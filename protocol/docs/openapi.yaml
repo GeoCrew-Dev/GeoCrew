@@ -353,6 +353,21 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/export.sections.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportSections
+      summary: The measured-section layer table as CSV, one row per layer (capability "sections")
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 剖面, 层号, 起点斜距(m), 终点斜距(m), 岩性, 倾向, 倾角, 产状来源, 真厚度(m), 备注, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/comments:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
