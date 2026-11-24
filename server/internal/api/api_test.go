@@ -640,6 +640,9 @@ func TestViewLinks(t *testing.T) {
 	base := "/api/v0/workspaces/" + a.WorkspaceID
 	e.call("POST", base+"/features", a.Token, map[string]any{"features": []any{feature("f1", 1, "2026-11-24T08:00:00Z")}}, nil)
 
+	if c := e.call("GET", base+"/export.samples.csv?tz_offset=9999", a.Token, nil, nil); c != 400 {
+		t.Fatalf("bad tz_offset: %d", c)
+	}
 	if c := e.call("POST", base+"/view-links", a.Token, map[string]int{"hours": 500}, nil); c != 400 {
 		t.Fatalf("bad hours: %d", c)
 	}
@@ -657,7 +660,7 @@ func TestViewLinks(t *testing.T) {
 	if c := e.call("GET", base+"/features", link.Token, nil, &page); c != 200 {
 		t.Fatalf("viewer pull: %d", c)
 	}
-	for _, p := range []string{base, base + "/members", base + "/comments", base + "/export.geojson"} {
+	for _, p := range []string{base, base + "/members", base + "/comments", base + "/export.geojson", base + "/export.samples.csv?tz_offset=480"} {
 		if c := e.call("GET", p, link.Token, nil, nil); c != 200 {
 			t.Fatalf("viewer GET %s: %d", p, c)
 		}

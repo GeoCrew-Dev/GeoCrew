@@ -241,3 +241,29 @@ func (s *Server) exportPackage(w http.ResponseWriter, r *http.Request) {
 		s.logger().Error("export package", "workspace", ws, "err", err)
 	}
 }
+
+// exportSamples downloads the sample register (protocol v0 §6.4) as CSV.
+// tz_offset (minutes east of UTC, as a browser knows it) sets the time zone
+// of the sampling times; it defaults to UTC.
+func (s *Server) exportSamples(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	zone := time.UTC
+	if v := r.URL.Query().Get("tz_offset"); v != "" {
+		m, err := strconv.Atoi(v)
+		if err != nil || m < -14*60 || m > 14*60 {
+			writeErr(w, http.StatusBadRequest, "bad_tz_offset", "tz_offset must be minutes east of UTC, -840 to 840")
+			return
+		}
+		zone = time.FixedZone("", m*60)
+	}
+	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="samples.csv"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := export.Samples(r.Context(), s.Store, ws, zone, w); err != nil {
+		s.logger().Error("export samples", "workspace", ws, "err", err)
+	}
+}

@@ -29,7 +29,8 @@ const Usage = `用法：geocrew-server [参数] admin <命令>
   revoke <工作组> <成员>            移出成员，令牌立即失效
   backup <目标文件>                 在线备份数据库（附件目录另行复制）
   export <工作组> <目标文件>         导出当前全部记录：.geojson 结尾为 GeoJSON（可直接用 QGIS 打开），
-                                   .zip 结尾为工程包（含照片和记录表单，安卓端可导入为新工程）
+                                   .zip 结尾为工程包（含照片和记录表单，安卓端可导入为新工程），
+                                   .csv 结尾为样品清单（每件样品一行，时间按本机时区）
 
   files <工作组> [prune]             统计附件：占用空间、被记录引用的、没有任何记录引用的、缺失的；
                                    加 prune 删除没有引用且上传超过 1 天的附件（历史版本引用的不删）
@@ -152,7 +153,12 @@ func RunWith(ctx context.Context, st store.Store, opt Options, args []string, ou
 			return err
 		}
 		var msg string
-		if strings.HasSuffix(strings.ToLower(rest[1]), ".zip") {
+		lower := strings.ToLower(rest[1])
+		if strings.HasSuffix(lower, ".csv") {
+			var n int
+			n, err = export.Samples(ctx, st, ws.ID, time.Local, f)
+			msg = fmt.Sprintf("已把「%s」的 %d 件样品导出到 %s", ws.Name, n, rest[1])
+		} else if strings.HasSuffix(lower, ".zip") {
 			open := func(sha string) (io.ReadCloser, error) {
 				if opt.Files == nil {
 					return nil, os.ErrNotExist
