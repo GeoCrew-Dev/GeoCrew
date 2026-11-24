@@ -1,5 +1,6 @@
 package org.geocrew.core.formats
 
+import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.GeoFeature
 import java.io.InputStream
 import java.io.OutputStream
@@ -11,12 +12,16 @@ data class ImportContext(
     val projectId: String,
     val now: Instant = Instant.now(),
     val newId: () -> String = { UUID.randomUUID().toString() },
+    /** The project's form, so columns named by a field's label land in that field. */
+    val fields: List<FieldTemplate> = emptyList(),
 )
 
 /** Extra data an export may use (e.g. per-vertex times for GPX tracks). */
 data class ExportContext(
     val title: String = "GeoCrew",
     val trackTimes: (featureId: String) -> List<Instant>? = { null },
+    /** The project's form: tabular formats put these columns first, headed by their labels. */
+    val fields: List<FieldTemplate> = emptyList(),
 )
 
 data class ImportResult(
@@ -48,7 +53,7 @@ interface FeatureFormat {
 }
 
 object FeatureFormats {
-    val all: List<FeatureFormat> = listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat)
+    val all: List<FeatureFormat> = listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat, CsvFormat)
 
     fun byId(id: String) = all.firstOrNull { it.id == id }
 

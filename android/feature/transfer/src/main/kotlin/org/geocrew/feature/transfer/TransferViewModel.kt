@@ -67,7 +67,7 @@ class TransferViewModel @Inject constructor(
             ?: return@work fail("认不出「$name」的格式。支持：" + formats.filter { it.canRead }.joinToString("、") { it.displayName })
         val project = projects.ensureCurrent()
         val result = withContext(Dispatchers.IO) {
-            context.contentResolver.openInputStream(uri)?.use { format.read(it, ImportContext(project.id)) }
+            context.contentResolver.openInputStream(uri)?.use { format.read(it, ImportContext(project.id, fields = project.config.fields)) }
         } ?: return@work fail("打不开「$name」。")
         if (result.features.isEmpty()) return@work fail("「$name」里没有可导入的要素。" + result.warnings.joinToString(" "))
         _preview.value = ImportPreview(name, format, result)
@@ -103,7 +103,7 @@ class TransferViewModel @Inject constructor(
         // GPX keeps per-point times for tracks; collect them up front.
         val times = list.filter { it.kind == FeatureKind.TRACK }
             .associate { t -> t.id to tracks.points(t.id).map { it.time } }
-        val ctx = ExportContext(title = project.name, trackTimes = { id -> times[id]?.takeIf { it.isNotEmpty() } })
+        val ctx = ExportContext(title = project.name, trackTimes = { id -> times[id]?.takeIf { it.isNotEmpty() } }, fields = project.config.fields)
         val result = withContext(Dispatchers.IO) {
             context.contentResolver.openOutputStream(uri, "wt")?.use { format.write(list, it, ctx) }
         } ?: return@work fail("无法写入所选位置。")
