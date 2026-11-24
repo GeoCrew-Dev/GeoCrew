@@ -76,6 +76,7 @@ internal object MapLayers {
             stop("polygon", MapColors.POLYGON),
             stop("track", MapColors.TRACK),
             stop("section", MapColors.SECTION),
+            stop("route", MapColors.ROUTE),
         ),
     )
 

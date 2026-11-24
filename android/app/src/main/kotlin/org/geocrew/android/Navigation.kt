@@ -18,6 +18,7 @@ import org.geocrew.core.gis.SectionTool
 import org.geocrew.feature.analysis.StereonetScreen
 import org.geocrew.feature.compass.CompassScreen
 import org.geocrew.feature.compass.CoordinatesScreen
+import org.geocrew.feature.compass.ROUTE_FEATURE_ARG
 import org.geocrew.feature.compass.SECTION_FEATURE_ARG
 import org.geocrew.feature.compass.SEEK_FEATURE_ARG
 import org.geocrew.feature.compass.SeekScreen
@@ -64,6 +65,9 @@ object Routes {
     const val SECTION = "section?$SECTION_FEATURE_ARG={$SECTION_FEATURE_ARG}"
     const val SECTION_ANY = "section"
     fun measuredSection(featureId: String) = "section?$SECTION_FEATURE_ARG=$featureId"
+    const val ROUTE = "route?$ROUTE_FEATURE_ARG={$ROUTE_FEATURE_ARG}"
+    const val ROUTE_ANY = "route"
+    fun geoRoute(featureId: String) = "route?$ROUTE_FEATURE_ARG=$featureId"
     const val COORDINATES = "coordinates"
     const val SUN = "sun"
     const val SEEK = "seek?$SEEK_FEATURE_ARG={$SEEK_FEATURE_ARG}"
@@ -182,6 +186,7 @@ fun GeoCrewNavHost() {
                 onSection = { nav.navigate(Routes.analysis(SectionTool().id, it)) },
                 onSeek = { nav.navigate(Routes.seek(it)) },
                 onOpenMeasuredSection = { nav.navigate(Routes.measuredSection(it)) },
+                onOpenRoute = { nav.navigate(Routes.geoRoute(it)) },
             )
         }
         composable(Routes.THICKNESS) {
@@ -192,6 +197,12 @@ fun GeoCrewNavHost() {
             arguments = listOf(navArgument(SECTION_FEATURE_ARG) { type = NavType.StringType; nullable = true; defaultValue = null }),
         ) {
             org.geocrew.feature.compass.SectionScreen(onBack = { nav.popBackStack() })
+        }
+        composable(
+            Routes.ROUTE,
+            arguments = listOf(navArgument(ROUTE_FEATURE_ARG) { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) {
+            org.geocrew.feature.compass.RouteScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.COORDINATES) {
             CoordinatesScreen(onBack = { nav.popBackStack() })

@@ -124,6 +124,7 @@ fun FeatureDetailScreen(
     onSeek: ((String) -> Unit)? = null,
     /** Opens a measured-section record in the section editor. */
     onOpenMeasuredSection: ((String) -> Unit)? = null,
+    onOpenRoute: ((String) -> Unit)? = null,
     viewModel: FeatureDetailViewModel = hiltViewModel(),
 ) {
     val feature by viewModel.feature.collectAsStateWithLifecycle()
@@ -195,10 +196,13 @@ fun FeatureDetailScreen(
             VoiceNotes(f, viewModel)
             SectionHeader("信息")
             Info(f, format)
+            if (onOpenRoute != null && f.kind == FeatureKind.ROUTE) {
+                OutlinedButton(onClick = { onOpenRoute(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("打开地质路线（点序、点间描述与小结）") }
+            }
             if (onOpenMeasuredSection != null && f.kind == FeatureKind.SECTION) {
                 OutlinedButton(onClick = { onOpenMeasuredSection(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("打开实测剖面（导线、分层与厚度）") }
             }
-            if (onSection != null && f.kind != FeatureKind.SECTION && (f.geometry is Geometry.LineString || f.geometry is Geometry.MultiLineString) && f.kind != FeatureKind.TRACK) {
+            if (onSection != null && f.kind != FeatureKind.SECTION && f.kind != FeatureKind.ROUTE && (f.geometry is Geometry.LineString || f.geometry is Geometry.MultiLineString) && f.kind != FeatureKind.TRACK) {
                 OutlinedButton(onClick = { onSection(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("作为剖面线，投影产状算视倾角") }
             }
             commentAccess?.let { access ->

@@ -42,6 +42,8 @@ object MapColors {
     const val TRACK = "#F9A825"
     /** Measured sections: the traverse line. */
     const val SECTION = "#795548"
+    /** Geological routes: the line joining their points. */
+    const val ROUTE = "#00838F"
     const val SELECTED = "#00E5FF"
     const val ME = "#1E88E5"
     const val TEAM = "#43A047"

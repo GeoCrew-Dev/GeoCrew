@@ -25,8 +25,10 @@ value class FeatureKind(val id: String) {
         val PHOTO = FeatureKind("photo")
         /** A measured stratigraphic section (§6.5); its line is the traverse. */
         val SECTION = FeatureKind("section")
+        /** A geological route (§6.6); its line joins the observation points it lists. */
+        val ROUTE = FeatureKind("route")
 
-        val builtIn = listOf(POINT, GEO_POINT, LINE, POLYGON, TRACK, PHOTO, SECTION)
+        val builtIn = listOf(POINT, GEO_POINT, LINE, POLYGON, TRACK, PHOTO, SECTION, ROUTE)
     }
 }
 
@@ -93,6 +95,8 @@ object Props {
     const val SAMPLES = "samples"
     /** Legs and layers of a measured section (§6.5). */
     const val SECTION = "section"
+    /** Stops, descriptions and summary of a geological route (§6.6). */
+    const val ROUTE = "route"
     const val LITHOLOGY = "lithology"
     const val STRIKE = "strike"
     const val DIP_DIRECTION = "dip_direction"
@@ -113,7 +117,7 @@ object Props {
 
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
-        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, LITHOLOGY, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
+        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, LITHOLOGY, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
         STARTED_AT, ENDED_AT, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
         ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS,
     )
