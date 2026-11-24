@@ -62,6 +62,7 @@ object Routes {
     fun projectSettings(id: String) = "project/${android.net.Uri.encode(id)}/settings"
     const val STEREONET = "stereonet"
     const val THICKNESS = "thickness"
+    const val BEARING_FIX = "bearing-fix"
     const val SECTION = "section?$SECTION_FEATURE_ARG={$SECTION_FEATURE_ARG}"
     const val SECTION_ANY = "section"
     fun measuredSection(featureId: String) = "section?$SECTION_FEATURE_ARG=$featureId"
@@ -191,6 +192,12 @@ fun GeoCrewNavHost() {
         }
         composable(Routes.THICKNESS) {
             ThicknessScreen(onBack = { nav.popBackStack() })
+        }
+        composable(Routes.BEARING_FIX) {
+            org.geocrew.feature.compass.BearingFixScreen(
+                onBack = { nav.popBackStack() },
+                onOpenRecord = { nav.navigate(Routes.feature(it)) },
+            )
         }
         composable(
             Routes.SECTION,

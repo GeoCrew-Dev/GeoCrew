@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.ChangeHistory
 import androidx.compose.material.icons.filled.DonutLarge
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.GridOn
@@ -36,6 +37,7 @@ val builtInTools = listOf(
     ToolEntry("地层厚度", "按产状和导线（方位、坡角、斜距）算真厚度和铅直厚度", Icons.Default.Straighten, Routes.THICKNESS),
     ToolEntry("地质路线", "按顺序串起当天的地质点，写点间描述和路线小结，导出路线记录表", Icons.Default.Hiking, Routes.ROUTE_ANY),
     ToolEntry("实测剖面", "沿导线逐层记录岩性和产状，算各层真厚度，剖面线保存到地图", Icons.Default.Layers, Routes.SECTION_ANY),
+    ToolEntry("方位交会", "用罗盘方位定点：前方交会求够不着的目标，后方交会在 GPS 差时求自己的位置", Icons.Default.ChangeHistory, Routes.BEARING_FIX),
     ToolEntry("寻点", "带方向箭头走到记录点或指派给你的任务点", Icons.Default.NearMe, Routes.SEEK_ANY),
     ToolEntry("日出日落", "当地日出、日落和天黑时间，还剩多久天黑", Icons.Default.WbTwilight, Routes.SUN),
     ToolEntry("坐标换算", "经纬度与高斯-克吕格 3°/6° 带平面坐标互换，导出点的平面坐标表", Icons.Default.GridOn, Routes.COORDINATES),
