@@ -19,6 +19,8 @@ import (
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/config"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/postgres"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqldb"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
 )
 
@@ -48,11 +50,12 @@ func run() error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return err
 	}
-	db, err := sqlite.Open(filepath.Join(cfg.DataDir, "geocrew.db"))
+	db, err := openStore(cfg)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
+	log.Info("database", "engine", db.Dialect())
 	files := &blob.Disk{Root: filepath.Join(cfg.DataDir, "files"), MaxSize: cfg.MaxUploadMB << 20}
 	if len(cfg.Args) > 0 {
 		return admin.RunWith(context.Background(), db, admin.Options{Files: files}, cfg.Args[1:], os.Stdout)
@@ -120,4 +123,13 @@ func healthcheck(base string) error {
 		return fmt.Errorf("healthz returned %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// openStore opens PostgreSQL when a database URL is set, otherwise the
+// SQLite file in the data directory. Attachments stay on disk either way.
+func openStore(cfg config.Config) (*sqldb.DB, error) {
+	if cfg.Database != "" {
+		return postgres.Open(cfg.Database)
+	}
+	return sqlite.Open(filepath.Join(cfg.DataDir, "geocrew.db"))
 }

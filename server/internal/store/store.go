@@ -1,8 +1,8 @@
 // Package store defines the persistence contract of the GeoCrew server.
 //
-// The HTTP layer depends only on the Store interface, so the default SQLite
-// backend (package sqlite) can later be swapped for PostgreSQL/PostGIS
-// without touching handlers.
+// The HTTP layer depends only on the Store interface. Package sqldb
+// implements it once for SQL databases; packages sqlite (the default) and
+// postgres open it on their engine, and storetest checks any backend.
 package store
 
 import (

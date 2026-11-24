@@ -1,4 +1,4 @@
-package sqlite
+package sqldb
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func (d *DB) comment(ctx context.Context, q interface {
 }
 
 // nextCommentSeq bumps and returns the workspace's comment counter.
-func nextCommentSeq(ctx context.Context, tx *sql.Tx, workspaceID string) (int64, error) {
+func nextCommentSeq(ctx context.Context, tx *Tx, workspaceID string) (int64, error) {
 	var seq int64
 	err := tx.QueryRowContext(ctx,
 		`UPDATE workspaces SET comment_seq = comment_seq + 1 WHERE id = ? RETURNING comment_seq`, workspaceID).Scan(&seq)
@@ -74,7 +74,7 @@ func (d *DB) AddComment(ctx context.Context, workspaceID, authorID string, c sto
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO comments (workspace_id, id, seq, feature_id, body, at_lng, at_lat, author_id, created_at, urgent)
 		 VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		workspaceID, c.ID, seq, c.FeatureID, c.Body, lng, lat, authorID, fmtTime(time.Now()), c.Urgent); err != nil {
+		workspaceID, c.ID, seq, c.FeatureID, c.Body, lng, lat, authorID, fmtTime(time.Now()), b2i(c.Urgent)); err != nil {
 		return c, err
 	}
 	out, err := d.comment(ctx, tx, workspaceID, c.ID)

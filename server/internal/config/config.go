@@ -13,9 +13,11 @@ import (
 
 // Config holds every runtime setting.
 type Config struct {
-	Addr           string
-	Name           string
-	DataDir        string
+	Addr    string
+	Name    string
+	DataDir string
+	// Database is a PostgreSQL URL; empty keeps the SQLite file in DataDir.
+	Database       string
 	MaxUploadMB    int64
 	LogLevel       slog.Level
 	LogFormat      string // "text" or "json"
@@ -55,6 +57,7 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&c.Addr, "addr", env("GEOCREW_ADDR", ":8080"), "listen address")
 	fs.StringVar(&c.Name, "name", env("GEOCREW_NAME", "GeoCrew Server"), "server display name")
 	fs.StringVar(&c.DataDir, "data", env("GEOCREW_DATA_DIR", "./data"), "directory for the database and attachments")
+	fs.StringVar(&c.Database, "database", env("GEOCREW_DATABASE_URL", ""), "PostgreSQL URL (postgres://…); empty uses SQLite in the data directory")
 	fs.Int64Var(&c.MaxUploadMB, "max-upload-mb", maxUpload, "largest attachment accepted, in MiB")
 	fs.StringVar(&level, "log-level", env("GEOCREW_LOG_LEVEL", "info"), "debug, info, warn or error")
 	fs.StringVar(&c.LogFormat, "log-format", env("GEOCREW_LOG_FORMAT", "text"), "text or json")
@@ -86,6 +89,9 @@ func Load(args []string) (Config, error) {
 	}
 	if c.LogFormat != "text" && c.LogFormat != "json" {
 		return c, fmt.Errorf("log format must be text or json")
+	}
+	if c.Database != "" && !strings.HasPrefix(c.Database, "postgres://") && !strings.HasPrefix(c.Database, "postgresql://") {
+		return c, fmt.Errorf("database must be a postgres:// URL (leave it empty for SQLite)")
 	}
 	if c.JoinPerMinute < 1 {
 		return c, fmt.Errorf("join-per-minute must be at least 1")

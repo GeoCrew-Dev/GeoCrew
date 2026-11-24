@@ -43,6 +43,7 @@ go build -o geocrew-server ./cmd/geocrew-server
 | `-addr` | `GEOCREW_ADDR` | `:8080` | 监听地址 |
 | `-name` | `GEOCREW_NAME` | `GeoCrew Server` | 服务器显示名称 |
 | `-data` | `GEOCREW_DATA_DIR` | `./data`（镜像内 `/data`） | 数据库与附件目录 |
+| `-database` | `GEOCREW_DATABASE_URL` | 空 | PostgreSQL 连接地址（`postgres://…`）；留空用数据目录里的 SQLite，见下文 |
 | `-max-upload-mb` | `GEOCREW_MAX_UPLOAD_MB` | `32` | 单个附件上限（MiB） |
 | `-log-level` | `GEOCREW_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `-log-format` | `GEOCREW_LOG_FORMAT` | `text` | `text` 或 `json` |
@@ -51,6 +52,17 @@ go build -o geocrew-server ./cmd/geocrew-server
 | `-join-per-minute` | `GEOCREW_JOIN_PER_MINUTE` | `10` | 每个客户端地址每分钟可尝试新建 / 加入的次数，防止猜测邀请码 |
 | `-push` | `GEOCREW_PUSH` | `true` | 向组员登记的推送地址发通知（UnifiedPush） |
 | `-push-allow-private` | `GEOCREW_PUSH_ALLOW_PRIVATE` | `false` | 允许推送地址在内网、本机或用 http（推送分发器和服务端在同一局域网时打开） |
+
+### 使用 PostgreSQL
+
+默认的 SQLite 单文件对一般野外小组足够，不需要改。已经有 PostgreSQL（12 及以上），或者想在几台机器上跑多个服务端进程共用一个库时，可以改用它：
+
+```bash
+createdb geocrew
+geocrew-server -data /var/lib/geocrew -database "postgres://geocrew:密码@localhost/geocrew"
+```
+
+首次启动自动建表；多个进程同时启动时用咨询锁保证只迁移一次。附件仍放在 `-data` 目录的 `files/` 下，多台机器时需要共享这个目录（NFS 等）。两种数据库存的内容完全相同（时间和 GeoJSON 都按原文保存），不需要 PostGIS。从 SQLite 迁移到 PostgreSQL 目前没有现成命令，可用「下载整组数据」导出工程包再在新服务器上建组导入。备份改用 `pg_dump`，`admin backup` 只用于 SQLite。
 
 ## 管理命令
 
@@ -131,7 +143,10 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 | `cmd/geocrew-server` | 入口、优雅退出、健康检查 |
 | `internal/api` | HTTP 与 WebSocket 接口 |
 | `internal/store` | 存储接口（与具体数据库无关） |
-| `internal/store/sqlite` | 默认 SQLite 实现（纯 Go，无 CGO），含迁移 |
+| `internal/store/sqldb` | 基于 `database/sql` 的通用实现：全部查询写一次，引擎差异（占位符、行锁、迁移记录、备份）放在 `Dialect` 里 |
+| `internal/store/sqlite` | 默认 SQLite 方言（纯 Go，无 CGO）与迁移 |
+| `internal/store/postgres` | PostgreSQL 方言与迁移（pgx 驱动） |
+| `internal/store/storetest` | 每种存储都要通过的契约测试（含并发推送） |
 | `internal/blob` | 附件按 SHA-256 存储在本地磁盘 |
 | `internal/realtime` | 实时消息分发（位置、在线状态、变更通知） |
 | `internal/push` | 推送通知投递（UnifiedPush 风格，内容最少、防内网探测） |
@@ -139,13 +154,15 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 | `internal/config` | 参数与环境变量 |
 | `internal/admin` | 运维命令（列出、恢复组长、备份、导出） |
 
-换用 PostgreSQL/PostGIS 时只需新增一个实现 `store.Store` 接口的包。
+再加一种 SQL 数据库只需写一个 `Dialect` 和它的建表语句，并让测试调用 `storetest.Run`；非 SQL 的存储直接实现 `store.Store` 接口。改表结构时，在 `sqlite` 和 `postgres` 两个包的迁移列表末尾各追加一条。
 
 ## 本地开发
 
 ```bash
 go test -race ./...
 go run ./cmd/geocrew-server
+# PostgreSQL 的契约测试需要一个可用的库（不设置时跳过）：
+GEOCREW_TEST_POSTGRES="postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" go test ./internal/store/...
 ```
 
 ## 许可
