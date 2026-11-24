@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
@@ -17,6 +18,7 @@ import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.PhotoStore
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.SettingsRepository
+import org.geocrew.core.data.team.TeamRepository
 import org.geocrew.core.model.Attitude
 import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.FeatureKind
@@ -25,6 +27,15 @@ import org.geocrew.core.model.Props
 import org.geocrew.core.model.string
 import java.io.File
 import javax.inject.Inject
+
+data class Revision(val feature: GeoFeature, val author: String)
+
+sealed interface HistoryState {
+    data object Idle : HistoryState
+    data object Loading : HistoryState
+    data class Loaded(val revisions: List<Revision>) : HistoryState
+    data class Failed(val message: String) : HistoryState
+}
 
 @HiltViewModel
 class RecordListViewModel @Inject constructor(
@@ -63,8 +74,37 @@ class FeatureDetailViewModel @Inject constructor(
     private val features: FeatureRepository,
     val photos: PhotoStore,
     settings: SettingsRepository,
+    private val projects: ProjectRepository,
+    private val team: TeamRepository,
 ) : ViewModel() {
     private val id: String = checkNotNull(savedState[FEATURE_ID_ARG])
+
+    /** True when the feature's project syncs with a workspace, so the server keeps its history. */
+    val shared: StateFlow<Boolean> = projects.current.map { it.team != null }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private val _history = MutableStateFlow<HistoryState>(HistoryState.Idle)
+    val history: StateFlow<HistoryState> = _history.asStateFlow()
+
+    fun loadHistory() = viewModelScope.launch {
+        val f = feature.value ?: return@launch
+        val h = team.handle(f.projectId) ?: run { _history.value = HistoryState.Failed("当前工程未连接工作组"); return@launch }
+        _history.value = HistoryState.Loading
+        _history.value = try {
+            val names = runCatching { team.members(h).associate { it.id to it.nickname } }.getOrDefault(emptyMap())
+            HistoryState.Loaded(
+                team.history(h, id).asReversed().map { r ->
+                    Revision(r, r.sync.updatedBy?.let { names[it] ?: "已移出的成员" } ?: "未知")
+                },
+            )
+        } catch (e: java.io.IOException) {
+            HistoryState.Failed(if (e is org.geocrew.core.network.ApiException && e.status == 404) "服务器上还没有这条记录，同步后再看" else "读取失败：${e.message}")
+        }
+    }
+
+    fun restore(r: Revision) = viewModelScope.launch {
+        features.restore(id, r.feature)
+        _history.value = HistoryState.Idle
+    }
 
     val feature: StateFlow<GeoFeature?> = features.observe(id).stateIn(viewModelScope, SharingStarted.Eagerly, null)
 

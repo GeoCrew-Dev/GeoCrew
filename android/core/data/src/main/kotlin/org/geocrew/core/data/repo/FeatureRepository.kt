@@ -70,6 +70,15 @@ class FeatureRepository @Inject constructor(
         return next
     }
 
+    /** Brings back an earlier revision's content as a new local revision (undeleting if needed). */
+    suspend fun restore(id: String, from: GeoFeature): GeoFeature? {
+        val cur = get(id) ?: return null
+        val next = cur.copy(kind = from.kind, geometry = from.geometry, properties = from.properties)
+            .let { it.copy(sync = it.sync.bumped(clock.instant()).copy(deleted = false)) }
+        dao.upsert(next.toEntity())
+        return next
+    }
+
     suspend fun delete(id: String) {
         val cur = get(id) ?: return
         dao.upsert(cur.markDeleted(clock.instant()).toEntity())

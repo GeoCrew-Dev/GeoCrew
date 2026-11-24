@@ -78,6 +78,10 @@ class TeamRepository @Inject constructor(
     }
 
     suspend fun members(h: TeamHandle): List<Member> = h.api.members(h.link.workspaceId)
+
+    /** Every revision of a feature the server kept, oldest first. */
+    suspend fun history(h: TeamHandle, featureId: String): List<org.geocrew.core.model.GeoFeature> =
+        h.api.history(h.link.workspaceId, h.project.id, featureId)
     suspend fun resetInvite(h: TeamHandle): String = h.api.resetInvite(h.link.workspaceId)
     suspend fun setRole(h: TeamHandle, memberId: String, role: String) = h.api.setRole(h.link.workspaceId, memberId, role)
     suspend fun revoke(h: TeamHandle, memberId: String) = h.api.revoke(h.link.workspaceId, memberId)

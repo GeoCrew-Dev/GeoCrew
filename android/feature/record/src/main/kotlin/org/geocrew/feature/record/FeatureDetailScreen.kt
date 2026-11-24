@@ -85,6 +85,8 @@ fun FeatureDetailScreen(
 ) {
     val feature by viewModel.feature.collectAsStateWithLifecycle()
     val format by viewModel.coordinateFormat.collectAsStateWithLifecycle()
+    val shared by viewModel.shared.collectAsStateWithLifecycle()
+    val history by viewModel.history.collectAsStateWithLifecycle()
     val f = feature
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -119,6 +121,10 @@ fun FeatureDetailScreen(
             Photos(f, viewModel)
             SectionHeader("信息")
             Info(f, format)
+            if (shared) {
+                SectionHeader("修改历史")
+                History(history, viewModel::loadHistory, viewModel::restore)
+            }
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -336,6 +342,48 @@ private fun Attributes(f: GeoFeature, onSet: (String, String) -> Unit, onRemove:
                 TextButton(enabled = key.isNotBlank() && !bad, onClick = { onSet(key, value); editing = null }) { Text("保存") }
             },
             dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } },
+        )
+    }
+}
+
+@Composable
+private fun History(state: HistoryState, onLoad: () -> Unit, onRestore: (Revision) -> Unit) {
+    var confirm by remember { mutableStateOf<Revision?>(null) }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        when (state) {
+            HistoryState.Idle -> TextButton(onClick = onLoad) { Text("查看组内的修改记录") }
+            HistoryState.Loading -> Text("读取中…", style = MaterialTheme.typography.bodySmall)
+            is HistoryState.Failed -> {
+                Text(state.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = onLoad) { Text("重试") }
+            }
+            is HistoryState.Loaded -> if (state.revisions.isEmpty()) {
+                Text("服务器上没有这条记录的历史", style = MaterialTheme.typography.bodySmall)
+            } else state.revisions.forEachIndexed { i, r ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "第 ${r.feature.sync.version} 版 · ${r.author}" + if (r.feature.deleted) " · 删除" else "",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            fullTime.format(r.feature.sync.updatedAt) + (r.feature.title?.let { " · $it" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (i > 0 && !r.feature.deleted) TextButton(onClick = { confirm = r }) { Text("恢复") }
+                }
+            }
+        }
+    }
+    confirm?.let { r ->
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text("恢复到第 ${r.feature.sync.version} 版？") },
+            text = { Text("会用这一版的位置和属性生成一个新版本，之前的版本仍保留在历史里。") },
+            confirmButton = { TextButton(onClick = { onRestore(r); confirm = null }) { Text("恢复") } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("取消") } },
         )
     }
 }
