@@ -152,8 +152,17 @@ class MapViewModel @Inject constructor(
         return downloads.start(b.source, b.source.keyId?.let { b.keys[it] }, plan, name)
     }
 
+    /** Downloads that stopped part way and can go on. */
+    val pausedDownloads: StateFlow<List<org.geocrew.core.data.repo.PausedDownload>> = downloads.paused
+
     fun cancelDownload() = downloads.cancel()
+    fun pauseDownload() = downloads.pause()
     fun dismissDownload() = downloads.dismiss()
+    fun discardDownload(id: String) = downloads.discard(id)
+
+    fun resumeDownload(id: String) {
+        viewModelScope.launch { downloads.resume(id)?.let { _notice.value = it } }
+    }
 
 
     val team: StateFlow<TeamStatus> = teamSession.status

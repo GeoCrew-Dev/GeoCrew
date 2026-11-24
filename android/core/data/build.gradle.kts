@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.geocrew.android.library)
     alias(libs.plugins.geocrew.android.hilt)
     alias(libs.plugins.room)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 room {

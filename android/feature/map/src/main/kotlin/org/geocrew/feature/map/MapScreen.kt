@@ -96,6 +96,7 @@ fun MapScreen(
     val averaging by viewModel.averaging.collectAsStateWithLifecycle()
     val mapNotice by viewModel.notice.collectAsStateWithLifecycle()
     val download by viewModel.download.collectAsStateWithLifecycle()
+    val pausedDownloads by viewModel.pausedDownloads.collectAsStateWithLifecycle()
     val format = settings?.coordinateFormat ?: CoordinateFormat.DECIMAL
     val camera = rememberMapCameraState()
 
@@ -293,7 +294,17 @@ fun MapScreen(
                 Notice("正在记录轨迹：${t.points} 个点，${CoordinateFormatter.distance(t.lengthMeters)}", null, null)
             }
             download?.let { d ->
-                DownloadCard(d, onCancel = viewModel::cancelDownload, onUse = { viewModel.chooseSource(it.id) }, onDismiss = viewModel::dismissDownload)
+                DownloadCard(
+                    d,
+                    onPause = viewModel::pauseDownload,
+                    onCancel = viewModel::cancelDownload,
+                    onResume = viewModel::resumeDownload,
+                    onUse = { viewModel.chooseSource(it.id) },
+                    onDismiss = viewModel::dismissDownload,
+                )
+            }
+            if (download == null && pausedDownloads.isNotEmpty()) {
+                PausedDownloadsCard(pausedDownloads, onResume = viewModel::resumeDownload, onDiscard = viewModel::discardDownload)
             }
             if (display.filtering) {
                 Notice(if (display.onlyMyTasks) "地图上只显示我的待办任务" else "地图上隐藏了部分记录", "调整") { showLayers = true }

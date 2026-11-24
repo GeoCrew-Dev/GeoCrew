@@ -1,6 +1,7 @@
 package org.geocrew.feature.map
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.geocrew.core.data.repo.BasemapDownload
+import org.geocrew.core.data.repo.PausedDownload
 import org.geocrew.core.model.Bounds
 import org.geocrew.core.model.tiles.BulkDownload
 import org.geocrew.core.model.tiles.TilePlan
@@ -98,7 +100,14 @@ internal fun OfflineDownloadDialog(
 
 /** Progress, then the outcome, of the running offline download. */
 @Composable
-internal fun DownloadCard(d: BasemapDownload, onCancel: () -> Unit, onUse: (TileSource) -> Unit, onDismiss: () -> Unit) {
+internal fun DownloadCard(
+    d: BasemapDownload,
+    onPause: () -> Unit,
+    onCancel: () -> Unit,
+    onResume: (String) -> Unit,
+    onUse: (TileSource) -> Unit,
+    onDismiss: () -> Unit,
+) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))) {
         Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp)) {
             val text = when (d.state) {
@@ -106,25 +115,66 @@ internal fun DownloadCard(d: BasemapDownload, onCancel: () -> Unit, onUse: (Tile
                 BasemapDownload.State.DONE -> "「${d.name}」已下载" + if (d.missing > 0) "，${d.missing} 张没有内容或下载失败" else ""
                 BasemapDownload.State.FAILED -> d.message ?: "下载失败"
                 BasemapDownload.State.CANCELLED -> "已取消下载「${d.name}」"
+                BasemapDownload.State.PAUSED -> "「${d.name}」暂停在 ${d.done} / ${d.total}" + (d.message?.let { "：$it" } ?: "")
             }
             Text(text, style = MaterialTheme.typography.bodyMedium)
-            if (d.state == BasemapDownload.State.RUNNING) {
+            if (d.state == BasemapDownload.State.RUNNING || d.state == BasemapDownload.State.PAUSED) {
                 LinearProgressIndicator(
                     progress = { if (d.total == 0L) 0f else d.done.toFloat() / d.total },
                     modifier = Modifier.fillMaxWidth().padding(end = 8.dp, top = 6.dp),
                 )
             }
-            androidx.compose.foundation.layout.Row {
+            Row {
                 when (d.state) {
-                    BasemapDownload.State.RUNNING -> TextButton(onClick = onCancel) { Text("取消") }
+                    BasemapDownload.State.RUNNING -> {
+                        TextButton(onClick = onPause) { Text("暂停") }
+                        TextButton(onClick = onCancel) { Text("取消并删除") }
+                    }
                     BasemapDownload.State.DONE -> {
                         d.source?.let { s -> TextButton(onClick = { onUse(s); onDismiss() }) { Text("换成这张底图") } }
                         TextButton(onClick = onDismiss) { Text("关闭") }
+                    }
+                    BasemapDownload.State.PAUSED -> {
+                        TextButton(onClick = { onDismiss(); onResume(d.id) }) { Text("继续") }
+                        TextButton(onClick = onDismiss) { Text("稍后") }
                     }
                     else -> TextButton(onClick = onDismiss) { Text("关闭") }
                 }
             }
         }
+    }
+}
+
+/**
+ * Downloads that stopped part way earlier (the app was closed, the network
+ * went): go on with one, or delete what it fetched.
+ */
+@Composable
+internal fun PausedDownloadsCard(list: List<PausedDownload>, onResume: (String) -> Unit, onDiscard: (String) -> Unit) {
+    var discarding by remember { mutableStateOf<PausedDownload?>(null) }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp)) {
+            for (p in list.take(3)) {
+                val pct = if (p.total == 0L) 0 else (p.done * 100 / p.total)
+                Text("离线底图「${p.name}」下载到约 $pct% 停下了", style = MaterialTheme.typography.bodyMedium)
+                Row {
+                    TextButton(onClick = { onResume(p.id) }) { Text("继续下载") }
+                    TextButton(onClick = { discarding = p }) { Text("删除") }
+                }
+            }
+            if (list.size > 3) {
+                Text("还有 ${list.size - 3} 个没下完", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+            }
+        }
+    }
+    discarding?.let { p ->
+        AlertDialog(
+            onDismissRequest = { discarding = null },
+            title = { Text("删除没下完的底图？") },
+            text = { Text("「${p.name}」已下载的瓦片会一起删掉。") },
+            confirmButton = { TextButton(onClick = { onDiscard(p.id); discarding = null }) { Text("删除") } },
+            dismissButton = { TextButton(onClick = { discarding = null }) { Text("取消") } },
+        )
     }
 }
 
