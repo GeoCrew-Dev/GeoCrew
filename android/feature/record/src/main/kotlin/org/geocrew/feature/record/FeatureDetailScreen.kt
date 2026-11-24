@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -101,6 +102,7 @@ fun FeatureDetailScreen(
     onMeasureAttitude: ((String) -> Unit)? = null,
     /** Opens the cross-section analysis with this line as the section. */
     onSection: ((String) -> Unit)? = null,
+    onSeek: ((String) -> Unit)? = null,
     viewModel: FeatureDetailViewModel = hiltViewModel(),
 ) {
     val feature by viewModel.feature.collectAsStateWithLifecycle()
@@ -124,6 +126,9 @@ fun FeatureDetailScreen(
                 actions = {
                     if (f != null) {
                         IconButton(onClick = { onShowOnMap(f.id) }) { Icon(Icons.Default.Map, "在地图上查看") }
+                        if (onSeek != null && f.geometry is Geometry.Point) {
+                            IconButton(onClick = { onSeek(f.id) }) { Icon(Icons.Default.NearMe, "寻点前往") }
+                        }
                         IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "删除") }
                     }
                 },

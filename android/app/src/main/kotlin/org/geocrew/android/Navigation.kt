@@ -18,6 +18,8 @@ import org.geocrew.core.gis.SectionTool
 import org.geocrew.feature.analysis.StereonetScreen
 import org.geocrew.feature.compass.CompassScreen
 import org.geocrew.feature.compass.CoordinatesScreen
+import org.geocrew.feature.compass.SEEK_FEATURE_ARG
+import org.geocrew.feature.compass.SeekScreen
 import org.geocrew.feature.compass.ThicknessScreen
 import org.geocrew.feature.compass.TARGET_FEATURE_ARG
 import org.geocrew.feature.map.MapScreen
@@ -59,6 +61,9 @@ object Routes {
     const val STEREONET = "stereonet"
     const val THICKNESS = "thickness"
     const val COORDINATES = "coordinates"
+    const val SEEK = "seek?$SEEK_FEATURE_ARG={$SEEK_FEATURE_ARG}"
+    const val SEEK_ANY = "seek"
+    fun seek(featureId: String) = "seek?$SEEK_FEATURE_ARG=$featureId"
     const val COMPASS = "compass?$TARGET_FEATURE_ARG={$TARGET_FEATURE_ARG}"
     fun compassFor(featureId: String) = "compass?$TARGET_FEATURE_ARG=$featureId"
 
@@ -170,6 +175,7 @@ fun GeoCrewNavHost() {
                 onShowOnMap = { nav.showOnMap(it) },
                 onMeasureAttitude = { nav.navigate(Routes.compassFor(it)) },
                 onSection = { nav.navigate(Routes.analysis(SectionTool().id, it)) },
+                onSeek = { nav.navigate(Routes.seek(it)) },
             )
         }
         composable(Routes.THICKNESS) {
@@ -177,6 +183,12 @@ fun GeoCrewNavHost() {
         }
         composable(Routes.COORDINATES) {
             CoordinatesScreen(onBack = { nav.popBackStack() })
+        }
+        composable(
+            Routes.SEEK,
+            arguments = listOf(navArgument(SEEK_FEATURE_ARG) { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) {
+            SeekScreen(onBack = { nav.popBackStack() }, onOpenRecord = { nav.navigate(Routes.feature(it)) })
         }
         composable(Routes.TOOLS) {
             ToolsScreen(builtInTools, onBack = { nav.popBackStack() }, onOpen = { nav.navigate(it) })
