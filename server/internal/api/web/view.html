@@ -46,6 +46,14 @@
   .pop img { max-width: 100%; border-radius: 6px; margin-top: 4px; }
   .pop .cap { color: #666; font-size: 12px; }
   .pop audio { width: 100%; margin-top: 4px; }
+  #banner { margin-top: 6px; font-size: 12px; }
+  #banner div { padding: 4px 8px; border-radius: 6px; margin-top: 4px; cursor: pointer; }
+  #banner .urgent { background: color-mix(in srgb, #c62828 15%, transparent); color: #c62828; }
+  #banner .call { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  #list .msg .body { white-space: pre-wrap; word-break: break-word; }
+  #list .urgent { color: #c62828; }
+  #list .tag { font-size: 11px; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-right: 6px; }
+  .pop .talk { border-top: 1px solid #ddd; margin-top: 6px; padding-top: 4px; font-size: 12px; }
   #gate { max-width: 520px; margin: 15vh auto; padding: 0 20px; }
   @media (max-width: 700px) { #app { flex-direction: column-reverse; } #side { width: 100%; max-width: none; height: 40%; border-right: 0; border-top: 1px solid var(--line); } }
 </style>
@@ -53,11 +61,12 @@
 <body>
 <div id="app" hidden>
   <aside id="side">
-    <header><h1 id="name">工作组</h1><div id="status">正在读取…</div><div id="today"></div></header>
+    <header><h1 id="name">工作组</h1><div id="status">正在读取…</div><div id="today"></div><div id="banner"></div></header>
     <div id="tools">
       <input id="q" type="search" placeholder="按名称、岩性、备注筛选">
       <button id="fit" type="button">全部</button>
       <button id="check" type="button" hidden>待核对</button>
+      <button id="msgs" type="button">组内消息</button>
       <button id="geojson" type="button">下载 GeoJSON</button>
       <button id="kml" type="button">下载 KML</button>
       <button id="package" type="button">下载工程包</button>
@@ -192,6 +201,68 @@
     for (const m of list) if (!m.revoked) members.set(m.id, m.nickname);
   }
 
+  // Team messages and record discussions (protocol v0 §8), read-only here.
+  const comments = new Map(); // id -> comment
+  let cseq = 0, messaging = false;
+  async function pullComments() {
+    for (;;) {
+      const page = await (await api("/comments?since=" + cseq)).json();
+      for (const c of page.comments || []) { if (c.deleted) comments.delete(c.id); else comments.set(c.id, c); }
+      if (page.seq > cseq) cseq = page.seq;
+      if (!page.more || !(page.comments || []).length) break;
+    }
+    renderBanner();
+    if (messaging) renderList();
+  }
+  const when = (t) => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleString("zh-CN", { hour12: false }).slice(0, -3); };
+  const ago = (t, h) => Date.now() - Date.parse(t) <= h * 3600 * 1000;
+  const team = () => [...comments.values()].filter((c) => !c.feature_id).sort((a, b) => b.seq - a.seq);
+  // The newest roll call of the last 24 hours with each member's latest answer (§8.2).
+  function rollCall() {
+    const call = team().find((c) => c.roll_call && ago(c.created_at, 24));
+    if (!call) return null;
+    const answers = new Map();
+    for (const c of team()) if (c.answer_to === call.id && !answers.has(c.author_id)) answers.set(c.author_id, c);
+    const roster = [...members.keys()].filter((id) => id !== call.author_id);
+    const help = [...answers.values()].filter((a) => a.urgent);
+    const silent = roster.filter((id) => !answers.has(id)).map((id) => members.get(id));
+    return { call, answers, roster, help, silent };
+  }
+  function rollLine(r) {
+    return "点名（" + (r.call.nickname || "组长") + " " + when(r.call.created_at) + "）：已回应 " + r.answers.size + "/" + r.roster.length +
+      (r.help.length ? "，求助：" + r.help.map((a) => a.nickname || "组员").join("、") : "") +
+      (r.silent.length ? "；未回应：" + r.silent.slice(0, 12).join("、") + (r.silent.length > 12 ? " 等" : "") : "");
+  }
+  function renderBanner() {
+    const box = $("banner"); box.replaceChildren();
+    const open = () => { messaging = true; checking = false; $("check").classList.remove("on"); $("msgs").classList.add("on"); renderList(); };
+    const alert = team().find((c) => c.urgent && !c.answer_to && ago(c.created_at, 6));
+    if (alert) box.append(Object.assign(document.createElement("div"), { className: "urgent", textContent: "紧急：" + (alert.nickname || "组员") + " " + when(alert.created_at) + " · " + alert.body, onclick: open }));
+    const r = rollCall();
+    if (r) box.append(Object.assign(document.createElement("div"), { className: r.help.length ? "urgent" : "call", textContent: rollLine(r), onclick: open }));
+    const n = team().length;
+    $("msgs").textContent = n ? "组内消息 " + n : "组内消息";
+  }
+  function renderMessages(ul) {
+    const r = rollCall();
+    if (r) { const li = document.createElement("li"); li.className = r.help.length ? "urgent" : ""; li.textContent = rollLine(r); ul.append(li); }
+    const q = $("q").value.trim().toLowerCase();
+    const list = team().filter((c) => !q || c.body.toLowerCase().includes(q) || (c.nickname || "").toLowerCase().includes(q)).slice(0, 300);
+    if (!list.length) { const li = document.createElement("li"); li.className = "sub"; li.textContent = "还没有组内消息"; ul.append(li); }
+    for (const c of list) {
+      const li = document.createElement("li"); li.className = "msg" + (c.urgent ? " urgent" : "");
+      const head = document.createElement("div"); head.className = "sub";
+      const tag = c.roll_call ? "点名" : c.answer_to ? (c.urgent ? "求助" : "报平安") : c.urgent ? "紧急" : "";
+      if (tag) head.append(Object.assign(document.createElement("span"), { className: "tag", textContent: tag }));
+      head.append(document.createTextNode((c.nickname || "组员") + " · " + when(c.created_at) + (Array.isArray(c.at) && c.at.length === 2 ? " · 有位置" : "")));
+      li.append(head, Object.assign(document.createElement("div"), { className: "body", textContent: c.body }));
+      if (Array.isArray(c.at) && c.at.length === 2 && c.at.every((v) => typeof v === "number")) {
+        li.onclick = () => map.flyTo({ center: c.at, zoom: Math.max(map.getZoom(), 15) });
+      }
+      ul.append(li);
+    }
+  }
+
   function collection() {
     return { type: "FeatureCollection", features: [...features.values()].map((f) => ({
       type: "Feature", id: undefined, geometry: f.geometry,
@@ -216,6 +287,7 @@
     const q = $("q").value.trim().toLowerCase();
     const ul = $("list");
     ul.replaceChildren();
+    if (messaging) return renderMessages(ul);
     // Records without a position are not on the map, but their issues still list.
     const pool = checking
       ? [...issues.keys()].map((id) => features.get(id) || { id, properties: { title: issues.get(id)[0].title } })
@@ -381,6 +453,13 @@
     row("备注", text(p, "note"));
     row("修改", [members.get(by(f)) || "", upd(f).replace("T", " ").slice(0, 16)].filter(Boolean).join(" · "));
     box.append(dl);
+    const talk = [...comments.values()].filter((c) => c.feature_id === f.id).sort((a, b) => a.seq - b.seq);
+    if (talk.length) {
+      const t = document.createElement("div"); t.className = "talk";
+      t.append(Object.assign(document.createElement("b"), { textContent: "讨论 " + talk.length + " 条" }));
+      for (const c of talk.slice(-5)) t.append(Object.assign(document.createElement("div"), { textContent: (c.nickname || "组员") + "（" + when(c.created_at) + "）：" + c.body }));
+      box.append(t);
+    }
     const media = document.createElement("div"); box.append(media);
     const shas = (list) => (Array.isArray(list) ? list : []).filter((s) => typeof s === "string" && /^[0-9a-f]{64}$/.test(s));
     const info = p.photo_info && typeof p.photo_info === "object" ? p.photo_info : {};
@@ -458,7 +537,8 @@
       if (m.type === "hello") (m.positions || []).forEach(showMate);
       else if (m.type === "position") showMate(m);
       else if (m.type === "feature_changed") pull().catch(() => {});
-      else if (m.type === "members_changed") loadMembers().then(render).catch(() => {});
+      else if (m.type === "members_changed") loadMembers().then(() => { render(); renderBanner(); }).catch(() => {});
+      else if (m.type === "comments_changed") pullComments().catch(() => {});
       else if (m.type === "settings_changed") loadSettings().then(render).catch(() => {});
     };
     sock.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 60 * 1000); };
@@ -506,7 +586,8 @@
     });
     $("q").oninput = renderList;
     $("fit").onclick = fitAll;
-    $("check").onclick = () => { checking = !checking; $("check").classList.toggle("on", checking); renderList(); };
+    $("check").onclick = () => { checking = !checking; messaging = false; $("msgs").classList.remove("on"); $("check").classList.toggle("on", checking); renderList(); };
+    $("msgs").onclick = () => { messaging = !messaging; checking = false; $("check").classList.remove("on"); $("msgs").classList.toggle("on", messaging); renderList(); };
     $("geojson").onclick = () => download("/export.geojson", "geocrew-" + WS + ".geojson");
     $("kml").onclick = () => download("/export.kml", "geocrew-" + WS + ".kml");
     $("package").onclick = () => download("/export.geocrew.zip", "geocrew-" + WS + ".geocrew.zip");
@@ -522,7 +603,10 @@
     await loadMembers();
     await loadSettings();
     await pull();
+    await pullComments().catch((e) => { if (e.message === "unauthorized") throw e; });
     connect();
+    // Ages out the alert and roll call lines even when nothing new arrives.
+    setInterval(renderBanner, 60 * 1000);
   }
 
   if (typeof maplibregl === "undefined") { gate("地图组件没有加载成功（需要能访问 unpkg.com）。"); return; }
