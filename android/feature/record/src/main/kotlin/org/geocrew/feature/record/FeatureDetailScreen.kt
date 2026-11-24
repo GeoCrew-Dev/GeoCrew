@@ -70,6 +70,9 @@ import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.Props
+import org.geocrew.core.model.TaskInfo
+import org.geocrew.core.model.TaskStatus
+import org.geocrew.core.model.task
 import org.geocrew.core.model.areaSquareMeters
 import org.geocrew.core.model.lengthMeters
 import org.geocrew.core.model.string
@@ -102,6 +105,7 @@ fun FeatureDetailScreen(
     val commentAccess by viewModel.commentAccess.collectAsStateWithLifecycle()
     val comments by viewModel.comments.collectAsStateWithLifecycle()
     val commentError by viewModel.commentError.collectAsStateWithLifecycle()
+    val assignees by viewModel.assignees.collectAsStateWithLifecycle()
     val f = feature
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -126,6 +130,18 @@ fun FeatureDetailScreen(
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             TextFields(f, viewModel)
             if (f.geometry is Geometry.Point) KindSwitch(f.kind, viewModel::setKind)
+            commentAccess?.let { access ->
+                SectionHeader("任务")
+                TaskSection(
+                    task = f.task,
+                    access = access,
+                    choices = assignees,
+                    onLoadChoices = viewModel::loadAssignees,
+                    onAssign = viewModel::assign,
+                    onStatus = viewModel::setTaskStatus,
+                    onClear = viewModel::clearTask,
+                )
+            }
             if (f.kind == FeatureKind.GEO_POINT || f.attitude != null) {
                 SectionHeader("产状")
                 AttitudeEditor(f.attitude, viewModel::setAttitude, onMeasure = onMeasureAttitude?.let { { it(f.id) } })
@@ -465,6 +481,81 @@ private fun History(state: HistoryState, onLoad: () -> Unit, onRestore: (Revisio
             text = { Text("会用这一版的位置和属性生成一个新版本，之前的版本仍保留在历史里。") },
             confirmButton = { TextButton(onClick = { onRestore(r); confirm = null }) { Text("恢复") } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("取消") } },
+        )
+    }
+}
+
+/** Who this record is handed to and how far they got; synced like any other property. */
+@Composable
+private fun TaskSection(
+    task: TaskInfo?,
+    access: FeatureDetailViewModel.CommentAccess,
+    choices: FeatureDetailViewModel.AssigneeChoices,
+    onLoadChoices: () -> Unit,
+    onAssign: (FeatureDetailViewModel.Assignee) -> Unit,
+    onStatus: (TaskStatus) -> Unit,
+    onClear: () -> Unit,
+) {
+    var picking by remember { mutableStateOf(false) }
+    val canEdit = access.canPost
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        if (task == null) {
+            Text(
+                if (canEdit) "未指派。可以把这条记录交给某位组员去完成，例如去这个点采样。" else "未指派。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (canEdit) {
+                OutlinedButton(onClick = { picking = true; onLoadChoices() }) { Text("指派给…") }
+            }
+        } else {
+            val who = task.assigneeName.ifBlank { "组员" } + if (task.assignee == access.memberId) "（我）" else ""
+            Text("指派给 $who", style = MaterialTheme.typography.bodyLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TaskStatus.entries.forEach { s ->
+                    FilterChip(
+                        selected = task.status == s,
+                        onClick = { onStatus(s) },
+                        enabled = canEdit,
+                        label = { Text(s.label) },
+                    )
+                }
+            }
+            if (canEdit) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { picking = true; onLoadChoices() }) { Text("改派") }
+                    TextButton(onClick = onClear) { Text("取消指派") }
+                }
+            }
+        }
+    }
+    if (picking) {
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text("指派给") },
+            text = {
+                Column {
+                    when (choices) {
+                        FeatureDetailViewModel.AssigneeChoices.Idle,
+                        FeatureDetailViewModel.AssigneeChoices.Loading -> Text("正在读取组员…")
+                        is FeatureDetailViewModel.AssigneeChoices.Loaded -> {
+                            if (choices.offline) {
+                                Text(
+                                    "没有连上服务器，现在只能指派给自己；联网后可以选其他组员。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(bottom = 8.dp),
+                                )
+                            }
+                            choices.members.forEach { m ->
+                                TextButton(onClick = { onAssign(m); picking = false }, modifier = Modifier.fillMaxWidth()) {
+                                    Text(m.nickname + if (m.me) "（我）" else "", Modifier.fillMaxWidth())
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text("取消") } },
         )
     }
 }

@@ -28,6 +28,9 @@ import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Props
+import org.geocrew.core.model.TaskInfo
+import org.geocrew.core.model.TaskStatus
+import org.geocrew.core.model.task
 import org.geocrew.core.model.string
 import java.io.File
 import javax.inject.Inject
@@ -49,6 +52,14 @@ class RecordListViewModel @Inject constructor(
     val kindFilter = MutableStateFlow<FeatureKind?>(null)
     val query = MutableStateFlow("")
 
+    /** Narrows the list to open tasks: everyone's, or only those handed to this device's member. */
+    enum class TaskFilter { NONE, MINE, OPEN }
+    val taskFilter = MutableStateFlow(TaskFilter.NONE)
+
+    /** This device's member id in the current workspace, if any. */
+    val me: StateFlow<String?> = projects.current.map { it.team?.memberId }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     private val all: StateFlow<List<GeoFeature>> = projects.current
         .map { it.id }
         .distinctUntilChanged()
@@ -57,9 +68,17 @@ class RecordListViewModel @Inject constructor(
 
     val projectName: StateFlow<String> = projects.current.map { it.name }.stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
-    val items: StateFlow<List<GeoFeature>> = combine(all, kindFilter, query) { list, kind, q ->
+    val items: StateFlow<List<GeoFeature>> = combine(all, kindFilter, query, taskFilter, me) { list, kind, q, tf, me ->
         list.asSequence()
             .filter { kind == null || it.kind == kind }
+            .filter { f ->
+                val t = f.task
+                when (tf) {
+                    TaskFilter.NONE -> true
+                    TaskFilter.OPEN -> t != null && t.status != TaskStatus.DONE
+                    TaskFilter.MINE -> t != null && t.status != TaskStatus.DONE && t.assignee == me
+                }
+            }
             .filter { q.isBlank() || (it.title ?: "").contains(q, ignoreCase = true) || (it.note ?: "").contains(q, ignoreCase = true) }
             .sortedByDescending { it.sync.updatedAt }
             .toList()
@@ -67,6 +86,14 @@ class RecordListViewModel @Inject constructor(
 
     val counts: StateFlow<Map<FeatureKind, Int>> = all.map { l -> l.groupingBy { it.kind }.eachCount() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** Open tasks in the project and those of them handed to me. */
+    data class TaskCounts(val open: Int = 0, val mine: Int = 0)
+
+    val taskCounts: StateFlow<TaskCounts> = combine(all, me) { l, me ->
+        val open = l.mapNotNull { it.task }.filter { it.status != TaskStatus.DONE }
+        TaskCounts(open.size, open.count { it.assignee == me })
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, TaskCounts())
 }
 
 /** Route argument holding the feature id. */
@@ -241,6 +268,56 @@ class FeatureDetailViewModel @Inject constructor(
         } catch (e: java.io.IOException) {
             _commentError.value = if (e is org.geocrew.core.network.ApiException && e.isForbidden) "只能删除自己的发言" else "删除需要联网：${e.message}"
         }
+    }
+
+    // --- task assignment (protocol v0 §6.1) -----------------------------------
+
+    /** Someone a record can be handed to. */
+    data class Assignee(val id: String, val nickname: String, val me: Boolean)
+
+    /** Members to choose from: loaded from the server, or just this device's member while offline. */
+    sealed interface AssigneeChoices {
+        data object Idle : AssigneeChoices
+        data object Loading : AssigneeChoices
+        data class Loaded(val members: List<Assignee>, val offline: Boolean) : AssigneeChoices
+    }
+
+    private val _assignees = MutableStateFlow<AssigneeChoices>(AssigneeChoices.Idle)
+    val assignees: StateFlow<AssigneeChoices> = _assignees.asStateFlow()
+
+    fun loadAssignees() = viewModelScope.launch {
+        val pid = feature.value?.projectId ?: return@launch
+        val p = projects.get(pid) ?: return@launch
+        val link = p.team ?: return@launch
+        val me = Assignee(link.memberId, link.nickname, me = true)
+        _assignees.value = AssigneeChoices.Loading
+        val h = team.handle(p.id)
+        val members = h?.let { handle ->
+            runCatching { team.members(handle) }.getOrNull()
+                ?.filter { !it.revoked && it.role != TeamRepository.ROLE_READONLY }
+                ?.map { Assignee(it.id, it.nickname, it.id == link.memberId) }
+                ?.sortedWith(compareByDescending<Assignee> { it.me }.thenBy { it.nickname })
+        }
+        _assignees.value = if (members != null) AssigneeChoices.Loaded(members, offline = false)
+        else AssigneeChoices.Loaded(listOf(me), offline = true)
+    }
+
+    fun assign(a: Assignee) = viewModelScope.launch {
+        val cur = feature.value?.task
+        if (cur?.assignee == a.id) return@launch
+        // A new assignee starts from scratch; reassigning a finished task reopens it.
+        features.edit(id) { TaskInfo(a.id, a.nickname, TaskStatus.TODO).writeTo(this) }
+    }
+
+    fun setTaskStatus(status: TaskStatus) = viewModelScope.launch {
+        val cur = feature.value?.task ?: return@launch
+        if (cur.status == status) return@launch
+        features.edit(id) { cur.copy(status = status).writeTo(this) }
+    }
+
+    fun clearTask() = viewModelScope.launch {
+        if (feature.value?.task == null) return@launch
+        features.edit(id) { TaskInfo.clear(this) }
     }
 }
 

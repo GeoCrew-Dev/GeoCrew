@@ -39,6 +39,7 @@ import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.areaSquareMeters
 import org.geocrew.core.model.CoordinateFormatter
 import org.geocrew.core.model.lengthMeters
+import org.geocrew.core.model.task
 import org.geocrew.core.ui.KindUi
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -59,6 +60,9 @@ fun RecordListScreen(
     val kind by viewModel.kindFilter.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val project by viewModel.projectName.collectAsStateWithLifecycle()
+    val taskFilter by viewModel.taskFilter.collectAsStateWithLifecycle()
+    val taskCounts by viewModel.taskCounts.collectAsStateWithLifecycle()
+    val me by viewModel.me.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -84,7 +88,28 @@ fun RecordListScreen(
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilterChip(selected = kind == null, onClick = { viewModel.kindFilter.value = null }, label = { Text("全部 ${counts.values.sum()}") })
+                FilterChip(
+                    selected = kind == null && taskFilter == RecordListViewModel.TaskFilter.NONE,
+                    onClick = { viewModel.kindFilter.value = null; viewModel.taskFilter.value = RecordListViewModel.TaskFilter.NONE },
+                    label = { Text("全部 ${counts.values.sum()}") },
+                )
+                // Task chips only show up once the team uses tasks.
+                if (taskCounts.mine > 0 || taskFilter == RecordListViewModel.TaskFilter.MINE) {
+                    val on = taskFilter == RecordListViewModel.TaskFilter.MINE
+                    FilterChip(
+                        selected = on,
+                        onClick = { viewModel.taskFilter.value = if (on) RecordListViewModel.TaskFilter.NONE else RecordListViewModel.TaskFilter.MINE },
+                        label = { Text("我的任务 ${taskCounts.mine}") },
+                    )
+                }
+                if (taskCounts.open > 0 || taskFilter == RecordListViewModel.TaskFilter.OPEN) {
+                    val on = taskFilter == RecordListViewModel.TaskFilter.OPEN
+                    FilterChip(
+                        selected = on,
+                        onClick = { viewModel.taskFilter.value = if (on) RecordListViewModel.TaskFilter.NONE else RecordListViewModel.TaskFilter.OPEN },
+                        label = { Text("未完成任务 ${taskCounts.open}") },
+                    )
+                }
                 FeatureKind.builtIn.filter { (counts[it] ?: 0) > 0 }.forEach { k ->
                     FilterChip(
                         selected = kind == k,
@@ -95,11 +120,11 @@ fun RecordListScreen(
             }
             if (items.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("还没有记录。在地图上定点、画线或记录轨迹，都会出现在这里。", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(32.dp))
+                    Text(if (counts.values.sum() > 0) "没有符合条件的记录。" else "还没有记录。在地图上定点、画线或记录轨迹，都会出现在这里。", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(32.dp))
                 }
             } else {
                 LazyColumn {
-                    items(items, key = { it.id }) { f -> RecordRow(f) { onOpen(f.id) } }
+                    items(items, key = { it.id }) { f -> RecordRow(f, me) { onOpen(f.id) } }
                 }
             }
         }
@@ -107,7 +132,7 @@ fun RecordListScreen(
 }
 
 @Composable
-private fun RecordRow(f: GeoFeature, onClick: () -> Unit) {
+private fun RecordRow(f: GeoFeature, me: String?, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(f.title ?: KindUi.label(f.kind)) },
         supportingContent = {
@@ -120,6 +145,10 @@ private fun RecordRow(f: GeoFeature, onClick: () -> Unit) {
                     else -> Unit
                 }
                 if (f.photos.isNotEmpty()) add("${f.photos.size} 张照片")
+                f.task?.let { t ->
+                    val who = if (t.assignee == me) "我" else t.assigneeName.ifBlank { "组员" }
+                    add("任务：$who · ${t.status.label}")
+                }
                 if (f.sync.dirty) add("未同步")
             }
             Text(parts.joinToString(" · "))
