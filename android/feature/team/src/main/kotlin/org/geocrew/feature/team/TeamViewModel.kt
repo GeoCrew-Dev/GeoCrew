@@ -9,10 +9,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.geocrew.core.data.repo.AppSettings
+import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.SettingsRepository
 import org.geocrew.core.data.team.TeamRepository
@@ -47,6 +49,7 @@ class TeamViewModel @Inject constructor(
     private val session: TeamSession,
     private val settingsRepo: SettingsRepository,
     private val push: TeamPush,
+    features: FeatureRepository,
 ) : ViewModel() {
     val project: StateFlow<Project?> = projects.current.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val status: StateFlow<TeamStatus> = session.status
@@ -63,6 +66,13 @@ class TeamViewModel @Inject constructor(
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    /** Task progress per member id, from the project's synced records (protocol v0 §6.1). */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val progress: StateFlow<Map<String, MemberProgress>> = projects.current
+        .flatMapLatest { p -> features.observeProject(p.id) }
+        .map { list -> MemberProgress.of(list) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Whether the linked server offers push notices (its "push" capability). */
     private val _pushAvailable = MutableStateFlow(false)

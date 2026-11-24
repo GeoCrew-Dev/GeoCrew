@@ -98,6 +98,7 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
     val invite by viewModel.invite.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val pushAvailable by viewModel.pushAvailable.collectAsStateWithLifecycle()
+    val progress by viewModel.progress.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val incoming by viewModel.incoming.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -161,6 +162,7 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
                     onShare = viewModel::setShare,
                     onDownload = { uri -> viewModel.downloadPackage(appContext, uri) },
                     pushAvailable = pushAvailable,
+                    progress = progress,
                     pushOn = p.config.pushEnabled,
                     onPushOn = viewModel::enablePush,
                     onPushOff = viewModel::disablePush,
@@ -282,6 +284,7 @@ private fun LinkedPanel(
     onShare: (Boolean) -> Unit,
     onDownload: (android.net.Uri) -> Unit,
     pushAvailable: Boolean,
+    progress: Map<String, MemberProgress>,
     pushOn: Boolean,
     onPushOn: (Activity) -> Unit,
     onPushOff: () -> Unit,
@@ -404,9 +407,20 @@ private fun LinkedPanel(
             }
         }
         item { SectionHeader("成员（${members.count { !it.revoked }}）") }
+        val total = progress.values.fold(MemberProgress()) { a, b -> a.copy(todo = a.todo + b.todo, doing = a.doing + b.doing, done = a.done + b.done) }
+        if (total.assigned > 0) {
+            item {
+                Text(
+                    "组内任务 ${total.assigned} 条：已完成 ${total.done}，进行中 ${total.doing}，待办 ${total.todo}（按已同步的记录统计）",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
         items(members.filterNot { it.revoked }, key = { it.id }) { m ->
             MemberRow(
                 member = m,
+                progress = progress[m.id],
                 online = m.id in status.online,
                 isMe = m.id == myId,
                 canManage = isLeader && m.id != myId,
@@ -440,6 +454,7 @@ private fun LinkedPanel(
 @Composable
 private fun MemberRow(
     member: Member,
+    progress: MemberProgress?,
     online: Boolean,
     isMe: Boolean,
     canManage: Boolean,
@@ -454,7 +469,16 @@ private fun MemberRow(
             )
         },
         headlineContent = { Text(member.nickname + if (isMe) "（我）" else "") },
-        supportingContent = { Text(TeamViewModel.roleLabel(member.role) + if (online) " · 在线" else "") },
+        supportingContent = {
+            val activity = when {
+                online -> " · 在线"
+                else -> member.lastSeen?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }?.let { " · ${ago(it)}活动" }.orEmpty()
+            }
+            Column {
+                Text(TeamViewModel.roleLabel(member.role) + activity)
+                progress?.label()?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
         trailingContent = if (canManage) {
             {
                 Box {
@@ -486,6 +510,20 @@ private fun connectionLabel(s: RealtimeState) = when (s) {
     RealtimeState.Waiting -> "网络中断，稍后重连"
     RealtimeState.Unauthorized -> "身份失效"
 }
+
+/** "刚刚", "5 分钟前", "3 小时前", "2 天前", or the date for anything older. */
+internal fun ago(t: java.time.Instant, now: java.time.Instant = java.time.Instant.now()): String {
+    val m = java.time.Duration.between(t, now).toMinutes()
+    return when {
+        m < 2 -> "刚刚"
+        m < 60 -> "$m 分钟前"
+        m < 24 * 60 -> "${m / 60} 小时前"
+        m < 7 * 24 * 60 -> "${m / (24 * 60)} 天前"
+        else -> DAY.format(t)
+    }
+}
+
+private val DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault())
 
 private val TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss").withZone(ZoneId.systemDefault())
 

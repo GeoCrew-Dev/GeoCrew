@@ -33,6 +33,8 @@ data class Member(
     val role: String,
     @SerialName("joined_at") val joinedAt: String = "",
     val revoked: Boolean = false,
+    /** Last authenticated request, to the minute; null on older servers or before the first one. */
+    @SerialName("last_seen") val lastSeen: String? = null,
 )
 
 @Serializable
