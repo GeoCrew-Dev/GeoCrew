@@ -35,7 +35,12 @@ class TeamPush @Inject constructor(
     private val projects: ProjectRepository,
     private val team: TeamRepository,
     private val session: TeamSession,
-) {
+) : org.geocrew.core.data.team.TeamLeaveHook {
+    override suspend fun beforeLeave(projectId: String) {
+        // Also when not yet enabled: a registration may be waiting for its endpoint.
+        disable(projectId)
+    }
+
     /** True when at least one UnifiedPush distributor is installed. */
     fun hasDistributor(): Boolean = UnifiedPush.getDistributors(context).isNotEmpty()
 

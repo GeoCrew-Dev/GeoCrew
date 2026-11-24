@@ -148,7 +148,7 @@ class TeamViewModel @Inject constructor(
 
     fun leave() = act("已退出工作组，本地数据保留") {
         project.value?.let { p ->
-            if (p.config.pushEnabled) push.disable(p.id)
+            // Push is switched off by TeamPush's leave hook.
             team.leave(p.id)
         }
         _members.value = emptyList()

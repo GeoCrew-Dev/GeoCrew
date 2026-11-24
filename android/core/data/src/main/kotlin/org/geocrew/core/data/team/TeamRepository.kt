@@ -13,6 +13,7 @@ import org.geocrew.core.network.Member
 import org.geocrew.core.network.ServerInfo
 import org.geocrew.core.network.WorkspaceInfo
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 /** A project's team link plus the means to talk to its server. */
@@ -29,6 +30,8 @@ class TeamRepository @Inject constructor(
     private val settings: SettingsRepository,
     private val client: OkHttpClient,
     private val defaults: BuildDefaults,
+    // A Provider, since hooks usually need this repository themselves.
+    private val leaveHooks: Provider<Set<@JvmSuppressWildcards TeamLeaveHook>>,
 ) {
     fun api(serverUrl: String, token: String? = null) = GeoCrewApi(serverUrl, client, token, defaults.userAgent)
 
@@ -59,6 +62,16 @@ class TeamRepository @Inject constructor(
 
     /** Unlinks the project; local data stays. The member token is forgotten. */
     suspend fun leave(projectId: String) {
+        if (projects.get(projectId)?.team != null) {
+            for (hook in leaveHooks.get()) {
+                try {
+                    hook.beforeLeave(projectId)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+            }
+        }
         projects.linkTeam(projectId, null)
         credentials.clear(projectId)
     }
