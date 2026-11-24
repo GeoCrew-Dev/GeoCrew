@@ -90,4 +90,20 @@ class FieldReportTest {
         assertEquals("1 灰岩 5.0 m；2 5.0 m", facts["分层"])
         assertEquals("10.0 m", facts["总厚度"])
     }
+    @Test fun routeFacts() {
+        val d1 = feature("d1", FeatureKind.GEO_POINT, "2026-11-24T01:00:00Z", Geometry.Point(org.geocrew.core.model.LngLat(116.0, 40.0))) { this[Props.TITLE] = "D1" }
+        val d2 = feature("d2", FeatureKind.GEO_POINT, "2026-11-24T01:30:00Z", Geometry.Point(org.geocrew.core.model.LngLat(116.01, 40.0))) { this[Props.TITLE] = "D2" }
+        val r = org.geocrew.core.model.GeoRoute(java.time.LocalDate.of(2026, 11, 24), "王", "追索断层", summary = "走向北东")
+            .plus(listOf("d1", "gone", "d2")).withOnward("d1", "沿沟向东")
+        val f = feature("r", FeatureKind.ROUTE, "2026-11-24T09:00:00Z", null) {
+            this[Props.TITLE] = "L001"
+            put(Props.ROUTE, r.toJson())
+        }
+        val byId = listOf(d1, d2, f).associateBy { it.id }
+        val facts = FieldReport.entry(f, emptyList(), { "地质路线" }, zone, CoordinateFormat.DECIMAL, byId::get).facts.toMap()
+        assertEquals("2 个：D1 → D2", facts["路线点"])
+        assertEquals("D1→D2：沿沟向东", facts["点间描述"])
+        assertEquals("追索断层", facts["目的任务"])
+        assertEquals("走向北东", facts["路线小结"])
+    }
 }

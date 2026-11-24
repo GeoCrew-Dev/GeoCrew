@@ -6,6 +6,7 @@ import org.geocrew.core.model.CoordinateFormatter
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.GeoFeature
+import org.geocrew.core.model.GeoRoute
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.areaSquareMeters
@@ -15,6 +16,7 @@ import org.geocrew.core.model.string
 import org.geocrew.core.model.task
 import org.geocrew.core.model.audio
 import org.geocrew.core.model.audioInfo
+import org.geocrew.core.model.geoRoute
 import org.geocrew.core.model.measuredSection
 import org.geocrew.core.model.samples
 import java.time.Instant
@@ -69,9 +71,10 @@ data class FieldReport(
                 .filter { !it.deleted && (includeTracks || it.kind != FeatureKind.TRACK) }
                 .filter { days == null || it.createdAt.atZone(zone).toLocalDate() in days }
                 .sortedWith(compareBy<GeoFeature> { it.createdAt }.thenBy { it.id })
+            val byId = features.associateBy { it.id }
             val grouped = chosen.groupBy { it.createdAt.atZone(zone).toLocalDate() }
             val dayList = grouped.toSortedMap().map { (date, list) ->
-                Day(date, list.map { entry(it, fields, kindLabel, zone, coordinates) })
+                Day(date, list.map { entry(it, fields, kindLabel, zone, coordinates, byId::get) })
             }
             val span = when {
                 dayList.isEmpty() -> "没有记录"
@@ -91,6 +94,7 @@ data class FieldReport(
             kindLabel: (FeatureKind) -> String,
             zone: ZoneId,
             coordinates: CoordinateFormat,
+            byId: (String) -> GeoFeature? = { null },
         ): Entry {
             val title = f.title?.takeIf { it.isNotBlank() }
             val heading = listOfNotNull(title, kindLabel(f.kind)).joinToString(" · ") + "（" + CLOCK.withZone(zone).format(f.createdAt) + "）"
@@ -135,6 +139,7 @@ data class FieldReport(
                         add("总厚度" to "%.1f m".format(java.util.Locale.ROOT, r.total))
                     }
                 }
+                if (f.kind == FeatureKind.ROUTE) routeFacts(f.geoRoute, byId)
                 f.task?.let { t -> add("任务" to "${t.assigneeName}：${t.status.label}") }
                 f.audio.takeIf { it.isNotEmpty() }?.let { clips ->
                     val total = clips.sumOf { f.audioInfo[it]?.durationSeconds ?: 0.0 }
@@ -142,6 +147,22 @@ data class FieldReport(
                 }
             }
             return Entry(f.id, heading, facts, f.note?.takeIf { it.isNotBlank() }, f.photos)
+        }
+
+        /** A geological route (protocol v0 §6.6): crew, purpose, the points in order, what lies between them, summary. */
+        private fun MutableList<Pair<String, String>>.routeFacts(r: GeoRoute, byId: (String) -> GeoFeature?) {
+            r.date?.let { add("路线日期" to DAY.format(it)) }
+            if (r.members.isNotBlank()) add("参加人员" to r.members.trim())
+            if (r.purpose.isNotBlank()) add("目的任务" to r.purpose.trim())
+            val stops = r.resolve(byId).filter { it.feature != null }
+            if (stops.isNotEmpty()) {
+                val name = { s: GeoRoute.Resolved -> s.feature?.title?.takeIf { it.isNotBlank() } ?: "未命名点" }
+                add("路线点" to "${stops.size} 个：" + stops.joinToString(" → ", transform = name))
+                val between = stops.zipWithNext().filter { (a, _) -> a.stop.onward.isNotBlank() }
+                    .map { (a, b) -> "${name(a)}→${name(b)}：${a.stop.onward.trim()}" }
+                if (between.isNotEmpty()) add("点间描述" to between.joinToString("；"))
+            }
+            if (r.summary.isNotBlank()) add("路线小结" to r.summary.trim())
         }
     }
 }
