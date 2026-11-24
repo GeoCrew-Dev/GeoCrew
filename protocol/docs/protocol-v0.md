@@ -303,7 +303,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 
 服务器能力里有 `push` 时可用（运维人员可以关闭，此时这组接口返回 `404 push_disabled`）。实时通道只在应用打开时有效；推送让应用在后台也能知道有新动静。
 
-- 登记：`PUT …/push` 提交 `{endpoint, events?}`。`endpoint` 是手机上的推送分发器（[UnifiedPush](https://unifiedpush.org/)，如 ntfy）给出的地址；`events` 是要订阅的类型，省略时全部订阅。每个成员一个地址，再次登记即替换。返回 `{endpoint, events, updated_at}`。
+- 登记：`PUT …/push` 提交 `{endpoint, events?, keys?}`。`endpoint` 是手机上的推送分发器（[UnifiedPush](https://unifiedpush.org/)，如 ntfy）给出的地址；`events` 是要订阅的类型，省略时全部订阅。`keys` 是设备的 Web Push 密钥 `{p256dh, auth}`（base64url，与浏览器订阅里的同名字段一致），给了就加密投递。每个成员一个地址，再次登记即替换。返回 `{endpoint, events, keys?, updated_at}`。
 - 查看与取消：`GET …/push`（没有登记时 `404 not_found`），`DELETE …/push`（返回 `204`）。成员被吊销时登记一并删除。
 
 | 类型 | 何时发 | 发给谁 |
@@ -317,6 +317,8 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 ```json
 { "type": "task", "workspace": "w-1c2d", "feature": "f-8a1c", "from": "m-3f2a", "seq": 128 }
 ```
+
+没有 `keys` 时请求体就是上面的 JSON；有 `keys` 时服务端按 RFC 8291 把它加密成一个 aes128gcm 记录（`Content-Encoding: aes128gcm`，`Content-Type: application/octet-stream`），分发器只看得到密文。
 
 通知里**不含**消息正文、记录内容或昵称：分发器常由第三方运营，客户端被唤醒后应通过带凭据的接口拉取详情（`seq` 告诉它至少要拉到哪里），并用成员列表把 `from` 换成昵称。投递是尽力而为的：失败不重试，分发器回复 `404` / `410` 时服务端删除该登记，客户端可以随时重新登记。网络重试导致同一条发言被重复提交时可能收到两次通知，客户端按 `seq` 去重即可。
 

@@ -494,6 +494,7 @@ paths:
                   type: array
                   description: Defaults to every event type
                   items: { $ref: "#/components/schemas/PushEvent" }
+                keys: { $ref: "#/components/schemas/PushKeys" }
       responses:
         "200":
           description: Stored endpoint
@@ -723,7 +724,15 @@ components:
       properties:
         endpoint: { type: string, format: uri }
         events: { type: array, items: { $ref: "#/components/schemas/PushEvent" } }
+        keys: { $ref: "#/components/schemas/PushKeys" }
         updated_at: { type: string, format: date-time }
+    PushKeys:
+      type: object
+      description: "Web Push keys (base64url); when given, notices are encrypted per RFC 8291 (aes128gcm)"
+      required: [p256dh, auth]
+      properties:
+        p256dh: { type: string, description: Uncompressed P-256 public key }
+        auth: { type: string, description: 16-byte authentication secret }
     PushNotice:
       type: object
       description: Body POSTed to a push endpoint. It never carries message text or record content.
