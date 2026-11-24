@@ -432,7 +432,23 @@ private fun LinkedPanel(
             }
         }
         item { SectionHeader("成员（${members.count { !it.revoked }}）") }
-        val total = progress.values.fold(MemberProgress()) { a, b -> a.copy(todo = a.todo + b.todo, doing = a.doing + b.doing, done = a.done + b.done) }
+        val total = progress.values.fold(MemberProgress()) { a, b ->
+            a.copy(
+                todo = a.todo + b.todo, doing = a.doing + b.doing, done = a.done + b.done,
+                today = org.geocrew.core.model.DailyActivity(
+                    a.today.records + b.today.records, a.today.samples + b.today.samples, a.today.trackMeters + b.today.trackMeters,
+                ),
+            )
+        }
+        total.today.label()?.let { t ->
+            item {
+                Text(
+                    "全组今天：$t（按已同步的记录统计）",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
         if (total.assigned > 0) {
             item {
                 Text(
