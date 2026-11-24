@@ -55,6 +55,9 @@ data class ProjectConfig(
     val display: MapDisplay = MapDisplay(),
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
+
+    /** Required fields [f] has not filled yet, in form order. */
+    fun missing(f: GeoFeature): List<FieldTemplate> = if (f.deleted) emptyList() else fields.filter { it.missingFrom(f) }
 }
 
 @Serializable
@@ -76,8 +79,13 @@ data class FieldTemplate(
     val unit: String = "",
     /** Record kinds the field applies to (see [FeatureKind]); empty means all. */
     val kinds: List<String> = emptyList(),
+    /** Records of these kinds count as incomplete until the field is filled (a reminder, never enforced). */
+    val required: Boolean = false,
 ) {
     fun appliesTo(kind: FeatureKind) = kinds.isEmpty() || kind.id in kinds
+
+    /** Whether [f] still lacks this required field. */
+    fun missingFrom(f: GeoFeature): Boolean = required && appliesTo(f.kind) && display(f.properties[key]).isBlank()
 
     /**
      * Turns what the user typed into the stored value: null for blank,

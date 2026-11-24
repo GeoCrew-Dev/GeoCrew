@@ -38,6 +38,7 @@ import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.PhotoInfo
 import org.geocrew.core.model.photoInfo
 import org.geocrew.core.model.Props
+import org.geocrew.core.model.ProjectConfig
 import org.geocrew.core.model.Sample
 import org.geocrew.core.model.samples
 import org.geocrew.core.model.TaskInfo
@@ -70,8 +71,11 @@ class RecordListViewModel @Inject constructor(
     val kindFilter = MutableStateFlow<FeatureKind?>(null)
     val query = MutableStateFlow("")
 
-    /** Narrows the list to open tasks: everyone's, or only those handed to this device's member. */
-    enum class TaskFilter { NONE, MINE, OPEN }
+    /**
+     * Narrows the list to open tasks (everyone's, or only those handed to this
+     * device's member), or to records missing a required form field.
+     */
+    enum class TaskFilter { NONE, MINE, OPEN, INCOMPLETE }
     val taskFilter = MutableStateFlow(TaskFilter.NONE)
 
     /** This device's member id in the current workspace, if any. */
@@ -86,7 +90,13 @@ class RecordListViewModel @Inject constructor(
 
     val projectName: StateFlow<String> = projects.current.map { it.name }.stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
-    val items: StateFlow<List<GeoFeature>> = combine(all, kindFilter, query, taskFilter, me) { list, kind, q, tf, me ->
+    /** The project's form, which decides what counts as incomplete. */
+    val config: StateFlow<ProjectConfig> = projects.current.map { it.config }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ProjectConfig())
+
+    private val who = combine(me, config) { m, c -> m to c }
+
+    val items: StateFlow<List<GeoFeature>> = combine(all, kindFilter, query, taskFilter, who) { list, kind, q, tf, (me, config) ->
         list.asSequence()
             .filter { kind == null || it.kind == kind }
             .filter { f ->
@@ -95,6 +105,7 @@ class RecordListViewModel @Inject constructor(
                     TaskFilter.NONE -> true
                     TaskFilter.OPEN -> t != null && t.status != TaskStatus.DONE
                     TaskFilter.MINE -> t != null && t.status != TaskStatus.DONE && t.assignee == me
+                    TaskFilter.INCOMPLETE -> config.missing(f).isNotEmpty()
                 }
             }
             .filter { q.isBlank() || (it.title ?: "").contains(q, ignoreCase = true) || (it.note ?: "").contains(q, ignoreCase = true) }
@@ -107,6 +118,10 @@ class RecordListViewModel @Inject constructor(
 
     /** Open tasks in the project and those of them handed to me. */
     data class TaskCounts(val open: Int = 0, val mine: Int = 0)
+
+    /** Records still missing a required field. */
+    val incomplete: StateFlow<Int> = combine(all, config) { l, c -> l.count { c.missing(it).isNotEmpty() } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     val taskCounts: StateFlow<TaskCounts> = combine(all, me) { l, me ->
         val open = l.mapNotNull { it.task }.filter { it.status != TaskStatus.DONE }

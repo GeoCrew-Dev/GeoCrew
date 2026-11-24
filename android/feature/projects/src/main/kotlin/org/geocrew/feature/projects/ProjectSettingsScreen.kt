@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Switch
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -281,6 +283,7 @@ private fun describe(f: FieldTemplate): String = buildList {
         },
     )
     if (f.kinds.isNotEmpty()) add(f.kinds.joinToString("、") { KindUi.label(FeatureKind(it)) })
+    if (f.required) add("必填")
     if (f.key != f.label) add("键 ${f.key}")
 }.joinToString(" · ")
 
@@ -295,6 +298,7 @@ private fun FieldDialog(old: FieldTemplate?, start: FieldTemplate, onDismiss: ()
     var options by remember { mutableStateOf(start.options.joinToString("\n")) }
     var unit by remember { mutableStateOf(start.unit) }
     var kinds by remember { mutableStateOf(start.kinds.toSet()) }
+    var required by remember { mutableStateOf(start.required) }
     var problem by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -335,6 +339,13 @@ private fun FieldDialog(old: FieldTemplate?, start: FieldTemplate, onDismiss: ()
                         )
                     }
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("必填", style = MaterialTheme.typography.bodyLarge)
+                        Text("没填的记录在列表里标为「待补全」，不会阻止保存", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(checked = required, onCheckedChange = { required = it })
+                }
                 problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
@@ -348,6 +359,7 @@ private fun FieldDialog(old: FieldTemplate?, start: FieldTemplate, onDismiss: ()
                     options = if (type == FieldType.CHOICE) options.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct() else emptyList(),
                     unit = if (type == FieldType.NUMBER) unit.trim() else "",
                     kinds = FeatureKind.builtIn.map { it.id }.filter { it in kinds },
+                    required = required,
                 )
                 problem = onSave(f)
             }) { Text("保存") }

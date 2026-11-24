@@ -1,6 +1,7 @@
 package org.geocrew.feature.record
 
 import org.geocrew.core.model.samples
+import org.geocrew.core.model.FieldTemplate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -63,6 +64,8 @@ fun RecordListScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val project by viewModel.projectName.collectAsStateWithLifecycle()
     val taskFilter by viewModel.taskFilter.collectAsStateWithLifecycle()
+    val incomplete by viewModel.incomplete.collectAsStateWithLifecycle()
+    val config by viewModel.config.collectAsStateWithLifecycle()
     val taskCounts by viewModel.taskCounts.collectAsStateWithLifecycle()
     val me by viewModel.me.collectAsStateWithLifecycle()
 
@@ -112,6 +115,14 @@ fun RecordListScreen(
                         label = { Text("未完成任务 ${taskCounts.open}") },
                     )
                 }
+                if (incomplete > 0 || taskFilter == RecordListViewModel.TaskFilter.INCOMPLETE) {
+                    val on = taskFilter == RecordListViewModel.TaskFilter.INCOMPLETE
+                    FilterChip(
+                        selected = on,
+                        onClick = { viewModel.taskFilter.value = if (on) RecordListViewModel.TaskFilter.NONE else RecordListViewModel.TaskFilter.INCOMPLETE },
+                        label = { Text("待补全 $incomplete") },
+                    )
+                }
                 FeatureKind.builtIn.filter { (counts[it] ?: 0) > 0 }.forEach { k ->
                     FilterChip(
                         selected = kind == k,
@@ -126,7 +137,7 @@ fun RecordListScreen(
                 }
             } else {
                 LazyColumn {
-                    items(items, key = { it.id }) { f -> RecordRow(f, me) { onOpen(f.id) } }
+                    items(items, key = { it.id }) { f -> RecordRow(f, me, config.missing(f)) { onOpen(f.id) } }
                 }
             }
         }
@@ -134,7 +145,7 @@ fun RecordListScreen(
 }
 
 @Composable
-private fun RecordRow(f: GeoFeature, me: String?, onClick: () -> Unit) {
+private fun RecordRow(f: GeoFeature, me: String?, missing: List<FieldTemplate>, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(f.title ?: KindUi.label(f.kind)) },
         supportingContent = {
@@ -155,7 +166,15 @@ private fun RecordRow(f: GeoFeature, me: String?, onClick: () -> Unit) {
                 }
                 if (f.sync.dirty) add("未同步")
             }
-            Text(parts.joinToString(" · "))
+            Column {
+                Text(parts.joinToString(" · "))
+                if (missing.isNotEmpty()) {
+                    Text(
+                        "待补全：" + missing.joinToString("、") { it.label },
+                        color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
         },
         leadingContent = { Icon(KindUi.icon(f.kind), null) },
         trailingContent = { Text(timeFormat.format(f.sync.updatedAt), style = MaterialTheme.typography.bodySmall) },

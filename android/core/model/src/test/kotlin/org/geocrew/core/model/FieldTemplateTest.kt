@@ -59,3 +59,26 @@ class FieldTemplateTest {
         assertEquals(emptyList<FieldTemplate>(), cfg.fields)
     }
 }
+
+class RequiredFieldTest {
+    private fun f(kind: FeatureKind, vararg props: Pair<String, String>) = GeoFeature(
+        id = "f", projectId = "p", kind = kind, geometry = null,
+        properties = buildProperties { props.forEach { (k, v) -> this[k] = v } },
+        createdAt = java.time.Instant.EPOCH, sync = SyncInfo(updatedAt = java.time.Instant.EPOCH),
+    )
+
+    @org.junit.Test
+    fun missingListsOnlyRequiredApplicableBlankFields() {
+        val config = ProjectConfig(
+            fields = listOf(
+                FieldTemplate("formation", "地层", required = true, kinds = listOf("geo_point")),
+                FieldTemplate("sample_no", "样品编号"),
+                FieldTemplate("width", "宽度", FieldType.NUMBER, required = true, kinds = listOf("line")),
+            ),
+        )
+        org.junit.Assert.assertEquals(listOf("地层"), config.missing(f(FeatureKind.GEO_POINT)).map { it.label })
+        org.junit.Assert.assertEquals(emptyList<FieldTemplate>(), config.missing(f(FeatureKind.GEO_POINT, "formation" to "J3")))
+        org.junit.Assert.assertEquals(listOf("地层"), config.missing(f(FeatureKind.GEO_POINT, "formation" to "  ")).map { it.label })
+        org.junit.Assert.assertEquals(emptyList<FieldTemplate>(), config.missing(f(FeatureKind.POINT)))
+    }
+}

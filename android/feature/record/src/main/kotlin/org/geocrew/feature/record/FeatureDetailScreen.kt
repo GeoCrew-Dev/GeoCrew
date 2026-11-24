@@ -629,12 +629,15 @@ private fun FormFields(f: GeoFeature, fields: List<FieldTemplate>, onSet: (Field
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         fields.forEach { field ->
             val stored = field.display(f.properties[field.key])
+            val missing = field.required && stored.isBlank()
+            val label: @Composable () -> Unit = { Text(if (field.required) field.label + " *" else field.label) }
+            val hint: (@Composable () -> Unit)? = if (missing) ({ Text("必填，还没填") }) else null
             val suffix: (@Composable () -> Unit)? = field.unit.takeIf { it.isNotBlank() }?.let { u -> { Text(u) } }
             if (field.type == FieldType.CHOICE) {
                 var open by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
                     OutlinedTextField(
-                        value = stored, onValueChange = {}, readOnly = true, label = { Text(field.label) },
+                        value = stored, onValueChange = {}, readOnly = true, label = label, supportingText = hint,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
                     )
@@ -650,8 +653,8 @@ private fun FormFields(f: GeoFeature, fields: List<FieldTemplate>, onSet: (Field
             } else {
                 var text by remember(f.id, field.key, stored) { mutableStateOf(stored) }
                 OutlinedTextField(
-                    value = text, onValueChange = { text = it }, label = { Text(field.label) }, singleLine = true,
-                    suffix = suffix,
+                    value = text, onValueChange = { text = it }, label = label, singleLine = true,
+                    suffix = suffix, supportingText = hint,
                     keyboardOptions = if (field.type == FieldType.NUMBER) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default,
                     modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused && text != stored) onSet(field, text) },
                 )
