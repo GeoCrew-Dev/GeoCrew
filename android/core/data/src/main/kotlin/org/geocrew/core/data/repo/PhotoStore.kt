@@ -7,6 +7,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.InputStream
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -47,6 +48,21 @@ class PhotoStore @Inject constructor(@ApplicationContext private val context: Co
     }
 
     fun file(sha: String): File = File(dir, "$sha.jpg")
+
+    /** Stores a photo read from [input] (blocking; call off the main thread). Returns its hash. */
+    fun putBlocking(input: InputStream): String? {
+        val tmp = File.createTempFile("pkg_", ".jpg", pending)
+        tmp.outputStream().use { input.copyTo(it) }
+        if (tmp.length() == 0L) {
+            tmp.delete()
+            return null
+        }
+        val sha = sha256(tmp)
+        val dst = file(sha)
+        if (!dst.exists()) tmp.copyTo(dst)
+        tmp.delete()
+        return sha
+    }
 
     /**
      * Deletes stored photos not in [keep] and abandoned capture files. Only

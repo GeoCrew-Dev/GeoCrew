@@ -20,6 +20,9 @@ interface ProjectDao {
     @Query("SELECT * FROM projects WHERE id = :id")
     suspend fun get(id: String): ProjectEntity?
 
+    @Query("SELECT * FROM projects")
+    suspend fun all(): List<ProjectEntity>
+
     @Query("SELECT * FROM projects ORDER BY openedAt DESC, createdAt DESC LIMIT 1")
     suspend fun first(): ProjectEntity?
 
@@ -84,6 +87,9 @@ interface FeatureDao {
 interface TrackPointDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(p: TrackPointEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(ps: List<TrackPointEntity>)
 
     @Query("SELECT * FROM track_points WHERE trackId = :trackId ORDER BY idx")
     suspend fun points(trackId: String): List<TrackPointEntity>

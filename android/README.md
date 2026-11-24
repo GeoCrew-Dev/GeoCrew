@@ -31,14 +31,14 @@
 | --- | --- |
 | `app` | 应用入口、导航、依赖注入装配 |
 | `core:model` | 纯 Kotlin 领域模型：几何、测地计算、要素、产状、图源定义 |
-| `core:formats` | GeoJSON / GPX / KML 读写，可注册新格式 |
+| `core:formats` | GeoJSON / GPX / KML / Shapefile 读写（可注册新格式）、工程包 |
 | `core:network` | 纯 Kotlin 协议客户端：REST、实时通道、同步引擎 |
 | `core:gis` | 纯 Kotlin 空间分析工具与插件接口（`GisTool`） |
 | `core:data` | Room 数据库、设置（DataStore）、要素/轨迹/照片仓库、工作组会话 |
 | `core:sensors` | 定位（不依赖 Google 服务）、方向传感器、轨迹前台服务 |
 | `core:map` | MapLibre 地图组件、图源样式、叠加图层、瓦片网络监测 |
 | `core:ui` | 主题与通用组件 |
-| `feature:projects` | 启动页：工程列表（最近打开、新建、重命名、删除） |
+| `feature:projects` | 启动页：工程列表（最近打开、新建、重命名、删除、工程包导入导出） |
 | `feature:map` | 工程的地图主界面：图层切换、定位、定点、轨迹、画线面 |
 | `feature:settings` | 设置：Key、自定义图源、坐标格式、磁偏角、轨迹参数 |
 | `feature:record` | 记录列表与详情：名称、岩性、产状、自定义属性、照片 |
@@ -59,6 +59,8 @@
 - 只有一套迁移，升级时不会出现部分工程库没迁移的情况；
 - Room 与 Hilt 按单例注入数据库，不必在切换工程时关闭、重开连接，也不会让后台同步和界面拿到不同的库；
 - 工程的可移植性由「工程包」导出 / 导入解决，不依赖拷贝数据库文件。
+
+**工程包**（`*.geocrew.zip`）：在工程列表的菜单里导出，右上角导入。包内是 `project.json`（名称、日期、工程设置）、`features.geojson`（全部记录）、`tracks/<id>.csv`（轨迹每个点的时间、精度、速度）和 `photos/<sha256>.jpg`（照片）。不含工作组链接和凭据。导入时总是新建一个工程并给记录分配新 ID，所以同一个包可以反复导入，也能直接交给别人。格式说明见 `core:formats` 里的 `ProjectPackage`。
 
 工程自己的设置（底图、地图视图、说明等）以 JSON 存在 `projects.config` 列，新增字段无需数据库迁移，旧版本读取新版本写的内容时会忽略不认识的字段。
 

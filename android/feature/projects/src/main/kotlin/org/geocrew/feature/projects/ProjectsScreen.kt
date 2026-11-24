@@ -13,6 +13,9 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.foundation.layout.fillMaxWidth
+import org.geocrew.core.formats.ProjectPackage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -63,6 +66,8 @@ data class ProjectRow(val project: Project, val count: Int, val current: Boolean
 
 @HiltViewModel
 class ProjectsViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
+    private val packages: org.geocrew.core.data.repo.ProjectPackages,
     private val projects: ProjectRepository,
     features: FeatureRepository,
     private val team: TeamRepository,
@@ -83,6 +88,48 @@ class ProjectsViewModel @Inject constructor(
         projects.open(id)
         then()
     }
+    private val _message = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message
+    private val _busy = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val busy: StateFlow<Boolean> = _busy
+
+    fun consumeMessage() { _message.value = null }
+
+    fun exportTo(id: String, uri: android.net.Uri) = work {
+        val r = context.contentResolver.openOutputStream(uri, "wt")?.use { packages.export(id, it) }
+        _message.value = if (r == null) "无法写入所选位置" else "已导出 ${r.features} 条记录、${r.photos} 张照片"
+    }
+
+    fun importFrom(uri: android.net.Uri, then: () -> Unit) = work {
+        val r = context.contentResolver.openInputStream(uri)?.use { packages.import(it) }
+        if (r == null) {
+            _message.value = "打不开所选文件"
+            return@work
+        }
+        _message.value = "已导入「${r.project.name}」：${r.features} 条记录、${r.photos} 张照片" +
+            (if (r.warnings.isNotEmpty()) "（${r.warnings.size} 条提示：${r.warnings.first()}）" else "")
+        projects.open(r.project.id)
+        then()
+    }
+
+    private fun work(block: suspend () -> Unit) {
+        if (_busy.value) return
+        viewModelScope.launch {
+            _busy.value = true
+            try {
+                block()
+            } catch (e: org.geocrew.core.formats.FormatException) {
+                _message.value = e.message
+            } catch (e: java.io.IOException) {
+                _message.value = "读写失败：${e.message}"
+            } catch (e: IllegalStateException) {
+                _message.value = e.message
+            } finally {
+                _busy.value = false
+            }
+        }
+    }
+
     fun rename(id: String, name: String) = viewModelScope.launch { projects.rename(id, name) }
 
     fun delete(id: String) = viewModelScope.launch {
@@ -101,6 +148,19 @@ class ProjectsViewModel @Inject constructor(
  */
 fun ProjectsScreen(onOpened: () -> Unit, onOpenSettings: () -> Unit, viewModel: ProjectsViewModel = hiltViewModel()) {
     val loaded by viewModel.rows.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    androidx.compose.runtime.LaunchedEffect(message) {
+        message?.let { snackbar.showSnackbar(it); viewModel.consumeMessage() }
+    }
+    var exporting by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument(ProjectPackage.MIME),
+    ) { uri -> val id = exporting; exporting = null; if (uri != null && id != null) viewModel.exportTo(id, uri) }
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) viewModel.importFrom(uri, onOpened) }
     var naming by remember { mutableStateOf<Pair<String?, String>?>(null) }
     var deleting by remember { mutableStateOf<ProjectRow?>(null) }
 
@@ -108,9 +168,15 @@ fun ProjectsScreen(onOpened: () -> Unit, onOpenSettings: () -> Unit, viewModel: 
         topBar = {
             TopAppBar(
                 title = { Text("同勘 · 工程") },
-                actions = { IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, "设置") } },
+                actions = {
+                    IconButton(onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream")) }, enabled = !busy) {
+                        Icon(Icons.Default.FileOpen, "导入工程包")
+                    }
+                    IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, "设置") }
+                },
             )
         },
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { naming = null to "" },
@@ -119,6 +185,7 @@ fun ProjectsScreen(onOpened: () -> Unit, onOpenSettings: () -> Unit, viewModel: 
             )
         },
     ) { padding ->
+        if (busy) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(padding))
         val rows = loaded ?: return@Scaffold
         if (rows.isEmpty()) {
             Empty(Modifier.fillMaxSize().padding(padding))
@@ -148,6 +215,11 @@ fun ProjectsScreen(onOpened: () -> Unit, onOpenSettings: () -> Unit, viewModel: 
                             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "更多") }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 DropdownMenuItem(text = { Text("重命名") }, onClick = { menu = false; naming = r.project.id to r.project.name })
+                                DropdownMenuItem(text = { Text("导出工程包") }, onClick = {
+                                    menu = false
+                                    exporting = r.project.id
+                                    exportLauncher.launch("${r.project.name}.${ProjectPackage.EXTENSION}")
+                                })
                                 DropdownMenuItem(
                                     text = { Text("删除", color = MaterialTheme.colorScheme.error) },
                                     onClick = { menu = false; deleting = r },
@@ -184,7 +256,7 @@ fun ProjectsScreen(onOpened: () -> Unit, onOpenSettings: () -> Unit, viewModel: 
             text = {
                 Text(
                     "将从本机删除 ${r.count} 条记录，无法恢复。" +
-                        if (r.project.team != null) "本机会先退出工作组，组内服务器上的数据不受影响。" else "如需保留，请先导出。",
+                        if (r.project.team != null) "本机会先退出工作组，组内服务器上的数据不受影响。" else "如需保留，请先导出工程包。",
                 )
             },
             confirmButton = { TextButton(onClick = { viewModel.delete(r.project.id); deleting = null }) { Text("删除") } },

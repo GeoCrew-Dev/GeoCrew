@@ -48,8 +48,10 @@ class ProjectRepository @Inject constructor(
 
     suspend fun get(id: String): Project? = dao.get(id)?.toModel()
 
-    suspend fun create(name: String): Project {
-        val p = Project(UUID.randomUUID().toString(), name.trim().ifEmpty { "新工程" }, clock.instant())
+    suspend fun all(): List<Project> = dao.all().map { it.toModel() }
+
+    suspend fun create(name: String, id: String = UUID.randomUUID().toString(), config: ProjectConfig = ProjectConfig()): Project {
+        val p = Project(id, name.trim().ifEmpty { "新工程" }, clock.instant(), config = config)
         dao.upsert(p.toEntity())
         return p
     }
