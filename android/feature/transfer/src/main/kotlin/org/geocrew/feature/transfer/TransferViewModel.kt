@@ -1,0 +1,133 @@
+package org.geocrew.feature.transfer
+
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.geocrew.core.data.repo.FeatureRepository
+import org.geocrew.core.data.repo.ProjectRepository
+import org.geocrew.core.data.repo.TrackRepository
+import org.geocrew.core.formats.ExportContext
+import org.geocrew.core.formats.FeatureFormat
+import org.geocrew.core.formats.FeatureFormats
+import org.geocrew.core.formats.ImportContext
+import org.geocrew.core.formats.ImportResult
+import org.geocrew.core.model.FeatureKind
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import javax.inject.Inject
+
+/** A parsed file waiting for the user to confirm the import. */
+data class ImportPreview(val fileName: String, val format: FeatureFormat, val result: ImportResult) {
+    val counts: Map<FeatureKind, Int> get() = result.features.groupingBy { it.kind }.eachCount()
+}
+
+sealed interface TransferMessage {
+    data class Info(val text: String) : TransferMessage
+    data class Error(val text: String) : TransferMessage
+}
+
+@HiltViewModel
+class TransferViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val projects: ProjectRepository,
+    private val features: FeatureRepository,
+    private val tracks: TrackRepository,
+) : ViewModel() {
+    private val _preview = MutableStateFlow<ImportPreview?>(null)
+    val preview: StateFlow<ImportPreview?> = _preview.asStateFlow()
+
+    private val _message = MutableStateFlow<TransferMessage?>(null)
+    val message: StateFlow<TransferMessage?> = _message.asStateFlow()
+
+    private val _busy = MutableStateFlow(false)
+    val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
+    val formats: List<FeatureFormat> = FeatureFormats.all
+
+    fun clearMessage() {
+        _message.value = null
+    }
+
+    /** Reads and parses a picked file; nothing is saved until [confirmImport]. */
+    fun open(uri: Uri) = work {
+        val name = displayName(uri) ?: "未命名文件"
+        val type = context.contentResolver.getType(uri)
+        val format = FeatureFormats.detect(name, type)?.takeIf { it.canRead }
+            ?: return@work fail("认不出「$name」的格式。支持：" + formats.filter { it.canRead }.joinToString("、") { it.displayName })
+        val project = projects.ensureCurrent()
+        val result = withContext(Dispatchers.IO) {
+            context.contentResolver.openInputStream(uri)?.use { format.read(it, ImportContext(project.id)) }
+        } ?: return@work fail("打不开「$name」。")
+        if (result.features.isEmpty()) return@work fail("「$name」里没有可导入的要素。" + result.warnings.joinToString(" "))
+        _preview.value = ImportPreview(name, format, result)
+    }
+
+    fun confirmImport() = work {
+        val p = _preview.value ?: return@work
+        // Ids from a file are kept so re-importing updates instead of duplicating,
+        // but an id already used in another project gets a fresh one.
+        val incoming = p.result.features.map { f ->
+            val existing = features.get(f.id)
+            if (existing != null && existing.projectId != f.projectId) f.copy(id = java.util.UUID.randomUUID().toString()) else f
+        }
+        features.importAll(incoming)
+        _preview.value = null
+        _message.value = TransferMessage.Info("已导入 ${p.result.features.size} 个要素。")
+    }
+
+    fun cancelImport() {
+        _preview.value = null
+    }
+
+    /** Suggested file name for an export in [format]. */
+    fun exportName(format: FeatureFormat): String {
+        val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm").withZone(ZoneId.systemDefault()).format(Instant.now())
+        return "geocrew-$stamp.${format.extension}"
+    }
+
+    fun export(format: FeatureFormat, uri: Uri) = work {
+        val project = projects.ensureCurrent()
+        val list = features.all(project.id)
+        if (list.isEmpty()) return@work fail("当前工程还没有要素可以导出。")
+        // GPX keeps per-point times for tracks; collect them up front.
+        val times = list.filter { it.kind == FeatureKind.TRACK }
+            .associate { t -> t.id to tracks.points(t.id).map { it.time } }
+        val ctx = ExportContext(title = project.name, trackTimes = { id -> times[id]?.takeIf { it.isNotEmpty() } })
+        val result = withContext(Dispatchers.IO) {
+            context.contentResolver.openOutputStream(uri, "wt")?.use { format.write(list, it, ctx) }
+        } ?: return@work fail("无法写入所选位置。")
+        val skipped = if (result.skipped > 0) "，${result.skipped} 个此格式不支持已跳过" else ""
+        _message.value = TransferMessage.Info("已导出 ${result.written} 个要素$skipped。")
+    }
+
+    private fun fail(text: String) {
+        _message.value = TransferMessage.Error(text)
+    }
+
+    private fun work(block: suspend () -> Unit) = viewModelScope.launch {
+        _busy.value = true
+        try {
+            block()
+        } catch (e: Exception) {
+            fail("出错了：${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            _busy.value = false
+        }
+    }
+
+    private fun displayName(uri: Uri): String? =
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        } ?: uri.lastPathSegment
+}

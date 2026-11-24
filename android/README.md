@@ -2,7 +2,7 @@
 
 开源的野外地质移动工具：多图源底图、实时定位、野外记录与小组协同。
 
-> 状态：早期开发。规划见 [geocrew-protocol](https://github.com/GeoCrew-Dev/geocrew-protocol/blob/main/docs/roadmap.md)。
+> 状态：早期开发。规划见 [geocrew-protocol](https://github.com/GeoCrew-Dev/GeoCrew-Protocol/blob/main/docs/roadmap.md)。
 
 ## 底图与天地图 Key
 

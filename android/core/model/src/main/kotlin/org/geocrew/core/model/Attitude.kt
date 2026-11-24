@@ -21,6 +21,13 @@ data class Attitude(val dipDirection: Double, val dip: Double) {
     /** Conventional field notation, e.g. "125°∠42°" (dip direction ∠ dip). */
     fun format(): String = "%03.0f°∠%02.0f°".fmt(dipDirection, dip)
 
+    /** Upward unit normal of the plane as (east, north, up). */
+    fun normal(): DoubleArray {
+        val d = dip * PI / 180
+        val a = dipDirection * PI / 180
+        return doubleArrayOf(kotlin.math.sin(d) * kotlin.math.sin(a), kotlin.math.sin(d) * kotlin.math.cos(a), kotlin.math.cos(d))
+    }
+
     fun writeTo(b: PropertiesBuilder) {
         b[Props.STRIKE] = round1(strike)
         b[Props.DIP_DIRECTION] = round1(dipDirection)
@@ -56,6 +63,28 @@ data class Attitude(val dipDirection: Double, val dip: Double) {
             // The upward normal leans toward the dip direction.
             val dd = if (hypot(e, n) < 1e-9) 0.0 else atan2(e, n) * 180 / PI
             return of(dd + declination, dip)
+        }
+
+        /**
+         * Mean orientation of several readings, averaging unit normals so that
+         * readings around north (359° and 1°) do not cancel out. Null if empty.
+         */
+        fun mean(readings: List<Attitude>): Attitude? {
+            if (readings.isEmpty()) return null
+            var e = 0.0
+            var n = 0.0
+            var u = 0.0
+            readings.forEach { r -> r.normal().let { e += it[0]; n += it[1]; u += it[2] } }
+            return fromDeviceNormal(e, n, u)
+        }
+
+        /** Largest angle in degrees between any reading and [mean]; a steadiness measure. */
+        fun spread(readings: List<Attitude>, mean: Attitude): Double {
+            val m = mean.normal()
+            return readings.maxOfOrNull { r ->
+                val v = r.normal()
+                acos((v[0] * m[0] + v[1] * m[1] + v[2] * m[2]).coerceIn(-1.0, 1.0)) * 180 / PI
+            } ?: 0.0
         }
 
         private fun round1(v: Double) = Math.round(v * 10) / 10.0

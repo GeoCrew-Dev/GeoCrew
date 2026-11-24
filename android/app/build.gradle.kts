@@ -45,6 +45,9 @@ dependencies {
     implementation(project(":core:sensors"))
     implementation(project(":feature:map"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:record"))
+    implementation(project(":feature:compass"))
+    implementation(project(":feature:transfer"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

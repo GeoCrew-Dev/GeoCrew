@@ -50,6 +50,9 @@ class PhotoStore @Inject constructor(@ApplicationContext private val context: Co
 
     fun exists(sha: String) = file(sha).exists()
 
+    /** A content URI other apps (viewers, share targets) can read. */
+    fun uri(sha: String): Uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file(sha))
+
     private fun sha256(f: File): String {
         val md = MessageDigest.getInstance("SHA-256")
         f.inputStream().use { input ->

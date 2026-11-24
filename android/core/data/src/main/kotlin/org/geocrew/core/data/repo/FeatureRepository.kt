@@ -58,6 +58,15 @@ class FeatureRepository @Inject constructor(
         return next
     }
 
+    /** Re-classifies a feature, e.g. a plain point that turned out to be a geological point. */
+    suspend fun changeKind(id: String, kind: FeatureKind): GeoFeature? {
+        val cur = get(id) ?: return null
+        if (cur.kind == kind) return cur
+        val next = cur.copy(kind = kind).edited(clock.instant())
+        dao.upsert(next.toEntity())
+        return next
+    }
+
     suspend fun delete(id: String) {
         val cur = get(id) ?: return
         dao.upsert(cur.markDeleted(clock.instant()).toEntity())

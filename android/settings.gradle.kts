@@ -31,3 +31,6 @@ include(":core:sensors")
 // One module per screen or flow.
 include(":feature:map")
 include(":feature:settings")
+include(":feature:record")
+include(":feature:compass")
+include(":feature:transfer")

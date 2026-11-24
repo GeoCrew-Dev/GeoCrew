@@ -46,4 +46,14 @@ class AttitudeTest {
         assertEquals(Attitude.of(125.0, 42.0), Attitude.fromProperties(p))
         assertNull(Attitude.fromProperties(buildProperties { this[Props.TITLE] = "x" }))
     }
+
+    @Test
+    fun meanAcrossNorth() {
+        val m = Attitude.mean(listOf(Attitude.of(358.0, 40.0), Attitude.of(2.0, 40.0), Attitude.of(0.0, 42.0)))!!
+        val dd = if (m.dipDirection > 180) m.dipDirection - 360 else m.dipDirection
+        org.junit.Assert.assertEquals(0.0, dd, 0.5)
+        org.junit.Assert.assertEquals(40.7, m.dip, 0.5)
+        org.junit.Assert.assertTrue(Attitude.spread(listOf(Attitude.of(358.0, 40.0), Attitude.of(2.0, 40.0)), m) < 3)
+        org.junit.Assert.assertNull(Attitude.mean(emptyList()))
+    }
 }

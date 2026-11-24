@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MyLocation
@@ -53,11 +55,17 @@ import org.geocrew.core.map.rememberMapCameraState
 import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.CoordinateFormatter
 import org.geocrew.core.model.FeatureKind
+import org.geocrew.core.model.bounds
 
 @Composable
 fun MapScreen(
     onOpenSettings: () -> Unit,
     onOpenFeature: (String) -> Unit,
+    onOpenRecords: () -> Unit = {},
+    onOpenTools: () -> Unit = {},
+    /** A feature another screen asked to show; consumed once. */
+    focusFeatureId: String? = null,
+    onFocusHandled: () -> Unit = {},
     viewModel: MapViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -94,6 +102,16 @@ fun MapScreen(
             followOnFirstFix = false
             camera.animateTo(f.position, 15.0)
         }
+    }
+
+    val featureList by viewModel.featureList.collectAsStateWithLifecycle()
+    LaunchedEffect(focusFeatureId, featureList) {
+        val id = focusFeatureId ?: return@LaunchedEffect
+        val f = featureList.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        viewModel.select(id)
+        f.geometry?.bounds()?.let { camera.fit(it) }
+        followOnFirstFix = false
+        onFocusHandled()
     }
 
     val bm = baseMap ?: return
@@ -149,6 +167,8 @@ fun MapScreen(
                 val f = fix
                 if (f != null) camera.animateTo(f.position, maxOf(camera.zoom, 16.0)) else viewModel.startLocation()
             }) { Icon(Icons.Default.MyLocation, "定位") }
+            SmallFloatingActionButton(onClick = onOpenRecords) { Icon(Icons.AutoMirrored.Filled.List, "记录") }
+            SmallFloatingActionButton(onClick = onOpenTools) { Icon(Icons.Default.Build, "工具") }
             SmallFloatingActionButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, "设置") }
         }
 
