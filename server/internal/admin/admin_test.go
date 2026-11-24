@@ -138,4 +138,12 @@ func TestExport(t *testing.T) {
 	if b, _ := os.ReadFile(dest); !strings.HasPrefix(string(b), `{"type":"FeatureCollection"`) {
 		t.Fatalf("content: %s", b)
 	}
+	pkg := filepath.Join(t.TempDir(), "北山.zip")
+	out, err = run(t, db, "export", ws.ID, pkg)
+	if err != nil || !strings.Contains(out, "0 张照片") {
+		t.Fatalf("package: %q %v", out, err)
+	}
+	if b, _ := os.ReadFile(pkg); !strings.HasPrefix(string(b), "PK") {
+		t.Fatalf("package content: %q", b[:min(len(b), 16)])
+	}
 }

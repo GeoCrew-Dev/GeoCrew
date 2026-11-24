@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -219,5 +220,23 @@ func (s *Server) exportGeoJSON(w http.ResponseWriter, r *http.Request) {
 	if _, err := export.GeoJSON(r.Context(), s.Store, ws, w); err != nil {
 		// Headers are sent already; the truncated body tells the client it failed.
 		s.logger().Error("export", "workspace", ws, "err", err)
+	}
+}
+
+// exportPackage downloads the workspace as a project package that the
+// Android app opens as a new project: records, photos and the record form.
+func (s *Server) exportPackage(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="workspace.geocrew.zip"`)
+	w.Header().Set("Cache-Control", "no-store")
+	open := func(sha string) (io.ReadCloser, error) { return s.Files.Open(ws, sha) }
+	if _, err := export.Package(r.Context(), s.Store, ws, open, s.Name+"/"+s.Version, time.Now(), w); err != nil {
+		// Headers are sent already; a broken zip tells the client it failed.
+		s.logger().Error("export package", "workspace", ws, "err", err)
 	}
 }

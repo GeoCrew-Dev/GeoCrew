@@ -81,6 +81,14 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.geojso
 
 把工作组当前的全部记录（不含已删除的）导出成一个 GeoJSON，QGIS、ArcGIS 可以直接打开，属性原样保留。组员也可以带着自己的令牌请求 `GET /api/v0/workspaces/{id}/export.geojson` 下载同样的文件。
 
+目标文件以 `.zip` 结尾时导出为**工程包**（和安卓端「导出工程包」同一种格式）：
+
+```bash
+geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
+```
+
+包里有全部记录、记录引用的照片和工作组的记录表单，安卓端在工程列表右上角「导入」即可打开为一个新工程（不绑定工作组），适合季末归档或交给不在组里的人。组员同样可以请求 `GET /api/v0/workspaces/{id}/export.geocrew.zip` 下载。
+
 ## 代码结构
 
 | 目录 | 内容 |
@@ -91,7 +99,7 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.geojso
 | `internal/store/sqlite` | 默认 SQLite 实现（纯 Go，无 CGO），含迁移 |
 | `internal/blob` | 附件按 SHA-256 存储在本地磁盘 |
 | `internal/realtime` | 实时消息分发（位置、在线状态、变更通知） |
-| `internal/export` | 导出为 GeoJSON 等标准格式 |
+| `internal/export` | 导出为 GeoJSON 和工程包 |
 | `internal/config` | 参数与环境变量 |
 | `internal/admin` | 运维命令（列出、恢复组长、备份、导出） |
 

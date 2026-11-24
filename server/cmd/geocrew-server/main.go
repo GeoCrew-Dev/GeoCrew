@@ -52,15 +52,16 @@ func run() error {
 		return err
 	}
 	defer db.Close()
+	files := &blob.Disk{Root: filepath.Join(cfg.DataDir, "files"), MaxSize: cfg.MaxUploadMB << 20}
 	if len(cfg.Args) > 0 {
-		return admin.Run(context.Background(), db, cfg.Args[1:], os.Stdout)
+		return admin.RunWith(context.Background(), db, admin.Options{Files: files}, cfg.Args[1:], os.Stdout)
 	}
 
 	srv := &api.Server{
 		Name:    cfg.Name,
 		Version: version,
 		Store:   db,
-		Files:   &blob.Disk{Root: filepath.Join(cfg.DataDir, "files"), MaxSize: cfg.MaxUploadMB << 20},
+		Files:   files,
 		Hub:     realtime.NewHub(),
 		Log:     log,
 

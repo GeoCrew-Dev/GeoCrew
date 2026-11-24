@@ -374,6 +374,18 @@ func TestExportGeoJSON(t *testing.T) {
 	if c := e.call("GET", base+"/export.geojson", "", nil, nil); c != 401 {
 		t.Fatalf("export without token: %d", c)
 	}
+
+	req, _ := http.NewRequest("GET", e.srv.URL+base+"/export.geocrew.zip", nil)
+	req.Header.Set("Authorization", "Bearer "+leader.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/zip" || !bytes.HasPrefix(data, []byte("PK")) {
+		t.Fatalf("package: %d %q %d bytes", resp.StatusCode, resp.Header.Get("Content-Type"), len(data))
+	}
 }
 
 func TestComments(t *testing.T) {

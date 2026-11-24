@@ -27,43 +27,65 @@ func GeoJSON(ctx context.Context, st store.Store, workspaceID string, out io.Wri
 	if _, err := st.Workspace(ctx, workspaceID); err != nil {
 		return 0, err
 	}
+	return writeCollection(ctx, st, workspaceID, out, nil)
+}
+
+// writeCollection writes the live features as a FeatureCollection, calling
+// seen (if not nil) for each one written.
+func writeCollection(ctx context.Context, st store.Store, workspaceID string, out io.Writer, seen func(store.Feature)) (int, error) {
 	w := bufio.NewWriter(out)
 	if _, err := w.WriteString(`{"type":"FeatureCollection","features":[`); err != nil {
 		return 0, err
 	}
 	n := 0
+	err := eachLive(ctx, st, workspaceID, func(f store.Feature) error {
+		b, err := json.Marshal(feature{"Feature", f.ID, orNull(f.Geometry), orNull(f.Properties)})
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			w.WriteByte(',')
+		}
+		w.WriteByte('\n')
+		if _, err := w.Write(b); err != nil {
+			return err
+		}
+		if seen != nil {
+			seen(f)
+		}
+		n++
+		return nil
+	})
+	if err != nil {
+		return n, err
+	}
+	if _, err := w.WriteString("\n]}\n"); err != nil {
+		return n, err
+	}
+	return n, w.Flush()
+}
+
+// eachLive calls fn for every feature that is not deleted, in seq order.
+func eachLive(ctx context.Context, st store.Store, workspaceID string, fn func(store.Feature) error) error {
 	var since int64
 	for {
 		fs, more, err := st.PullFeatures(ctx, workspaceID, since, page)
 		if err != nil {
-			return n, err
+			return err
 		}
 		for _, f := range fs {
 			since = f.Seq
 			if f.Deleted {
 				continue
 			}
-			b, err := json.Marshal(feature{"Feature", f.ID, orNull(f.Geometry), orNull(f.Properties)})
-			if err != nil {
-				return n, err
+			if err := fn(f); err != nil {
+				return err
 			}
-			if n > 0 {
-				w.WriteByte(',')
-			}
-			w.WriteByte('\n')
-			if _, err := w.Write(b); err != nil {
-				return n, err
-			}
-			n++
 		}
 		if !more || len(fs) == 0 {
-			break
+			return nil
 		}
 	}
-	if _, err := w.WriteString("\n]}\n"); err != nil {
-		return n, err
-	}
-	return n, w.Flush()
 }
 
 func orNull(b json.RawMessage) json.RawMessage {

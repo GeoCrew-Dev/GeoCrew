@@ -19,7 +19,7 @@ import (
 const ProtocolVersion = "0"
 
 // Capabilities advertised by /info so clients can adapt to older servers.
-var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments"}
+var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package"}
 
 // Server wires the store, file storage and realtime hub into HTTP handlers.
 type Server struct {
@@ -84,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST "+ws+"/features", s.auth(s.push, writers))
 	mux.Handle("GET "+ws+"/features/{feature}/history", s.auth(s.history, anyRole))
 	mux.Handle("GET "+ws+"/export.geojson", s.auth(s.exportGeoJSON, anyRole))
+	mux.Handle("GET "+ws+"/export.geocrew.zip", s.auth(s.exportPackage, anyRole))
 	mux.Handle("GET "+ws+"/comments", s.auth(s.comments, anyRole))
 	mux.Handle("POST "+ws+"/comments", s.auth(s.addComment, writers))
 	mux.Handle("DELETE "+ws+"/comments/{comment}", s.auth(s.deleteComment, writers))
