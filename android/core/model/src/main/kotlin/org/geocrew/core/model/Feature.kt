@@ -120,12 +120,15 @@ object Props {
     const val ASSIGNEE = "assignee"
     const val ASSIGNEE_NAME = "assignee_name"
     const val TASK_STATUS = "task_status"
+    /** Where a point's altitude came from when it is not the GPS: [ALT_FROM_DEM]. Absent for GPS heights. */
+    const val ALT_SOURCE = "alt_source"
+    const val ALT_FROM_DEM = "dem"
 
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
         KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, LITHOLOGY, LINE_STYLE, MEET_AT, REVIEW, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
         STARTED_AT, ENDED_AT, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
-        ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS,
+        ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS, ALT_SOURCE,
     )
 }
 

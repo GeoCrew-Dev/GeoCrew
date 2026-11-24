@@ -156,8 +156,13 @@ class FeatureDetailViewModel @Inject constructor(
     private val team: TeamRepository,
     private val teamComments: TeamComments,
     private val session: TeamSession,
+    private val terrain: org.geocrew.core.data.repo.TerrainTiles,
 ) : ViewModel() {
     private val id: String = checkNotNull(savedState[FEATURE_ID_ARG])
+
+    private val _dem = MutableStateFlow<DemState>(DemState.Idle)
+    /** Ground height under a point from the public DEM, looked up on request. */
+    val dem: StateFlow<DemState> = _dem.asStateFlow()
 
     /** True when the feature's project syncs with a workspace, so the server keeps its history. */
     val shared: StateFlow<Boolean> = projects.current.map { it.team != null }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -261,6 +266,24 @@ class FeatureDetailViewModel @Inject constructor(
             this[Props.TITLE] = title.trim().ifBlank { null }
             this[Props.NOTE] = note.trim().ifBlank { null }
             this[Props.LITHOLOGY] = lithology.trim().ifBlank { null }
+        }
+    }
+
+    fun lookUpDem() = viewModelScope.launch {
+        val p = (feature.value?.geometry as? org.geocrew.core.model.Geometry.Point)?.position ?: return@launch
+        _dem.value = DemState.Loading
+        _dem.value = runCatching { withContext(Dispatchers.IO) { terrain.elevation().at(listOf(p)).first() } }.fold(
+            { h -> h?.let { DemState.Value(it) } ?: DemState.Failed("这里没有地形数据") },
+            { e -> DemState.Failed("取不到地形高程：${e.message ?: "网络不通"}") },
+        )
+    }
+
+    /** Writes the DEM height as the point's altitude, marked as such so it is never taken for a GPS reading. */
+    fun useDemAltitude() = viewModelScope.launch {
+        val h = (_dem.value as? DemState.Value)?.metres ?: return@launch
+        val g = feature.value?.geometry as? org.geocrew.core.model.Geometry.Point ?: return@launch
+        features.edit(id, org.geocrew.core.model.Geometry.Point(g.position.copy(alt = Math.round(h * 10) / 10.0))) {
+            this[Props.ALT_SOURCE] = Props.ALT_FROM_DEM
         }
     }
 
@@ -656,3 +679,10 @@ class FeatureDetailViewModel @Inject constructor(
 
 /** Properties with their own editors or managed by the app; free attributes never overwrite them. */
 internal val RESERVED_KEYS = Props.MANAGED
+
+sealed interface DemState {
+    data object Idle : DemState
+    data object Loading : DemState
+    data class Value(val metres: Double) : DemState
+    data class Failed(val message: String) : DemState
+}

@@ -755,6 +755,7 @@ class MapViewModel @Inject constructor(
                 if (m.single) {
                     // These described the original fix, not a position set by hand.
                     remove(Props.ACCURACY_M); remove(Props.GPS_SAMPLES); remove(Props.GPS_SPREAD_M)
+                    if ((geometry as? Geometry.Point)?.position?.alt == null) remove(Props.ALT_SOURCE)
                 }
             }
             _selected.value = id

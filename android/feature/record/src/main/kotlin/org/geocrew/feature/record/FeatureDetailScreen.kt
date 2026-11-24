@@ -212,7 +212,8 @@ fun FeatureDetailScreen(
             SectionHeader(if (f.audio.isEmpty()) "录音" else "录音（${f.audio.size}）")
             VoiceNotes(f, viewModel)
             SectionHeader("信息")
-            Info(f, format)
+            val dem by viewModel.dem.collectAsStateWithLifecycle()
+            Info(f, format, dem, viewModel::lookUpDem, viewModel::useDemAltitude)
             if (onOpenRoute != null && f.kind == FeatureKind.ROUTE) {
                 OutlinedButton(onClick = { onOpenRoute(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("打开地质路线（点序、点间描述与小结）") }
             }
@@ -680,13 +681,40 @@ private fun VoiceNotes(f: GeoFeature, vm: FeatureDetailViewModel) {
     }
 }
 
+/** The public DEM's height under a point, next to the GPS height, and a way to use it when there is none. */
 @Composable
-private fun Info(f: GeoFeature, format: org.geocrew.core.model.CoordinateFormat) {
+private fun DemRow(gps: Double?, noAltitude: Boolean, dem: DemState, onLookUp: () -> Unit, onUse: () -> Unit) {
+    when (dem) {
+        DemState.Idle -> TextButton(onClick = onLookUp) { Text("查地形高程（公开 DEM，需联网）") }
+        DemState.Loading -> Text("正在取地形高程…", style = MaterialTheme.typography.bodySmall)
+        is DemState.Failed -> Text(dem.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        is DemState.Value -> {
+            val diff = gps?.let { it - dem.metres }?.takeIf { kotlin.math.abs(it) >= 1 }
+                ?.let { d -> "，记录的海拔" + (if (d > 0) "高" else "低") + " %.0f m".format(kotlin.math.abs(d)) }.orEmpty()
+            InfoRow("地形高程", "约 %.0f m（DEM 约 30 m 分辨率$diff）".format(dem.metres))
+            if (noAltitude) TextButton(onClick = onUse) { Text("用作这个点的海拔") }
+        }
+    }
+}
+
+@Composable
+private fun Info(
+    f: GeoFeature,
+    format: org.geocrew.core.model.CoordinateFormat,
+    dem: DemState,
+    onLookUpDem: () -> Unit,
+    onUseDem: () -> Unit,
+) {
     Column(Modifier.padding(horizontal = 16.dp)) {
         when (val g = f.geometry) {
             is Geometry.Point -> {
                 InfoRow("坐标", CoordinateFormatter.format(g.position, format))
-                g.position.alt?.let { InfoRow("海拔", "%.1f m".format(it)) }
+                val source = f.properties.string(org.geocrew.core.model.Props.ALT_SOURCE)
+                val fromDem = source == org.geocrew.core.model.Props.ALT_FROM_DEM
+                g.position.alt?.let {
+                    InfoRow("海拔", "%.1f m".format(it) + when { fromDem -> "（取自地形 DEM）"; source != null -> "（其他来源）"; else -> "" })
+                }
+                DemRow(g.position.alt.takeUnless { fromDem }, g.position.alt == null, dem, onLookUpDem, onUseDem)
                 f.properties.double(org.geocrew.core.model.Props.ACCURACY_M)?.let { acc ->
                     val n = f.properties.double(org.geocrew.core.model.Props.GPS_SAMPLES)?.toInt()
                     val spread = f.properties.double(org.geocrew.core.model.Props.GPS_SPREAD_M)
