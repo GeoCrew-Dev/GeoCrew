@@ -95,6 +95,10 @@ object Props {
     const val STARTED_AT = "started_at"
     const val ENDED_AT = "ended_at"
     const val ACCURACY_M = "accuracy_m"
+    /** Fixes averaged into a point placed by GPS. */
+    const val GPS_SAMPLES = "gps_samples"
+    /** RMS wander of those fixes around the average, metres. */
+    const val GPS_SPREAD_M = "gps_spread_m"
     const val ASSIGNEE = "assignee"
     const val ASSIGNEE_NAME = "assignee_name"
     const val TASK_STATUS = "task_status"
@@ -102,7 +106,7 @@ object Props {
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
         KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, LITHOLOGY, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
-        STARTED_AT, ENDED_AT, ACCURACY_M, LENGTH_M, AREA_M2,
+        STARTED_AT, ENDED_AT, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
         ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS,
     )
 }

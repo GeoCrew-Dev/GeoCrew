@@ -229,6 +229,26 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
             item { SectionHeader("罗盘") }
             item { DeclinationRow(s.declination, viewModel::setDeclination) }
 
+            item { SectionHeader("定点") }
+            item {
+                Text(
+                    "用「定点」在当前位置打点时，先连续定位一段时间再取加权平均，适合采样点和控制点。",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+            item {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0, 10, 30, 60).forEach { sec ->
+                        FilterChip(
+                            selected = s.pointAverageSeconds == sec,
+                            onClick = { viewModel.setPointAverage(sec) },
+                            label = { Text(if (sec == 0) "不平均" else "$sec 秒") },
+                        )
+                    }
+                }
+            }
+
             item { SectionHeader("轨迹记录") }
             item {
                 NumberRow("记录间隔（秒）", s.trackIntervalSeconds) { viewModel.setTrackInterval(it) }

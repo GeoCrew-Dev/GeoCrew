@@ -148,6 +148,8 @@ class SettingsViewModel @Inject constructor(
 
     fun deleteSource(id: String) = viewModelScope.launch { repo.deleteCustomSource(id) }
 
+    fun setPointAverage(seconds: Int) = viewModelScope.launch { repo.setPointAverageSeconds(seconds) }
+
     fun setMapCache(mb: Int) = viewModelScope.launch { repo.setMapCacheMb(mb) }
 
     fun clearMapCache() = viewModelScope.launch {

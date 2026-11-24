@@ -92,6 +92,8 @@ fun MapScreen(
     val team by viewModel.team.collectAsStateWithLifecycle()
     val unread by viewModel.unreadMessages.collectAsStateWithLifecycle()
     val alert by viewModel.alert.collectAsStateWithLifecycle()
+    val averaging by viewModel.averaging.collectAsStateWithLifecycle()
+    val mapNotice by viewModel.notice.collectAsStateWithLifecycle()
     val format = settings?.coordinateFormat ?: CoordinateFormat.DECIMAL
     val camera = rememberMapCameraState()
 
@@ -207,6 +209,8 @@ fun MapScreen(
                 )
                 bm.usingFallback -> Notice("所选底图还没有 Key，暂时显示「${bm.source.name}」。", "填写 Key", onOpenSettings)
             }
+            averaging?.let { a -> AveragingCard(a, onDone = viewModel::finishAveraging, onCancel = viewModel::cancelAveraging) }
+            mapNotice?.let { Notice(it, "好", viewModel::consumeNotice) }
             alert?.let { a ->
                 AlertCard(
                     text = "${a.nickname}：${a.body}",
@@ -396,6 +400,30 @@ private fun StatusLine(text: String, onClick: () -> Unit) {
         tonalElevation = 2.dp,
     ) {
         Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+    }
+}
+
+/** Progress of an averaged GPS point, with the running result. */
+@Composable
+private fun AveragingCard(a: MapViewModel.Averaging, onDone: () -> Unit, onCancel: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp)) {
+            Text("正在平均定位，请保持不动 · ${a.elapsed}/${a.seconds} 秒", style = MaterialTheme.typography.bodyMedium)
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { a.elapsed.toFloat() / a.seconds },
+                modifier = Modifier.fillMaxWidth().padding(end = 8.dp, top = 6.dp, bottom = 4.dp),
+            )
+            val r = a.result
+            Text(
+                if (r == null) "等待可用定位…（已收到 ${a.seen} 次）"
+                else "已用 ${r.used}/${a.seen} 次，离散 %.1f m".format(r.spread) + (r.accuracy?.let { "，单次精度约 %.0f m".format(it) } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onCancel) { Text("取消") }
+                TextButton(onClick = onDone, enabled = r != null) { Text("现在打点") }
+            }
+        }
     }
 }
 

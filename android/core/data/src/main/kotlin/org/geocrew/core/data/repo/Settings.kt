@@ -52,6 +52,8 @@ data class AppSettings(
     val sharePosition: Boolean = false,
     /** Size of the map tile cache in MB; see MapCache. */
     val mapCacheMb: Int = 200,
+    /** Seconds of fixes averaged when placing a point at the GPS position; 0 places it at once. */
+    val pointAverageSeconds: Int = 0,
 )
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("settings")
@@ -79,6 +81,7 @@ class SettingsRepository @Inject constructor(
         val NICK = stringPreferencesKey("nickname")
         val SHARE = booleanPreferencesKey("share_position")
         val CACHE = intPreferencesKey("map_cache_mb")
+        val AVERAGE = intPreferencesKey("point_average_s")
     }
 
     val settings: Flow<AppSettings> = store.data.map { p ->
@@ -97,6 +100,7 @@ class SettingsRepository @Inject constructor(
             nickname = p[K.NICK].orEmpty(),
             sharePosition = p[K.SHARE] ?: false,
             mapCacheMb = p[K.CACHE] ?: 200,
+            pointAverageSeconds = p[K.AVERAGE] ?: 0,
         )
     }
 
@@ -132,6 +136,7 @@ class SettingsRepository @Inject constructor(
             if (p[K.SOURCE] == id) p[K.SOURCE] = BuiltInSources.default.id
         }
     }
+    suspend fun setPointAverageSeconds(s: Int) { store.edit { it[K.AVERAGE] = s.coerceIn(0, 600) } }
     suspend fun setMapCacheMb(mb: Int) { store.edit { it[K.CACHE] = mb.coerceIn(10, 4000) } }
     suspend fun setCoordinateFormat(f: CoordinateFormat) { store.edit { it[K.COORD] = f.name } }
     suspend fun setDeclination(value: Float?) {

@@ -33,6 +33,7 @@ import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.MapDisplay
 import org.geocrew.core.model.MapViewport
+import org.geocrew.core.model.PositionAverage
 import org.geocrew.core.model.Project
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.tiles.BuiltInSources
@@ -273,19 +274,98 @@ class MapViewModel @Inject constructor(
     }
 
     /** Adds a point at [position], e.g. the crosshair or a long press. */
-    fun addPoint(position: LngLat, kind: FeatureKind = FeatureKind.POINT) = viewModelScope.launch {
+    fun addPoint(position: LngLat, kind: FeatureKind = FeatureKind.POINT): Job = addPoint(position, kind) {}
+
+    private fun addPoint(
+        position: LngLat,
+        kind: FeatureKind,
+        extra: org.geocrew.core.model.PropertiesBuilder.() -> Unit,
+    ): Job = viewModelScope.launch {
         val p = project.value ?: projects.ensureCurrent()
         val name = p.config.numbering.next(kind, features.all(p.id).map { it.title })
         val f = features.create(p.id, kind, Geometry.Point(position)) {
             this[Props.TITLE] = name
+            extra()
         }
         _selected.value = f.id
     }
 
-    /** Adds a point at the current GPS fix, keeping its altitude and accuracy. */
+    /** Collecting fixes for an averaged point; null when not averaging. */
+    data class Averaging(
+        val seconds: Int,
+        val elapsed: Int,
+        val result: PositionAverage.Result?,
+        val seen: Int,
+    )
+
+    private val _averaging = MutableStateFlow<Averaging?>(null)
+    val averaging: StateFlow<Averaging?> = _averaging.asStateFlow()
+    private var averageJob: Job? = null
+    private val _notice = MutableStateFlow<String?>(null)
+    /** A one-off message for the map, e.g. why an averaged point was not placed. */
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+    fun consumeNotice() { _notice.value = null }
+
+    /**
+     * Adds a point at the current GPS fix, keeping its altitude and accuracy;
+     * with averaging on, collects fixes for the set time first.
+     */
     fun addPointAtFix() {
+        val seconds = settings.value?.pointAverageSeconds ?: 0
+        if (seconds > 0) return startAveraging(seconds)
         val f = _fix.value ?: return
-        addPoint(f.position)
+        addPoint(f.position, FeatureKind.POINT) {
+            f.accuracy?.let { this[Props.ACCURACY_M] = Math.round(it * 10) / 10.0 }
+        }
+    }
+
+    private fun startAveraging(seconds: Int) {
+        averageJob?.cancel()
+        val avg = PositionAverage()
+        _averaging.value = Averaging(seconds, 0, null, 0)
+        averageJob = viewModelScope.launch {
+            val ticker = launch {
+                for (e in 1..seconds) {
+                    kotlinx.coroutines.delay(1_000)
+                    _averaging.update { it?.copy(elapsed = e) }
+                }
+            }
+            var last: java.time.Instant? = null
+            kotlinx.coroutines.withTimeoutOrNull(seconds * 1_000L) {
+                _fix.collect { f ->
+                    if (f == null || f.time == last) return@collect
+                    last = f.time
+                    avg.add(f.position, f.accuracy?.toDouble())
+                    _averaging.update { it?.copy(result = avg.result(), seen = avg.seen) }
+                }
+            }
+            ticker.cancel()
+            finishAveraging()
+        }
+    }
+
+    /** Places the averaged point now, with what has been collected so far. */
+    fun finishAveraging() {
+        val a = _averaging.value ?: return
+        _averaging.value = null
+        val r = a.result
+        if (r == null) {
+            _notice.value = if (a.seen == 0) "没有收到定位，未打点" else "定位精度都不够好（差于 30 米），未打点"
+        } else {
+            addPoint(r.position, FeatureKind.POINT) {
+                r.accuracy?.let { this[Props.ACCURACY_M] = Math.round(it * 10) / 10.0 }
+                this[Props.GPS_SAMPLES] = r.used
+                this[Props.GPS_SPREAD_M] = Math.round(r.spread * 10) / 10.0
+            }
+        }
+        averageJob?.cancel()
+        averageJob = null
+    }
+
+    fun cancelAveraging() {
+        averageJob?.cancel()
+        averageJob = null
+        _averaging.value = null
     }
 
     fun startDraw(kind: FeatureKind) {

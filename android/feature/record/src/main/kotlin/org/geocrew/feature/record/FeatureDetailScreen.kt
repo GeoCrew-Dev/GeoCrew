@@ -89,6 +89,7 @@ import org.geocrew.core.model.task
 import org.geocrew.core.model.areaSquareMeters
 import org.geocrew.core.model.lengthMeters
 import org.geocrew.core.model.string
+import org.geocrew.core.model.double
 import org.geocrew.core.data.team.CommentItem
 import org.geocrew.core.ui.CommentBubble
 import org.geocrew.core.ui.CommentComposer
@@ -408,6 +409,14 @@ private fun Info(f: GeoFeature, format: org.geocrew.core.model.CoordinateFormat)
             is Geometry.Point -> {
                 InfoRow("坐标", CoordinateFormatter.format(g.position, format))
                 g.position.alt?.let { InfoRow("海拔", "%.1f m".format(it)) }
+                f.properties.double(org.geocrew.core.model.Props.ACCURACY_M)?.let { acc ->
+                    val n = f.properties.double(org.geocrew.core.model.Props.GPS_SAMPLES)?.toInt()
+                    val spread = f.properties.double(org.geocrew.core.model.Props.GPS_SPREAD_M)
+                    InfoRow(
+                        "定位精度",
+                        "约 %.0f m".format(acc) + if (n != null && n > 1) "（平均 $n 次" + (spread?.let { "，离散 %.1f m".format(it) } ?: "") + "）" else "",
+                    )
+                }
             }
             is Geometry.Polygon, is Geometry.MultiPolygon -> {
                 InfoRow("面积", CoordinateFormatter.area(g.areaSquareMeters()))
