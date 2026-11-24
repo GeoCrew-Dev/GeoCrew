@@ -38,7 +38,7 @@ class RouteTableTest {
 
     @Test
     fun rowsInWalkingOrderWithPurposeAndSummary() {
-        val r = GeoRoute(LocalDate.of(2026, 11, 24), "王", "追索断层", summary = "断层走向北东").plus(listOf("D2", "D1")).withOnward("D2", "沿沟向东")
+        val r = GeoRoute(LocalDate.of(2026, 11, 24), "王", "追索断层", summary = "断层走向北东").plus(listOf("D2", "gone", "D1")).withOnward("D2", "沿沟向东")
         val older = GeoRoute(LocalDate.of(2026, 11, 23)).plus(listOf("D1"))
         val out = ByteArrayOutputStream()
         val res = RouteTableFormat.write(listOf(point("D1", 116.0), point("D2", 116.01), route("r2", "L002", r), route("r1", "L001", older)), out, ExportContext())

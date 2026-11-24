@@ -46,7 +46,8 @@ object RouteTableFormat : FeatureFormat {
             val name = f.title?.takeIf { it.isNotBlank() } ?: "地质路线"
             val head = listOf(name, r.date?.toString().orEmpty(), r.members)
             if (r.purpose.isNotBlank()) row(head + listOf("目的", "", "", "", "", "", "", "", r.purpose, "", f.id))
-            r.resolve(byId::get).forEachIndexed { i, s ->
+            // Stops whose record is missing or deleted are skipped (protocol v0 §6.6).
+            r.resolve(byId::get).filter { it.feature != null }.forEachIndexed { i, s ->
                 val p = s.feature
                 val pos = s.position
                 row(
