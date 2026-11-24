@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -281,6 +283,42 @@ func (s *Server) exportKML(w http.ResponseWriter, r *http.Request) {
 	if _, err := export.KML(r.Context(), s.Store, ws, w); err != nil {
 		s.logger().Error("export kml", "workspace", ws, "err", err)
 	}
+}
+
+// exportGeoPackage downloads the workspace's records as a GeoPackage for
+// desktop GIS. SQLite needs a real file, so it is built in a temporary
+// directory and removed once sent.
+func (s *Server) exportGeoPackage(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	dir, err := os.MkdirTemp("", "geocrew-gpkg-")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "export.gpkg")
+	if _, err := export.GeoPackage(r.Context(), s.Store, ws, path); err != nil {
+		s.logger().Error("export gpkg", "workspace", ws, "err", err)
+		s.fail(w, r, err)
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "application/geopackage+sqlite3")
+	w.Header().Set("Content-Disposition", `attachment; filename="geocrew-export.gpkg"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if fi, err := f.Stat(); err == nil {
+		w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
+	}
+	io.Copy(w, f)
 }
 
 // exportRoutes downloads the geological route table (protocol v0 §6.6) as CSV.

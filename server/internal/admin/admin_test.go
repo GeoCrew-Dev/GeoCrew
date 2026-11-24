@@ -152,6 +152,14 @@ func TestExport(t *testing.T) {
 	if b, _ := os.ReadFile(pkg); !strings.HasPrefix(string(b), "PK") {
 		t.Fatalf("package content: %q", b[:min(len(b), 16)])
 	}
+	gpkg := filepath.Join(t.TempDir(), "北山.gpkg")
+	out, err = run(t, db, "export", ws.ID, gpkg)
+	if err != nil || !strings.Contains(out, "0 条记录") {
+		t.Fatalf("gpkg: %q %v", out, err)
+	}
+	if b, _ := os.ReadFile(gpkg); !strings.HasPrefix(string(b), "SQLite format 3") {
+		t.Fatalf("gpkg content: %q", b[:min(len(b), 16)])
+	}
 }
 
 func TestFilesAndPrune(t *testing.T) {

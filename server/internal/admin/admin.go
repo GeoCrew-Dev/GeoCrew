@@ -36,7 +36,8 @@ const Usage = `用法：geocrew-server [参数] admin <命令>
                                    .csv 结尾为样品清单（每件样品一行，时间按本机时区），
                                    .sections.csv 结尾为实测剖面分层表（每层一行，含真厚度），
                                    .routes.csv 结尾为地质路线记录表（按点序每点一行，含点间描述），
-                                   .kml 结尾为 KML（奥维、Google Earth 可打开，按共享图例着色）
+                                   .kml 结尾为 KML（奥维、Google Earth 可打开，按共享图例着色），
+                                   .gpkg 结尾为 GeoPackage（QGIS、ArcGIS 可打开，点线面分表）
 
   files <工作组> [prune]             统计附件：占用空间、被记录引用的、没有任何记录引用的、缺失的；
                                    加 prune 删除没有引用且上传超过 1 天的附件（历史版本引用的不删）
@@ -168,7 +169,14 @@ func RunWith(ctx context.Context, st store.Store, opt Options, args []string, ou
 		}
 		var msg string
 		lower := strings.ToLower(rest[1])
-		if strings.HasSuffix(lower, ".kml") {
+		if strings.HasSuffix(lower, ".gpkg") {
+			// SQLite writes the file itself; the empty one made above reserves the name.
+			f.Close()
+			var n int
+			n, err = export.GeoPackage(ctx, st, ws.ID, rest[1])
+			msg = fmt.Sprintf("已把「%s」的 %d 条记录导出到 %s", ws.Name, n, rest[1])
+			f = nil
+		} else if strings.HasSuffix(lower, ".kml") {
 			var n int
 			n, err = export.KML(ctx, st, ws.ID, f)
 			msg = fmt.Sprintf("已把「%s」的 %d 条记录导出到 %s", ws.Name, n, rest[1])
@@ -202,8 +210,10 @@ func RunWith(ctx context.Context, st store.Store, opt Options, args []string, ou
 			n, err = export.GeoJSON(ctx, st, ws.ID, f)
 			msg = fmt.Sprintf("已把「%s」的 %d 条记录导出到 %s", ws.Name, n, rest[1])
 		}
-		if cerr := f.Close(); err == nil {
-			err = cerr
+		if f != nil {
+			if cerr := f.Close(); err == nil {
+				err = cerr
+			}
 		}
 		if err != nil {
 			os.Remove(rest[1])
