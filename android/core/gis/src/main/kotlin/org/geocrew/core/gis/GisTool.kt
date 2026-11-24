@@ -91,6 +91,8 @@ data class ToolInput(
     val features: List<GeoFeature>,
     val values: Map<String, String> = emptyMap(),
     val cancelled: () -> Boolean = { false },
+    /** Ground heights for tools that want terrain; null when the app offers none. Blocking. */
+    val elevation: org.geocrew.core.model.Elevation? = null,
 ) {
     fun number(p: ToolParam.Number): Double? = values[p.key]?.trim()?.toDoubleOrNull()?.let { v ->
         v.coerceIn(p.min ?: v, p.max ?: v)

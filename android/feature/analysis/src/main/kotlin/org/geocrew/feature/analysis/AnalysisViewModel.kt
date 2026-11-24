@@ -55,6 +55,7 @@ class AnalysisViewModel @Inject constructor(
     private val features: FeatureRepository,
     private val clock: Clock,
     pluginTools: PluginTools,
+    private val terrain: org.geocrew.core.data.repo.TerrainTiles,
     /** Starts tools from other apps; the screen launches what it asks for. */
     val plugins: PluginHost,
 ) : ViewModel() {
@@ -124,7 +125,8 @@ class AnalysisViewModel @Inject constructor(
             try {
                 val out = withContext(Dispatchers.Default) {
                     val ctx = coroutineContext
-                    t.run(snapshot.copy(cancelled = { !ctx.isActive })) { p -> _run.value = _run.value.copy(progress = p) }
+                    // Tools that want terrain fetch tiles from inside run(); a few blocking calls on this pool are fine.
+                    t.run(snapshot.copy(cancelled = { !ctx.isActive }, elevation = terrain.elevation())) { p -> _run.value = _run.value.copy(progress = p) }
                 }
                 _run.value = RunState(output = out)
             } catch (_: ToolCancelled) {

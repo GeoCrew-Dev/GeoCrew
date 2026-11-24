@@ -39,7 +39,58 @@ class MapSectionTool : GisTool {
 
     private val line = ToolParam.Feature("line", "剖面线", setOf(GeometryType.LINE), help = "方向从线的起点指向终点")
     private val unit = ToolParam.Field("unit", "填图单元属性（可选）", numeric = false, help = "例如岩性或地层代号；不选就用面的名称")
-    override val params = listOf(line, unit)
+    private val terrain = ToolParam.Choice(
+        "terrain", "地形线",
+        listOf(ToolParam.Choice.Option(TERRAIN_DEM, "取公开 DEM 高程（约 30 m，需联网）"), ToolParam.Choice.Option(TERRAIN_NONE, "不画地形")),
+        help = "有地形线时剖面示意按高程画，界线按视倾角画进地下",
+    )
+    override val params = listOf(line, unit, terrain)
+
+    /** Ground height along the section: chainage (m) and height (m), at even steps. */
+    data class Profile(val chainage: DoubleArray, val height: DoubleArray) {
+        fun at(c: Double): Double {
+            if (c <= chainage.first()) return height.first()
+            if (c >= chainage.last()) return height.last()
+            val i = chainage.indexOfFirst { it >= c }.coerceAtLeast(1)
+            val t = (c - chainage[i - 1]) / (chainage[i] - chainage[i - 1])
+            return height[i - 1] + t * (height[i] - height[i - 1])
+        }
+        override fun equals(other: Any?) = other is Profile && chainage.contentEquals(other.chainage) && height.contentEquals(other.height)
+        override fun hashCode() = chainage.contentHashCode() * 31 + height.contentHashCode()
+    }
+
+    /**
+     * Samples the ground along [s] every [step] metres or so (at most
+     * [MAX_SAMPLES]); null with the reason when there's no terrain to be had.
+     */
+    private fun profile(input: ToolInput, s: Walk): Pair<Profile?, String?> {
+        if (input.choice(terrain) != TERRAIN_DEM) return null to null
+        val dem = input.elevation ?: return null to "这台设备上没有地形数据来源"
+        val n = kotlin.math.ceil(s.length / STEP_M).toInt().coerceIn(2, MAX_SAMPLES)
+        val cs = DoubleArray(n + 1) { s.length * it / n }
+        val hs = try {
+            dem.at(cs.map(s::at))
+        } catch (e: IllegalArgumentException) {
+            return null to (e.message ?: "剖面太长")
+        } catch (e: java.io.IOException) {
+            return null to "地形没下载成功（${e.message ?: "网络不通"}）"
+        }
+        // Fill short gaps from the neighbours; give up when most of the line has no data.
+        val known = hs.indices.filter { hs[it] != null }
+        if (known.size < (n + 1) / 2) return null to "这一带没有地形数据"
+        val filled = DoubleArray(n + 1) { i ->
+            hs[i] ?: run {
+                val a = known.lastOrNull { it < i }
+                val b = known.firstOrNull { it > i }
+                when {
+                    a == null -> hs[b!!]!!
+                    b == null -> hs[a]!!
+                    else -> hs[a]!! + (hs[b]!! - hs[a]!!) * (i - a) / (b - a)
+                }
+            }
+        }
+        return Profile(cs, filled) to null
+    }
 
     /** One stretch of the section inside one mapped unit. */
     data class Interval(val from: Double, val to: Double, val unit: String, val polygon: GeoFeature) {
@@ -117,6 +168,8 @@ class MapSectionTool : GisTool {
         val r = section(input, progress)
         val l = input.feature(line)!!
         val s = Walk(path(l))
+        if (input.cancelled()) throw ToolCancelled()
+        val (ground, groundNote) = profile(input, s)
         val title = l.title ?: "剖面线"
         val palette = HashMap<String, String>()
         fun colorOf(i: Interval): String = palette.getOrPut(i.unit) {
@@ -147,11 +200,35 @@ class MapSectionTool : GisTool {
                 c.line.lineStyle?.let { this[Props.LINE_STYLE] = it.id }
                 c.apparentDip?.let { this[SectionTool.APPARENT_DIP] = round1(it) }
                 c.attitude?.let { this[SectionTool.TRUE_ATTITUDE] = it.format() }
+                ground?.let { this[ELEVATION_M] = round1(it.at(c.chainage)) }
                 this["marker-color"] = if (c.line.lineStyle?.fault == true) "#D32F2F" else "#212121"
             })
         }
+        val terrainLine = ground?.let { g ->
+            OutputFeature(FeatureKind.LINE, Geometry.LineString(g.chainage.indices.map { i -> s.at(g.chainage[i]).copy(alt = round1(g.height[i])) }), buildProperties {
+                this[OutputProps.TOOL] = id
+                this[Props.TITLE] = "$title 地形线"
+                this[SECTION_LINE] = title
+                this[ROLE] = ROLE_TERRAIN
+                this[SectionTool.SECTION_LENGTH_M] = round1(r.length)
+                put(PROFILE, kotlinx.serialization.json.JsonArray(g.chainage.indices.map { i ->
+                    kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive(round1(g.chainage[i])), kotlinx.serialization.json.JsonPrimitive(round1(g.height[i]))))
+                }))
+                style(stroke = "#6D4C41", strokeWidth = 2.0)
+            })
+        }
         val legend = palette.entries.map { (unit, color) -> LegendEntry(color, unit) }
-        return ToolOutput(features, summary(title, r), legend)
+        return ToolOutput(features + listOfNotNull(terrainLine), summary(title, r) + terrainSummary(ground, groundNote), legend)
+    }
+
+    private fun terrainSummary(g: Profile?, note: String?): String = when {
+        g != null -> {
+            val hi = g.height.indices.maxBy { g.height[it] }
+            val lo = g.height.indices.minBy { g.height[it] }
+            "\n地形：起点 ${fmt(g.height.first(), 0)} m，终点 ${fmt(g.height.last(), 0)} m，最高 ${fmt(g.height[hi], 0)} m（距起点 ${CoordinateFormatter.distance(g.chainage[hi])}），最低 ${fmt(g.height[lo], 0)} m"
+        }
+        note != null -> "\n没画地形线：$note"
+        else -> ""
     }
 
     private fun summary(title: String, r: Result): String = buildString {
@@ -235,6 +312,17 @@ class MapSectionTool : GisTool {
         const val LENGTH_M = "length_m"
         const val CHAINAGE_M = "chainage_m"
         const val SOURCE = "source"
+        /** Ground height at a cut, when the section has terrain. */
+        const val ELEVATION_M = "elevation_m"
+        /** What an output is for; the terrain line has [ROLE_TERRAIN]. */
+        const val ROLE = "role"
+        const val ROLE_TERRAIN = "terrain"
+        /** The terrain line's profile, [[chainage, height], ...] in metres. */
+        const val PROFILE = "profile"
+        const val TERRAIN_DEM = "dem"
+        const val TERRAIN_NONE = "none"
+        private const val STEP_M = 30.0
+        private const val MAX_SAMPLES = 400
         private const val TOLERANCE_M = 0.05
         private const val EPS = 1e-9
         private const val SUMMARY_ROWS = 10

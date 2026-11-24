@@ -95,4 +95,25 @@ class MapSectionTest {
         assertNotNull(tool.check(ToolInput(listOf(section), mapOf("line" to "S"))))
         assertNull(tool.check(input))
     }
+
+    @Test fun drawsTheGroundWhenTerrainIsAvailable() {
+        // A ridge rising 1 m per 0.0001° of longitude eastwards, from 1000 m.
+        val dem = org.geocrew.core.model.Elevation { pts -> pts.map { 1000 + (it.lng - 116.0) * 10_000 } }
+        val out = tool.run(input.copy(elevation = dem)) {}
+        val ground = out.features.single { it.properties.string(MapSectionTool.ROLE) == MapSectionTool.ROLE_TERRAIN }
+        val profile = (ground.properties[MapSectionTool.PROFILE] as kotlinx.serialization.json.JsonArray)
+        assertTrue(profile.size in 3..401)
+        assertEquals(1000.0, (profile.first() as kotlinx.serialization.json.JsonArray)[1].toString().toDouble(), 0.1)
+        assertEquals(1500.0, (profile.last() as kotlinx.serialization.json.JsonArray)[1].toString().toDouble(), 0.1)
+        val fault = out.features.single { it.properties.string(MapSectionTool.SOURCE) == "F1" }
+        assertEquals(1100.0, fault.properties.double(MapSectionTool.ELEVATION_M)!!, 1.0)
+        assertTrue(out.summary.contains("最高 1500 m"))
+
+        // No terrain asked for, or none to be had: the section still comes out, with a note.
+        val none = tool.run(input.copy(values = input.values + ("terrain" to MapSectionTool.TERRAIN_NONE), elevation = dem)) {}
+        assertTrue(none.features.none { it.properties.string(MapSectionTool.ROLE) == MapSectionTool.ROLE_TERRAIN })
+        val offline = tool.run(input.copy(elevation = { throw java.io.IOException("timeout") })) {}
+        assertTrue(offline.summary.contains("没画地形线：地形没下载成功（timeout）"))
+        assertTrue(tool.run(input) {}.summary.contains("没有地形数据来源"))
+    }
 }
