@@ -235,7 +235,7 @@ private fun ConnectPanel(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = share, onCheckedChange = { share = it })
-                    Text("打开地图时向组员共享我的位置")
+                    Text("打开地图或记录轨迹时向组员共享我的位置")
                 }
                 val form = ConnectForm(server, value.trim(), nickname.trim(), share)
                 Button(
@@ -305,7 +305,7 @@ private fun LinkedPanel(
         item {
             ListItem(
                 headlineContent = { Text("共享我的位置") },
-                supportingContent = { Text("地图打开时，组员能看到你的实时位置") },
+                supportingContent = { Text("打开地图或记录轨迹时（包括锁屏后），组员能看到你的实时位置") },
                 trailingContent = { Switch(checked = share, onCheckedChange = onShare) },
             )
         }

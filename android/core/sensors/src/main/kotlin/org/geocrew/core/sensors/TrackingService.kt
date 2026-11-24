@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.SettingsRepository
 import org.geocrew.core.data.repo.TrackRepository
+import org.geocrew.core.data.team.TeamSession
 import org.geocrew.core.model.CoordinateFormatter
 import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.LngLat
@@ -57,6 +58,8 @@ class TrackingController @Inject constructor() {
 /**
  * Foreground service that keeps recording while the screen is off or the
  * app is in the background. Accepts only fixes better than [MAX_ACCURACY_M].
+ * While it runs it also shares the position with the workspace, so a team
+ * can follow someone walking a traverse with the phone in their pocket.
  */
 @AndroidEntryPoint
 class TrackingService : LifecycleService() {
@@ -65,6 +68,7 @@ class TrackingService : LifecycleService() {
     @Inject lateinit var projects: ProjectRepository
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var location: LocationSource
+    @Inject lateinit var team: TeamSession
 
     private var job: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -98,6 +102,8 @@ class TrackingService : LifecycleService() {
             controller.update(TrackingState.Recording(track.id, 0, 0.0, null))
             location.fixes(cfg.trackIntervalSeconds * 1000L, cfg.trackMinDistanceMeters.toFloat()).collect { fix ->
                 if ((fix.accuracy ?: 0f) > MAX_ACCURACY_M) return@collect
+                // Teammates keep seeing us while the screen is off (only if sharing is on).
+                team.reportPosition(fix.position, fix.accuracy, fix.bearing, fix.speed)
                 last?.let { prev ->
                     val d = Geodesy.distance(prev, fix.position)
                     if (d < cfg.trackMinDistanceMeters) return@collect
