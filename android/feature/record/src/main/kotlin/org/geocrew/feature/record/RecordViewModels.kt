@@ -248,7 +248,7 @@ class FeatureDetailViewModel @Inject constructor(
     fun addCaptured(file: File) = viewModelScope.launch {
         // The camera's own EXIF (GPS, time, sometimes direction) wins over our aim.
         val exif = withContext(Dispatchers.IO) { PhotoExif.read(file) }
-        val info = exif.orElse(aim)
+        val info = exif?.orElse(aim) ?: aim
         aim = null
         photos.commit(file)?.let { addPhoto(it, info) }
     }

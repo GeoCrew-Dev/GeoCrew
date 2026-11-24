@@ -17,9 +17,12 @@ internal object PhotoExif {
 
     fun read(file: File): PhotoInfo? = runCatching {
         val exif = ExifInterface(file)
-        val position = exif.latLong?.let { (lat, lng) ->
-            if (lat == 0.0 && lng == 0.0) null
-            else LngLat(lng, lat, exif.getAttribute(ExifInterface.TAG_GPS_ALTITUDE)?.let { exif.getAltitude(0.0) })
+        val lat = dms(exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE), exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE_REF), "S")
+        val lng = dms(exif.getAttribute(ExifInterface.TAG_GPS_LONGITUDE), exif.getAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF), "W")
+        val position = if (lat == null || lng == null || (lat == 0.0 && lng == 0.0) || lat !in -90.0..90.0 || lng !in -180.0..180.0) {
+            null
+        } else {
+            LngLat(lng, lat, exif.getAttribute(ExifInterface.TAG_GPS_ALTITUDE)?.let { exif.getAltitude(0.0) })
         }
         // Only a true-north direction is usable without knowing the declination there.
         val ref = exif.getAttribute(ExifInterface.TAG_GPS_IMG_DIRECTION_REF)
@@ -46,6 +49,14 @@ internal object PhotoExif {
             else -> 0
         }
     }.getOrDefault(0)
+
+    /** EXIF "d/1,m/1,s/100" with its hemisphere reference, in signed degrees. */
+    private fun dms(value: String?, ref: String?, negative: String): Double? {
+        val parts = value?.split(',')?.map { rational(it.trim()) } ?: return null
+        if (parts.size != 3 || parts.any { it == null }) return null
+        val deg = parts[0]!! + parts[1]!! / 60 + parts[2]!! / 3600
+        return if (ref?.trim().equals(negative, ignoreCase = true)) -deg else deg
+    }
 
     private fun rational(s: String): Double? {
         val parts = s.split('/')
