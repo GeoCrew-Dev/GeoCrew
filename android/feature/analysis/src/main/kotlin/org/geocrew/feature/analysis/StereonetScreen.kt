@@ -59,6 +59,7 @@ import org.geocrew.core.gis.Lineation
 import org.geocrew.core.gis.NetPoint
 import org.geocrew.core.gis.Rose
 import org.geocrew.core.gis.Stereonet
+import org.geocrew.core.gis.fabric
 import org.geocrew.core.model.Attitude
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.string
@@ -75,6 +76,8 @@ data class StereonetUi(
     val stats: FisherStats? = null,
     /** Pole density contours, worked out only while [NetDisplay.DENSITY] is shown. */
     val density: Stereonet.Density? = null,
+    /** Shape of the pole distribution and, for a girdle, the fold axis. */
+    val fabric: org.geocrew.core.gis.Fabric? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -100,6 +103,7 @@ class StereonetViewModel @Inject constructor(
             group = g,
             display = d,
             stats = Stereonet.fisher(chosen.map(Stereonet::pole)),
+            fabric = Stereonet.fabric(chosen.map(Stereonet::pole)),
             density = if (d == NetDisplay.DENSITY) Stereonet.density(chosen.map(Stereonet::pole)) else null,
         )
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, StereonetUi())
@@ -182,6 +186,16 @@ private fun Summary(ui: StereonetUi) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        ui.fabric?.let { f ->
+            val shape = "极点" + f.shape.label + "（K %.2f，C %.1f）".format(f.k.coerceAtMost(99.0), f.strength.coerceAtMost(99.0))
+            Text(shape, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (f.shape == org.geocrew.core.gis.Fabric.Shape.GIRDLE) {
+                Text(
+                    "像圆柱状褶皱：枢纽（π 轴，图中三角）%03.0f°∠%02.0f°，π 圆（虚线）%s".format(f.foldAxis.trend, f.foldAxis.plunge, f.girdle.format()),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
         if (s.count < 5) {
             Text("读数较少，统计量仅供参考。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -249,7 +263,29 @@ private fun Net(ui: StereonetUi, modifier: Modifier) {
         if (ui.display == NetDisplay.PLANES || ui.display == NetDisplay.BOTH) circles.forEach { line(it, plane.copy(alpha = 0.7f), 1.5.dp.toPx()) }
         if (ui.display == NetDisplay.POLES || ui.display == NetDisplay.BOTH) poles.forEach { drawCircle(pole, 3.5.dp.toPx(), at(it)) }
         ui.stats?.let { s -> meanMarker(at(Stereonet.project(s.mean)), mean) }
+        ui.fabric?.takeIf { it.shape == org.geocrew.core.gis.Fabric.Shape.GIRDLE }?.let { f ->
+            val pts = Stereonet.greatCircle(f.girdle, steps = 90)
+            if (pts.size > 1) {
+                val path = Path().apply {
+                    moveTo(at(pts[0]).x, at(pts[0]).y)
+                    pts.drop(1).forEach { val o = at(it); lineTo(o.x, o.y) }
+                }
+                drawPath(path, mean, style = Stroke(2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 6.dp.toPx()))))
+            }
+            axisMarker(at(Stereonet.project(f.foldAxis)), mean)
+        }
     }
+}
+
+private fun DrawScope.axisMarker(o: Offset, color: Color) {
+    val d = 8.dp.toPx()
+    val tri = Path().apply {
+        moveTo(o.x, o.y - d)
+        lineTo(o.x + d * 0.87f, o.y + d * 0.5f)
+        lineTo(o.x - d * 0.87f, o.y + d * 0.5f)
+        close()
+    }
+    drawPath(tri, color)
 }
 
 private fun DrawScope.meanMarker(o: Offset, color: Color) {
