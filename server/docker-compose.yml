@@ -1,0 +1,9 @@
+services:
+  geocrew:
+    build: .
+    image: ghcr.io/geocrew-dev/geocrew-server:latest
+    ports:
+      - "8080:8080"
+    environment:
+      GEOCREW_NAME: "我的野外小组服务器"
+    restart: unless-stopped
