@@ -40,6 +40,8 @@ object MapColors {
     const val LINE = "#1565C0"
     const val POLYGON = "#2E7D32"
     const val TRACK = "#F9A825"
+    /** Measured sections: the traverse line. */
+    const val SECTION = "#795548"
     const val SELECTED = "#00E5FF"
     const val ME = "#1E88E5"
     const val TEAM = "#43A047"

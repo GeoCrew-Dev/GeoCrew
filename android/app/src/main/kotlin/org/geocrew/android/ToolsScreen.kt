@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.WbTwilight
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -32,6 +33,7 @@ data class ToolEntry(val title: String, val description: String, val icon: Image
 val builtInTools = listOf(
     ToolEntry("罗盘 · 产状", "测量方位和岩层产状，保存为地质点", Icons.Default.Explore, "compass"),
     ToolEntry("地层厚度", "按产状和导线（方位、坡角、斜距）算真厚度和铅直厚度", Icons.Default.Straighten, Routes.THICKNESS),
+    ToolEntry("实测剖面", "沿导线逐层记录岩性和产状，算各层真厚度，剖面线保存到地图", Icons.Default.Layers, Routes.SECTION),
     ToolEntry("寻点", "带方向箭头走到记录点或指派给你的任务点", Icons.Default.NearMe, Routes.SEEK_ANY),
     ToolEntry("日出日落", "当地日出、日落和天黑时间，还剩多久天黑", Icons.Default.WbTwilight, Routes.SUN),
     ToolEntry("坐标换算", "经纬度与高斯-克吕格 3°/6° 带平面坐标互换，导出点的平面坐标表", Icons.Default.GridOn, Routes.COORDINATES),

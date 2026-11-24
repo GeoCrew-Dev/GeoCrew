@@ -60,6 +60,7 @@ object Routes {
     fun projectSettings(id: String) = "project/${android.net.Uri.encode(id)}/settings"
     const val STEREONET = "stereonet"
     const val THICKNESS = "thickness"
+    const val SECTION = "section"
     const val COORDINATES = "coordinates"
     const val SUN = "sun"
     const val SEEK = "seek?$SEEK_FEATURE_ARG={$SEEK_FEATURE_ARG}"
@@ -181,6 +182,9 @@ fun GeoCrewNavHost() {
         }
         composable(Routes.THICKNESS) {
             ThicknessScreen(onBack = { nav.popBackStack() })
+        }
+        composable(Routes.SECTION) {
+            org.geocrew.feature.compass.SectionScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.COORDINATES) {
             CoordinatesScreen(onBack = { nav.popBackStack() })

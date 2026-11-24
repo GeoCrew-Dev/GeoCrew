@@ -10,6 +10,7 @@ import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.CropSquare
 import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.Timeline
@@ -31,6 +32,7 @@ object KindUi {
         FeatureKind.POLYGON -> "面"
         FeatureKind.TRACK -> "轨迹"
         FeatureKind.PHOTO -> "照片点"
+        FeatureKind.SECTION -> "实测剖面"
         else -> kind.id
     }
 
@@ -41,6 +43,7 @@ object KindUi {
         FeatureKind.POLYGON -> Icons.Outlined.CropSquare
         FeatureKind.TRACK -> Icons.Outlined.Gesture
         FeatureKind.PHOTO -> Icons.Outlined.PhotoCamera
+        FeatureKind.SECTION -> Icons.Outlined.Layers
         else -> Icons.Outlined.Category
     }
 }
