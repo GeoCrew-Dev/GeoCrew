@@ -97,10 +97,10 @@ private fun ToolList(tools: List<GisTool>, onChoose: (GisTool) -> Unit) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 /** Recent features offered for a feature parameter; older ones can be renamed or redrawn. */
 private const val MAX_FEATURE_CHOICES = 30
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ToolForm(tool: GisTool, vm: AnalysisViewModel, onShowOnMap: () -> Unit) {
     val values by vm.values.collectAsStateWithLifecycle()
