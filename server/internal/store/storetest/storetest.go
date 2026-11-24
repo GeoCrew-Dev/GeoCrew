@@ -31,6 +31,7 @@ func Run(t *testing.T, open Opener) {
 		{"Comments", comments},
 		{"ViewLinks", viewLinks},
 		{"ConcurrentPushes", concurrentPushes},
+		{"LockedProps", lockedProps},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -375,5 +376,44 @@ func concurrentPushes(t *testing.T, open Opener) {
 		if f.Seq != int64(i+1) {
 			t.Fatalf("seq %d at %d", f.Seq, i)
 		}
+	}
+}
+
+func lockedProps(t *testing.T, open Opener) {
+	ctx := context.Background()
+	d := open(t)
+	ws, a, _, _ := d.CreateWorkspace(ctx, "w", "a")
+	_, b, _, _ := d.Join(ctx, ws.InviteCode, "b")
+	t0 := time.Date(2026, 11, 24, 8, 0, 0, 0, time.UTC)
+	withProps := func(v int64, props string) store.Feature {
+		f := feat("f1", v, t0.Add(time.Duration(v)*time.Minute))
+		f.Properties = []byte(props)
+		return f
+	}
+	lock := store.LockProps("review")
+
+	// A member's new record can't arrive already reviewed.
+	if _, _, err := d.PushFeatures(ctx, ws.ID, b.ID, []store.Feature{withProps(1, `{"title":"D1","review":{"state":"approved"}}`)}, lock); err != nil {
+		t.Fatal(err)
+	}
+	// The leader's push isn't locked.
+	d.PushFeatures(ctx, ws.ID, a.ID, []store.Feature{withProps(2, `{"title":"D1","review":{"state":"redo","note":"补产状"}}`)})
+	// The member edits the record and tries to clear the review; the edit lands, the review stays.
+	res, _, _ := d.PushFeatures(ctx, ws.ID, b.ID, []store.Feature{withProps(3, `{"title":"D1 改"}`)}, lock)
+	if res[0].Status != store.PushApplied {
+		t.Fatalf("member edit: %+v", res)
+	}
+	fs, _, _ := d.PullFeatures(ctx, ws.ID, 0, 10)
+	var p map[string]any
+	if len(fs) != 1 || json.Unmarshal(fs[0].Properties, &p) != nil {
+		t.Fatalf("pull: %+v", fs)
+	}
+	r, _ := p["review"].(map[string]any)
+	if p["title"] != "D1 改" || r["state"] != "redo" || r["note"] != "补产状" {
+		t.Fatalf("locked review not kept: %s", fs[0].Properties)
+	}
+	h, _ := d.FeatureHistory(ctx, ws.ID, "f1")
+	if len(h) != 2 || string(h[1].Properties) != `{"title":"D1"}` {
+		t.Fatalf("history: %+v", h)
 	}
 }

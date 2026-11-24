@@ -803,3 +803,36 @@ func TestViewLinks(t *testing.T) {
 		t.Fatalf("after revoke: %d", c)
 	}
 }
+
+func TestOnlyLeadersReview(t *testing.T) {
+	e := newEnv(t)
+	var leader, member joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "组员"}, &member)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+
+	f := feature("r1", 1, "2026-11-24T08:00:00Z")
+	f["properties"].(map[string]any)["review"] = map[string]any{"state": "approved", "by": member.MemberID}
+	e.call("POST", base+"/features", member.Token, map[string]any{"features": []any{f}}, nil)
+
+	f = feature("r1", 2, "2026-11-24T08:05:00Z")
+	f["properties"].(map[string]any)["review"] = map[string]any{"state": "approved", "by": leader.MemberID, "at": "2026-11-24T08:05:00Z"}
+	e.call("POST", base+"/features", leader.Token, map[string]any{"features": []any{f}}, nil)
+
+	f = feature("r1", 3, "2026-11-24T08:10:00Z")
+	f["properties"].(map[string]any)["review"] = map[string]any{"state": "redo"}
+	if c := e.call("POST", base+"/features", member.Token, map[string]any{"features": []any{f}}, nil); c != 200 {
+		t.Fatalf("member push: %d", c)
+	}
+	var pull pullResp
+	e.call("GET", base+"/features?since=0", leader.Token, nil, &pull)
+	if len(pull.Features) != 1 {
+		t.Fatalf("pull: %+v", pull)
+	}
+	var p map[string]any
+	_ = json.Unmarshal(pull.Features[0].Properties, &p)
+	r, _ := p["review"].(map[string]any)
+	if pull.Features[0].Sync.Version != 3 || r["state"] != "approved" || r["by"] != leader.MemberID {
+		t.Fatalf("review should stay the leader's: %s", pull.Features[0].Properties)
+	}
+}

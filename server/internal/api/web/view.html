@@ -533,6 +533,21 @@
     return parts.length ? "：" + parts.join("，") : "";
   }
 
+  // Leader review (protocol §6.9): approved or sent back, by whom, and whether the record changed since.
+  function reviewText(f) {
+    const r = (f.properties || {}).review;
+    if (!r || typeof r !== "object" || (r.state !== "approved" && r.state !== "redo")) return "";
+    const parts = [r.state === "approved" ? "已通过" : "退回重做"];
+    if (typeof r.by === "string" && members.get(r.by)) parts.push(members.get(r.by));
+    if (typeof r.at === "string" && !isNaN(Date.parse(r.at))) {
+      parts.push(when(r.at));
+      if (Date.parse(upd(f)) > Date.parse(r.at) + 1000) parts.push("之后有改动");
+    }
+    let s = parts.join(" · ");
+    if (typeof r.note === "string" && r.note.trim()) s += "：" + r.note.trim();
+    return s;
+  }
+
   function popup(f, lngLat) {
     const p = f.properties || {}, k = kindOf(p);
     const box = document.createElement("div"); box.className = "pop";
@@ -561,6 +576,7 @@
     if (k === "route") routeRows(p.route, row);
     row("备注", text(p, "note"));
     row("修改", [members.get(by(f)) || "", upd(f).replace("T", " ").slice(0, 16)].filter(Boolean).join(" · "));
+    row("审核", reviewText(f));
     box.append(dl);
     const talk = [...comments.values()].filter((c) => c.feature_id === f.id).sort((a, b) => a.seq - b.seq);
     if (talk.length) {

@@ -122,6 +122,81 @@ type PushResult struct {
 	Previous *Feature
 }
 
+// PushOption adjusts how PushFeatures treats a batch.
+type PushOption func(*PushConfig)
+
+// PushConfig is the effect of a batch's PushOptions.
+type PushConfig struct {
+	// LockedProps are top-level property keys the pusher may not change:
+	// the stored value wins, and a key the stored feature lacks is dropped.
+	LockedProps []string
+}
+
+// LockProps keeps the stored value of each key, whatever the push says.
+// The server uses it for fields only some roles may set, such as review.
+func LockProps(keys ...string) PushOption {
+	return func(c *PushConfig) { c.LockedProps = append(c.LockedProps, keys...) }
+}
+
+// NewPushConfig applies opts.
+func NewPushConfig(opts []PushOption) PushConfig {
+	var c PushConfig
+	for _, o := range opts {
+		o(&c)
+	}
+	return c
+}
+
+// KeepLocked returns next's properties with each locked key set as it is in
+// prev (nil for a new feature). It returns next unchanged when nothing
+// differs, so the stored bytes stay as the client sent them; properties
+// that aren't a JSON object are left alone.
+func KeepLocked(next, prev json.RawMessage, keys []string) json.RawMessage {
+	if len(keys) == 0 {
+		return next
+	}
+	var n map[string]json.RawMessage
+	if err := json.Unmarshal(next, &n); err != nil || n == nil {
+		if len(next) != 0 && string(next) != "null" {
+			return next
+		}
+		n = map[string]json.RawMessage{}
+	}
+	var p map[string]json.RawMessage
+	_ = json.Unmarshal(prev, &p)
+	changed := false
+	for _, k := range keys {
+		nv, inNext := n[k]
+		pv, inPrev := p[k]
+		switch {
+		case inPrev && (!inNext || !jsonEqual(nv, pv)):
+			n[k] = pv
+			changed = true
+		case !inPrev && inNext:
+			delete(n, k)
+			changed = true
+		}
+	}
+	if !changed {
+		return next
+	}
+	b, err := json.Marshal(n)
+	if err != nil {
+		return next
+	}
+	return b
+}
+
+func jsonEqual(a, b json.RawMessage) bool {
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return string(a) == string(b)
+	}
+	xb, _ := json.Marshal(x)
+	yb, _ := json.Marshal(y)
+	return string(xb) == string(yb)
+}
+
 // PushTarget is where a member's device wants notifications: a UnifiedPush
 // or similar endpoint URL that accepts a POSTed message.
 type PushTarget struct {
@@ -228,7 +303,8 @@ type Store interface {
 
 	// PushFeatures applies changes atomically and returns one result per input
 	// plus the workspace's latest seq. UpdatedBy is forced to memberID.
-	PushFeatures(ctx context.Context, workspaceID, memberID string, fs []Feature) ([]PushResult, int64, error)
+	// Options can lock properties this member may not change (see LockProps).
+	PushFeatures(ctx context.Context, workspaceID, memberID string, fs []Feature, opts ...PushOption) ([]PushResult, int64, error)
 	// PullFeatures returns features with seq > since, ordered by seq.
 	PullFeatures(ctx context.Context, workspaceID string, since int64, limit int) ([]Feature, bool, error)
 	// FeatureHistory returns superseded revisions of a feature, newest first.

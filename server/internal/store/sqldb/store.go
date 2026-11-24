@@ -394,7 +394,8 @@ func rawOrNull(b []byte) string {
 	return string(b)
 }
 
-func (d *DB) PushFeatures(ctx context.Context, workspaceID, memberID string, fs []store.Feature) ([]store.PushResult, int64, error) {
+func (d *DB) PushFeatures(ctx context.Context, workspaceID, memberID string, fs []store.Feature, opts ...store.PushOption) ([]store.PushResult, int64, error) {
+	cfg := store.NewPushConfig(opts)
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, 0, err
@@ -426,6 +427,13 @@ func (d *DB) PushFeatures(ctx context.Context, workspaceID, memberID string, fs 
 			c := cur
 			results = append(results, store.PushResult{ID: f.ID, Status: store.PushStale, Seq: cur.Seq, Current: &c})
 			continue
+		}
+		if len(cfg.LockedProps) > 0 && !f.Deleted {
+			var prev json.RawMessage
+			if exists {
+				prev = cur.Properties
+			}
+			f.Properties = store.KeepLocked(f.Properties, prev, cfg.LockedProps)
 		}
 		seq++
 		if exists {

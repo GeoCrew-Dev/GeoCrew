@@ -22,11 +22,13 @@ const (
 	IssuePoorAccuracy    = "poor_accuracy"
 	IssueFarAway         = "far_away"
 	IssueMissingStop     = "missing_stop"
+	// IssueRedo: a leader sent the record back (review.state = redo, protocol §6.9).
+	IssueRedo = "redo"
 )
 
 var issueOrder = map[string]int{
 	IssueDuplicateNumber: 0, IssueDuplicateSample: 1, IssueNoPosition: 2,
-	IssuePoorAccuracy: 3, IssueFarAway: 4, IssueMissingStop: 5,
+	IssuePoorAccuracy: 3, IssueFarAway: 4, IssueMissingStop: 5, IssueRedo: -1,
 }
 
 // Issue is one thing worth a second look on one record.
@@ -73,6 +75,8 @@ func Checks(ctx context.Context, st store.Store, workspaceID string, opt CheckOp
 		stops           []string
 		lon, lat        float64
 		located         bool
+		redo            bool
+		redoNote        string
 	}
 	var recs []rec
 	err := eachLive(ctx, st, workspaceID, func(f store.Feature) error {
@@ -88,11 +92,16 @@ func Checks(ctx context.Context, st store.Store, workspaceID string, opt CheckOp
 					Feature any `json:"feature"`
 				} `json:"stops"`
 			} `json:"route"`
+			Review struct {
+				State any `json:"state"`
+				Note  any `json:"note"`
+			} `json:"review"`
 		}
 		if json.Unmarshal(f.Properties, &p) != nil {
 			return nil
 		}
 		r := rec{id: f.ID, kind: str(p.Kind), title: strings.TrimSpace(str(p.Title))}
+		r.redo, r.redoNote = str(p.Review.State) == "redo", strings.TrimSpace(str(p.Review.Note))
 		for _, s := range p.Samples {
 			if no := strings.TrimSpace(str(s.No)); no != "" {
 				r.samples = append(r.samples, no)
@@ -162,6 +171,13 @@ func Checks(ctx context.Context, st store.Store, workspaceID string, opt CheckOp
 				add(r, IssueDuplicateSample, fmt.Sprintf("样品编号「%s」在这条记录里用了两次", no))
 			} else {
 				add(r, IssueDuplicateSample, fmt.Sprintf("样品编号「%s」也在 %s", no, strings.Join(others, "、")))
+			}
+		}
+		if r.redo {
+			if r.redoNote != "" {
+				add(r, IssueRedo, "组长退回："+r.redoNote)
+			} else {
+				add(r, IssueRedo, "组长退回，需要补充或改正")
 			}
 		}
 		if locatedKinds[r.kind] && !r.located {

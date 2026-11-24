@@ -125,7 +125,12 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ws := r.PathValue("ws")
-	results, seq, err := s.Store.PushFeatures(r.Context(), ws, member(r).ID, fs)
+	var opts []store.PushOption
+	if member(r).Role != store.RoleLeader {
+		// Only leaders review records (protocol §6.9); a member's push keeps whatever review is stored.
+		opts = append(opts, store.LockProps(ReviewProp))
+	}
+	results, seq, err := s.Store.PushFeatures(r.Context(), ws, member(r).ID, fs, opts...)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -146,6 +151,9 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
+
+// ReviewProp is the property a leader sets when reviewing a record.
+const ReviewProp = "review"
 
 type pullResp struct {
 	Features []wireFeature `json:"features"`
