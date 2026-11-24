@@ -81,7 +81,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | POST | `/api/v0/workspaces` | 无 | 创建工作区 `{name, nickname}` |
 | POST | `/api/v0/workspaces/join` | 无 | 加入 `{invite_code, nickname}` |
 | GET | `/api/v0/workspaces/{id}` | 任意 | 工作区信息、我的身份、在线成员；组长额外看到邀请码 |
-| GET | `/api/v0/workspaces/{id}/members` | 任意 | 成员列表（含已吊销，带 `revoked: true`） |
+| GET | `/api/v0/workspaces/{id}/members` | 任意 | 成员列表（含已吊销，带 `revoked: true`）；`last_seen` 为该成员最近一次带令牌请求的时间（精确到分钟，从未请求过则没有这个键） |
 | GET | `/api/v0/workspaces/{id}/settings` | 任意 | 共享设置（见 2.2） |
 | PUT | `/api/v0/workspaces/{id}/settings` | 组长 | 修改共享设置 |
 | PATCH | `/api/v0/workspaces/{id}/members/{member_id}` | 组长 | 修改角色 `{role}` |

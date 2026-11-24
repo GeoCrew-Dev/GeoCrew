@@ -581,6 +581,7 @@ components:
         nickname: { type: string }
         role: { $ref: "#/components/schemas/Role" }
         joined_at: { type: string, format: date-time }
+        last_seen: { type: string, format: date-time, description: "Last authenticated request, to the minute; absent before the first one." }
         revoked: { type: boolean }
 
     WorkspaceView:
