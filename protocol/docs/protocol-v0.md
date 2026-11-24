@@ -68,7 +68,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 
 | 键 | 内容 |
 | --- | --- |
-| `form` | 记录表单：属性数组，每项 `{key, label?, type?, options?, unit?, kinds?}`。`type` 为 `TEXT`（默认）、`NUMBER` 或 `CHOICE`；`kinds` 为适用的要素种类，空表示全部。值写在要素 `properties[key]` 里，文字始终是字符串，数字是 JSON 数字。 |
+| `form` | 记录表单：属性数组，每项 `{key, label?, type?, options?, unit?, kinds?, required?}`。`type` 为 `TEXT`（默认）、`NUMBER` 或 `CHOICE`；`kinds` 为适用的要素种类，空表示全部；`required: true` 表示这些种类的记录应当填写该属性，客户端据此提示「待补全」，但服务端不校验，提交时也不应拒绝。值写在要素 `properties[key]` 里，文字始终是字符串，数字是 JSON 数字。 |
 
 不认识的键必须原样保留：客户端修改设置时先读取、只改自己负责的键、再整体提交。
 
