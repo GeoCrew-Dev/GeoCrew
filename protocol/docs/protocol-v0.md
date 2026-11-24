@@ -241,7 +241,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | --- | --- | --- |
 | `point` | Point | `title`、`note`、`photos`、`audio` |
 | `geo_point` | Point | 地质点：`title`、`lithology`、`strike`、`dip_direction`、`dip`、`note`、`photos`、`audio` |
-| `line` | LineString | `title`、`note`、`length_m` |
+| `line` | LineString | `title`、`note`、`length_m`、`line_style`（第 6.7 节） |
 | `polygon` | Polygon | `title`、`note`、`area_m2` |
 | `track` | LineString | 轨迹：`title`、`started_at`、`ended_at`、`length_m`；坐标可带高程 |
 | `photo` | Point | 独立照片点：`photos`、`azimuth`（拍摄方位角） |
@@ -376,6 +376,19 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `stops` | 按走过的顺序排列。`feature` 是点记录的 id；`onward` 是从这个点到下一个点之间的描述，可省略 |
 
 同一个 id 在 `stops` 中重复时只取第一次；找不到或已删除的记录应跳过，但不要从对象里删掉（可能还没同步到）。不认识的字段应原样保留，整个对象随记录一起按第 4.3 节的规则合并。服务端不解析这个对象。
+
+### 6.7 线型
+
+线和面可以带 `line_style`，说明它在地质图上代表什么、该怎么画：
+
+| 值 | 含义 | 画法 |
+| --- | --- | --- |
+| `contact` | 实测地质界线 | 黑色实线 |
+| `inferred_contact` | 推测地质界线 | 黑色虚线 |
+| `fault` | 实测断层 | 红色粗实线 |
+| `inferred_fault` | 推测断层 | 红色粗虚线 |
+
+记录自带 simplestyle 颜色（`stroke`）时颜色以自带的为准，虚实和粗细仍按线型。不认识的值当作没有线型画，但要原样保留。DXF 等导出时，带线型的线放在以线型命名的图层上，推测的用虚线线型。
 
 ## 7. 实时通道
 
