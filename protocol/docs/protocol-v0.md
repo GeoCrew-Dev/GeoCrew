@@ -98,6 +98,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | PUT | `/api/v0/workspaces/{id}/files/{sha256}` | 组长、成员 | 上传附件 |
 | GET / HEAD | `/api/v0/workspaces/{id}/files/{sha256}` | 任意 | 下载附件 / 查询是否存在 |
 | GET | `/api/v0/workspaces/{id}/ws` | 任意 | 升级为 WebSocket 实时通道 |
+| GET / PUT / DELETE | `/api/v0/workspaces/{id}/push` | 任意 | 查看、登记、取消我的推送地址（见第 9 节） |
 
 `info` 示例：
 
@@ -106,7 +107,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "create"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
@@ -298,7 +299,30 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 - 发言不能修改；`feature_id` 指向的记录被删除时，讨论仍然保留。
 - 每次发言或删除后，服务端通过实时通道广播 `comments_changed`。
 
-## 9. 版本演进
+## 9. 推送通知
+
+服务器能力里有 `push` 时可用（运维人员可以关闭，此时这组接口返回 `404 push_disabled`）。实时通道只在应用打开时有效；推送让应用在后台也能知道有新动静。
+
+- 登记：`PUT …/push` 提交 `{endpoint, events?}`。`endpoint` 是手机上的推送分发器（[UnifiedPush](https://unifiedpush.org/)，如 ntfy）给出的地址；`events` 是要订阅的类型，省略时全部订阅。每个成员一个地址，再次登记即替换。返回 `{endpoint, events, updated_at}`。
+- 查看与取消：`GET …/push`（没有登记时 `404 not_found`），`DELETE …/push`（返回 `204`）。成员被吊销时登记一并删除。
+
+| 类型 | 何时发 | 发给谁 |
+| --- | --- | --- |
+| `message` | 有人发了全组消息 | 除发送者外的全部成员 |
+| `comment` | 有人在记录下发言 | 除发送者外的全部成员 |
+| `task` | 记录的 `assignee` 变成某人（6.1），且不是本人自己指派、`task_status` 不是 `done` | 被指派的人 |
+
+服务端向地址 `POST` 一个 JSON（`Content-Type: application/json`）：
+
+```json
+{ "type": "task", "workspace": "w-1c2d", "feature": "f-8a1c", "from": "m-3f2a", "seq": 128 }
+```
+
+通知里**不含**消息正文、记录内容或昵称：分发器常由第三方运营，客户端被唤醒后应通过带凭据的接口拉取详情（`seq` 告诉它至少要拉到哪里），并用成员列表把 `from` 换成昵称。投递是尽力而为的：失败不重试，分发器回复 `404` / `410` 时服务端删除该登记，客户端可以随时重新登记。网络重试导致同一条发言被重复提交时可能收到两次通知，客户端按 `seq` 去重即可。
+
+为防止服务端被用来访问它所在的内网，服务端默认只接受公网的 `https` 地址，并在连接时检查解析出的 IP，不跟随重定向。
+
+## 10. 版本演进
 
 - 同一主版本（v0）内只增加字段、接口和消息类型，不删除、不改变含义。
 - 不兼容的修改会使用新的路径前缀（`/api/v1/`），服务端可同时提供多个版本。

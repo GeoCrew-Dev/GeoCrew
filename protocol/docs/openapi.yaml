@@ -22,6 +22,7 @@ tags:
   - name: comments
   - name: files
   - name: realtime
+  - name: push
 
 paths:
   /healthz:
@@ -457,6 +458,60 @@ paths:
         "101": { description: Switching protocols }
         "401": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/push:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [push]
+      operationId: getPushTarget
+      summary: The calling member's push endpoint
+      responses:
+        "200":
+          description: Registered endpoint
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushTarget" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [push]
+      operationId: setPushTarget
+      summary: Register (or replace) the calling member's push endpoint
+      description: |
+        The server POSTs a PushNotice to the endpoint for each subscribed
+        event. Servers refuse plain http and private addresses unless their
+        operator allows them. 404 `push_disabled` means the server sends no
+        push notifications.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string, format: uri, maxLength: 2048 }
+                events:
+                  type: array
+                  description: Defaults to every event type
+                  items: { $ref: "#/components/schemas/PushEvent" }
+      responses:
+        "200":
+          description: Stored endpoint
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushTarget" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [push]
+      operationId: deletePushTarget
+      summary: Stop push notifications for the calling member
+      responses:
+        "204": { description: Removed (or there was none) }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearer:
@@ -659,6 +714,26 @@ components:
         speed: { type: number, description: Metres per second }
         at: { type: string, format: date-time }
 
+    PushEvent:
+      type: string
+      enum: [message, comment, task]
+    PushTarget:
+      type: object
+      required: [endpoint, events, updated_at]
+      properties:
+        endpoint: { type: string, format: uri }
+        events: { type: array, items: { $ref: "#/components/schemas/PushEvent" } }
+        updated_at: { type: string, format: date-time }
+    PushNotice:
+      type: object
+      description: Body POSTed to a push endpoint. It never carries message text or record content.
+      required: [type, workspace]
+      properties:
+        type: { $ref: "#/components/schemas/PushEvent" }
+        workspace: { type: string }
+        feature: { type: string, description: Record concerned (comment and task) }
+        from: { type: string, description: Member who caused the notice }
+        seq: { type: integer, description: "Comment seq for message and comment notices, feature seq for task notices" }
     RealtimeMessage:
       description: Any message on the realtime channel
       oneOf:
