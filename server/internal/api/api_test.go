@@ -660,7 +660,7 @@ func TestViewLinks(t *testing.T) {
 	if c := e.call("GET", base+"/features", link.Token, nil, &page); c != 200 {
 		t.Fatalf("viewer pull: %d", c)
 	}
-	for _, p := range []string{base, base + "/members", base + "/comments", base + "/export.geojson", base + "/export.samples.csv?tz_offset=480", base + "/export.sections.csv", base + "/export.kml"} {
+	for _, p := range []string{base, base + "/members", base + "/comments", base + "/export.geojson", base + "/export.samples.csv?tz_offset=480", base + "/export.sections.csv", base + "/export.kml", base + "/export.routes.csv"} {
 		if c := e.call("GET", p, link.Token, nil, nil); c != 200 {
 			t.Fatalf("viewer GET %s: %d", p, c)
 		}

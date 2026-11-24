@@ -59,6 +59,7 @@
       <button id="package" type="button">下载工程包</button>
       <button id="samples" type="button">下载样品清单</button>
       <button id="sections" type="button">下载剖面分层表</button>
+      <button id="routes" type="button">下载路线记录表</button>
     </div>
     <ul id="list"></ul>
   </aside>
@@ -83,7 +84,7 @@
   const KINDS = {
     point: ["标注点", "#e53935"], geo_point: ["地质点", "#8e24aa"], photo: ["照片点", "#fb8c00"],
     line: ["线", "#1e88e5"], polygon: ["面", "#43a047"], track: ["轨迹", "#00897b"],
-    section: ["实测剖面", "#795548"],
+    section: ["实测剖面", "#795548"], route: ["地质路线", "#00838F"],
   };
   const STATUS = { todo: "待办", doing: "进行中", done: "已完成" };
   const kindOf = (p) => KINDS[p.kind] ? p.kind : "point";
@@ -300,6 +301,22 @@
     if (lines.length) { row("分层", lines.slice(0, 8).join("；") + (lines.length > 8 ? "……" : "")); row("总厚度", sum.toFixed(1) + " m"); }
   }
 
+  // Geological route (protocol v0 §6.6): stops in walking order, by record id.
+  function routeRows(r, row) {
+    if (!r || typeof r !== "object") return;
+    const s = (v) => typeof v === "string" ? v.trim() : "";
+    row("日期", s(r.date));
+    row("人员", s(r.members));
+    row("目的", s(r.purpose));
+    const seen = new Set();
+    const stops = (Array.isArray(r.stops) ? r.stops : []).filter((x) => x && s(x.feature) && !seen.has(x.feature) && seen.add(x.feature));
+    const names = stops.map((x) => features.get(x.feature)).filter((f) => f && !f.deleted)
+      .map((f) => text(f.properties || {}, "title") || KINDS[kindOf(f.properties || {})][0]);
+    if (stops.length) row("路线点", names.length + " 个" + (names.length ? "：" + names.slice(0, 10).join(" → ") + (names.length > 10 ? "……" : "") : "") +
+      (names.length < stops.length ? "（另有 " + (stops.length - names.length) + " 个找不到）" : ""));
+    row("小结", s(r.summary));
+  }
+
   function popup(f, lngLat) {
     const p = f.properties || {}, k = kindOf(p);
     const box = document.createElement("div"); box.className = "pop";
@@ -323,6 +340,7 @@
       if (list.length) row("样品", list.join("、"));
     }
     if (k === "section") sectionRows(p.section, row);
+    if (k === "route") routeRows(p.route, row);
     row("备注", text(p, "note"));
     row("修改", [members.get(by(f)) || "", upd(f).replace("T", " ").slice(0, 16)].filter(Boolean).join(" · "));
     box.append(dl);
@@ -450,6 +468,7 @@
     // Sampling times in this computer's zone.
     $("samples").onclick = () => download("/export.samples.csv?tz_offset=" + (-new Date().getTimezoneOffset()), "geocrew-" + WS + "-samples.csv");
     $("sections").onclick = () => download("/export.sections.csv", "geocrew-" + WS + "-sections.csv");
+    $("routes").onclick = () => download("/export.routes.csv", "geocrew-" + WS + "-routes.csv");
 
     const ws = await (await api("")).json();
     $("name").textContent = ws.name || "工作组";

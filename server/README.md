@@ -104,6 +104,8 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 
 目标文件以 `.sections.csv` 结尾时导出**实测剖面分层表**：每个剖面的每一层一行（剖面、层号、起止斜距、岩性、产状及来源、真厚度、备注），厚度按协议第 6.5 节由导线和产状算出，没有实测产状的层借用最近一层并注明「借用」。组员请求 `GET /api/v0/workspaces/{id}/export.sections.csv` 也能下载。
 
+目标文件以 `.routes.csv` 结尾时导出**地质路线记录表**：每条路线一个目的行、按走过的顺序每个点一行（点号、类型、坐标、海拔、岩性、产状、点上描述、至下一点描述）和一个小结行，路线按日期和路线号排序，格式与安卓端「地质路线记录表」相同（协议第 6.6 节）。组员请求 `GET /api/v0/workspaces/{id}/export.routes.csv` 也能下载（能力名 `routes`）。
+
 目标文件以 `.kml` 结尾时导出 **KML**：每条有位置的记录一个地标，名称、备注、其余属性（ExtendedData）都带上，颜色按记录自带的 simplestyle 或组长设的共享图例（协议 §2.2 `legend`），在奥维互动地图、Google Earth 里打开即是同一套配色。组员请求 `GET /api/v0/workspaces/{id}/export.kml` 也能下载（能力名 `kml`）。
 
 ## 电脑端查看

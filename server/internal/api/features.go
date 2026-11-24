@@ -283,6 +283,21 @@ func (s *Server) exportKML(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// exportRoutes downloads the geological route table (protocol v0 §6.6) as CSV.
+func (s *Server) exportRoutes(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="routes.csv"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := export.Routes(r.Context(), s.Store, ws, w); err != nil {
+		s.logger().Error("export routes", "workspace", ws, "err", err)
+	}
+}
+
 // exportSections downloads the measured-section layer table (protocol v0 §6.5) as CSV.
 func (s *Server) exportSections(w http.ResponseWriter, r *http.Request) {
 	ws := r.PathValue("ws")
