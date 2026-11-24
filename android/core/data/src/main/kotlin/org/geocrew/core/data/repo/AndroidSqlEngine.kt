@@ -37,7 +37,7 @@ object AndroidSqlEngine : SqlEngine {
                     }
                 }
                 android.database.sqlite.SQLiteCursor(driver, table, q)
-            }, sql, null, null)
+            }, sql, null, "")
             return c.use { rows(it) }
         }
 
