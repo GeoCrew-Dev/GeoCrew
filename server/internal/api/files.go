@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/GeoCrew-Dev/geocrew-server/internal/blob"
-	"github.com/GeoCrew-Dev/geocrew-server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
 
 func (s *Server) putFile(w http.ResponseWriter, r *http.Request) {

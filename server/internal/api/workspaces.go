@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/GeoCrew-Dev/geocrew-server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
 
 type joinResp struct {

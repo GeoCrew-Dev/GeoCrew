@@ -8,7 +8,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/GeoCrew-Dev/geocrew-server/internal/realtime"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
 )
 
 const (

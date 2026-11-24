@@ -1,6 +1,6 @@
 # 同勘 GeoCrew 服务端
 
-同勘 GeoCrew 小组协同功能的自部署服务端参考实现，按 [geocrew-protocol](https://github.com/GeoCrew-Dev/geocrew-protocol) 中的协议 v0 实现。单个可执行文件，无外部依赖，数据存在一个 SQLite 文件和一个附件目录里。
+同勘 GeoCrew 小组协同功能的自部署服务端参考实现，按 [geocrew-protocol](https://github.com/GeoCrew-Dev/GeoCrew-Protocol) 中的协议 v0 实现。单个可执行文件，无外部依赖，数据存在一个 SQLite 文件和一个附件目录里。
 
 > 状态：早期版本。已实现工作区与邀请码、角色（组长 / 成员 / 只读）、要素增量同步与冲突处理、修改历史、附件上传下载、WebSocket 实时位置与变更通知。
 
@@ -9,7 +9,7 @@
 需要一台装有 Docker 的 Linux 服务器：
 
 ```bash
-git clone https://github.com/GeoCrew-Dev/geocrew-server.git
+git clone https://github.com/GeoCrew-Dev/GeoCrew-Server.git
 cd geocrew-server
 docker compose up -d
 curl http://localhost:8080/api/v0/info

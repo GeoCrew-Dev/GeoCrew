@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GeoCrew-Dev/geocrew-server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )

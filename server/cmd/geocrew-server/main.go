@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/GeoCrew-Dev/geocrew-server/internal/api"
-	"github.com/GeoCrew-Dev/geocrew-server/internal/blob"
-	"github.com/GeoCrew-Dev/geocrew-server/internal/config"
-	"github.com/GeoCrew-Dev/geocrew-server/internal/realtime"
-	"github.com/GeoCrew-Dev/geocrew-server/internal/store/sqlite"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/api"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/config"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
