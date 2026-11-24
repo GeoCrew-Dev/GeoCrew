@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -57,6 +58,8 @@ fun TeamChatScreen(
     val list = rememberLazyListState()
     var confirm by remember { mutableStateOf<CommentItem?>(null) }
     var attachCenter by rememberSaveable { mutableStateOf(false) }
+    var alerting by rememberSaveable { mutableStateOf(false) }
+    val sendingAlert by viewModel.sendingAlert.collectAsStateWithLifecycle()
 
     // Stay at the newest message as messages arrive.
     LaunchedEffect(ui.items.size) {
@@ -74,6 +77,14 @@ fun TeamChatScreen(
                     }
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
+                actions = {
+                    if (ui.linked) {
+                        TextButton(onClick = { alerting = true }, enabled = !sendingAlert) {
+                            Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error)
+                            Text(" 紧急", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
             )
         },
     ) { padding ->
@@ -107,6 +118,7 @@ fun TeamChatScreen(
                             else -> null
                         },
                         onLongPress = if (c.mine || ui.isLeader) ({ confirm = c }) else null,
+                        urgent = c.urgent,
                     )
                 }
             }
@@ -121,9 +133,36 @@ fun TeamChatScreen(
                     placeholder = "发给全组…",
                 )
             } else {
-                Text("只读成员不能发言", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
+                Text("只读成员不能发普通消息，但可以用右上角「紧急」求助", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
+
+    if (alerting) {
+        var text by rememberSaveable { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { alerting = false },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("发送紧急消息") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("用于求助或要求集合。全组都会收到高优先级提醒，消息附上你现在的位置。")
+                    androidx.compose.material3.OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        placeholder = { Text("需要帮助，请到我的位置") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text("没有信号时会先存在手机里，联网后立即发出。", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.sendAlert(text); alerting = false }) {
+                    Text("发送", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { alerting = false }) { Text("取消") } },
+        )
     }
 
     confirm?.let { c ->

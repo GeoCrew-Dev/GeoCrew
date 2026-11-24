@@ -72,6 +72,8 @@ data class Comment(
     @SerialName("created_at") val createdAt: String = "",
     val seq: Long = 0,
     val deleted: Boolean = false,
+    /** A call for help or to gather (protocol v0 §8.1). */
+    val urgent: Boolean = false,
 )
 
 @Serializable
@@ -83,6 +85,7 @@ internal data class AddCommentReq(
     @SerialName("feature_id") val featureId: String? = null,
     val body: String,
     val at: List<Double>? = null,
+    val urgent: Boolean = false,
 )
 
 /** A device's Web Push keys (base64url); the server encrypts notices with them. */

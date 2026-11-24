@@ -59,6 +59,8 @@ fun CommentBubble(
     context: String? = null,
     onClick: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
+    /** An urgent team message: drawn in the error colours with a label. */
+    urgent: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
@@ -66,21 +68,40 @@ fun CommentBubble(
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
     ) {
         Text(
-            (if (mine) "我" else nickname.ifBlank { "组员" }) + " · " + if (pending) "待发送" else commentTime(time),
+            (if (urgent) "紧急 · " else "") + (if (mine) "我" else nickname.ifBlank { "组员" }) + " · " + if (pending) "待发送" else commentTime(time),
             style = MaterialTheme.typography.labelSmall,
-            color = if (pending) colors.tertiary else colors.onSurfaceVariant,
+            color = when {
+                urgent -> colors.error
+                pending -> colors.tertiary
+                else -> colors.onSurfaceVariant
+            },
         )
         Column(
             Modifier
                 .widthIn(max = 320.dp)
-                .background(if (mine) colors.primaryContainer else colors.surfaceVariant, RoundedCornerShape(12.dp))
+                .background(
+                    when {
+                        urgent -> colors.errorContainer
+                        mine -> colors.primaryContainer
+                        else -> colors.surfaceVariant
+                    },
+                    RoundedCornerShape(12.dp),
+                )
                 .combinedClickable(enabled = onClick != null || onLongPress != null, onClick = { onClick?.invoke() }, onLongClick = onLongPress)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             context?.let {
                 Text(it, style = MaterialTheme.typography.labelMedium, color = colors.primary)
             }
-            Text(body, style = MaterialTheme.typography.bodyMedium, color = if (mine) colors.onPrimaryContainer else colors.onSurface)
+            Text(
+                body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = when {
+                    urgent -> colors.onErrorContainer
+                    mine -> colors.onPrimaryContainer
+                    else -> colors.onSurface
+                },
+            )
         }
     }
 }

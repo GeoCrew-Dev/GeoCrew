@@ -138,8 +138,15 @@ class GeoCrewApi(
     }
 
     /** Posts a comment. Retrying with the same [id] returns the stored one. */
-    suspend fun addComment(ws: String, id: String, body: String, featureId: String? = null, at: List<Double>? = null): Comment {
-        val req = json.encodeToString(AddCommentReq.serializer(), AddCommentReq(id, featureId, body, at)).toRequestBody(JSON)
+    suspend fun addComment(
+        ws: String,
+        id: String,
+        body: String,
+        featureId: String? = null,
+        at: List<Double>? = null,
+        urgent: Boolean = false,
+    ): Comment {
+        val req = json.encodeToString(AddCommentReq.serializer(), AddCommentReq(id, featureId, body, at, urgent)).toRequestBody(JSON)
         return send(wsUrl(ws, "comments"), "POST", req, Comment.serializer())
     }
 

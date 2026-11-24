@@ -145,6 +145,21 @@ class MapViewModel @Inject constructor(
 
     val project: StateFlow<Project?> = projects.current.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    private val dismissedAlerts = MutableStateFlow<Set<String>>(emptySet())
+
+    /** A teammate's newest urgent message from the last hours, until dismissed here. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val alert: StateFlow<org.geocrew.core.data.team.CommentItem?> = project
+        .map { p -> p?.team?.let { p.id to it.memberId } }
+        .distinctUntilChanged()
+        .flatMapLatest { k ->
+            if (k == null) kotlinx.coroutines.flow.flowOf(emptyList()) else teamComments.alerts(k.first, k.second)
+        }
+        .combine(dismissedAlerts) { list, gone -> list.firstOrNull { it.id !in gone } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun dismissAlert(id: String) = dismissedAlerts.update { it + id }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val featureList: StateFlow<List<GeoFeature>> = projects.current
         .map { it.id }

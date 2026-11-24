@@ -35,6 +35,7 @@ class TeamPush @Inject constructor(
     private val projects: ProjectRepository,
     private val team: TeamRepository,
     private val session: TeamSession,
+    private val comments: org.geocrew.core.data.team.TeamComments,
 ) : org.geocrew.core.data.team.TeamLeaveHook {
     override suspend fun beforeLeave(projectId: String) {
         // Also when not yet enabled: a registration may be waiting for its endpoint.
@@ -96,14 +97,23 @@ class TeamPush @Inject constructor(
             "message" -> "有新的组内消息"
             "comment" -> "记录下有新的讨论"
             "task" -> "有一条记录指派给你"
+            "alert" -> "组员发出了紧急消息"
             else -> return
         }
         // Fetch what the notice announces when it concerns the open project.
-        if (projects.currentId.first() == projectId) runCatching { session.syncNow() }
+        val current = projects.currentId.first() == projectId
+        if (current) runCatching { session.syncNow() }
+        if (n.type == "alert") {
+            // Say who and what when the message has arrived; it matters more than anything else here.
+            val a = if (current) comments.latestAlert(projectId, link.memberId) else null
+            val detail = a?.let { "${it.nickname}：${it.body}" } ?: text
+            notify(projectId, "紧急 · ${link.workspaceName}", detail, id = (projectId + "alert" + n.seq).hashCode(), urgent = true)
+            return
+        }
         notify(projectId, link.workspaceName, text, id = (projectId + n.type).hashCode())
     }
 
-    private fun notify(projectId: String, title: String, text: String, id: Int) {
+    private fun notify(projectId: String, title: String, text: String, id: Int, urgent: Boolean = false) {
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -111,13 +121,21 @@ class TeamPush @Inject constructor(
         }
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "工作组通知", NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(
+            NotificationChannel(ALERT_CHANNEL, "紧急消息", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "组员求助或要求集合"
+                enableVibration(true)
+            },
+        )
         val open = context.packageManager.getLaunchIntentForPackage(context.packageName)?.let {
             PendingIntent.getActivity(context, projectId.hashCode(), it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
-        val notification = Notification.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_notify_chat)
+        val notification = Notification.Builder(context, if (urgent) ALERT_CHANNEL else CHANNEL)
+            .setSmallIcon(if (urgent) android.R.drawable.stat_sys_warning else android.R.drawable.stat_notify_chat)
             .setContentTitle(title)
             .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setCategory(if (urgent) Notification.CATEGORY_ALARM else Notification.CATEGORY_MESSAGE)
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
@@ -126,5 +144,6 @@ class TeamPush @Inject constructor(
 
     private companion object {
         const val CHANNEL = "team"
+        const val ALERT_CHANNEL = "alert"
     }
 }

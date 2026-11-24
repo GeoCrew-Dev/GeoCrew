@@ -90,4 +90,7 @@ data class CommentEntity(
     val nickname: String,
     val createdAt: Long,
     val seq: Long,
+    /** Urgent team message (protocol v0 §8.1). */
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val urgent: Boolean = false,
 )

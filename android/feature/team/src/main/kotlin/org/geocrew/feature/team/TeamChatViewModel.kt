@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
@@ -46,6 +47,7 @@ class TeamChatViewModel @Inject constructor(
     features: FeatureRepository,
     private val comments: TeamComments,
     private val session: TeamSession,
+    private val location: org.geocrew.core.sensors.LocationSource,
 ) : ViewModel() {
     private val project = projects.current
 
@@ -85,6 +87,37 @@ class TeamChatViewModel @Inject constructor(
     fun send(text: String, at: LngLat?) = viewModelScope.launch {
         val id = projectId ?: return@launch
         if (!comments.post(id, text, at = at)) _error.value = "当前工程没有加入工作组"
+    }
+
+    private val _sendingAlert = MutableStateFlow(false)
+    val sendingAlert: StateFlow<Boolean> = _sendingAlert.asStateFlow()
+
+    /**
+     * Sends an urgent message to everyone (protocol v0 §8.1) with this
+     * phone's position, or the map centre when no fix comes quickly.
+     * Read-only members may send these too.
+     */
+    fun sendAlert(text: String) = viewModelScope.launch {
+        val id = projectId ?: return@launch
+        if (_sendingAlert.value) return@launch
+        _sendingAlert.value = true
+        try {
+            val fix = if (location.hasPermission() && location.isEnabled()) {
+                kotlinx.coroutines.withTimeoutOrNull(15_000) { location.fixes(intervalMillis = 1000).first() }
+            } else {
+                null
+            }
+            val at = fix?.position ?: ui.value.mapCenter
+            val body = text.trim().ifEmpty { "需要帮助，请到我的位置" }
+            if (!comments.post(id, body, at = at, urgent = true)) {
+                _error.value = "当前工程没有加入工作组"
+                return@launch
+            }
+            runCatching { session.syncNow() }
+            if (fix == null) _error.value = "没有拿到定位，紧急消息附的是地图中心位置。消息会在联网后发出。"
+        } finally {
+            _sendingAlert.value = false
+        }
     }
 
     fun delete(c: CommentItem) = viewModelScope.launch {

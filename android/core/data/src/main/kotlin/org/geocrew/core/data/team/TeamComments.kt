@@ -31,6 +31,8 @@ data class CommentItem(
     /** Written here but not yet received by the server. */
     val pending: Boolean,
     val mine: Boolean,
+    /** A call for help or to gather; shown and notified loudly. */
+    val urgent: Boolean = false,
 )
 
 /**
@@ -57,6 +59,16 @@ class TeamComments @Inject constructor(
 
     fun pendingCount(projectId: String): Flow<Int> = dao.observePendingCount(projectId)
 
+    /** Teammates' urgent messages from the last [hours] hours, newest first. */
+    fun alerts(projectId: String, me: String?, hours: Long = ALERT_HOURS): Flow<List<CommentItem>> =
+        dao.observeUrgent(projectId, clock.millis() - hours * 3_600_000).map { list ->
+            list.map { it.toItem(me) }.filter { !it.mine }
+        }
+
+    /** The newest urgent message from someone else, if any, for a notification. */
+    suspend fun latestAlert(projectId: String, me: String?): CommentItem? =
+        dao.latestUrgent(projectId, clock.millis() - ALERT_HOURS * 3_600_000)?.toItem(me)?.takeIf { !it.mine }
+
     /** Teammates' comments the user has not seen in the team chat yet. */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     fun unread(projectId: String): Flow<Int> = projects.observe(projectId)
@@ -74,7 +86,7 @@ class TeamComments @Inject constructor(
      * Stores a new comment for sending. Returns false when the project has no
      * team or the text is empty. Long text is cut to the protocol limit.
      */
-    suspend fun post(projectId: String, body: String, featureId: String? = null, at: LngLat? = null): Boolean {
+    suspend fun post(projectId: String, body: String, featureId: String? = null, at: LngLat? = null, urgent: Boolean = false): Boolean {
         val link = projects.get(projectId)?.team ?: return false
         val text = body.trim().let { if (it.codePointCount(0, it.length) > MAX_CHARS) it.take(it.offsetByCodePoints(0, MAX_CHARS)) else it }
         if (text.isEmpty()) return false
@@ -82,7 +94,7 @@ class TeamComments @Inject constructor(
             CommentEntity(
                 projectId = projectId, id = UUID.randomUUID().toString(), featureId = featureId, body = text,
                 atLng = at?.lng, atLat = at?.lat, authorId = link.memberId, nickname = link.nickname,
-                createdAt = clock.millis(), seq = 0,
+                createdAt = clock.millis(), seq = 0, urgent = urgent && featureId == null,
             ),
         )
         return true
@@ -96,7 +108,7 @@ class TeamComments @Inject constructor(
     // --- CommentStore, for CommentSync -----------------------------------------
 
     override suspend fun pending(projectId: String): List<Comment> = dao.pending(projectId).map {
-        Comment(id = it.id, featureId = it.featureId, body = it.body, at = it.atLng?.let { lng -> listOf(lng, it.atLat ?: 0.0) })
+        Comment(id = it.id, featureId = it.featureId, body = it.body, at = it.atLng?.let { lng -> listOf(lng, it.atLat ?: 0.0) }, urgent = it.urgent)
     }
 
     override suspend fun save(projectId: String, c: Comment) {
@@ -106,7 +118,7 @@ class TeamComments @Inject constructor(
                 projectId = projectId, id = c.id, featureId = c.featureId?.ifEmpty { null }, body = c.body,
                 atLng = at?.get(0), atLat = at?.get(1), authorId = c.authorId, nickname = c.nickname,
                 createdAt = runCatching { Instant.parse(c.createdAt).toEpochMilli() }.getOrDefault(clock.millis()),
-                seq = c.seq,
+                seq = c.seq, urgent = c.urgent,
             ),
         )
     }
@@ -122,10 +134,11 @@ class TeamComments @Inject constructor(
         id = id, featureId = featureId, body = body,
         at = if (atLng != null && atLat != null) LngLat(atLng, atLat) else null,
         authorId = authorId, nickname = nickname, createdAt = Instant.ofEpochMilli(createdAt),
-        pending = seq == 0L, mine = me != null && authorId == me,
+        pending = seq == 0L, mine = me != null && authorId == me, urgent = urgent,
     )
 
     companion object {
         const val MAX_CHARS = 2000
+        const val ALERT_HOURS = 6L
     }
 }

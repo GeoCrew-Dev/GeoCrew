@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ProjectEntity::class, FeatureEntity::class, TrackPointEntity::class, CommentEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class GeoCrewDatabase : RoomDatabase() {
@@ -41,6 +41,13 @@ abstract class GeoCrewDatabase : RoomDatabase() {
             }
         }
 
-        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        /** Schema 4: urgent team messages (protocol v0 §8.1). */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE comments ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
     }
 }

@@ -91,6 +91,7 @@ fun MapScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val team by viewModel.team.collectAsStateWithLifecycle()
     val unread by viewModel.unreadMessages.collectAsStateWithLifecycle()
+    val alert by viewModel.alert.collectAsStateWithLifecycle()
     val format = settings?.coordinateFormat ?: CoordinateFormat.DECIMAL
     val camera = rememberMapCameraState()
 
@@ -205,6 +206,22 @@ fun MapScreen(
                     onDismiss = viewModel::dismissTileProblem,
                 )
                 bm.usingFallback -> Notice("所选底图还没有 Key，暂时显示「${bm.source.name}」。", "填写 Key", onOpenSettings)
+            }
+            alert?.let { a ->
+                AlertCard(
+                    text = "${a.nickname}：${a.body}",
+                    time = a.createdAt,
+                    onShow = a.at?.let { p ->
+                        {
+                            goneTo = p
+                            goneLabel = "⚠ " + a.nickname
+                            camera.animateTo(p, maxOf(camera.zoom, 15.0))
+                            followOnFirstFix = false
+                        }
+                    },
+                    onOpenChat = onOpenChat,
+                    onDismiss = { viewModel.dismissAlert(a.id) },
+                )
             }
             if (tracking is org.geocrew.core.sensors.TrackingState.Recording) {
                 val t = tracking as org.geocrew.core.sensors.TrackingState.Recording
@@ -379,6 +396,27 @@ private fun StatusLine(text: String, onClick: () -> Unit) {
         tonalElevation = 2.dp,
     ) {
         Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+    }
+}
+
+/** A teammate's call for help, kept at the top of the map until dismissed. */
+@Composable
+private fun AlertCard(text: String, time: java.time.Instant, onShow: (() -> Unit)?, onOpenChat: () -> Unit, onDismiss: () -> Unit) {
+    val ago = java.time.Duration.between(time, java.time.Instant.now()).toMinutes().coerceAtLeast(0)
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp)) {
+            Text(
+                "紧急 · " + if (ago < 1) "刚刚" else if (ago < 60) "$ago 分钟前" else "${ago / 60} 小时前",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer, maxLines = 3)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (onShow != null) TextButton(onClick = onShow) { Text("看位置") }
+                TextButton(onClick = onOpenChat) { Text("回复") }
+                TextButton(onClick = onDismiss) { Text("知道了") }
+            }
+        }
     }
 }
 
