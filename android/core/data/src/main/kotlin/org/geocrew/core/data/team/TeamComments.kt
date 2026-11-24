@@ -33,7 +33,22 @@ data class CommentItem(
     val mine: Boolean,
     /** A call for help or to gather; shown and notified loudly. */
     val urgent: Boolean = false,
-)
+    /** A leader asking everyone to report in (protocol v0 §8.2). */
+    val rollCall: Boolean = false,
+    /** The roll call this message reports in to. */
+    val answerTo: String? = null,
+) {
+    /** An answer saying the sender needs help rather than that all is well. */
+    val needsHelp: Boolean get() = answerTo != null && urgent
+}
+
+/**
+ * The current roll call and, per member, their latest answer to it. Who has
+ * not answered yet comes from the member list, which only the server knows.
+ */
+data class RollCall(val call: CommentItem, val answers: List<CommentItem>) {
+    fun answerOf(memberId: String): CommentItem? = answers.firstOrNull { it.authorId == memberId }
+}
 
 /**
  * The team's discussion (protocol v0 §8), kept in the local database so it
@@ -58,6 +73,29 @@ class TeamComments @Inject constructor(
         dao.observeCounts(projectId).map { list -> list.associate { it.featureId to it.count } }
 
     fun pendingCount(projectId: String): Flow<Int> = dao.observePendingCount(projectId)
+
+    /** The newest roll call from the last [hours] hours with everyone's latest answer, or null. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun rollCall(projectId: String, me: String?, hours: Long = ROLL_CALL_HOURS): Flow<RollCall?> =
+        dao.observeLatestRollCall(projectId, clock.millis() - hours * 3_600_000)
+            .distinctUntilChanged()
+            .flatMapLatest { call ->
+                if (call == null) {
+                    flowOf(null)
+                } else {
+                    dao.observeAnswers(projectId, call.id).map { list ->
+                        val latest = list.map { it.toItem(me) }.groupBy { it.authorId }.map { (_, a) -> a.last() }
+                        RollCall(call.toItem(me), latest.sortedBy { it.createdAt })
+                    }
+                }
+            }
+
+    /** The newest roll call, for a notification. */
+    suspend fun latestRollCall(projectId: String, me: String?): CommentItem? =
+        dao.latestRollCall(projectId, clock.millis() - ROLL_CALL_HOURS * 3_600_000)?.toItem(me)
+
+    /** The newest answer to a roll call, for the leader's notification. */
+    suspend fun latestAnswer(projectId: String, me: String?): CommentItem? = dao.latestAnswer(projectId)?.toItem(me)
 
     /** Teammates' urgent messages from the last [hours] hours, newest first. */
     fun alerts(projectId: String, me: String?, hours: Long = ALERT_HOURS): Flow<List<CommentItem>> =
@@ -86,7 +124,15 @@ class TeamComments @Inject constructor(
      * Stores a new comment for sending. Returns false when the project has no
      * team or the text is empty. Long text is cut to the protocol limit.
      */
-    suspend fun post(projectId: String, body: String, featureId: String? = null, at: LngLat? = null, urgent: Boolean = false): Boolean {
+    suspend fun post(
+        projectId: String,
+        body: String,
+        featureId: String? = null,
+        at: LngLat? = null,
+        urgent: Boolean = false,
+        rollCall: Boolean = false,
+        answerTo: String? = null,
+    ): Boolean {
         val link = projects.get(projectId)?.team ?: return false
         val text = body.trim().let { if (it.codePointCount(0, it.length) > MAX_CHARS) it.take(it.offsetByCodePoints(0, MAX_CHARS)) else it }
         if (text.isEmpty()) return false
@@ -95,6 +141,8 @@ class TeamComments @Inject constructor(
                 projectId = projectId, id = UUID.randomUUID().toString(), featureId = featureId, body = text,
                 atLng = at?.lng, atLat = at?.lat, authorId = link.memberId, nickname = link.nickname,
                 createdAt = clock.millis(), seq = 0, urgent = urgent && featureId == null,
+                rollCall = rollCall && featureId == null && answerTo == null,
+                answerTo = answerTo?.takeIf { featureId == null },
             ),
         )
         return true
@@ -108,7 +156,9 @@ class TeamComments @Inject constructor(
     // --- CommentStore, for CommentSync -----------------------------------------
 
     override suspend fun pending(projectId: String): List<Comment> = dao.pending(projectId).map {
-        Comment(id = it.id, featureId = it.featureId, body = it.body, at = it.atLng?.let { lng -> listOf(lng, it.atLat ?: 0.0) }, urgent = it.urgent)
+        Comment(id = it.id, featureId = it.featureId, body = it.body, at = it.atLng?.let { lng -> listOf(lng, it.atLat ?: 0.0) }, urgent = it.urgent,
+            rollCall = it.rollCall, answerTo = it.answerTo,
+        )
     }
 
     override suspend fun save(projectId: String, c: Comment) {
@@ -118,7 +168,7 @@ class TeamComments @Inject constructor(
                 projectId = projectId, id = c.id, featureId = c.featureId?.ifEmpty { null }, body = c.body,
                 atLng = at?.get(0), atLat = at?.get(1), authorId = c.authorId, nickname = c.nickname,
                 createdAt = runCatching { Instant.parse(c.createdAt).toEpochMilli() }.getOrDefault(clock.millis()),
-                seq = c.seq, urgent = c.urgent,
+                seq = c.seq, urgent = c.urgent, rollCall = c.rollCall, answerTo = c.answerTo?.ifEmpty { null },
             ),
         )
     }
@@ -135,10 +185,12 @@ class TeamComments @Inject constructor(
         at = if (atLng != null && atLat != null) LngLat(atLng, atLat) else null,
         authorId = authorId, nickname = nickname, createdAt = Instant.ofEpochMilli(createdAt),
         pending = seq == 0L, mine = me != null && authorId == me, urgent = urgent,
+        rollCall = rollCall, answerTo = answerTo,
     )
 
     companion object {
         const val MAX_CHARS = 2000
         const val ALERT_HOURS = 6L
+        const val ROLL_CALL_HOURS = 24L
     }
 }

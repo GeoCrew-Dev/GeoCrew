@@ -30,6 +30,20 @@ import javax.inject.Inject
 /** A message plus the title of the record it is about, if any and still there. */
 data class ChatRow(val item: CommentItem, val featureTitle: String?)
 
+/** Someone on the roll and their latest answer, if any. */
+data class RosterRow(val memberId: String, val nickname: String, val answer: CommentItem?)
+
+/** The current roll call as the chat shows it. */
+data class RollCallUi(
+    val call: CommentItem,
+    /** This user's latest answer. */
+    val mine: CommentItem?,
+    /** Everyone asked (all but the caller), not yet answered first; null while the member list is unknown. */
+    val roster: List<RosterRow>?,
+    /** Answers received, for when the roster is unknown. */
+    val answers: List<CommentItem>,
+)
+
 data class ChatUi(
     val linked: Boolean = false,
     val workspaceName: String = "",
@@ -48,6 +62,8 @@ class TeamChatViewModel @Inject constructor(
     private val comments: TeamComments,
     private val session: TeamSession,
     private val location: org.geocrew.core.sensors.LocationSource,
+    private val team: TeamRepository,
+    private val rollCalls: org.geocrew.core.sensors.RollCallActions,
 ) : ViewModel() {
     private val project = projects.current
 
@@ -69,6 +85,26 @@ class TeamChatViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUi())
 
+    private val members = MutableStateFlow<List<org.geocrew.core.network.Member>?>(null)
+
+    private val currentCall = project
+        .map { p -> p.team?.let { p.id to it.memberId } }
+        .distinctUntilChanged()
+        .flatMapLatest { k -> if (k == null) flowOf(null) else comments.rollCall(k.first, k.second) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** The roll call of the last day, with who has answered. */
+    val rollCall: StateFlow<RollCallUi?> = combine(currentCall, members) { rc, list ->
+        rc ?: return@combine null
+        val roster = list?.filter { !it.revoked && it.id != rc.call.authorId }
+            ?.map { RosterRow(it.id, it.nickname, rc.answerOf(it.id)) }
+            ?.sortedWith(compareBy<RosterRow>({ it.answer != null }, { it.answer?.needsHelp != true }, { it.nickname }))
+        RollCallUi(rc.call, rc.answers.lastOrNull { it.mine }, roster, rc.answers)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _rollBusy = MutableStateFlow(false)
+    val rollBusy: StateFlow<Boolean> = _rollBusy.asStateFlow()
+
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
     fun consumeError() { _error.value = null }
@@ -77,6 +113,49 @@ class TeamChatViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { project.collect { projectId = it.id } }
+        // Who should answer: fetched when a roll call appears and again as answers come in.
+        viewModelScope.launch {
+            currentCall.map { it?.call?.id to (it?.answers?.size ?: 0) }.distinctUntilChanged().collect { (id, _) ->
+                if (id != null) loadMembers()
+            }
+        }
+    }
+
+    private suspend fun loadMembers() {
+        val id = projectId ?: return
+        val h = team.handle(id) ?: return
+        runCatching { team.members(h) }.getOrNull()?.let { members.value = it }
+    }
+
+    private fun rollAction(block: suspend (String) -> String?) = viewModelScope.launch {
+        val id = projectId ?: return@launch
+        if (_rollBusy.value) return@launch
+        _rollBusy.value = true
+        try {
+            block(id)?.let { _error.value = it }
+        } catch (e: IOException) {
+            _error.value = if (e is ApiException && e.isForbidden) "只有组长和发起人能结束点名" else "需要联网：${e.message}"
+        } finally {
+            _rollBusy.value = false
+        }
+    }
+
+    /** Asks everyone to report in (leaders only, protocol v0 §8.2). */
+    fun startRollCall(text: String) = rollAction { rollCalls.start(it, text) }
+
+    /** Answers the current roll call with this phone's position. */
+    fun answerRollCall(ok: Boolean) {
+        val call = rollCall.value?.call ?: return
+        rollAction { rollCalls.answer(it, call.id, ok, ui.value.mapCenter) }
+    }
+
+    /** Ends the current roll call; answers stay in the message stream. */
+    fun endRollCall() {
+        val call = rollCall.value?.call ?: return
+        rollAction {
+            if (call.pending) comments.discard(it, call.id) else rollCalls.end(call.id)
+            null
+        }
     }
 
     /** Called while the chat is on screen, as messages arrive. */

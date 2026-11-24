@@ -93,6 +93,8 @@ fun MapScreen(
     val team by viewModel.team.collectAsStateWithLifecycle()
     val unread by viewModel.unreadMessages.collectAsStateWithLifecycle()
     val alert by viewModel.alert.collectAsStateWithLifecycle()
+    val rollCall by viewModel.rollCall.collectAsStateWithLifecycle()
+    val answering by viewModel.answering.collectAsStateWithLifecycle()
     val averaging by viewModel.averaging.collectAsStateWithLifecycle()
     val mapNotice by viewModel.notice.collectAsStateWithLifecycle()
     val download by viewModel.download.collectAsStateWithLifecycle()
@@ -287,6 +289,17 @@ fun MapScreen(
                     },
                     onOpenChat = onOpenChat,
                     onDismiss = { viewModel.dismissAlert(a.id) },
+                )
+            }
+            rollCall?.let { c ->
+                org.geocrew.core.ui.RollCallPrompt(
+                    caller = c.nickname,
+                    question = c.body,
+                    time = c.createdAt,
+                    onOk = { viewModel.answerRollCall(true) },
+                    onHelp = { viewModel.answerRollCall(false) },
+                    busy = answering,
+                    onLater = { viewModel.dismissRollCall(c.id) },
                 )
             }
             if (tracking is org.geocrew.core.sensors.TrackingState.Recording) {

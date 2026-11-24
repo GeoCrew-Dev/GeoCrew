@@ -1,5 +1,6 @@
 package org.geocrew.feature.team
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,6 +40,8 @@ import org.geocrew.core.data.team.CommentItem
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.ui.CommentBubble
 import org.geocrew.core.ui.CommentComposer
+import org.geocrew.core.ui.RollCallPrompt
+import org.geocrew.core.ui.commentTime
 
 /**
  * The team's message stream: messages to everyone plus comments on records,
@@ -60,6 +63,10 @@ fun TeamChatScreen(
     var attachCenter by rememberSaveable { mutableStateOf(false) }
     var alerting by rememberSaveable { mutableStateOf(false) }
     val sendingAlert by viewModel.sendingAlert.collectAsStateWithLifecycle()
+    val rollCall by viewModel.rollCall.collectAsStateWithLifecycle()
+    val rollBusy by viewModel.rollBusy.collectAsStateWithLifecycle()
+    var calling by rememberSaveable { mutableStateOf(false) }
+    var ending by rememberSaveable { mutableStateOf(false) }
 
     // Stay at the newest message as messages arrive.
     LaunchedEffect(ui.items.size) {
@@ -78,6 +85,9 @@ fun TeamChatScreen(
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
+                    if (ui.linked && ui.isLeader) {
+                        TextButton(onClick = { calling = true }, enabled = !rollBusy) { Text("点名") }
+                    }
                     if (ui.linked) {
                         TextButton(onClick = { alerting = true }, enabled = !sendingAlert) {
                             Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error)
@@ -92,6 +102,17 @@ fun TeamChatScreen(
             if (!ui.linked) {
                 Text("当前工程没有加入工作组。", Modifier.padding(24.dp))
                 return@Column
+            }
+            rollCall?.let { rc ->
+                RollCallPanel(
+                    rc,
+                    busy = rollBusy,
+                    onOk = { viewModel.answerRollCall(true) },
+                    onHelp = { viewModel.answerRollCall(false) },
+                    onEnd = { ending = true },
+                    onShowPosition = onShowPosition,
+                    canEnd = rc.call.mine || ui.isLeader,
+                )
             }
             LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list) {
                 if (ui.items.isEmpty()) {
@@ -109,6 +130,9 @@ fun TeamChatScreen(
                         nickname = c.nickname, body = c.body, time = c.createdAt, mine = c.mine, pending = c.pending,
                         context = when {
                             c.featureId != null -> "关于 " + (row.featureTitle ?: "已删除的记录")
+                            c.rollCall -> "点名"
+                            c.answerTo != null && c.at != null -> "回应点名 · 📍 点击查看位置"
+                            c.answerTo != null -> "回应点名"
                             c.at != null -> "📍 点击查看位置"
                             else -> null
                         },
@@ -165,6 +189,32 @@ fun TeamChatScreen(
         )
     }
 
+    if (calling) {
+        var text by rememberSaveable { mutableStateOf(org.geocrew.core.sensors.RollCallActions.DEFAULT_CALL) }
+        AlertDialog(
+            onDismissRequest = { calling = false },
+            title = { Text("发起点名") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("全组都会收到提醒，每人一键报平安或求助，回应附上各自的位置。你会看到谁还没回应。")
+                    androidx.compose.material3.OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth())
+                    if (rollCall != null) Text("新的点名会替换现在这一次。", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { viewModel.startRollCall(text); calling = false }) { Text("发出") } },
+            dismissButton = { TextButton(onClick = { calling = false }) { Text("取消") } },
+        )
+    }
+    if (ending) {
+        AlertDialog(
+            onDismissRequest = { ending = false },
+            title = { Text("结束点名？") },
+            text = { Text("点名会从大家的屏幕上消失，已有的回应仍留在消息里。") },
+            confirmButton = { TextButton(onClick = { viewModel.endRollCall(); ending = false }) { Text("结束") } },
+            dismissButton = { TextButton(onClick = { ending = false }) { Text("取消") } },
+        )
+    }
+
     confirm?.let { c ->
         AlertDialog(
             onDismissRequest = { confirm = null },
@@ -182,3 +232,94 @@ fun TeamChatScreen(
         )
     }
 }
+
+/**
+ * The current roll call above the messages: the caller sees who has
+ * answered and who hasn't; everyone else answers with one tap.
+ */
+@Composable
+private fun RollCallPanel(
+    rc: RollCallUi,
+    busy: Boolean,
+    onOk: () -> Unit,
+    onHelp: () -> Unit,
+    onEnd: () -> Unit,
+    onShowPosition: (LngLat) -> Unit,
+    canEnd: Boolean,
+) {
+    val c = rc.call
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (!c.mine) {
+            RollCallPrompt(
+                caller = c.nickname,
+                question = c.body,
+                time = c.createdAt,
+                onOk = onOk,
+                onHelp = onHelp,
+                answered = rc.mine?.let { "你已回应：${it.body} · " + if (it.pending) "待发送" else commentTime(it.createdAt) },
+                busy = busy,
+            )
+        } else {
+            androidx.compose.material3.Card(
+                colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("你在 ${commentTime(c.createdAt)} 点名" + if (c.pending) "（待发送）" else "", style = MaterialTheme.typography.labelMedium)
+                    Text(c.body, style = MaterialTheme.typography.bodyLarge)
+                    val roster = rc.roster
+                    if (roster == null) {
+                        Text("已有 ${rc.answers.size} 人回应；联网后显示还没回应的人", style = MaterialTheme.typography.bodySmall)
+                        rc.answers.take(MAX_ROWS).forEach { a -> AnswerLine(a.nickname, a, onShowPosition) }
+                    } else {
+                        val done = roster.count { it.answer != null }
+                        val help = roster.count { it.answer?.needsHelp == true }
+                        Text(
+                            "已回应 $done / ${roster.size}" + (if (help > 0) "，$help 人需要帮助" else "") + if (done == roster.size) "，全部到齐" else "",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = if (help > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                        roster.take(MAX_ROWS).forEach { r -> AnswerLine(r.nickname, r.answer, onShowPosition) }
+                        if (roster.size > MAX_ROWS) Text("还有 ${roster.size - MAX_ROWS} 人", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (canEnd) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = onEnd, enabled = !busy) { Text("结束点名") }
+                        }
+                    }
+                }
+            }
+        }
+        if (!c.mine && canEnd) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onEnd, enabled = !busy) { Text("结束这次点名") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnswerLine(nickname: String, answer: CommentItem?, onShowPosition: (LngLat) -> Unit) {
+    val status = when {
+        answer == null -> "未回应"
+        answer.needsHelp -> "需要帮助 · " + commentTime(answer.createdAt)
+        else -> answer.body + " · " + commentTime(answer.createdAt)
+    }
+    val at = answer?.at
+    Row(
+        Modifier.fillMaxWidth().then(if (at != null) Modifier.clickable { onShowPosition(at) } else Modifier).padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(nickname.ifBlank { "组员" }, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            status + if (at != null) " 📍" else "",
+            style = MaterialTheme.typography.bodyMedium,
+            color = when {
+                answer == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                answer.needsHelp -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.onTertiaryContainer
+            },
+        )
+    }
+}
+
+private const val MAX_ROWS = 12

@@ -122,6 +122,20 @@ interface CommentDao {
     @Query("SELECT COUNT(*) FROM comments WHERE projectId = :projectId AND seq > :seen AND authorId != :me")
     fun observeUnread(projectId: String, seen: Long, me: String): Flow<Int>
 
+    /** The newest roll call written since [sinceMillis]. */
+    @Query("SELECT * FROM comments WHERE projectId = :projectId AND rollCall = 1 AND createdAt >= :sinceMillis ORDER BY createdAt DESC LIMIT 1")
+    fun observeLatestRollCall(projectId: String, sinceMillis: Long): Flow<CommentEntity?>
+
+    @Query("SELECT * FROM comments WHERE projectId = :projectId AND rollCall = 1 AND createdAt >= :sinceMillis ORDER BY createdAt DESC LIMIT 1")
+    suspend fun latestRollCall(projectId: String, sinceMillis: Long): CommentEntity?
+
+    /** Answers to a roll call, oldest first. */
+    @Query("SELECT * FROM comments WHERE projectId = :projectId AND answerTo = :callId ORDER BY createdAt")
+    fun observeAnswers(projectId: String, callId: String): Flow<List<CommentEntity>>
+
+    @Query("SELECT * FROM comments WHERE projectId = :projectId AND answerTo IS NOT NULL ORDER BY createdAt DESC LIMIT 1")
+    suspend fun latestAnswer(projectId: String): CommentEntity?
+
     /** Urgent messages written since [sinceMillis], newest first. */
     @Query("SELECT * FROM comments WHERE projectId = :projectId AND urgent = 1 AND createdAt >= :sinceMillis ORDER BY createdAt DESC")
     fun observeUrgent(projectId: String, sinceMillis: Long): Flow<List<CommentEntity>>

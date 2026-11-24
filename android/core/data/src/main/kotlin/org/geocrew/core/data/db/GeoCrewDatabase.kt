@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ProjectEntity::class, FeatureEntity::class, TrackPointEntity::class, CommentEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class GeoCrewDatabase : RoomDatabase() {
@@ -48,6 +48,14 @@ abstract class GeoCrewDatabase : RoomDatabase() {
             }
         }
 
-        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        /** Schema 5: roll calls and their answers (protocol v0 §8.2). */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE comments ADD COLUMN rollCall INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE comments ADD COLUMN answerTo TEXT")
+            }
+        }
+
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
     }
 }

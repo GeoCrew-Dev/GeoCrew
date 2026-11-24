@@ -37,7 +37,7 @@ class CommentSync(
         var failed = 0
         for (c in store.pending(projectId)) {
             try {
-                store.save(projectId, api.addComment(workspaceId, c.id, c.body, c.featureId, c.at, c.urgent))
+                store.save(projectId, api.addComment(workspaceId, c.id, c.body, c.featureId, c.at, c.urgent, c.rollCall, c.answerTo))
                 posted++
             } catch (e: ApiException) {
                 // The server refused this comment for good (too long, or its id

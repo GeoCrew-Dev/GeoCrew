@@ -74,6 +74,10 @@ data class Comment(
     val deleted: Boolean = false,
     /** A call for help or to gather (protocol v0 §8.1). */
     val urgent: Boolean = false,
+    /** A leader's roll call (protocol v0 §8.2). */
+    @SerialName("roll_call") val rollCall: Boolean = false,
+    /** The roll call this message answers (protocol v0 §8.2). */
+    @SerialName("answer_to") val answerTo: String? = null,
 )
 
 @Serializable
@@ -86,6 +90,8 @@ internal data class AddCommentReq(
     val body: String,
     val at: List<Double>? = null,
     val urgent: Boolean = false,
+    @SerialName("roll_call") val rollCall: Boolean = false,
+    @SerialName("answer_to") val answerTo: String? = null,
 )
 
 /** A device's Web Push keys (base64url); the server encrypts notices with them. */

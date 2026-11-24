@@ -93,4 +93,9 @@ data class CommentEntity(
     /** Urgent team message (protocol v0 §8.1). */
     @androidx.room.ColumnInfo(defaultValue = "0")
     val urgent: Boolean = false,
+    /** A leader's roll call (protocol v0 §8.2). */
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val rollCall: Boolean = false,
+    /** The roll call this message answers. */
+    val answerTo: String? = null,
 )

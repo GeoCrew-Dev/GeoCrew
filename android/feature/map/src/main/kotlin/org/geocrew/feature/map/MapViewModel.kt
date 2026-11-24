@@ -141,6 +141,7 @@ class MapViewModel @Inject constructor(
     @ApplicationScope private val appScope: CoroutineScope,
     private val downloads: org.geocrew.core.data.repo.BasemapDownloads,
     private val overlayImages: org.geocrew.core.data.repo.OverlayImages,
+    private val rollCalls: org.geocrew.core.sensors.RollCallActions,
 ) : ViewModel() {
 
     /** Downloading an area of the base map for offline use; survives leaving the screen. */
@@ -233,6 +234,42 @@ class MapViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun dismissAlert(id: String) = dismissedAlerts.update { it + id }
+
+    private val dismissedCalls = MutableStateFlow<Set<String>>(emptySet())
+
+    /** A teammate's roll call this user has not answered yet, until put off here. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val rollCall: StateFlow<org.geocrew.core.data.team.CommentItem?> = project
+        .map { p -> p?.team?.let { p.id to it.memberId } }
+        .distinctUntilChanged()
+        .flatMapLatest { k ->
+            if (k == null) kotlinx.coroutines.flow.flowOf(null) else teamComments.rollCall(k.first, k.second)
+        }
+        .combine(dismissedCalls) { rc, gone ->
+            rc?.takeIf { !it.call.mine && it.call.id !in gone && it.answers.none { a -> a.mine } }?.call
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _answering = MutableStateFlow(false)
+    val answering: StateFlow<Boolean> = _answering.asStateFlow()
+
+    fun dismissRollCall(id: String) = dismissedCalls.update { it + id }
+
+    /** Answers the roll call on screen with this phone's position (the map centre without a fix). */
+    fun answerRollCall(ok: Boolean) {
+        val call = rollCall.value ?: return
+        val pid = project.value?.id ?: return
+        if (_answering.value) return
+        _answering.value = true
+        val center = project.value?.config?.view?.let { runCatching { LngLat(it.lng, it.lat) }.getOrNull() }
+        appScope.launch {
+            try {
+                rollCalls.answer(pid, call.id, ok, center)?.let { _notice.value = it }
+            } finally {
+                _answering.value = false
+            }
+        }
+    }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val featureList: StateFlow<List<GeoFeature>> = projects.current

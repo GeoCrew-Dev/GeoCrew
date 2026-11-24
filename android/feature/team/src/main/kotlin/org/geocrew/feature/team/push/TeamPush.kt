@@ -98,6 +98,7 @@ class TeamPush @Inject constructor(
             "comment" -> "记录下有新的讨论"
             "task" -> "有一条记录指派给你"
             "alert" -> "组员发出了紧急消息"
+            "rollcall" -> "组长在点名，请报平安"
             else -> return
         }
         // Fetch what the notice announces when it concerns the open project.
@@ -108,6 +109,19 @@ class TeamPush @Inject constructor(
             val a = if (current) comments.latestAlert(projectId, link.memberId) else null
             val detail = a?.let { "${it.nickname}：${it.body}" } ?: text
             notify(projectId, "紧急 · ${link.workspaceName}", detail, id = (projectId + "alert" + n.seq).hashCode(), urgent = true)
+            return
+        }
+        if (n.type == "rollcall") {
+            // A roll call goes to everyone; each answer only to the leader who called it.
+            val call = if (current) comments.latestRollCall(projectId, link.memberId) else null
+            val answer = if (current) comments.latestAnswer(projectId, link.memberId)?.takeIf { !it.mine && it.answerTo == call?.id } else null
+            val title = "点名 · ${link.workspaceName}"
+            when {
+                call != null && call.mine && answer != null ->
+                    notify(projectId, title, "${answer.nickname}：${answer.body}", id = (projectId + "rollcall-answer").hashCode())
+                call != null && call.mine -> notify(projectId, title, "有组员回应了点名", id = (projectId + "rollcall-answer").hashCode())
+                else -> notify(projectId, title, call?.let { "${it.nickname}：${it.body}" } ?: text, id = (projectId + "rollcall" + n.seq).hashCode(), urgent = true)
+            }
             return
         }
         notify(projectId, link.workspaceName, text, id = (projectId + n.type).hashCode())
