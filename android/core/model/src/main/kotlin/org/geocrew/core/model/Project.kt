@@ -1,6 +1,10 @@
 package org.geocrew.core.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 import java.time.Instant
 
 /**
@@ -33,7 +37,95 @@ data class ProjectConfig(
     val view: MapViewport? = null,
     /** Free-text description, e.g. survey area or purpose. */
     val description: String = "",
-)
+    /** Attribute fields offered on every record of this project, in order. */
+    val fields: List<FieldTemplate> = emptyList(),
+) {
+    fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
+}
+
+@Serializable
+enum class FieldType { TEXT, NUMBER, CHOICE }
+
+/**
+ * One attribute of a project's record form, e.g. "地层" or "样品编号". The
+ * value is stored in the record's GeoJSON properties under [key], so it
+ * syncs and exports like any other attribute.
+ */
+@Serializable
+data class FieldTemplate(
+    val key: String,
+    val label: String = key,
+    val type: FieldType = FieldType.TEXT,
+    /** Allowed values for [FieldType.CHOICE]. */
+    val options: List<String> = emptyList(),
+    /** Shown after numbers, e.g. "m" or "%". */
+    val unit: String = "",
+    /** Record kinds the field applies to (see [FeatureKind]); empty means all. */
+    val kinds: List<String> = emptyList(),
+) {
+    fun appliesTo(kind: FeatureKind) = kinds.isEmpty() || kind.id in kinds
+
+    /**
+     * Turns what the user typed into the stored value: null for blank,
+     * a number for [FieldType.NUMBER] (a comma decimal is accepted), and a
+     * string otherwise, so codes like "007" keep their zeros.
+     * Throws [IllegalArgumentException] when the input does not fit.
+     */
+    fun encode(raw: String): JsonElement? {
+        val v = raw.trim()
+        if (v.isEmpty()) return null
+        return when (type) {
+            FieldType.TEXT -> JsonPrimitive(v)
+            FieldType.NUMBER -> {
+                val n = v.replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() }
+                    ?: throw IllegalArgumentException("$label 需要填数字")
+                JsonPrimitive(n)
+            }
+            FieldType.CHOICE -> {
+                require(options.isEmpty() || v in options) { "$label 只能从选项里选" }
+                JsonPrimitive(v)
+            }
+        }
+    }
+
+    /** The stored value as the editor shows it; whole numbers lose their ".0". */
+    fun display(value: JsonElement?): String {
+        val p = value as? JsonPrimitive ?: return ""
+        if (p is JsonNull) return ""
+        val d = if (p.isString) null else p.doubleOrNull
+        return when {
+            d == null -> p.content
+            d == Math.rint(d) && kotlin.math.abs(d) < 1e15 -> d.toLong().toString()
+            else -> d.toString()
+        }
+    }
+
+    companion object {
+        private val KEY = Regex("^[\\p{L}\\p{N}_ .-]{1,40}$")
+
+        /** Why [field] cannot join [others], or null when it can. */
+        fun problem(field: FieldTemplate, others: List<FieldTemplate>): String? = when {
+            !KEY.matches(field.key) -> "属性键只能用文字、数字、空格和 _ . -，最多 40 个字"
+            field.key in Props.MANAGED -> "“${field.key}”由应用使用，请换一个"
+            others.any { it.key == field.key } -> "已有同名属性"
+            field.label.isBlank() -> "请填写名称"
+            field.type == FieldType.CHOICE && field.options.isEmpty() -> "选项型属性至少要有一个选项"
+            else -> null
+        }
+
+        /** A starting point for geological mapping; users edit it per project. */
+        val geologyPreset = listOf(
+            FieldTemplate("point_no", "点号"),
+            FieldTemplate("formation", "地层"),
+            FieldTemplate(
+                "structure", "构造类型", FieldType.CHOICE,
+                options = listOf("层理", "节理", "断层", "片理", "劈理", "褶皱轴面", "接触面"),
+            ),
+            FieldTemplate("sample_no", "样品编号"),
+            FieldTemplate("thickness", "厚度", FieldType.NUMBER, unit = "m"),
+        )
+    }
+}
 
 @Serializable
 data class MapViewport(val lng: Double, val lat: Double, val zoom: Double, val bearing: Double = 0.0)

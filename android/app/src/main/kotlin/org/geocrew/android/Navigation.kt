@@ -19,6 +19,8 @@ import org.geocrew.feature.map.MapScreen
 import org.geocrew.feature.record.FEATURE_ID_ARG
 import org.geocrew.feature.record.FeatureDetailScreen
 import org.geocrew.feature.record.RecordListScreen
+import org.geocrew.feature.projects.PROJECT_ID_ARG
+import org.geocrew.feature.projects.ProjectSettingsScreen
 import org.geocrew.feature.projects.ProjectsScreen
 import org.geocrew.feature.settings.SettingsScreen
 import org.geocrew.feature.team.INVITE_CODE_ARG
@@ -41,6 +43,8 @@ object Routes {
     const val TEAM_PLAIN = "team"
     const val ANALYSIS = "analysis"
     const val PROJECTS = "projects"
+    const val PROJECT_SETTINGS = "project/{$PROJECT_ID_ARG}/settings"
+    fun projectSettings(id: String) = "project/${android.net.Uri.encode(id)}/settings"
     const val STEREONET = "stereonet"
     const val COMPASS = "compass?$TARGET_FEATURE_ARG={$TARGET_FEATURE_ARG}"
     fun compassFor(featureId: String) = "compass?$TARGET_FEATURE_ARG=$featureId"
@@ -83,7 +87,11 @@ fun GeoCrewNavHost() {
             ProjectsScreen(
                 onOpened = { nav.navigate(Routes.MAP) { launchSingleTop = true } },
                 onOpenSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
+                onProjectSettings = { nav.navigate(Routes.projectSettings(it)) },
             )
+        }
+        composable(Routes.PROJECT_SETTINGS, arguments = listOf(navArgument(PROJECT_ID_ARG) { type = NavType.StringType })) {
+            ProjectSettingsScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.STEREONET) {
             StereonetScreen(onBack = { nav.popBackStack() })

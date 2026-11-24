@@ -48,6 +48,8 @@ class ProjectRepository @Inject constructor(
 
     suspend fun get(id: String): Project? = dao.get(id)?.toModel()
 
+    fun observe(id: String): Flow<Project?> = dao.observe(id).map { it?.toModel() }
+
     suspend fun all(): List<Project> = dao.all().map { it.toModel() }
 
     suspend fun create(name: String, id: String = UUID.randomUUID().toString(), config: ProjectConfig = ProjectConfig()): Project {

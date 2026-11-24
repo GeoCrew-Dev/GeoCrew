@@ -22,6 +22,7 @@ import org.geocrew.core.data.team.TeamRepository
 import org.geocrew.core.model.Attitude
 import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.FeatureKind
+import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.string
@@ -108,6 +109,26 @@ class FeatureDetailViewModel @Inject constructor(
 
     val feature: StateFlow<GeoFeature?> = features.observe(id).stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** The project's form: the fields its records are meant to fill in. */
+    val form: StateFlow<List<FieldTemplate>> = projects.current.map { it.config.fields }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _fieldError = MutableStateFlow<String?>(null)
+    val fieldError: StateFlow<String?> = _fieldError.asStateFlow()
+    fun consumeFieldError() { _fieldError.value = null }
+
+    /** Sets one form field, typed by its template. */
+    fun setField(field: FieldTemplate, raw: String) = viewModelScope.launch {
+        val value = try {
+            field.encode(raw)
+        } catch (e: IllegalArgumentException) {
+            _fieldError.value = e.message; return@launch
+        }
+        val cur = feature.value ?: return@launch
+        if (cur.properties[field.key] == value) return@launch
+        features.edit(id) { put(field.key, value) }
+    }
+
     val coordinateFormat: StateFlow<CoordinateFormat> = settings.settings.map { it.coordinateFormat }
         .stateIn(viewModelScope, SharingStarted.Eagerly, CoordinateFormat.DECIMAL)
 
@@ -181,7 +202,4 @@ class FeatureDetailViewModel @Inject constructor(
 }
 
 /** Properties with their own editors or managed by the app; free attributes never overwrite them. */
-internal val RESERVED_KEYS = setOf(
-    Props.KIND, Props.TITLE, Props.NOTE, Props.PHOTOS, Props.LITHOLOGY, Props.STRIKE, Props.DIP_DIRECTION, Props.DIP,
-    Props.STARTED_AT, Props.ENDED_AT, Props.ACCURACY_M, Props.LENGTH_M, Props.AREA_M2,
-)
+internal val RESERVED_KEYS = Props.MANAGED

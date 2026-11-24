@@ -146,7 +146,11 @@ class ProjectsViewModel @Inject constructor(
  * first. Opening one leads to its map; everything else in the app works
  * inside the open project.
  */
-fun ProjectsScreen(onOpened: () -> Unit, onOpenSettings: () -> Unit, viewModel: ProjectsViewModel = hiltViewModel()) {
+fun ProjectsScreen(
+    onOpened: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onProjectSettings: (String) -> Unit = {},
+    viewModel: ProjectsViewModel = hiltViewModel()) {
     val loaded by viewModel.rows.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
@@ -215,6 +219,7 @@ fun ProjectsScreen(onOpened: () -> Unit, onOpenSettings: () -> Unit, viewModel: 
                             IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "更多") }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 DropdownMenuItem(text = { Text("重命名") }, onClick = { menu = false; naming = r.project.id to r.project.name })
+                                DropdownMenuItem(text = { Text("工程设置与表单") }, onClick = { menu = false; onProjectSettings(r.project.id) })
                                 DropdownMenuItem(text = { Text("导出工程包") }, onClick = {
                                     menu = false
                                     exporting = r.project.id

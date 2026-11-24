@@ -30,6 +30,13 @@ import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.ui.focus.onFocusChanged
+import org.geocrew.core.model.FieldTemplate
+import org.geocrew.core.model.FieldType
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -87,6 +94,8 @@ fun FeatureDetailScreen(
     val format by viewModel.coordinateFormat.collectAsStateWithLifecycle()
     val shared by viewModel.shared.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
+    val form by viewModel.form.collectAsStateWithLifecycle()
+    val fieldError by viewModel.fieldError.collectAsStateWithLifecycle()
     val f = feature
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -115,8 +124,13 @@ fun FeatureDetailScreen(
                 SectionHeader("产状")
                 AttitudeEditor(f.attitude, viewModel::setAttitude, onMeasure = onMeasureAttitude?.let { { it(f.id) } })
             }
-            SectionHeader("属性")
-            Attributes(f, viewModel::setAttribute, viewModel::removeAttribute)
+            val fields = form.filter { it.appliesTo(f.kind) }
+            if (fields.isNotEmpty()) {
+                SectionHeader("表单")
+                FormFields(f, fields, viewModel::setField)
+            }
+            SectionHeader(if (fields.isEmpty()) "属性" else "其他属性")
+            Attributes(f, form.map { it.key }.toSet(), viewModel::setAttribute, viewModel::removeAttribute)
             SectionHeader("照片")
             Photos(f, viewModel)
             SectionHeader("信息")
@@ -127,6 +141,14 @@ fun FeatureDetailScreen(
             }
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    fieldError?.let { msg ->
+        AlertDialog(
+            onDismissRequest = viewModel::consumeFieldError,
+            text = { Text(msg) },
+            confirmButton = { TextButton(onClick = viewModel::consumeFieldError) { Text("好") } },
+        )
     }
 
     if (confirmDelete) {
@@ -301,10 +323,51 @@ private fun Info(f: GeoFeature, format: org.geocrew.core.model.CoordinateFormat)
     }
 }
 
+/**
+ * The project's form fields, typed: numbers get a number keyboard and choices
+ * a menu. Each field saves when it loses focus or a choice is picked.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FormFields(f: GeoFeature, fields: List<FieldTemplate>, onSet: (FieldTemplate, String) -> Unit) {
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        fields.forEach { field ->
+            val stored = field.display(f.properties[field.key])
+            val suffix: (@Composable () -> Unit)? = field.unit.takeIf { it.isNotBlank() }?.let { u -> { Text(u) } }
+            if (field.type == FieldType.CHOICE) {
+                var open by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+                    OutlinedTextField(
+                        value = stored, onValueChange = {}, readOnly = true, label = { Text(field.label) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    )
+                    ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                        (field.options + listOfNotNull(stored.takeIf { it.isNotEmpty() && it !in field.options })).forEach { o ->
+                            DropdownMenuItem(text = { Text(o) }, onClick = { open = false; onSet(field, o) })
+                        }
+                        if (stored.isNotEmpty()) {
+                            DropdownMenuItem(text = { Text("清空", color = MaterialTheme.colorScheme.error) }, onClick = { open = false; onSet(field, "") })
+                        }
+                    }
+                }
+            } else {
+                var text by remember(f.id, field.key, stored) { mutableStateOf(stored) }
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it }, label = { Text(field.label) }, singleLine = true,
+                    suffix = suffix,
+                    keyboardOptions = if (field.type == FieldType.NUMBER) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default,
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused && text != stored) onSet(field, text) },
+                )
+            }
+        }
+    }
+}
+
 /** Free key/value attributes, e.g. a sample number or a measured grade. */
 @Composable
-private fun Attributes(f: GeoFeature, onSet: (String, String) -> Unit, onRemove: (String) -> Unit) {
-    val entries = f.properties.entries.filter { it.key !in RESERVED_KEYS && it.value is kotlinx.serialization.json.JsonPrimitive }
+private fun Attributes(f: GeoFeature, formKeys: Set<String>, onSet: (String, String) -> Unit, onRemove: (String) -> Unit) {
+    val entries = f.properties.entries.filter { it.key !in RESERVED_KEYS && it.key !in formKeys && it.value is kotlinx.serialization.json.JsonPrimitive }
     var editing by remember { mutableStateOf<Pair<String, String>?>(null) }
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         entries.forEach { (k, v) ->
@@ -324,7 +387,7 @@ private fun Attributes(f: GeoFeature, onSet: (String, String) -> Unit, onRemove:
     editing?.let { (k0, v0) ->
         var key by remember(k0) { mutableStateOf(k0) }
         var value by remember(k0) { mutableStateOf(v0) }
-        val bad = key.trim() in RESERVED_KEYS
+        val bad = key.trim() in RESERVED_KEYS || key.trim() in formKeys
         AlertDialog(
             onDismissRequest = { editing = null },
             title = { Text(if (k0.isEmpty()) "添加属性" else "修改属性") },
@@ -333,7 +396,7 @@ private fun Attributes(f: GeoFeature, onSet: (String, String) -> Unit, onRemove:
                     OutlinedTextField(
                         value = key, onValueChange = { key = it }, label = { Text("名称") }, singleLine = true,
                         enabled = k0.isEmpty(), isError = bad,
-                        supportingText = if (bad) ({ Text("这个名称由应用使用，请换一个") }) else null,
+                        supportingText = if (bad) ({ Text("这个名称已被应用或工程表单使用，请换一个") }) else null,
                     )
                     OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text("值") }, singleLine = true)
                 }
