@@ -241,6 +241,7 @@ fun MapScreen(
             keys = bm.keys,
             overlays = drawn,
             camera = camera,
+            hillshade = display.hillshade,
             modifier = Modifier.fillMaxSize(),
             // A finger's width (about 24 dp) on the ground, to pick up a vertex.
             onClick = { p, id -> viewModel.onMapClick(p, id, 24 * org.geocrew.core.model.MapScale.metersPerDp(p.lat, camera.zoom)) },

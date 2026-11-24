@@ -6,6 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import org.geocrew.core.model.Terrarium
 import org.geocrew.core.model.tiles.TileKeys
 import org.geocrew.core.model.tiles.TileSource
 import org.geocrew.core.model.tiles.TileTemplates
@@ -17,8 +18,15 @@ import org.geocrew.core.model.tiles.TileTemplates
  */
 object StyleBuilder {
     const val BACKGROUND = "#EEE8DD"
+    private const val DEM = "hillshade"
+    private const val DEM_MAX_ZOOM = 15
+    private const val DEM_ATTRIBUTION = "山体阴影：Terrain Tiles（Mapzen，SRTM 等）"
 
-    fun json(source: TileSource, keys: TileKeys): String {
+    /**
+     * [hillshade] adds relief shading from the public Terrarium DEM over the
+     * base map, so slopes show on any source (imagery and OSM have none).
+     */
+    fun json(source: TileSource, keys: TileKeys, hillshade: Boolean = false): String {
         val key = source.keyId?.let { keys[it] }
         val resolved = source.layers.map { TileTemplates.resolve(it, key) }
         return buildJsonObject {
@@ -35,6 +43,14 @@ object StyleBuilder {
                         put("tiles", JsonArray(l.urls.map(::JsonPrimitive)))
                         if (i == 0 && source.attribution.isNotBlank()) put("attribution", source.attribution)
                     }
+                }
+                if (hillshade) putJsonObject(DEM) {
+                    put("type", "raster-dem")
+                    put("encoding", "terrarium")
+                    put("tileSize", Terrarium.SIZE)
+                    put("maxzoom", DEM_MAX_ZOOM)
+                    put("tiles", JsonArray(listOf(JsonPrimitive(Terrarium.DEFAULT_URL))))
+                    put("attribution", DEM_ATTRIBUTION)
                 }
             }
             putJsonArray("layers") {
@@ -55,6 +71,19 @@ object StyleBuilder {
                         },
                     )
                 }
+                if (hillshade) add(
+                    buildJsonObject {
+                        put("id", DEM)
+                        put("type", "hillshade")
+                        put("source", DEM)
+                        putJsonObject("paint") {
+                            put("hillshade-exaggeration", 0.45)
+                            put("hillshade-shadow-color", "#3E2F1C")
+                            put("hillshade-highlight-color", "#FFFDF5")
+                            put("hillshade-illumination-direction", 315)
+                        }
+                    },
+                )
             }
         }.toString()
     }

@@ -130,6 +130,8 @@ fun GeoCrewMap(
     onLongClick: (LngLat) -> Unit = {},
     /** Drawn by Compose above the map, so no glyph server is needed for text. */
     labels: List<MapLabel> = emptyList(),
+    /** Shade the relief from the public DEM over the base map. */
+    hillshade: Boolean = false,
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -175,8 +177,8 @@ fun GeoCrewMap(
     }
 
     // Base map changes rebuild the style; overlays are re-installed on top.
-    LaunchedEffect(source, keys) {
-        holder.styleJson = StyleBuilder.json(source, keys)
+    LaunchedEffect(source, keys, hillshade) {
+        holder.styleJson = StyleBuilder.json(source, keys, hillshade)
         holder.applyStyle()
     }
     LaunchedEffect(overlays) {

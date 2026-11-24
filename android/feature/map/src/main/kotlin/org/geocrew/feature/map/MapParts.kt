@@ -263,6 +263,7 @@ internal fun LayerSheet(
                 }
             }
             item { DisplaySwitch("记录名称", "放大到一定比例后显示", display.names) { v -> onDisplay { it.copy(names = v) } } }
+            item { DisplaySwitch("山体阴影", "按公开 DEM 给底图加地形明暗，影像和 OSM 上也能看出山脊沟谷；需联网，看过的地方有缓存", display.hillshade) { v -> onDisplay { it.copy(hillshade = v) } } }
             item {
                 ListItem(
                     headlineContent = { Text("公里网") },

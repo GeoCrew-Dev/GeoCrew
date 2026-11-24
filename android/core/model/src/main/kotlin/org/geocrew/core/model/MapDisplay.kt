@@ -22,6 +22,8 @@ data class MapDisplay(
     val grid: Int = 0,
     /** Map sheet boundaries at this [MapSheet.Scale] (by name); null draws none. */
     val sheets: String? = null,
+    /** Relief shading from the public DEM over the base map. */
+    val hillshade: Boolean = false,
 ) {
     val sheetScale: MapSheet.Scale? get() = sheets?.let { n -> MapSheet.Scale.entries.firstOrNull { it.name == n } }
 

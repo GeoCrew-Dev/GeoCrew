@@ -14,6 +14,17 @@ class MapLogicTest {
     assertEquals(setOf("t0.tianditu.gov.cn","t1.tianditu.gov.cn","t2.tianditu.gov.cn","t3.tianditu.gov.cn","t4.tianditu.gov.cn","t5.tianditu.gov.cn","t6.tianditu.gov.cn","t7.tianditu.gov.cn"), StyleBuilder.hosts(BuiltInSources.TIANDITU_IMAGE))
     Json.parseToJsonElement(StyleBuilder.json(BuiltInSources.BLANK, TileKeys(emptyMap())))
   }
+  @Test fun hillshadeSitsOverTheBaseMap() {
+    val plain = Json.parseToJsonElement(StyleBuilder.json(BuiltInSources.OSM, TileKeys(emptyMap()))).jsonObject
+    assertNull(plain["sources"]!!.jsonObject["hillshade"])
+    val j = Json.parseToJsonElement(StyleBuilder.json(BuiltInSources.OSM, TileKeys(emptyMap()), hillshade = true)).jsonObject
+    val dem = j["sources"]!!.jsonObject["hillshade"]!!.jsonObject
+    assertEquals("raster-dem", dem["type"]!!.jsonPrimitive.content)
+    assertEquals("terrarium", dem["encoding"]!!.jsonPrimitive.content)
+    val layers = j["layers"]!!.jsonArray.map { it.jsonObject }
+    assertEquals("hillshade", layers.last()["type"]!!.jsonPrimitive.content)
+    assertFalse("hillshade" in StyleBuilder.hosts(BuiltInSources.OSM).joinToString())
+  }
   @Test fun overlays() {
     val f = GeoFeature("a","p",FeatureKind.POINT, Geometry.Point(LngLat(116.0,40.0)), JsonObject(emptyMap()), Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))
     val fc = Json.parseToJsonElement(OverlayGeoJson.features(listOf(f), "a")).jsonObject
