@@ -20,9 +20,11 @@ type Config struct {
 	LogLevel       slog.Level
 	LogFormat      string // "text" or "json"
 	HealthcheckURL string // set by -healthcheck: probe and exit
-	DisableCreate  bool
-	TrustProxy     bool
-	JoinPerMinute  int
+	// Args holds what follows the flags, e.g. an "admin" or "backup" command.
+	Args          []string
+	DisableCreate bool
+	TrustProxy    bool
+	JoinPerMinute int
 }
 
 func envBool(k string) bool {
@@ -63,6 +65,7 @@ func Load(args []string) (Config, error) {
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
+	c.Args = fs.Args()
 	if err := c.LogLevel.UnmarshalText([]byte(strings.ToUpper(level))); err != nil {
 		return c, fmt.Errorf("log level: %w", err)
 	}

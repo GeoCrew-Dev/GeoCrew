@@ -121,6 +121,12 @@ var (
 	ErrLastLeader   = errors.New("workspace must keep at least one leader")
 )
 
+// Backuper is implemented by stores that can write a consistent copy of
+// themselves while the server keeps running.
+type Backuper interface {
+	Backup(ctx context.Context, dest string) error
+}
+
 // Store is the persistence contract. Implementations must be safe for
 // concurrent use.
 type Store interface {
@@ -133,6 +139,8 @@ type Store interface {
 	Authenticate(ctx context.Context, workspaceID, token string) (Member, error)
 
 	Workspace(ctx context.Context, id string) (Workspace, error)
+	// Workspaces lists every workspace on the server, oldest first (for administration).
+	Workspaces(ctx context.Context) ([]Workspace, error)
 	Members(ctx context.Context, workspaceID string) ([]Member, error)
 	ResetInvite(ctx context.Context, workspaceID string) (string, error)
 	SetRole(ctx context.Context, workspaceID, memberID string, role Role) error

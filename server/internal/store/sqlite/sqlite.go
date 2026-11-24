@@ -279,6 +279,32 @@ func (d *DB) Workspace(ctx context.Context, id string) (store.Workspace, error) 
 	return scanWorkspace(d.db.QueryRowContext(ctx, wsSelect+` WHERE id = ?`, id))
 }
 
+func (d *DB) Workspaces(ctx context.Context) ([]store.Workspace, error) {
+	rows, err := d.db.QueryContext(ctx, wsSelect+` ORDER BY created_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Workspace
+	for rows.Next() {
+		ws, err := scanWorkspace(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ws)
+	}
+	return out, rows.Err()
+}
+
+// Backup writes a consistent, compacted copy of the database to dest,
+// which must not exist yet. Safe while the server is running.
+func (d *DB) Backup(ctx context.Context, dest string) error {
+	_, err := d.db.ExecContext(ctx, `VACUUM INTO ?`, dest)
+	return err
+}
+
+var _ store.Backuper = (*DB)(nil)
+
 func (d *DB) Members(ctx context.Context, workspaceID string) ([]store.Member, error) {
 	rows, err := d.db.QueryContext(ctx, memberSelect+` WHERE workspace_id = ? ORDER BY joined_at, id`, workspaceID)
 	if err != nil {

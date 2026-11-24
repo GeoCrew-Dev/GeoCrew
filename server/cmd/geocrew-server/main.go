@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/admin"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/api"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/config"
@@ -40,6 +41,9 @@ func run() error {
 	}
 	log := cfg.Logger()
 
+	if len(cfg.Args) > 0 && cfg.Args[0] != "admin" {
+		return fmt.Errorf("unknown command %q (try: admin help)", cfg.Args[0])
+	}
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return err
 	}
@@ -48,6 +52,9 @@ func run() error {
 		return err
 	}
 	defer db.Close()
+	if len(cfg.Args) > 0 {
+		return admin.Run(context.Background(), db, cfg.Args[1:], os.Stdout)
+	}
 
 	srv := &api.Server{
 		Name:    cfg.Name,
