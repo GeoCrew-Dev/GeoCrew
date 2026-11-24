@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.geocrew.core.gis.GisTool
 import org.geocrew.core.gis.LegendEntry
 import org.geocrew.core.gis.ToolParam
+import org.geocrew.core.gis.GeometryType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,6 +98,9 @@ private fun ToolList(tools: List<GisTool>, onChoose: (GisTool) -> Unit) {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
+/** Recent features offered for a feature parameter; older ones can be renamed or redrawn. */
+private const val MAX_FEATURE_CHOICES = 30
+
 @Composable
 private fun ToolForm(tool: GisTool, vm: AnalysisViewModel, onShowOnMap: () -> Unit) {
     val values by vm.values.collectAsStateWithLifecycle()
@@ -140,6 +144,24 @@ private fun ToolForm(tool: GisTool, vm: AnalysisViewModel, onShowOnMap: () -> Un
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                is ToolParam.Feature -> {
+                    Text(p.label, style = MaterialTheme.typography.titleSmall)
+                    p.help?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    val candidates = input.filter { GeometryType.of(it.geometry) in p.types }.sortedByDescending { it.sync.updatedAt }
+                    if (candidates.isEmpty()) {
+                        Text("工程里还没有可选的记录，先在地图上画一条。", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            candidates.take(MAX_FEATURE_CHOICES).forEach { f ->
+                                FilterChip(
+                                    selected = values[p.key] == f.id,
+                                    onClick = { vm.set(p.key, if (values[p.key] == f.id) "" else f.id) },
+                                    label = { Text(f.title ?: f.id.take(8)) },
+                                )
+                            }
+                        }
+                    }
+                }
                 is ToolParam.Choice -> {
                     Text(p.label, style = MaterialTheme.typography.titleSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

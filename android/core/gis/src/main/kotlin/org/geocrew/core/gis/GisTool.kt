@@ -67,6 +67,14 @@ sealed interface ToolParam {
         override val help: String? = null,
     ) : ToolParam
 
+    /** One of the input features, e.g. the section line to project onto; the value is its id. */
+    data class Feature(
+        override val key: String,
+        override val label: String,
+        val types: Set<GeometryType>,
+        override val help: String? = null,
+    ) : ToolParam
+
     data class Choice(
         override val key: String,
         override val label: String,
@@ -89,6 +97,11 @@ data class ToolInput(
     } ?: p.default
 
     fun text(key: String): String? = values[key]?.trim()?.ifEmpty { null }
+
+    /** The input feature chosen for [p], if it is still there and of an allowed type. */
+    fun feature(p: ToolParam.Feature): GeoFeature? = text(p.key)?.let { id ->
+        features.firstOrNull { it.id == id && !it.deleted && GeometryType.of(it.geometry) in p.types }
+    }
 
     fun choice(p: ToolParam.Choice): String = text(p.key)?.takeIf { v -> p.options.any { it.value == v } } ?: p.default
 
@@ -125,6 +138,6 @@ class ToolRegistry(tools: Iterable<GisTool>) {
 
     companion object {
         /** Tools that ship with the app. */
-        fun builtIn(): List<GisTool> = listOf(IdwTool(), KrigingTool(), StatisticsTool(), ConvexHullTool(), BufferTool())
+        fun builtIn(): List<GisTool> = listOf(IdwTool(), KrigingTool(), SectionTool(), StatisticsTool(), ConvexHullTool(), BufferTool())
     }
 }
