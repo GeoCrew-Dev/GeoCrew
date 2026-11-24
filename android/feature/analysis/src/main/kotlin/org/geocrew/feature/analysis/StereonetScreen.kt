@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
@@ -49,6 +50,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.ProjectRepository
@@ -62,7 +64,7 @@ import org.geocrew.core.model.Props
 import org.geocrew.core.model.string
 import javax.inject.Inject
 
-enum class NetDisplay(val label: String) { POLES("极点"), PLANES("大圆"), BOTH("两者"), ROSE("走向玫瑰") }
+enum class NetDisplay(val label: String) { POLES("极点"), PLANES("大圆"), BOTH("两者"), DENSITY("等密图"), ROSE("玫瑰图") }
 
 data class StereonetUi(
     val attitudes: List<Attitude> = emptyList(),
@@ -71,6 +73,8 @@ data class StereonetUi(
     val group: String? = null,
     val display: NetDisplay = NetDisplay.POLES,
     val stats: FisherStats? = null,
+    /** Pole density contours, worked out only while [NetDisplay.DENSITY] is shown. */
+    val density: Stereonet.Density? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -96,8 +100,9 @@ class StereonetViewModel @Inject constructor(
             group = g,
             display = d,
             stats = Stereonet.fisher(chosen.map(Stereonet::pole)),
+            density = if (d == NetDisplay.DENSITY) Stereonet.density(chosen.map(Stereonet::pole)) else null,
         )
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, StereonetUi())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, StereonetUi())
 
     fun setGroup(g: String?) { group.value = g }
     fun setDisplay(d: NetDisplay) { display.value = d }
@@ -168,6 +173,15 @@ private fun Summary(ui: StereonetUi) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (ui.display == NetDisplay.DENSITY) {
+            val d = ui.density
+            Text(
+                if (d == null) "至少要 3 条产状才能画等密图。"
+                else "极点等密线 " + d.levels.joinToString("、") { (if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()) + "%" } + "（每 1% 面积），最大 %.1f%%".format(d.max),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (s.count < 5) {
             Text("读数较少，统计量仅供参考。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -220,8 +234,20 @@ private fun Net(ui: StereonetUi, modifier: Modifier) {
         val n = measurer.measure("N", label)
         drawText(n, topLeft = Offset(c.x - n.size.width / 2f, c.y - r - n.size.height - 2.dp.toPx()))
 
-        if (ui.display != NetDisplay.POLES) circles.forEach { line(it, plane.copy(alpha = 0.7f), 1.5.dp.toPx()) }
-        if (ui.display != NetDisplay.PLANES) poles.forEach { drawCircle(pole, 3.5.dp.toPx(), at(it)) }
+        val density = ui.density
+        if (ui.display == NetDisplay.DENSITY && density != null) {
+            val rim = Path().apply { addOval(androidx.compose.ui.geometry.Rect(c, r)) }
+            clipPath(rim) {
+                val top = (density.levels.size - 1).coerceAtLeast(1)
+                density.lines.forEach { (level, pts) ->
+                    val i = density.levels.indexOf(level).coerceAtLeast(0)
+                    line(pts, plane.copy(alpha = 0.35f + 0.65f * i / top), (1f + i * 0.4f).dp.toPx())
+                }
+            }
+            poles.forEach { drawCircle(pole.copy(alpha = 0.6f), 2.dp.toPx(), at(it)) }
+        }
+        if (ui.display == NetDisplay.PLANES || ui.display == NetDisplay.BOTH) circles.forEach { line(it, plane.copy(alpha = 0.7f), 1.5.dp.toPx()) }
+        if (ui.display == NetDisplay.POLES || ui.display == NetDisplay.BOTH) poles.forEach { drawCircle(pole, 3.5.dp.toPx(), at(it)) }
         ui.stats?.let { s -> meanMarker(at(Stereonet.project(s.mean)), mean) }
     }
 }

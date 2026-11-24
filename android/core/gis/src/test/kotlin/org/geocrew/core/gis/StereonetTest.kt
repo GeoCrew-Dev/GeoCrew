@@ -12,6 +12,36 @@ class StereonetTest {
     private fun radius(p: NetPoint) = hypot(p.x, p.y)
 
     @Test
+    fun densityPeaksAtTheClusterAndReadsAboutOnePercentWhenSpread() {
+        // A tight cluster of poles plunging 60° to the north-east.
+        val cluster = (0 until 30).map { i -> Lineation(45.0 + (i % 5 - 2), 60.0 + (i / 5 - 2)) }
+        val d = Stereonet.density(cluster)!!
+        assertTrue("max ${d.max}", d.max > 30)
+        val peak = Stereonet.project(Lineation(45.0, 60.0))
+        assertTrue("peak at ${d.maxAt}", hypot(d.maxAt.x - peak.x, d.maxAt.y - peak.y) < 0.08)
+        assertEquals(generateSequence(1.0) { it * 2 }.takeWhile { it < d.max }.toList(), d.levels)
+        assertTrue(d.lines.isNotEmpty())
+
+        // Directions spread evenly over the lower hemisphere (golden-angle spiral): close to 1 % everywhere.
+        val even = (0 until 400).map { i ->
+            val down = (i + 0.5) / 400
+            Lineation((i * 137.50776) % 360, Math.toDegrees(kotlin.math.asin(down)))
+        }
+        val e = Stereonet.density(even)!!
+        assertTrue("even max ${e.max}", e.max in 1.0..2.5)
+        assertNull(Stereonet.density(cluster.take(2)))
+    }
+
+    @Test
+    fun densityWrapsAcrossThePrimitiveCircle() {
+        // Near-horizontal poles trending north and south are the same axis.
+        val axis = (0 until 20).map { i -> Lineation(if (i % 2 == 0) 0.0 + i % 3 else 180.0 - i % 3, 1.0) }
+        val d = Stereonet.density(axis)!!
+        assertTrue("max ${d.max}", d.max > 30)
+        assertTrue("peak at ${d.maxAt}", hypot(d.maxAt.x, d.maxAt.y) > 0.9)
+    }
+
+    @Test
     fun projectsTheCardinalCases() {
         val centre = Stereonet.project(Lineation(123.0, 90.0))
         assertEquals(0.0, radius(centre), 1e-9)

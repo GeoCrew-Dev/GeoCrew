@@ -122,6 +122,69 @@ object Stereonet {
         return FisherStats(count, mean, r / count, kappa, alpha95)
     }
 
+    /** Density contours of directions on the net; see [density]. */
+    data class Density(
+        /** Contour lines by level, in percent per 1 % of the net's area; they may run past the primitive circle, so clip when drawing. */
+        val lines: List<Pair<Double, List<NetPoint>>>,
+        val levels: List<Double>,
+        /** Highest density and where it is. */
+        val max: Double,
+        val maxAt: NetPoint,
+    )
+
+    /** Fisher-kernel concentration whose kernel covers the same area as a 1 % counting circle. */
+    private const val KAPPA = 100.0
+
+    /** How far past the primitive circle the grid reaches, so contours run up to the rim. */
+    private const val MARGIN = 1.1
+
+    /**
+     * Pole density as usually contoured on a Schmidt net (等密图): the share
+     * of [lines] falling into a counting area of 1 % of the net, in percent,
+     * so a uniform spread reads 1 % everywhere. Counting uses a smooth Fisher
+     * kernel exp(κ(|cos θ| − 1)) with κ = 100, which has the same area as the
+     * classic 1 % counting circle but gives smooth contours even for a few
+     * dozen readings. Lines are axes: directions near the primitive circle
+     * count on both sides of it. Levels double from 1 % (0.5 % when the data
+     * are very spread). Null for fewer than three lines.
+     */
+    fun density(lines: List<Lineation>, cells: Int = 64): Density? {
+        if (lines.size < 3) return null
+        val vs = lines.map { it.vector() }
+        val n = cells + 1
+        val step = 2 * MARGIN / cells
+        val grid = Array(n) { row ->
+            val y = MARGIN - row * step
+            DoubleArray(n) { col ->
+                val x = -MARGIN + col * step
+                val d = direction(x, y) ?: return@DoubleArray Double.NaN
+                var sum = 0.0
+                for (v in vs) sum += kotlin.math.exp(KAPPA * (kotlin.math.abs(v[0] * d[0] + v[1] * d[1] + v[2] * d[2]) - 1))
+                // The kernel integrates to 2π/κ (one cap), the counting area to 1 % of the hemisphere (2π · 0.01).
+                sum / vs.size * 100 * (KAPPA * 0.01)
+            }
+        }
+        var max = -1.0; var maxRow = 0; var maxCol = 0
+        for (r in 0 until n) for (c in 0 until n) {
+            val x = -MARGIN + c * step; val y = MARGIN - r * step
+            if (x * x + y * y <= 1 && grid[r][c] > max) { max = grid[r][c]; maxRow = r; maxCol = c }
+        }
+        val levels = generateSequence(if (max < 2) 0.5 else 1.0) { it * 2 }.takeWhile { it < max }.toList()
+        val traced = levels.flatMap { level ->
+            Contours.trace(grid, level).map { l -> level to l.points.map { (c, r) -> NetPoint(-MARGIN + c * step, MARGIN - r * step) } }
+        }
+        return Density(traced, levels, max, NetPoint(-MARGIN + maxCol * step, MARGIN - maxRow * step))
+    }
+
+    /** Unit vector (east, north, down) of net point (x, y); beyond the primitive circle it is the upper hemisphere. */
+    private fun direction(x: Double, y: Double): DoubleArray? {
+        val r = hypot(x, y)
+        if (r > sqrt(2.0)) return null
+        val theta = 2 * asin(r / sqrt(2.0)) // angle from straight down
+        val h = sin(theta)
+        return if (r == 0.0) doubleArrayOf(0.0, 0.0, 1.0) else doubleArrayOf(h * x / r, h * y / r, cos(theta))
+    }
+
     /** The plane whose pole is [pole]. */
     fun planeOfPole(pole: Lineation): Attitude = Attitude.of(pole.trend + 180, 90 - pole.plunge)
 
