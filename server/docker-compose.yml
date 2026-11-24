@@ -1,9 +1,16 @@
 services:
   geocrew:
     build: .
-    image: ghcr.io/geocrew-dev/geocrew-server:latest
+    image: geocrew-server:local
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      GEOCREW_NAME: "我的野外小组服务器"
-    restart: unless-stopped
+      GEOCREW_NAME: "GeoCrew Server"
+      GEOCREW_MAX_UPLOAD_MB: "32"
+      GEOCREW_LOG_FORMAT: "json"
+    volumes:
+      - geocrew-data:/data
+
+volumes:
+  geocrew-data:

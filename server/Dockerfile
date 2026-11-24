@@ -1,11 +1,17 @@
-FROM golang:1.23-alpine AS build
+FROM golang:1.24-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/geocrew-server ./cmd/geocrew-server
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/geocrew-server ./cmd/geocrew-server \
+ && mkdir -p /out/data
 
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/geocrew-server /geocrew-server
+COPY --from=build --chown=65532:65532 /out/data /data
+ENV GEOCREW_DATA_DIR=/data
+VOLUME /data
 EXPOSE 8080
-USER nonroot
+HEALTHCHECK --interval=30s --timeout=5s CMD ["/geocrew-server", "-healthcheck", "localhost:8080"]
 ENTRYPOINT ["/geocrew-server"]

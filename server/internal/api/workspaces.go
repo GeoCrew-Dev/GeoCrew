@@ -1,0 +1,120 @@
+package api
+
+import (
+	"net/http"
+
+	"github.com/GeoCrew-Dev/geocrew-server/internal/store"
+)
+
+type joinResp struct {
+	WorkspaceID   string     `json:"workspace_id"`
+	WorkspaceName string     `json:"workspace_name"`
+	MemberID      string     `json:"member_id"`
+	Role          store.Role `json:"role"`
+	Token         string     `json:"token"`
+	InviteCode    string     `json:"invite_code,omitempty"`
+}
+
+type nameReq struct {
+	Name     string `json:"name"`
+	Nickname string `json:"nickname"`
+}
+
+func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
+	var req nameReq
+	if !decode(w, r, &req) {
+		return
+	}
+	ws, m, tok, err := s.Store.CreateWorkspace(r.Context(), req.Name, req.Nickname)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, joinResp{ws.ID, ws.Name, m.ID, m.Role, tok, ws.InviteCode})
+}
+
+func (s *Server) join(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		InviteCode string `json:"invite_code"`
+		Nickname   string `json:"nickname"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	ws, m, tok, err := s.Store.Join(r.Context(), req.InviteCode, req.Nickname)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.Hub.MembersChanged(ws.ID)
+	writeJSON(w, http.StatusOK, joinResp{WorkspaceID: ws.ID, WorkspaceName: ws.Name, MemberID: m.ID, Role: m.Role, Token: tok})
+}
+
+type workspaceResp struct {
+	store.Workspace
+	Me         store.Member `json:"me"`
+	InviteCode string       `json:"invite_code,omitempty"`
+	Online     []string     `json:"online"`
+}
+
+func (s *Server) workspace(w http.ResponseWriter, r *http.Request) {
+	ws, err := s.Store.Workspace(r.Context(), r.PathValue("ws"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	me := member(r)
+	resp := workspaceResp{Workspace: ws, Me: me, Online: s.Hub.Online(ws.ID)}
+	if me.Role == store.RoleLeader {
+		resp.InviteCode = ws.InviteCode
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) members(w http.ResponseWriter, r *http.Request) {
+	ms, err := s.Store.Members(r.Context(), r.PathValue("ws"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if ms == nil {
+		ms = []store.Member{}
+	}
+	writeJSON(w, http.StatusOK, ms)
+}
+
+func (s *Server) resetInvite(w http.ResponseWriter, r *http.Request) {
+	code, err := s.Store.ResetInvite(r.Context(), r.PathValue("ws"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"invite_code": code})
+}
+
+func (s *Server) setRole(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Role store.Role `json:"role"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	ws := r.PathValue("ws")
+	if err := s.Store.SetRole(r.Context(), ws, r.PathValue("member"), req.Role); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.Hub.MembersChanged(ws)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
+	ws, target := r.PathValue("ws"), r.PathValue("member")
+	if err := s.Store.RevokeMember(r.Context(), ws, target); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.Hub.Kick(ws, target)
+	s.Hub.MembersChanged(ws)
+	w.WriteHeader(http.StatusNoContent)
+}
