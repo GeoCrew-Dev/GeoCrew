@@ -315,6 +315,21 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/export.geocrew.zip:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportPackage
+      summary: The workspace as a project package (zip with project.json, features.geojson and photos/)
+      responses:
+        "200":
+          description: "Zip archive; entries are deflated so streaming readers can open it"
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/comments:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:

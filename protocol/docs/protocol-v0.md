@@ -91,6 +91,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | POST | `/api/v0/workspaces/{id}/features` | 组长、成员 | 批量提交 |
 | GET | `/api/v0/workspaces/{id}/features/{fid}/history` | 任意 | 被覆盖的历史版本 |
 | GET | `/api/v0/workspaces/{id}/export.geojson` | 任意 | 当前全部未删除记录，标准 GeoJSON FeatureCollection（不含 `sync`），供桌面 GIS 使用 |
+| GET | `/api/v0/workspaces/{id}/export.geocrew.zip` | 任意 | 工程包（zip）：`project.json`（`format: "geocrew-project"`、名称、日期，`config.fields` 为共享设置里的 `form`）、`features.geojson`、`photos/<sha256>.jpg`（记录 `photos` 引用且服务器上有的附件）。与客户端导出的工程包同一格式，可直接导入为新工程；不含成员、凭据和历史。能力名 `package` |
 | GET | `/api/v0/workspaces/{id}/comments?since=&limit=` | 任意 | 增量拉取讨论（见第 8 节） |
 | POST | `/api/v0/workspaces/{id}/comments` | 组长、成员 | 发言 |
 | DELETE | `/api/v0/workspaces/{id}/comments/{comment_id}` | 作者、组长 | 删除发言 |
@@ -105,7 +106,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "create"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
