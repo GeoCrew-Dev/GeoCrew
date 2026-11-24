@@ -677,6 +677,36 @@
     }).catch((e) => alert("下载失败：" + e.message));
   }
 
+  // Relief shading from the public Terrarium DEM, under the records. Remembered per browser.
+  const DEM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+  function setShade(on) {
+    if (on && !map.getSource("dem")) {
+      map.addSource("dem", { type: "raster-dem", encoding: "terrarium", tiles: [DEM_URL], tileSize: 256, maxzoom: 15,
+        attribution: "山体阴影：Terrain Tiles（Mapzen，SRTM 等）" });
+      map.addLayer({ id: "hillshade", type: "hillshade", source: "dem",
+        paint: { "hillshade-exaggeration": 0.45, "hillshade-shadow-color": "#3e2f1c", "hillshade-highlight-color": "#fffdf5" } }, "fill");
+    }
+    if (map.getLayer("hillshade")) map.setLayoutProperty("hillshade", "visibility", on ? "visible" : "none");
+    try { localStorage.setItem("geocrew-shade", on ? "1" : ""); } catch (e) { /* private mode */ }
+  }
+  class ShadeControl {
+    onAdd() {
+      const box = document.createElement("div");
+      box.className = "maplibregl-ctrl maplibregl-ctrl-group";
+      const b = document.createElement("button");
+      b.type = "button"; b.title = "山体阴影"; b.textContent = "⛰";
+      b.style.fontSize = "16px";
+      let on = false;
+      try { on = localStorage.getItem("geocrew-shade") === "1"; } catch (e) { /* private mode */ }
+      const apply = () => { setShade(on); b.style.background = on ? "#d7e3f4" : ""; b.setAttribute("aria-pressed", String(on)); };
+      b.onclick = () => { on = !on; apply(); };
+      apply();
+      box.append(b);
+      return box;
+    }
+    onRemove() {}
+  }
+
   async function start() {
     $("app").hidden = false;
     map = new maplibregl.Map({
@@ -718,6 +748,7 @@
         map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
         map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
       }
+      map.addControl(new ShadeControl(), "top-right");
       ready = true;
       drawTrails();
       render();
