@@ -44,6 +44,7 @@
   .pop dt { color: #5f5d66; }
   .pop dd { margin: 0; word-break: break-word; }
   .pop img { max-width: 100%; border-radius: 6px; margin-top: 4px; }
+  .pop .cap { color: #666; font-size: 12px; }
   .pop audio { width: 100%; margin-top: 4px; }
   #gate { max-width: 520px; margin: 15vh auto; padding: 0 20px; }
   @media (max-width: 700px) { #app { flex-direction: column-reverse; } #side { width: 100%; max-width: none; height: 40%; border-right: 0; border-top: 1px solid var(--line); } }
@@ -382,9 +383,16 @@
     box.append(dl);
     const media = document.createElement("div"); box.append(media);
     const shas = (list) => (Array.isArray(list) ? list : []).filter((s) => typeof s === "string" && /^[0-9a-f]{64}$/.test(s));
+    const info = p.photo_info && typeof p.photo_info === "object" ? p.photo_info : {};
     for (const sha of shas(p.photos).slice(0, 4)) {
-      const img = document.createElement("img"); img.alt = "照片"; media.append(img);
-      blobURL(sha).then((u) => { img.src = u; }).catch(() => { img.replaceWith(Object.assign(document.createElement("div"), { textContent: "照片还没有上传" })); });
+      const pi = info[sha] && typeof info[sha] === "object" ? info[sha] : {};
+      const img = document.createElement("img"); img.alt = pi.sketch === true ? "素描" : "照片"; media.append(img);
+      const cap = [];
+      if (pi.sketch === true) cap.push(typeof pi.drawn_on === "string" && pi.drawn_on ? "野外素描（画在照片上）" : "野外素描");
+      if (typeof pi.azimuth === "number" && pi.sketch !== true) cap.push("朝 " + Math.round(((pi.azimuth % 360) + 360) % 360) + "°");
+      if (typeof pi.taken_at === "string" && !isNaN(Date.parse(pi.taken_at))) cap.push(new Date(pi.taken_at).toLocaleString("zh-CN", { hour12: false }).slice(0, -3));
+      if (cap.length) media.append(Object.assign(document.createElement("div"), { className: "cap", textContent: cap.join(" · ") }));
+      blobURL(sha).then((u) => { img.src = u; }).catch(() => { img.replaceWith(Object.assign(document.createElement("div"), { textContent: img.alt + "还没有上传" })); });
     }
     for (const sha of shas(p.audio)) {
       const a = document.createElement("audio"); a.controls = true; a.preload = "none"; media.append(a);
