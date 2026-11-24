@@ -91,7 +91,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | POST | `/api/v0/workspaces/{id}/features` | 组长、成员 | 批量提交 |
 | GET | `/api/v0/workspaces/{id}/features/{fid}/history` | 任意 | 被覆盖的历史版本 |
 | GET | `/api/v0/workspaces/{id}/export.geojson` | 任意 | 当前全部未删除记录，标准 GeoJSON FeatureCollection（不含 `sync`），供桌面 GIS 使用 |
-| GET | `/api/v0/workspaces/{id}/export.geocrew.zip` | 任意 | 工程包（zip）：`project.json`（`format: "geocrew-project"`、名称、日期，`config.fields` 为共享设置里的 `form`）、`features.geojson`、`photos/<sha256>.jpg`（记录 `photos` 引用且服务器上有的附件）。与客户端导出的工程包同一格式，可直接导入为新工程；不含成员、凭据和历史。能力名 `package` |
+| GET | `/api/v0/workspaces/{id}/export.geocrew.zip` | 任意 | 工程包（zip）：`project.json`（`format: "geocrew-project"`、名称、日期，`config.fields` 为共享设置里的 `form`）、`features.geojson`、`photos/<sha256>.jpg`（记录 `photos` 引用且服务器上有的附件）、`audio/<sha256>.m4a`（记录 `audio` 引用的录音，第 6.3 节）。与客户端导出的工程包同一格式，可直接导入为新工程；不含成员、凭据和历史。能力名 `package` |
 | GET | `/api/v0/workspaces/{id}/comments?since=&limit=` | 任意 | 增量拉取讨论（见第 8 节） |
 | POST | `/api/v0/workspaces/{id}/comments` | 组长、成员 | 发言 |
 | DELETE | `/api/v0/workspaces/{id}/comments/{comment_id}` | 作者、组长 | 删除发言 |
@@ -231,8 +231,8 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 
 | kind | 几何 | 主要属性 |
 | --- | --- | --- |
-| `point` | Point | `title`、`note`、`photos` |
-| `geo_point` | Point | 地质点：`title`、`lithology`、`strike`、`dip_direction`、`dip`、`note`、`photos` |
+| `point` | Point | `title`、`note`、`photos`、`audio` |
+| `geo_point` | Point | 地质点：`title`、`lithology`、`strike`、`dip_direction`、`dip`、`note`、`photos`、`audio` |
 | `line` | LineString | `title`、`note`、`length_m` |
 | `polygon` | Polygon | `title`、`note`、`area_m2` |
 | `track` | LineString | 轨迹：`title`、`started_at`、`ended_at`、`length_m`；坐标可带高程 |
@@ -270,6 +270,25 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `taken_at` | 拍摄时间，RFC 3339 |
 
 各字段都可省略；照片从 `photos` 移除时，对应条目也应删除。服务端不解析这个对象。旧版独立照片点的 `azimuth` 属性仍然有效。
+
+### 6.3 录音
+
+野外口述记录放在 `audio` 数组里，元素是附件哈希，按录制先后排列；每段的时长、录制时间和位置放在 `audio_info` 里，写法与 `photo_info` 相同：
+
+```json
+"audio": ["<sha256-c>"],
+"audio_info": {
+  "<sha256-c>": { "duration_s": 42.5, "recorded_at": "2026-11-24T10:41:00Z", "lon": 116.391, "lat": 39.907 }
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `duration_s` | 时长，秒 |
+| `recorded_at` | 开始录制的时间，RFC 3339 |
+| `lon`、`lat`、`alt` | 录制时所在位置，可省略 |
+
+官方客户端录成 AAC 音频（MP4 容器，上传时 `Content-Type: audio/mp4`，导出文件扩展名 `.m4a`）；读取方应按文件内容而不是扩展名判断格式。服务端把 `audio` 引用的附件与照片同样对待：工程包里放在 `audio/<sha256>.m4a`，清理无引用附件时不会删除。
 
 ## 7. 实时通道
 

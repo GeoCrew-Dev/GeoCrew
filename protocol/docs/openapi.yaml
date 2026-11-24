@@ -321,7 +321,7 @@ paths:
     get:
       tags: [features]
       operationId: exportPackage
-      summary: The workspace as a project package (zip with project.json, features.geojson and photos/)
+      summary: The workspace as a project package (zip with project.json, features.geojson, photos/ and audio/)
       responses:
         "200":
           description: "Zip archive; entries are deflated so streaming readers can open it"
