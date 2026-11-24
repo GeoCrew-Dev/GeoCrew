@@ -3,10 +3,13 @@ package org.geocrew.core.formats
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.geocrew.core.model.AttachmentKind
+import org.geocrew.core.model.AttachmentRef
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.ProjectConfig
 import org.geocrew.core.model.TrackPoint
+import org.geocrew.core.model.attachments
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -45,6 +48,7 @@ data class PackageContents(
  * features.geojson      every live record (points, lines, areas, tracks)
  * tracks/<id>.csv       recorded fixes of each track: time,lng,lat,alt,accuracy,speed,bearing
  * photos/<sha256>.jpg   photos, named by content hash as the records refer to them
+ * audio/<sha256>.m4a    voice notes, likewise
  * ```
  *
  * Workspace links and credentials are never included. Reading gives every
@@ -57,20 +61,23 @@ object ProjectPackage {
     const val MIME = "application/zip"
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = true }
-    private val PHOTO = Regex("^photos/([0-9a-f]{64})\\.jpg$")
+    /** `photos/<sha>.jpg`, `audio/<sha>.m4a`: one pattern per attachment kind. */
+    private val ATTACHMENT = AttachmentKind.entries.associateWith { k ->
+        Regex("^" + Regex.escape(k.dir) + "/([0-9a-f]{64})" + Regex.escape(k.ext) + "$")
+    }
     private val TRACK = Regex("^tracks/([A-Za-z0-9._-]{1,64})\\.csv$")
     private const val MAX_TEXT = 256L shl 20
 
-    /** Writes the package and returns how many photos went in. Missing photo files are skipped. */
+    /** Writes the package and returns how many files of each kind went in. Missing files are skipped. */
     fun write(
         output: OutputStream,
         manifest: PackageManifest,
         features: List<GeoFeature>,
         trackPoints: (featureId: String) -> List<TrackPoint>,
-        photoFile: (sha256: String) -> File?,
-    ): Int {
+        attachment: (AttachmentRef) -> File?,
+    ): Map<AttachmentKind, Int> {
         val live = features.filterNot { it.deleted }
-        var photos = 0
+        val written = mutableMapOf<AttachmentKind, Int>()
         ZipOutputStream(output).use { zip ->
             zip.text("project.json", json.encodeToString(PackageManifest.serializer(), manifest))
             zip.text("features.geojson", GeoJson.encodeCollection(live).toString())
@@ -85,23 +92,23 @@ object ProjectPackage {
                     }
                 })
             }
-            for (sha in live.flatMap { it.photos }.distinct()) {
-                val file = photoFile(sha)?.takeIf { it.isFile } ?: continue
-                // Photos are already compressed; storing them saves time on the phone.
-                zip.putNextEntry(ZipEntry("photos/$sha.jpg"))
+            for (ref in live.flatMap { it.attachments }.distinctBy { it.sha }) {
+                val file = attachment(ref)?.takeIf { it.isFile } ?: continue
+                // Photos and AAC are already compressed; storing them saves time on the phone.
+                zip.putNextEntry(ZipEntry(ref.kind.dir + "/" + ref.sha + ref.kind.ext))
                 file.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
-                photos++
+                written.merge(ref.kind, 1, Int::plus)
             }
         }
-        return photos
+        return written
     }
 
     /**
-     * Reads a package. Photos are handed to [photo] as they are met, by the
-     * hash they are filed under; records are returned with new ids.
+     * Reads a package. Attachments are handed to [attachment] as they are
+     * met, by the hash they are filed under; records are returned with new ids.
      */
-    fun read(input: InputStream, ctx: ImportContext, photo: (sha256: String, data: InputStream) -> Unit): PackageContents {
+    fun read(input: InputStream, ctx: ImportContext, attachment: (AttachmentRef, data: InputStream) -> Unit): PackageContents {
         var manifest: PackageManifest? = null
         var features: List<GeoFeature> = emptyList()
         val rawTracks = mutableMapOf<String, List<TrackPoint>>()
@@ -124,8 +131,10 @@ object ProjectPackage {
                         val id = TRACK.find(name)!!.groupValues[1]
                         rawTracks[id] = parseTrack(zip.textOf(), warnings, id)
                     }
-                    PHOTO.matches(name) -> photo(PHOTO.find(name)!!.groupValues[1], NonClosing(zip))
-                    else -> warnings += "忽略了不认识的文件 $name"
+                    else -> {
+                        val hit = ATTACHMENT.firstNotNullOfOrNull { (k, re) -> re.find(name)?.let { AttachmentRef(it.groupValues[1], k) } }
+                        if (hit != null) attachment(hit, NonClosing(zip)) else warnings += "忽略了不认识的文件 $name"
+                    }
                 }
             }
         }

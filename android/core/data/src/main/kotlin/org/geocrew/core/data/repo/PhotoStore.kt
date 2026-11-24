@@ -6,6 +6,7 @@ import androidx.core.content.FileProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.geocrew.core.model.AttachmentKind
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
@@ -13,8 +14,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Photos live in app storage named by the SHA-256 of their bytes, the same
- * id the server uses for attachments, so syncing never renames anything.
+ * Attachments (photos, voice notes) live in app storage named by the
+ * SHA-256 of their bytes, the same id the server uses, so syncing never
+ * renames anything. The extension only tells the kinds apart on disk.
  */
 @Singleton
 class PhotoStore @Inject constructor(@ApplicationContext private val context: Context) {
@@ -27,14 +29,17 @@ class PhotoStore @Inject constructor(@ApplicationContext private val context: Co
         return f to FileProvider.getUriForFile(context, "${context.packageName}.files", f)
     }
 
+    /** A fresh file for a voice recording in progress. */
+    fun newRecordingTarget(): File = File.createTempFile("rec_", AttachmentKind.AUDIO.ext, pending)
+
     /** Moves a captured file into the store and returns its hash, or null if empty. */
-    suspend fun commit(captured: File): String? = withContext(Dispatchers.IO) {
+    suspend fun commit(captured: File, kind: AttachmentKind = AttachmentKind.PHOTO): String? = withContext(Dispatchers.IO) {
         if (!captured.exists() || captured.length() == 0L) {
             captured.delete()
             return@withContext null
         }
         val sha = sha256(captured)
-        val dst = file(sha)
+        val dst = file(sha, kind)
         if (!dst.exists()) captured.copyTo(dst)
         captured.delete()
         sha
@@ -47,18 +52,20 @@ class PhotoStore @Inject constructor(@ApplicationContext private val context: Co
         commit(tmp)
     }
 
-    fun file(sha: String): File = File(dir, "$sha.jpg")
+    fun file(sha: String): File = file(sha, AttachmentKind.PHOTO)
 
-    /** Stores a photo read from [input] (blocking; call off the main thread). Returns its hash. */
-    fun putBlocking(input: InputStream): String? {
-        val tmp = File.createTempFile("pkg_", ".jpg", pending)
+    fun file(sha: String, kind: AttachmentKind): File = File(dir, sha + kind.ext)
+
+    /** Stores an attachment read from [input] (blocking; call off the main thread). Returns its hash. */
+    fun putBlocking(input: InputStream, kind: AttachmentKind = AttachmentKind.PHOTO): String? {
+        val tmp = File.createTempFile("pkg_", kind.ext, pending)
         tmp.outputStream().use { input.copyTo(it) }
         if (tmp.length() == 0L) {
             tmp.delete()
             return null
         }
         val sha = sha256(tmp)
-        val dst = file(sha)
+        val dst = file(sha, kind)
         if (!dst.exists()) tmp.copyTo(dst)
         tmp.delete()
         return sha
@@ -81,7 +88,7 @@ class PhotoStore @Inject constructor(@ApplicationContext private val context: Co
         n
     }
 
-    fun exists(sha: String) = file(sha).exists()
+    fun exists(sha: String, kind: AttachmentKind = AttachmentKind.PHOTO) = file(sha, kind).exists()
 
     /**
      * Decodes photo [sha] at roughly [maxSide] pixels on its longer side,

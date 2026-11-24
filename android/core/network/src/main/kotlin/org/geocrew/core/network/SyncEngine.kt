@@ -1,6 +1,8 @@
 package org.geocrew.core.network
 
+import org.geocrew.core.model.AttachmentKind
 import org.geocrew.core.model.GeoFeature
+import org.geocrew.core.model.attachments
 import java.io.File
 
 /** Local storage the sync engine reads and writes. Implemented by the data layer. */
@@ -18,10 +20,10 @@ interface SyncStore {
     suspend fun setLastSeq(projectId: String, seq: Long)
 }
 
-/** Where attachment files live locally, by SHA-256. */
+/** Where attachment files live locally, by SHA-256 and kind. */
 interface AttachmentStore {
-    fun file(sha256: String): File
-    fun exists(sha256: String): Boolean
+    fun file(sha256: String, kind: AttachmentKind): File
+    fun exists(sha256: String, kind: AttachmentKind): Boolean = file(sha256, kind).isFile
 }
 
 data class SyncReport(
@@ -114,16 +116,16 @@ class SyncEngine(
 
     private suspend fun uploadAttachments(batch: List<GeoFeature>, warnings: MutableList<String>): Int {
         var n = 0
-        for (sha in batch.filterNot { it.deleted }.flatMap { it.photos }.distinct()) {
-            if (!files.exists(sha)) continue
+        for ((sha, kind) in batch.filterNot { it.deleted }.flatMap { it.attachments }.distinctBy { it.sha }) {
+            if (!files.exists(sha, kind)) continue
             try {
                 if (!api.hasFile(workspaceId, sha)) {
-                    api.uploadFile(workspaceId, sha, files.file(sha))
+                    api.uploadFile(workspaceId, sha, files.file(sha, kind), kind.mime)
                     n++
                 }
             } catch (e: ApiException) {
                 if (e.isAuth || e.isForbidden) throw e
-                warnings += "照片 ${sha.take(8)} 上传失败：${e.message}"
+                warnings += "${kind.label} ${sha.take(8)} 上传失败：${e.message}"
             }
         }
         return n
@@ -131,17 +133,23 @@ class SyncEngine(
 
     private suspend fun downloadAttachments(features: List<GeoFeature>, warnings: MutableList<String>): Int {
         var n = 0
-        for (sha in features.filterNot { it.deleted }.flatMap { it.photos }.distinct()) {
-            if (files.exists(sha)) continue
+        for ((sha, kind) in features.filterNot { it.deleted }.flatMap { it.attachments }.distinctBy { it.sha }) {
+            if (files.exists(sha, kind)) continue
             try {
-                api.downloadFile(workspaceId, sha, files.file(sha))
+                api.downloadFile(workspaceId, sha, files.file(sha, kind))
                 n++
             } catch (e: ApiException) {
-                if (e.status != 404) warnings += "照片 ${sha.take(8)} 下载失败：${e.message}"
+                if (e.status != 404) warnings += "${kind.label} ${sha.take(8)} 下载失败：${e.message}"
             } catch (e: java.io.IOException) {
-                warnings += "照片 ${sha.take(8)} 下载失败：${e.message}"
+                warnings += "${kind.label} ${sha.take(8)} 下载失败：${e.message}"
             }
         }
         return n
     }
 }
+
+private val AttachmentKind.label: String
+    get() = when (this) {
+        AttachmentKind.PHOTO -> "照片"
+        AttachmentKind.AUDIO -> "录音"
+    }

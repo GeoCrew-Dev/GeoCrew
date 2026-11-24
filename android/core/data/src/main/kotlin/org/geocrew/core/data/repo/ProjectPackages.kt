@@ -7,6 +7,7 @@ import org.geocrew.core.data.db.TrackPointEntity
 import org.geocrew.core.formats.ImportContext
 import org.geocrew.core.formats.PackageManifest
 import org.geocrew.core.formats.ProjectPackage
+import org.geocrew.core.model.AttachmentKind
 import org.geocrew.core.model.Project
 import java.io.InputStream
 import java.io.OutputStream
@@ -14,8 +15,8 @@ import java.time.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class PackageExport(val features: Int, val photos: Int)
-data class PackageImport(val project: Project, val features: Int, val photos: Int, val warnings: List<String>)
+data class PackageExport(val features: Int, val photos: Int, val audio: Int = 0)
+data class PackageImport(val project: Project, val features: Int, val photos: Int, val warnings: List<String>, val audio: Int = 0)
 
 /** Exports a project to, and imports one from, a [ProjectPackage] zip. */
 @Singleton
@@ -40,20 +41,21 @@ class ProjectPackages @Inject constructor(
             config = p.config.copy(teamFormVersion = 0, teamFormPending = false, teamCommentSeq = 0, chatReadSeq = 0, pushEnabled = false),
             generator = defaults.userAgent,
         )
-        val n = ProjectPackage.write(output, manifest, list, { points[it].orEmpty() }) { sha -> photos.file(sha) }
-        PackageExport(list.size, n)
+        val n = ProjectPackage.write(output, manifest, list, { points[it].orEmpty() }) { ref -> photos.file(ref.sha, ref.kind) }
+        PackageExport(list.size, n[AttachmentKind.PHOTO] ?: 0, n[AttachmentKind.AUDIO] ?: 0)
     }
 
     /** Imports a package as a new project (never merging into an existing one) and returns it. */
     suspend fun import(input: InputStream): PackageImport = withContext(Dispatchers.IO) {
         val target = java.util.UUID.randomUUID().toString()
-        var stored = 0
+        val stored = mutableMapOf<AttachmentKind, Int>()
         val warnings = mutableListOf<String>()
-        val c = ProjectPackage.read(input, ImportContext(target, clock.instant())) { sha, data ->
-            val actual = photos.putBlocking(data)
-            if (actual == null) warnings += "照片 ${sha.take(8)} 是空文件"
-            else if (actual != sha) warnings += "照片 ${sha.take(8)} 内容与文件名不符，已跳过"
-            else stored++
+        val c = ProjectPackage.read(input, ImportContext(target, clock.instant())) { ref, data ->
+            val what = if (ref.kind == AttachmentKind.AUDIO) "录音" else "照片"
+            val actual = photos.putBlocking(data, ref.kind)
+            if (actual == null) warnings += "$what ${ref.sha.take(8)} 是空文件"
+            else if (actual != ref.sha) warnings += "$what ${ref.sha.take(8)} 内容与文件名不符，已跳过"
+            else stored.merge(ref.kind, 1, Int::plus)
         }
         val existing = projects.all().map { it.name }.toSet()
         val name = c.manifest.name.trim().ifEmpty { "导入的工程" }.let { if (it in existing) "$it（导入）" else it }
@@ -66,6 +68,6 @@ class ProjectPackages @Inject constructor(
                 },
             )
         }
-        PackageImport(project, c.features.size, stored, c.warnings + warnings)
+        PackageImport(project, c.features.size, stored[AttachmentKind.PHOTO] ?: 0, c.warnings + warnings, stored[AttachmentKind.AUDIO] ?: 0)
     }
 }

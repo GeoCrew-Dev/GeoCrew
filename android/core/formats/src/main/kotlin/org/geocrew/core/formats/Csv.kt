@@ -144,7 +144,7 @@ object CsvFormat : FeatureFormat {
     }
 
     /** Columns written on export that must not come back as attributes. */
-    private val IGNORED = setOf("id", Props.PHOTOS, Props.LENGTH_M, Props.AREA_M2)
+    private val IGNORED = setOf("id", Props.PHOTOS, Props.AUDIO, Props.LENGTH_M, Props.AREA_M2)
 
     private val ID = Regex("^[A-Za-z0-9._-]{1,64}$")
 

@@ -71,8 +71,7 @@ class MemoryStore : SyncStore, AttachmentStore {
     }
     override suspend fun lastSeq(projectId: String) = seq
     override suspend fun setLastSeq(projectId: String, seq: Long) { this.seq = seq }
-    override fun file(sha256: String) = File(dir, sha256)
-    override fun exists(sha256: String) = file(sha256).exists()
+    override fun file(sha256: String, kind: org.geocrew.core.model.AttachmentKind) = File(dir, sha256 + kind.ext)
 }
 
 /**
@@ -146,7 +145,7 @@ class ServerIntegrationTest {
         val a = MemoryStore()
         val bytes = "jpeg".toByteArray()
         val sha = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        a.file(sha).writeBytes(bytes)
+        a.file(sha, org.geocrew.core.model.AttachmentKind.PHOTO).writeBytes(bytes)
         feature("f1", a, "D001", sha)
         val r1 = SyncEngine(leader, a, a, ws, "p", leaderJoin.memberId).run()
         assertEquals(1, r1.pushed)
@@ -159,7 +158,7 @@ class ServerIntegrationTest {
         assertEquals(1, r2.pulled)
         assertEquals(1, r2.downloaded)
         assertEquals("D001", b.features["f1"]!!.title)
-        assertTrue(b.exists(sha))
+        assertTrue(b.exists(sha, org.geocrew.core.model.AttachmentKind.PHOTO))
 
         // Both edit; the later edit with the higher version wins on both sides.
         val now = Instant.now()

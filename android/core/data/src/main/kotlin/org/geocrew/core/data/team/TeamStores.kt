@@ -21,8 +21,7 @@ class RoomSyncStore @Inject constructor(
     override suspend fun setLastSeq(projectId: String, seq: Long) = projects.setLastSeq(projectId, seq)
 }
 
-/** Photos are already stored under their SHA-256, the attachment id of the protocol. */
+/** Attachments are already stored under their SHA-256, the attachment id of the protocol. */
 class PhotoAttachments @Inject constructor(private val photos: PhotoStore) : AttachmentStore {
-    override fun file(sha256: String): File = photos.file(sha256)
-    override fun exists(sha256: String) = photos.exists(sha256)
+    override fun file(sha256: String, kind: org.geocrew.core.model.AttachmentKind): File = photos.file(sha256, kind)
 }

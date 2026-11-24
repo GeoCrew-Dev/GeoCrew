@@ -97,7 +97,7 @@ class ProjectsViewModel @Inject constructor(
 
     fun exportTo(id: String, uri: android.net.Uri) = work {
         val r = context.contentResolver.openOutputStream(uri, "wt")?.use { packages.export(id, it) }
-        _message.value = if (r == null) "无法写入所选位置" else "已导出 ${r.features} 条记录、${r.photos} 张照片"
+        _message.value = if (r == null) "无法写入所选位置" else "已导出 ${r.features} 条记录、${r.photos} 张照片" + (if (r.audio > 0) "、${r.audio} 段录音" else "")
     }
 
     fun importFrom(uri: android.net.Uri, then: () -> Unit) = work {
@@ -106,7 +106,7 @@ class ProjectsViewModel @Inject constructor(
             _message.value = "打不开所选文件"
             return@work
         }
-        _message.value = "已导入「${r.project.name}」：${r.features} 条记录、${r.photos} 张照片" +
+        _message.value = "已导入「${r.project.name}」：${r.features} 条记录、${r.photos} 张照片" + (if (r.audio > 0) "、${r.audio} 段录音" else "") +
             (if (r.warnings.isNotEmpty()) "（${r.warnings.size} 条提示：${r.warnings.first()}）" else "")
         projects.open(r.project.id)
         then()

@@ -10,6 +10,7 @@ import org.geocrew.core.model.Props
 import org.geocrew.core.model.SyncInfo
 import org.geocrew.core.model.TrackPoint
 import org.geocrew.core.model.buildProperties
+import org.geocrew.core.model.edit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -42,7 +43,11 @@ class ProjectPackageTest {
     fun roundTripsRecordsTracksPhotosAndSettings() {
         val photo = tmp.newFile("p.jpg").apply { writeBytes(byteArrayOf(1, 2, 3)) }
         val track = feature("t1", FeatureKind.TRACK, Geometry.LineString(listOf(LngLat(110.0, 30.0), LngLat(110.001, 30.001))))
-        val point = feature("p1", FeatureKind.POINT, Geometry.Point(LngLat(110.0, 30.0, 512.0)), photos = listOf(sha))
+        val voice = "c".repeat(64)
+        val clip = tmp.newFile("v.m4a").apply { writeBytes(byteArrayOf(9, 8)) }
+        val point = feature("p1", FeatureKind.POINT, Geometry.Point(LngLat(110.0, 30.0, 512.0)), photos = listOf(sha)).let {
+            it.copy(properties = it.properties.edit { strings(org.geocrew.core.model.Props.AUDIO, listOf(voice, "../x")) })
+        }
         val gone = feature("x", FeatureKind.POINT, Geometry.Point(LngLat(1.0, 1.0)), deleted = true)
         val pts = listOf(
             TrackPoint(LngLat(110.0, 30.0, 500.0), t0, 4f, 1.2f, 90f),
@@ -54,11 +59,15 @@ class ProjectPackageTest {
         )
         val out = ByteArrayOutputStream()
         val n = ProjectPackage.write(out, manifest, listOf(track, point, gone), { if (it == "t1") pts else emptyList() }) {
-            if (it == sha) photo else null
+            when (it.sha) {
+                sha -> photo
+                voice -> clip
+                else -> null
+            }
         }
-        assertEquals(1, n)
+        assertEquals(mapOf(org.geocrew.core.model.AttachmentKind.PHOTO to 1, org.geocrew.core.model.AttachmentKind.AUDIO to 1), n)
 
-        val received = mutableMapOf<String, ByteArray>()
+        val received = mutableMapOf<org.geocrew.core.model.AttachmentRef, ByteArray>()
         var next = 0
         val c = ProjectPackage.read(ByteArrayInputStream(out.toByteArray()), ImportContext("new", newId = { "n${next++}" })) { s, data ->
             received[s] = data.readBytes()
@@ -75,7 +84,9 @@ class ProjectPackageTest {
         assertNotEquals("t1", newTrack.id)
         assertEquals(pts, c.tracks[newTrack.id])
         assertEquals(listOf(sha), c.features.single { it.kind == FeatureKind.POINT }.photos)
-        assertEquals(listOf<Byte>(1, 2, 3), received[sha]!!.toList())
+        assertEquals(listOf<Byte>(1, 2, 3), received[org.geocrew.core.model.AttachmentRef(sha, org.geocrew.core.model.AttachmentKind.PHOTO)]!!.toList())
+        assertEquals(listOf<Byte>(9, 8), received[org.geocrew.core.model.AttachmentRef(voice, org.geocrew.core.model.AttachmentKind.AUDIO)]!!.toList())
+        assertEquals(2, received.size)
     }
 
     @Test
