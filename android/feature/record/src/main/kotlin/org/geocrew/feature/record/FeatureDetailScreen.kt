@@ -70,6 +70,11 @@ import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.Props
+import org.geocrew.core.model.ElevationProfile
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import org.geocrew.core.model.TaskInfo
 import org.geocrew.core.model.TaskStatus
 import org.geocrew.core.model.task
@@ -348,7 +353,17 @@ private fun Info(f: GeoFeature, format: org.geocrew.core.model.CoordinateFormat)
                 InfoRow("周长", CoordinateFormatter.distance(g.lengthMeters()))
             }
             null -> InfoRow("几何", "无")
-            else -> InfoRow("长度", CoordinateFormatter.distance(g.lengthMeters()))
+            else -> {
+                InfoRow("长度", CoordinateFormatter.distance(g.lengthMeters()))
+                val path = (g as? Geometry.LineString)?.positions
+                    ?: (g as? Geometry.MultiLineString)?.lines?.maxByOrNull { it.size }
+                val profile = remember(path) { path?.let { ElevationProfile.of(it) } }
+                if (profile != null) {
+                    InfoRow("海拔", "%.0f – %.0f m".format(profile.min, profile.max))
+                    InfoRow("累计爬升 / 下降", "%.0f m / %.0f m".format(profile.ascent, profile.descent))
+                    ElevationChart(profile, Modifier.fillMaxWidth().height(120.dp).padding(vertical = 8.dp))
+                }
+            }
         }
         InfoRow("创建", fullTime.format(f.createdAt))
         InfoRow("修改", fullTime.format(f.sync.updatedAt))
@@ -482,6 +497,41 @@ private fun History(state: HistoryState, onLoad: () -> Unit, onRestore: (Revisio
             confirmButton = { TextButton(onClick = { onRestore(r); confirm = null }) { Text("恢复") } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("取消") } },
         )
+    }
+}
+
+/** Elevation against distance along the path, with the lowest and highest values marked on the axis. */
+@Composable
+private fun ElevationChart(profile: ElevationProfile, modifier: Modifier) {
+    val pts = remember(profile) { profile.downsampled(240) }
+    val line = MaterialTheme.colorScheme.primary
+    val fill = line.copy(alpha = 0.15f)
+    val axis = MaterialTheme.colorScheme.onSurfaceVariant
+    Column {
+        Canvas(modifier) {
+            val span = (profile.max - profile.min).coerceAtLeast(10.0)
+            val lo = profile.min - span * 0.05
+            val hi = lo + span * 1.1
+            val len = profile.length.coerceAtLeast(1.0)
+            fun x(d: Double) = (d / len * size.width).toFloat()
+            fun y(e: Double) = (size.height - (e - lo) / (hi - lo) * size.height).toFloat()
+            val path = Path().apply {
+                pts.forEachIndexed { i, s -> if (i == 0) moveTo(x(s.distance), y(s.elevation)) else lineTo(x(s.distance), y(s.elevation)) }
+            }
+            val area = Path().apply {
+                addPath(path)
+                lineTo(x(pts.last().distance), size.height)
+                lineTo(x(pts.first().distance), size.height)
+                close()
+            }
+            drawPath(area, fill)
+            drawPath(path, line, style = Stroke(width = 2.dp.toPx()))
+            drawLine(axis, Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1.dp.toPx())
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("0", style = MaterialTheme.typography.labelSmall, color = axis)
+            Text(CoordinateFormatter.distance(profile.length), style = MaterialTheme.typography.labelSmall, color = axis)
+        }
     }
 }
 
