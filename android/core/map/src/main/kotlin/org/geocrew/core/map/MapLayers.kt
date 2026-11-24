@@ -57,10 +57,12 @@ internal object MapLayers {
 
     const val L_FILL = "gc-fill"
     const val L_LINE = "gc-line"
+    /** Inferred contacts and faults, drawn dashed (MapLibre cannot vary the dash per feature). */
+    const val L_LINE_DASHED = "gc-line-dashed"
     const val L_POINT = "gc-point"
     private const val L_ATTITUDE = "gc-attitude"
     private const val L_DIP = "gc-dip"
-    val clickable = arrayOf(L_ATTITUDE, L_POINT, L_LINE, L_FILL)
+    val clickable = arrayOf(L_ATTITUDE, L_POINT, L_LINE, L_LINE_DASHED, L_FILL)
 
     private const val EMPTY = """{"type":"FeatureCollection","features":[]}"""
 
@@ -70,6 +72,20 @@ internal object MapLayers {
     private val selected = eq(get("selected"), literal(true))
     private val hasAttitude = Expression.has("dipdir")
     private val myTask = eq(get("mytask"), literal(true))
+    private val dashed = eq(get("dash"), literal(true))
+    private val fault = eq(get("fault"), literal(true))
+    private val contact = eq(get("contact"), literal(true))
+    private val plain = Expression.all(Expression.not(selected), Expression.not(Expression.has("stroke")))
+
+    /** Line colour: faults red and contacts black, unless the record or the legend colours them. */
+    private val lineColorExpr: Expression = switchCase(
+        Expression.all(fault, plain), literal(MapColors.FAULT),
+        Expression.all(contact, plain), literal(MapColors.CONTACT),
+        kindColor(MapColors.LINE, "stroke"),
+    )
+    private val lineWidthExpr: Expression = switchCase(
+        selected, literal(5f), Expression.has("stroke-width"), get("stroke-width"), fault, literal(4f), literal(3f),
+    )
 
     /** Colour for a feature: selection first, then its own simplestyle colour [own], then by kind. */
     private fun kindColor(default: String, own: String? = null): Expression = switchCase(
@@ -137,11 +153,20 @@ internal object MapLayers {
             ),
         )
         style.addLayer(
-            LineLayer(L_LINE, SRC_FEATURES).withFilter(Expression.any(isLine, isPolygon)).withProperties(
-                lineColor(kindColor(MapColors.LINE, "stroke")),
-                lineWidth(switchCase(selected, literal(5f), Expression.has("stroke-width"), get("stroke-width"), literal(3f))),
+            LineLayer(L_LINE, SRC_FEATURES).withFilter(Expression.all(Expression.any(isLine, isPolygon), Expression.not(dashed))).withProperties(
+                lineColor(lineColorExpr),
+                lineWidth(lineWidthExpr),
                 lineJoin(Property.LINE_JOIN_ROUND),
                 lineCap(Property.LINE_CAP_ROUND),
+            ),
+        )
+        style.addLayer(
+            LineLayer(L_LINE_DASHED, SRC_FEATURES).withFilter(Expression.all(Expression.any(isLine, isPolygon), dashed)).withProperties(
+                lineColor(lineColorExpr),
+                lineWidth(lineWidthExpr),
+                lineDasharray(arrayOf(3f, 2f)),
+                lineJoin(Property.LINE_JOIN_ROUND),
+                lineCap(Property.LINE_CAP_BUTT),
             ),
         )
         // Points with an attitude get a small dot under a strike-and-dip symbol.

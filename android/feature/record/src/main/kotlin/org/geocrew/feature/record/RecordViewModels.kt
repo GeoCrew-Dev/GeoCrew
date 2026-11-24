@@ -263,6 +263,10 @@ class FeatureDetailViewModel @Inject constructor(
         }
     }
 
+    fun setLineStyle(ls: org.geocrew.core.model.LineStyle?) = viewModelScope.launch {
+        features.edit(id) { this[Props.LINE_STYLE] = ls?.id }
+    }
+
     fun setAttitude(a: Attitude?) = viewModelScope.launch {
         features.edit(id) {
             if (a == null) {

@@ -42,6 +42,17 @@ class MapLogicTest {
     val none = Json.parseToJsonElement(OverlayGeoJson.features(list, null, null)).jsonObject["features"]!!.jsonArray
     assertTrue(none.none { it.jsonObject["properties"]!!.jsonObject.containsKey("mytask") })
   }
+  @Test fun lineStylesBecomeDashAndFaultFlags() {
+    fun line(id: String, style: String?) = GeoFeature(id, "p", FeatureKind.LINE, Geometry.LineString(listOf(LngLat(116.0, 40.0), LngLat(116.1, 40.0))),
+      buildProperties { this[Props.LINE_STYLE] = style }, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))
+    val props = Json.parseToJsonElement(OverlayGeoJson.features(listOf(line("a", "inferred_fault"), line("b", "contact"), line("c", null), line("d", "dyke")), null))
+      .jsonObject["features"]!!.jsonArray.map { it.jsonObject["properties"]!!.jsonObject }
+    fun flag(i: Int, k: String) = props[i][k]?.jsonPrimitive?.boolean == true
+    assertTrue(flag(0, "dash") && flag(0, "fault") && !flag(0, "contact"))
+    assertTrue(!flag(1, "dash") && flag(1, "contact") && !flag(1, "fault"))
+    assertTrue(listOf(2, 3).all { i -> listOf("dash", "fault", "contact").none { flag(i, it) } })
+    assertEquals(LineStyle.INFERRED_CONTACT, LineStyle.of("inferred_contact"))
+  }
   @Test fun simpleStyleIsCopiedOnlyWhenValid() {
     val props = buildJsonObject { put("fill", "#22A884"); put("stroke", "red; drop"); put("fill-opacity", 0.5); put("stroke-width", 99) }
     val f = GeoFeature("b","p",FeatureKind.POLYGON, Geometry.Polygon.of(listOf(LngLat(1.0,1.0),LngLat(2.0,1.0),LngLat(2.0,2.0))), props, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))

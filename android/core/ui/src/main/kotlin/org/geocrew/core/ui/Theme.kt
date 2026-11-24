@@ -45,6 +45,9 @@ object MapColors {
     /** Geological routes: the line joining their points. */
     const val ROUTE = "#00838F"
     const val SELECTED = "#00E5FF"
+    /** Geological contacts and faults (line_style), as on a printed geological map. */
+    const val CONTACT = "#212121"
+    const val FAULT = "#D32F2F"
     /** Kilometre grid lines. */
     const val GRID = "#5C6BC0"
     const val SHEET = "#C2185B"

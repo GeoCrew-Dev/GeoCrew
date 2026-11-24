@@ -5,6 +5,7 @@ import org.geocrew.core.model.GaussKruger
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
+import org.geocrew.core.model.lineStyle
 import java.io.OutputStream
 import java.nio.charset.Charset
 import java.util.Locale
@@ -19,7 +20,8 @@ import kotlin.math.sin
  * to one layer per legend value, or per record kind without a legend, with
  * the legend colour mapped to the nearest standard CAD colour; names are
  * TEXT beside them and attitudes a strike line with a dip tick and the dip
- * angle on layer 产状. Text is written in code page 936 (GBK), as Chinese
+ * angle on layer 产状. Lines marked as geological contacts or faults go to
+ * a layer per line style instead (faults red, inferred ones dashed). Text is written in code page 936 (GBK), as Chinese
  * CAD expects of R12 files. Symbol sizes suit a 1:10 000 plot.
  */
 object DxfFormat : FeatureFormat {
@@ -36,6 +38,10 @@ object DxfFormat : FeatureFormat {
     private const val DIP_TICK = 12.0
     private const val ATTITUDE_LAYER = "产状"
     private const val NAME_LAYER = "注记"
+    private const val DASHED = "DASHED"
+    /** Dash and gap in ground metres: 3 mm and 1 mm at 1:10 000. */
+    private const val DASH = 30.0
+    private const val GAP = 10.0
 
     override fun nothingToWrite(features: List<GeoFeature>): String? =
         if (features.none { !it.deleted && it.geometry != null }) "没有带位置的记录可以导出" else null
@@ -47,11 +53,14 @@ object DxfFormat : FeatureFormat {
         fun xy(p: LngLat) = GaussKruger.project(p, WIDTH, zone = zone).let { it.yWithZone to it.x }
 
         val layers = linkedMapOf<String, Int>()
+        val dashedLayers = mutableSetOf<String>()
         val body = StringBuilder()
         var skipped = 0
         for (f in live) {
-            val layer = layerOf(f, ctx)
-            layers.getOrPut(layer) { ctx.legend.colorOf(f)?.let(::aci) ?: defaultColor(f.kind) }
+            val style = f.lineStyle?.takeIf { f.geometry !is Geometry.Point && f.geometry !is Geometry.MultiPoint }
+            val layer = style?.let { clean(it.label) } ?: layerOf(f, ctx)
+            layers.getOrPut(layer) { if (style != null) (if (style.fault) 1 else 7) else ctx.legend.colorOf(f)?.let(::aci) ?: defaultColor(f.kind) }
+            if (style?.dashed == true) dashedLayers += layer
             val before = body.length
             entities(f.geometry!!, layer, ::xy, body)
             if (body.length == before) {
@@ -78,9 +87,14 @@ object DxfFormat : FeatureFormat {
             .group(9, "\$INSUNITS").group(70, "6")
             .group(0, "ENDSEC")
         head.group(0, "SECTION").group(2, "TABLES")
+            .group(0, "TABLE").group(2, "LTYPE").group(70, "2")
+            .group(0, "LTYPE").group(2, "CONTINUOUS").group(70, "0").group(3, "Solid line").group(72, "65").group(73, "0").group(40, "0.0")
+            .group(0, "LTYPE").group(2, DASHED).group(70, "0").group(3, "__ __ __").group(72, "65").group(73, "2")
+            .group(40, (DASH + GAP).fmt()).group(49, DASH.fmt()).group(49, (-GAP).fmt())
+            .group(0, "ENDTAB")
             .group(0, "TABLE").group(2, "LAYER").group(70, layers.size.toString())
         for ((name, color) in layers) {
-            head.group(0, "LAYER").group(2, name).group(70, "0").group(62, color.toString()).group(6, "CONTINUOUS")
+            head.group(0, "LAYER").group(2, name).group(70, "0").group(62, color.toString()).group(6, if (name in dashedLayers) DASHED else "CONTINUOUS")
         }
         head.group(0, "ENDTAB").group(0, "ENDSEC")
         head.group(0, "SECTION").group(2, "ENTITIES")

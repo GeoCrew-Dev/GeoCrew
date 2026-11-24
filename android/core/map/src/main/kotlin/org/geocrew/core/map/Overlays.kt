@@ -13,6 +13,7 @@ import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.Legend
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.TaskStatus
+import org.geocrew.core.model.lineStyle
 import org.geocrew.core.model.task
 
 /** The user's own position as drawn on the map. */
@@ -86,6 +87,10 @@ internal object OverlayGeoJson {
                 if (g is Geometry.Point) f.attitude?.let { a ->
                     this["dipdir"] = a.dipDirection
                     this["dip"] = Math.round(a.dip).toDouble()
+                }
+                if (g !is Geometry.Point && g !is Geometry.MultiPoint) f.lineStyle?.let { ls ->
+                    if (ls.dashed) this["dash"] = true
+                    this[if (ls.fault) "fault" else "contact"] = true
                 }
                 simpleStyle(f.properties)
                 // A record that brings its own colour (analysis output, an imported file) keeps it.

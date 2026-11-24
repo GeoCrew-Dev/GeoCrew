@@ -98,6 +98,8 @@ object Props {
     /** Stops, descriptions and summary of a geological route (§6.6). */
     const val ROUTE = "route"
     const val LITHOLOGY = "lithology"
+    /** What a line stands for: contact or fault, observed or inferred (see [LineStyle]). */
+    const val LINE_STYLE = "line_style"
     const val STRIKE = "strike"
     const val DIP_DIRECTION = "dip_direction"
     const val DIP = "dip"
@@ -117,7 +119,7 @@ object Props {
 
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
-        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, LITHOLOGY, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
+        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, LITHOLOGY, LINE_STYLE, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
         STARTED_AT, ENDED_AT, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
         ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS,
     )

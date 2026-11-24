@@ -44,6 +44,8 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.ui.focus.onFocusChanged
+import org.geocrew.core.model.LineStyle
+import org.geocrew.core.model.lineStyle
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.FieldType
 import androidx.compose.material3.FilledTonalButton
@@ -166,6 +168,7 @@ fun FeatureDetailScreen(
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             TextFields(f, viewModel)
             if (f.geometry is Geometry.Point) KindSwitch(f.kind, viewModel::setKind)
+            if (f.kind == FeatureKind.LINE) LineStyleSwitch(f.lineStyle, viewModel::setLineStyle)
             commentAccess?.let { access ->
                 SectionHeader("任务")
                 TaskSection(
@@ -284,6 +287,20 @@ private fun KindSwitch(kind: FeatureKind, onChange: (FeatureKind) -> Unit) {
     Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(FeatureKind.POINT, FeatureKind.GEO_POINT, FeatureKind.PHOTO).forEach { k ->
             FilterChip(selected = kind == k, onClick = { onChange(k) }, label = { Text(KindUi.label(k)) })
+        }
+    }
+}
+
+/** Contact or fault, observed or inferred: how the line is drawn on the map and exported. Tapping the chosen one clears it. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun LineStyleSwitch(current: LineStyle?, onChange: (LineStyle?) -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        LineStyle.entries.forEach { ls ->
+            FilterChip(selected = current == ls, onClick = { onChange(if (current == ls) null else ls) }, label = { Text(ls.label) })
         }
     }
 }

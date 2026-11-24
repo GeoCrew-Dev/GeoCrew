@@ -59,6 +59,25 @@ class DxfFormatTest {
     }
 
     @Test
+    fun faultsAndInferredContactsGetTheirOwnLayersAndLinetype() {
+        val line = Geometry.LineString(listOf(LngLat(117.3, 31.8), LngLat(117.31, 31.81)))
+        val list = listOf(
+            feature("f", FeatureKind.LINE, line, mapOf(Props.LINE_STYLE to "inferred_fault")),
+            feature("c", FeatureKind.LINE, line, mapOf(Props.LINE_STYLE to "contact")),
+        )
+        val out = ByteArrayOutputStream()
+        DxfFormat.write(list, out)
+        val g = groups(String(out.toByteArray(), charset("GB18030")))
+        fun layer(name: String): List<Pair<Int, String>> {
+            val i = g.indexOf(2 to name).also { assertTrue(name, it > 0) }
+            return g.subList(i, i + 4)
+        }
+        assertTrue(layer("推测断层").containsAll(listOf(62 to "1", 6 to "DASHED")))
+        assertTrue(layer("实测地质界线").containsAll(listOf(62 to "7", 6 to "CONTINUOUS")))
+        assertTrue(g.contains(2 to "DASHED"))
+    }
+
+    @Test
     fun mapsLegendColoursToCadColours() {
         assertEquals(1, DxfFormat.aci("#E53935"))
         assertEquals(5, DxfFormat.aci("#1010F0"))
