@@ -47,6 +47,8 @@ data class ProjectConfig(
     val teamCommentSeq: Long = 0,
     /** Newest comment seq the user has seen in the team chat on this device. */
     val chatReadSeq: Long = 0,
+    /** How new records are named. Kept per device, so teammates can use different prefixes. */
+    val numbering: Numbering = Numbering(),
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 }

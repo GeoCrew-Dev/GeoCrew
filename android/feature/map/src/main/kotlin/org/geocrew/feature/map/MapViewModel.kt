@@ -245,9 +245,9 @@ class MapViewModel @Inject constructor(
     /** Adds a point at [position], e.g. the crosshair or a long press. */
     fun addPoint(position: LngLat, kind: FeatureKind = FeatureKind.POINT) = viewModelScope.launch {
         val p = project.value ?: projects.ensureCurrent()
-        val n = featureList.value.count { it.kind == kind } + 1
+        val name = p.config.numbering.next(kind, features.all(p.id).map { it.title })
         val f = features.create(p.id, kind, Geometry.Point(position)) {
-            this[Props.TITLE] = (if (kind == FeatureKind.GEO_POINT) "D" else "P") + n.toString().padStart(3, '0')
+            this[Props.TITLE] = name
         }
         _selected.value = f.id
     }
@@ -291,9 +291,9 @@ class MapViewModel @Inject constructor(
         viewModelScope.launch {
             val p = project.value ?: projects.ensureCurrent()
             val geometry = if (m.closed) Geometry.Polygon.of(m.vertices) else Geometry.LineString(m.vertices)
-            val n = featureList.value.count { it.kind == m.kind } + 1
+            val name = p.config.numbering.next(m.kind, features.all(p.id).map { it.title })
             val f = features.create(p.id, m.kind, geometry) {
-                this[Props.TITLE] = (if (m.closed) "面" else "线") + n
+                this[Props.TITLE] = name
             }
             _selected.value = f.id
         }

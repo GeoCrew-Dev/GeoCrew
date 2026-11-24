@@ -61,6 +61,7 @@ import org.geocrew.core.model.FieldType
 import org.geocrew.core.model.Project
 import org.geocrew.core.ui.KindUi
 import org.geocrew.core.ui.SectionHeader
+import org.geocrew.core.model.Numbering
 import javax.inject.Inject
 
 /** Route argument holding the project id. */
@@ -104,6 +105,14 @@ class ProjectSettingsViewModel @Inject constructor(
     }
 
     fun describe(text: String) = viewModelScope.launch { projects.updateConfig(id) { it.copy(description = text.trim()) } }
+
+    /** Saves how new records are named; returns the problem instead when there is one. */
+    fun setNumbering(n: Numbering): String? {
+        val clean = n.copy(geoPoint = n.geoPoint.trim(), point = n.point.trim(), line = n.line.trim(), polygon = n.polygon.trim())
+        Numbering.problem(clean)?.let { return it }
+        viewModelScope.launch { projects.updateConfig(id) { it.copy(numbering = clean) } }
+        return null
+    }
 
     /** Adds or replaces the field with [old]'s key; returns the problem instead when there is one. */
     fun putField(old: FieldTemplate?, field: FieldTemplate): String? {
@@ -160,6 +169,7 @@ fun ProjectSettingsScreen(onBack: () -> Unit, viewModel: ProjectSettingsViewMode
     val message by viewModel.message.collectAsStateWithLifecycle()
     val readOnly = access == FormAccess.TEAM_MEMBER
     var editing by remember { mutableStateOf<Pair<FieldTemplate?, FieldTemplate>?>(null) }
+    var editingNumbers by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -184,6 +194,21 @@ fun ProjectSettingsScreen(onBack: () -> Unit, viewModel: ProjectSettingsViewMode
                     modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused && desc.trim() != p.config.description) viewModel.describe(desc) },
                 )
             }
+
+            SectionHeader("记录编号")
+            val n = p.config.numbering
+            ListItem(
+                headlineContent = {
+                    Text(listOf(n.geoPoint, n.point, n.line, n.polygon).joinToString("  ") { n.next(it, emptyList()) })
+                },
+                supportingContent = {
+                    Text(
+                        "新记录按前缀和顺序号命名，接着本工程已用过的最大编号往下排。" +
+                            if (p.team != null) "多人同时打点时，建议每人用自己的前缀，例如 D-王，避免重号。" else "",
+                    )
+                },
+                modifier = Modifier.clickable { editingNumbers = true },
+            )
 
             SectionHeader("记录表单")
             Text(
@@ -225,6 +250,16 @@ fun ProjectSettingsScreen(onBack: () -> Unit, viewModel: ProjectSettingsViewMode
             text = { Text(msg) },
             confirmButton = { TextButton(onClick = viewModel::consumeMessage) { Text("好") } },
         )
+    }
+
+    if (editingNumbers) {
+        project?.let { p ->
+            NumberingDialog(
+                start = p.config.numbering,
+                onDismiss = { editingNumbers = false },
+                onSave = { viewModel.setNumbering(it).also { e -> if (e == null) editingNumbers = false } },
+            )
+        }
     }
 
     editing?.let { (old, start) ->
@@ -315,6 +350,43 @@ private fun FieldDialog(old: FieldTemplate?, start: FieldTemplate, onDismiss: ()
                     kinds = FeatureKind.builtIn.map { it.id }.filter { it in kinds },
                 )
                 problem = onSave(f)
+            }) { Text("保存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun NumberingDialog(start: Numbering, onDismiss: () -> Unit, onSave: (Numbering) -> String?) {
+    var geo by rememberSaveable { mutableStateOf(start.geoPoint) }
+    var point by rememberSaveable { mutableStateOf(start.point) }
+    var line by rememberSaveable { mutableStateOf(start.line) }
+    var polygon by rememberSaveable { mutableStateOf(start.polygon) }
+    var width by rememberSaveable { mutableStateOf(start.width.toString()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("记录编号") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    Triple("地质点前缀", geo) { v: String -> geo = v },
+                    Triple("普通点前缀", point) { v: String -> point = v },
+                    Triple("线前缀", line) { v: String -> line = v },
+                    Triple("面前缀", polygon) { v: String -> polygon = v },
+                ).forEach { (label, value, set) ->
+                    OutlinedTextField(value = value, onValueChange = { set(it); error = null }, label = { Text(label) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                OutlinedTextField(
+                    value = width, onValueChange = { width = it.filter(Char::isDigit).take(1); error = null },
+                    label = { Text("编号位数（不足补 0）") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                error = onSave(Numbering(geo, point, line, polygon, width.toIntOrNull() ?: 0))
             }) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },

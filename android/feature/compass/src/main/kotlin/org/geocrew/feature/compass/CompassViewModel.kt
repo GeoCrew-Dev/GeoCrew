@@ -128,9 +128,9 @@ class CompassViewModel @Inject constructor(
         }
         val f = _fix.value
         val p = projects.ensureCurrent()
-        val n = features.all(p.id).count { it.kind == FeatureKind.GEO_POINT } + 1
+        val name = p.config.numbering.next(FeatureKind.GEO_POINT, features.all(p.id).map { it.title })
         val created = features.create(p.id, FeatureKind.GEO_POINT, f?.let { Geometry.Point(it.position) }) {
-            this[Props.TITLE] = "D" + n.toString().padStart(3, '0')
+            this[Props.TITLE] = name
             f?.accuracy?.let { this[Props.ACCURACY_M] = Math.round(it * 10) / 10.0 }
             a.writeTo(this)
         }
