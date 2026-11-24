@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -93,14 +94,25 @@ func (s *Server) notifyComment(ws string, c store.Comment) {
 		return
 	}
 	n := push.Notice{Type: push.EventMessage, Workspace: ws, From: c.AuthorID, Seq: c.Seq}
+	audience := push.Audience{Except: c.AuthorID}
 	switch {
 	case c.Urgent:
 		n.Type = push.EventAlert
+	case c.RollCall:
+		n.Type = push.EventRollCall
+	case c.AnswerTo != "":
+		// Only the leader who called the roll hears about each answer.
+		call, err := s.Store.Comment(context.Background(), ws, c.AnswerTo)
+		if err != nil {
+			return
+		}
+		n.Type = push.EventRollCall
+		audience.Only = call.AuthorID
 	case c.FeatureID != "":
 		n.Type = push.EventComment
 		n.Feature = c.FeatureID
 	}
-	s.Push.Notify(n, push.Audience{Except: c.AuthorID})
+	s.Push.Notify(n, audience)
 }
 
 // taskProps are the task fields of a record (protocol §6.1).

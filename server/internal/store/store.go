@@ -158,6 +158,11 @@ type Comment struct {
 	// Urgent marks a workspace message as a call for help or to gather;
 	// clients alert loudly and every member is notified (protocol §8.1).
 	Urgent bool `json:"urgent,omitempty"`
+	// RollCall marks a workspace message from a leader asking everyone to
+	// report in, e.g. before leaving the field (protocol §8.2).
+	RollCall bool `json:"roll_call,omitempty"`
+	// AnswerTo is the roll call this workspace message reports in to.
+	AnswerTo string `json:"answer_to,omitempty"`
 }
 
 // MaxCommentRunes bounds a comment body.
@@ -246,6 +251,8 @@ type Store interface {
 	// DeleteComment blanks a comment and gives it a new seq. Only its author
 	// or a leader (byLeader) may delete; others get ErrForbidden.
 	DeleteComment(ctx context.Context, workspaceID, commentID, memberID string, byLeader bool) (Comment, error)
+	// Comment returns one comment, deleted ones included.
+	Comment(ctx context.Context, workspaceID, commentID string) (Comment, error)
 
 	// SetPushTarget stores (replacing) the member's push endpoint.
 	SetPushTarget(ctx context.Context, workspaceID string, t PushTarget) error

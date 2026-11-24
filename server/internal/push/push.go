@@ -32,10 +32,13 @@ const (
 	EventComment = "comment" // discussion under a record
 	EventTask    = "task"    // a record was assigned to the member
 	EventAlert   = "alert"   // an urgent workspace message; cannot be unsubscribed
+	// EventRollCall is a leader's roll call (to everyone) or an answer to it
+	// (to the leader who called it); cannot be unsubscribed.
+	EventRollCall = "rollcall"
 )
 
 // Events lists every known event type.
-var Events = []string{EventMessage, EventComment, EventTask, EventAlert}
+var Events = []string{EventMessage, EventComment, EventTask, EventAlert, EventRollCall}
 
 // Notice is the JSON body POSTed to an endpoint.
 type Notice struct {
@@ -179,7 +182,7 @@ func (s *Sender) deliver(j job) {
 	}
 	body, _ := json.Marshal(j.notice)
 	for _, t := range targets {
-		wanted := j.notice.Type == EventAlert || slices.Contains(t.Events, j.notice.Type)
+		wanted := j.notice.Type == EventAlert || j.notice.Type == EventRollCall || slices.Contains(t.Events, j.notice.Type)
 		if !j.audience.includes(t.MemberID) || !wanted {
 			continue
 		}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -20,13 +21,21 @@ type addCommentReq struct {
 	Body      string    `json:"body"`
 	At        []float64 `json:"at"`
 	Urgent    bool      `json:"urgent"`
+	RollCall  bool      `json:"roll_call"`
+	AnswerTo  string    `json:"answer_to"`
 }
 
 func (q addCommentReq) validate() (store.Comment, error) {
-	c := store.Comment{ID: q.ID, FeatureID: q.FeatureID, Body: strings.TrimSpace(q.Body), At: q.At, Urgent: q.Urgent}
+	c := store.Comment{ID: q.ID, FeatureID: q.FeatureID, Body: strings.TrimSpace(q.Body), At: q.At, Urgent: q.Urgent, RollCall: q.RollCall, AnswerTo: q.AnswerTo}
 	switch {
 	case c.Urgent && c.FeatureID != "":
 		return c, fmt.Errorf("urgent is only for workspace messages, not comments on a record")
+	case (c.RollCall || c.AnswerTo != "") && c.FeatureID != "":
+		return c, fmt.Errorf("roll calls and answers are workspace messages, not comments on a record")
+	case c.RollCall && c.AnswerTo != "":
+		return c, fmt.Errorf("a roll call cannot answer another one")
+	case c.AnswerTo != "" && !commentID.MatchString(c.AnswerTo):
+		return c, fmt.Errorf("answer_to must be the id of a roll call")
 	case !commentID.MatchString(c.ID):
 		return c, fmt.Errorf("id must be 1-64 letters, digits, '.', '_' or '-'")
 	case c.FeatureID != "" && len(c.FeatureID) > 64:
@@ -63,13 +72,21 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_comment", err.Error())
 		return
 	}
-	// Read-only members may still call for help (protocol §8.1).
-	if !member(r).Role.CanWrite() && !c.Urgent {
-		writeErr(w, http.StatusForbidden, "forbidden", "read-only members can only send urgent messages")
+	if c.RollCall && member(r).Role != store.RoleLeader {
+		writeErr(w, http.StatusForbidden, "forbidden", "only leaders can call the roll")
+		return
+	}
+	// Read-only members may still call for help (protocol §8.1) and report in (§8.2).
+	if !member(r).Role.CanWrite() && !c.Urgent && c.AnswerTo == "" {
+		writeErr(w, http.StatusForbidden, "forbidden", "read-only members can only send urgent messages and roll call answers")
 		return
 	}
 	ws := r.PathValue("ws")
 	out, err := s.Store.AddComment(r.Context(), ws, member(r).ID, c)
+	if errors.Is(err, store.ErrInvalid) {
+		writeErr(w, http.StatusBadRequest, "invalid_comment", "answer_to must be the id of a roll call in this workspace")
+		return
+	}
 	if err != nil {
 		s.fail(w, r, err)
 		return

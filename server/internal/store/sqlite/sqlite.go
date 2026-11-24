@@ -156,4 +156,6 @@ var migrations = []string{
 		expires_unix INTEGER NOT NULL
 	);
 	CREATE INDEX view_links_member ON view_links(member_id, expires_unix);`,
+	`ALTER TABLE comments ADD COLUMN roll_call INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE comments ADD COLUMN answer_to TEXT NOT NULL DEFAULT '';`,
 }

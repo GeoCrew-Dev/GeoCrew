@@ -550,6 +550,94 @@ func TestPushNotices(t *testing.T) {
 	}
 }
 
+func TestRollCall(t *testing.T) {
+	var mu sync.Mutex
+	got := map[string][]push.Notice{}
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var n push.Notice
+		_ = json.NewDecoder(r.Body).Decode(&n)
+		mu.Lock()
+		got[r.URL.Path] = append(got[r.URL.Path], n)
+		mu.Unlock()
+	}))
+	defer sink.Close()
+	var sender *push.Sender
+	e := newEnvWith(t, func(s *Server) {
+		sender = push.New(s.Store, push.Options{AllowPrivate: true, Log: s.Log})
+		s.Push = sender
+	})
+	var leader, a, b joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "A"}, &a)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "B"}, &b)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+	var info infoResp
+	e.call("GET", "/api/v0/info", "", nil, &info)
+	if !slices.Contains(info.Capabilities, "rollcall") {
+		t.Fatalf("rollcall capability missing: %v", info.Capabilities)
+	}
+	// Everyone follows tasks only; roll calls get through regardless.
+	for _, m := range []joinResp{leader, a, b} {
+		e.call("PUT", base+"/push", m.Token, map[string]any{"endpoint": sink.URL + "/" + m.MemberID, "events": []string{"task"}}, nil)
+	}
+	post := func(token string, body map[string]any) (int, store.Comment) {
+		var c store.Comment
+		code := e.call("POST", base+"/comments", token, body, &c)
+		return code, c
+	}
+
+	if code, _ := post(a.Token, map[string]any{"id": "r0", "body": "点名", "roll_call": true}); code != 403 {
+		t.Fatalf("member calls the roll: %d", code)
+	}
+	code, call := post(leader.Token, map[string]any{"id": "r1", "body": "18 点前回营地报平安", "roll_call": true})
+	if code != 200 || !call.RollCall {
+		t.Fatalf("roll call: %d %+v", code, call)
+	}
+	for _, bad := range []map[string]any{
+		{"id": "x1", "body": "x", "roll_call": true, "feature_id": "f1"},
+		{"id": "x2", "body": "x", "answer_to": "r1", "feature_id": "f1"},
+		{"id": "x3", "body": "x", "answer_to": "r1", "roll_call": true},
+		{"id": "x4", "body": "平安", "answer_to": "nope"},
+		{"id": "x5", "body": "平安", "answer_to": "bad id"},
+	} {
+		if code, _ := post(leader.Token, bad); code != 400 {
+			t.Fatalf("invalid %v: %d", bad, code)
+		}
+	}
+	if code, _ := post(a.Token, map[string]any{"id": "m1", "body": "普通消息"}); code != 200 {
+		t.Fatalf("plain message: %d", code)
+	}
+	if code, _ := post(a.Token, map[string]any{"id": "x6", "body": "平安", "answer_to": "m1"}); code != 400 {
+		t.Fatalf("answer to a plain message: %d", code)
+	}
+	// A read-only member may still report in.
+	e.call("PATCH", base+"/members/"+b.MemberID, leader.Token, map[string]string{"role": "readonly"}, nil)
+	code, ans := post(b.Token, map[string]any{"id": "a-b", "body": "平安", "answer_to": "r1", "at": []float64{116.2, 40.0}})
+	if code != 200 || ans.AnswerTo != "r1" || len(ans.At) != 2 {
+		t.Fatalf("answer: %d %+v", code, ans)
+	}
+	if code, again := post(b.Token, map[string]any{"id": "a-b", "body": "平安", "answer_to": "r1", "at": []float64{116.2, 40.0}}); code != 200 || again.Seq != ans.Seq {
+		t.Fatalf("answer retry: %d %+v", code, again)
+	}
+	sender.Close()
+
+	// The retried answer may notify twice (protocol §9); both are B's answer.
+	if l := got["/"+leader.MemberID]; len(l) == 0 || slices.ContainsFunc(l, func(n push.Notice) bool { return n.Type != "rollcall" || n.From != b.MemberID }) {
+		t.Fatalf("leader got %+v", l)
+	}
+	if l := got["/"+a.MemberID]; len(l) != 1 || l[0].Type != "rollcall" || l[0].From != leader.MemberID {
+		t.Fatalf("member A got %+v", l)
+	}
+	if l := got["/"+b.MemberID]; len(l) != 1 || l[0].Type != "rollcall" {
+		t.Fatalf("member B got %+v", l)
+	}
+	// Deleting the roll call clears its flag; answers to it are refused from then on.
+	e.call("DELETE", base+"/comments/r1", leader.Token, nil, nil)
+	if code, _ := post(a.Token, map[string]any{"id": "a-a", "body": "平安", "answer_to": "r1"}); code != 400 {
+		t.Fatalf("answer to a deleted roll call: %d", code)
+	}
+}
+
 func TestPushDisabled(t *testing.T) {
 	e := newEnv(t)
 	var leader joinResp

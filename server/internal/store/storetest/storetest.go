@@ -274,12 +274,32 @@ func comments(t *testing.T, open Opener) {
 	if err != nil || !del.Deleted || del.Body != "" || del.Urgent || del.At != nil || del.Seq != 3 {
 		t.Fatalf("leader delete: %v %+v", err, del)
 	}
+	call, err := d.AddComment(ctx, ws.ID, a.ID, store.Comment{ID: "r1", Body: "报平安", RollCall: true})
+	if err != nil || !call.RollCall {
+		t.Fatalf("roll call: %v %+v", err, call)
+	}
+	if _, err := d.AddComment(ctx, ws.ID, b.ID, store.Comment{ID: "a1", Body: "平安", AnswerTo: "c2"}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("answer to a record comment: %v", err)
+	}
+	ans, err := d.AddComment(ctx, ws.ID, b.ID, store.Comment{ID: "a1", Body: "平安", AnswerTo: "r1"})
+	if err != nil || ans.AnswerTo != "r1" {
+		t.Fatalf("answer: %v %+v", err, ans)
+	}
+	if got, err := d.Comment(ctx, ws.ID, "a1"); err != nil || got.AnswerTo != "r1" || got.Nickname != "组员" {
+		t.Fatalf("get: %v %+v", err, got)
+	}
+	if _, err := d.Comment(ctx, ws.ID, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("get missing: %v", err)
+	}
+	if del, err := d.DeleteComment(ctx, ws.ID, "r1", a.ID, true); err != nil || del.RollCall {
+		t.Fatalf("delete roll call: %v %+v", err, del)
+	}
 	list, more, err := d.Comments(ctx, ws.ID, 0, 1)
 	if err != nil || !more || len(list) != 1 || list[0].ID != "c2" {
 		t.Fatalf("page 1: %v %v %+v", err, more, list)
 	}
 	list, more, _ = d.Comments(ctx, ws.ID, list[0].Seq, 10)
-	if more || len(list) != 1 || list[0].ID != "c1" || !list[0].Deleted {
+	if more || len(list) != 3 || list[0].ID != "c1" || !list[0].Deleted || list[1].ID != "a1" || list[2].ID != "r1" {
 		t.Fatalf("page 2: %v %+v", more, list)
 	}
 }
