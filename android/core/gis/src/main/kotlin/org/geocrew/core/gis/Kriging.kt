@@ -140,12 +140,14 @@ class OrdinaryKriging(
         for (j in 0 until k) a[k][j] = 1.0
         a[k][k] = 0.0
         a[k][k + 1] = 1.0
+        // gauss() works in place, so keep the right-hand side for the variance.
+        val g0 = DoubleArray(k) { a[it][k + 1] }
         val sol = gauss(a) ?: return Estimate(idx.sumOf { v[it] } / k, Double.NaN)
         var value = 0.0
         var variance = sol[k]
         for (i in 0 until k) {
             value += sol[i] * v[idx[i]]
-            variance += sol[i] * a[i][k + 1]
+            variance += sol[i] * g0[i]
         }
         return Estimate(value, max(0.0, variance))
     }

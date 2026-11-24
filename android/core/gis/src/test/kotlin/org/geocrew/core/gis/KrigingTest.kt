@@ -36,6 +36,13 @@ class KrigingTest {
         val near = ok.estimate(60.0, 50.0).variance
         val far = ok.estimate(400.0, 400.0).variance
         assertTrue("far $far should exceed near $near", far > near)
+        // Variance matches a direct solve of the kriging system (numpy), here and at every sample.
+        val xs = doubleArrayOf(0.0, 100.0, 0.0, 100.0, 50.0, 200.0)
+        val ys = doubleArrayOf(0.0, 0.0, 100.0, 100.0, 500.0, 900.0)
+        val ok6 = OrdinaryKriging(xs, ys, DoubleArray(6), Variogram(VariogramModel.EXPONENTIAL, 0.0, 1.0, 300.0))
+        assertEquals(0.6659896747658871, ok6.estimate(50.0, 450.0).variance, 1e-9)
+        assertEquals(1.25335078503762, ok6.estimate(1000.0, 0.0).variance, 1e-9)
+        for (i in xs.indices) assertEquals(0.0, ok6.estimate(xs[i], ys[i]).variance, 1e-9)
         // Weights sum to one, so a constant field is reproduced everywhere.
         val flat = OrdinaryKriging(x, y, DoubleArray(5) { 7.0 }, Variogram(VariogramModel.GAUSSIAN, 0.1, 1.0, 150.0))
         assertEquals(7.0, flat.estimate(30.0, 80.0).value, 1e-6)
