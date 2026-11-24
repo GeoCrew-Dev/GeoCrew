@@ -206,7 +206,8 @@ class KrigingTool : GisTool {
         "start", "补点路线起点", setOf(GeometryType.POINT),
         help = "可选，如驻地或现在所在的记录点；路线按最短顺序连起各补点",
     )
-    override val params = listOf(field, model, range, cell, show, suggest, plan, start)
+    private val contour = ToolParam.Number("contour", "等值线间距", default = null, min = 0.0, help = "按所显示的量（估计值或标准差）画，留空自动分档，填 0 不画")
+    override val params = listOf(field, model, range, cell, show, contour, suggest, plan, start)
 
     override fun check(input: ToolInput): String? {
         val key = input.text(field.key) ?: return "请选择插值属性"
@@ -274,6 +275,10 @@ class KrigingTool : GisTool {
             )
         }
 
+        val grid = Array(rows) { row -> DoubleArray(cols) { col -> est[row][col]!!.let { e -> if (showSd) sqrt(e.variance) else e.value } } }
+        val lines = Contours.features(grid, plane, minX, minY, size, id, if (showSd) "$key 标准差" else key, input.number(contour))
+        lines?.let { out += it.first }
+
         val wanted = input.number(suggest)?.toInt() ?: 0
         val from = input.feature(start)?.let { f -> (f.geometry as Geometry.Point).position.let { plane.x(it) to plane.y(it) } }
         val centres = ArrayList<Pair<Double, Double>>(rows * cols)
@@ -325,6 +330,7 @@ class KrigingTool : GisTool {
                 append("由 ${merged.size} 个点得到 ${cols}×${rows} 网格（格距 ${fmt(size, 1)} m）。")
                 append(fitText).append("。")
                 append(if (showSd) "颜色为估计标准差 ${fmt(lo)} – ${fmt(hi)}。" else "「$key」估计范围 ${fmt(lo)} – ${fmt(hi)}。")
+                lines?.let { (_, lv) -> append("等值线 ${lv.size} 条，${Contours.label(lv.first())} – ${Contours.label(lv.last())}。") }
                 if (visits.isNotEmpty()) append("已标出 ${visits.size} 个建议补点" + if (stops.size >= 2) "和补点路线（直线约 ${fmt(walk, 0)} m）。" else "。")
                 append(note)
             },

@@ -38,6 +38,17 @@ class GisToolsTest {
         assertEquals(listOf("grade"), numericFields(square))
     }
 
+    @Test fun idwDrawsContoursUnlessTurnedOff() {
+        val lines = { opts: Map<String, String> ->
+            IdwTool().run(ToolInput(square, mapOf("field" to "grade", "cell" to "100") + opts)).features.filter { it.kind == org.geocrew.core.model.FeatureKind.LINE }
+        }
+        val auto = lines(emptyMap())
+        assertTrue(auto.isNotEmpty())
+        assertTrue(auto.all { (it.geometry as org.geocrew.core.model.Geometry.LineString).positions.size >= 2 })
+        assertEquals(setOf(2.0, 3.0), lines(mapOf("contour" to "1")).map { it.properties.double(OutputProps.VALUE)!! }.toSet())
+        assertTrue(lines(mapOf("contour" to "0")).isEmpty())
+    }
+
     @Test fun idwStaysWithinSampleRangeAndHitsSamples() {
         val tool = IdwTool()
         val input = ToolInput(square, mapOf("field" to "grade", "cell" to "100"))

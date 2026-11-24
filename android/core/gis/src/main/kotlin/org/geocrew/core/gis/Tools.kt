@@ -31,7 +31,8 @@ class IdwTool : GisTool {
     private val cell = ToolParam.Number("cell", "网格大小", default = null, min = 1.0, max = 10_000.0, unit = "m", help = "留空自动选择")
     private val power = ToolParam.Number("power", "距离幂次", default = 2.0, min = 0.5, max = 5.0, help = "越大越偏向最近的点")
     private val radius = ToolParam.Number("radius", "搜索半径", default = null, min = 1.0, unit = "m", help = "留空使用全部点")
-    override val params = listOf(field, cell, power, radius)
+    private val contour = ToolParam.Number("contour", "等值线间距", default = null, min = 0.0, help = "留空自动分档，填 0 不画等值线")
+    override val params = listOf(field, cell, power, radius, contour)
 
     private data class Sample(val x: Double, val y: Double, val v: Double)
 
@@ -98,9 +99,12 @@ class IdwTool : GisTool {
                 },
             )
         }
+        val lines = Contours.features(values, plane, minX, minY, size, id, key, input.number(contour))
+        lines?.let { out += it.first }
         return ToolOutput(
             out,
-            "由 ${samples.size} 个点插值得到 ${cols}×${rows} 网格（格距 ${fmt(size, 1)} m），「$key」范围 ${fmt(lo)} – ${fmt(hi)}。",
+            "由 ${samples.size} 个点插值得到 ${cols}×${rows} 网格（格距 ${fmt(size, 1)} m），「$key」范围 ${fmt(lo)} – ${fmt(hi)}。" +
+                lines?.let { (_, lv) -> "等值线 ${lv.size} 条，${Contours.label(lv.first())} – ${Contours.label(lv.last())}。" }.orEmpty(),
             ramp.legend { fmt(it) },
         )
     }
