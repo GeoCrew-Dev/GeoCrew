@@ -523,6 +523,8 @@ func TestPushNotices(t *testing.T) {
 		t.Fatalf("leader got %v", got["/l"])
 	}
 	m := got["/m"]
+	// Workers deliver in parallel, so order is not guaranteed.
+	slices.SortFunc(m, func(a, b push.Notice) int { return strings.Compare(a.Type, b.Type) })
 	if len(m) != 2 || m[0].Type != "message" || m[0].From != leader.MemberID || m[1].Type != "task" || m[1].Feature != "f1" {
 		t.Fatalf("member notices: %+v", m)
 	}
@@ -542,5 +544,44 @@ func TestPushDisabled(t *testing.T) {
 	var body map[string]any
 	if c := e.call("PUT", "/api/v0/workspaces/"+leader.WorkspaceID+"/push", leader.Token, map[string]any{"endpoint": "https://ntfy.sh/x"}, &body); c != 404 || body["error"] != "push_disabled" {
 		t.Fatalf("disabled: %d %v", c, body)
+	}
+}
+
+func TestPushIsEncryptedWhenKeysAreGiven(t *testing.T) {
+	type got struct {
+		encoding string
+		body     []byte
+	}
+	ch := make(chan got, 4)
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		ch <- got{r.Header.Get("Content-Encoding"), b}
+	}))
+	defer sink.Close()
+	var sender *push.Sender
+	e := newEnvWith(t, func(s *Server) {
+		sender = push.New(s.Store, push.Options{AllowPrivate: true, Log: s.Log})
+		s.Push = sender
+	})
+	var leader, member joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "组员"}, &member)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+	keys := map[string]string{
+		"p256dh": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+		"auth":   "BTBZMqHH6r4Tts7J_aSIgg",
+	}
+	if c := e.call("PUT", base+"/push", member.Token, map[string]any{"endpoint": sink.URL, "keys": map[string]string{"p256dh": "x", "auth": "y"}}, nil); c != 400 {
+		t.Fatalf("bad keys: %d", c)
+	}
+	var tgt store.PushTarget
+	if c := e.call("PUT", base+"/push", member.Token, map[string]any{"endpoint": sink.URL, "keys": keys}, &tgt); c != 200 || tgt.Keys == nil {
+		t.Fatalf("register: %d %+v", c, tgt)
+	}
+	e.call("POST", base+"/comments", leader.Token, map[string]any{"id": "c1", "body": "收队"}, nil)
+	sender.Close()
+	g := <-ch
+	if g.encoding != "aes128gcm" || bytes.Contains(g.body, []byte("message")) || len(g.body) < 16+4+1+65+16 {
+		t.Fatalf("not encrypted: %q %q", g.encoding, g.body)
 	}
 }

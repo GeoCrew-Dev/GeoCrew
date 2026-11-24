@@ -130,6 +130,8 @@ var migrations = []string{
 		updated_at   TEXT NOT NULL,
 		PRIMARY KEY (workspace_id, member_id)
 	);`,
+	`ALTER TABLE push_targets ADD COLUMN p256dh TEXT NOT NULL DEFAULT '';
+	ALTER TABLE push_targets ADD COLUMN auth TEXT NOT NULL DEFAULT '';`,
 }
 
 func (d *DB) migrate(ctx context.Context) error {

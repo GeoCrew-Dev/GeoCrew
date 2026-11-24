@@ -18,18 +18,23 @@ func (d *DB) SetPushTarget(ctx context.Context, workspaceID string, t store.Push
 	if t.UpdatedAt.IsZero() {
 		t.UpdatedAt = time.Now()
 	}
+	var p256dh, auth string
+	if t.Keys != nil {
+		p256dh, auth = t.Keys.P256dh, t.Keys.Auth
+	}
 	_, err = d.db.ExecContext(ctx,
-		`INSERT INTO push_targets (workspace_id, member_id, endpoint, events, updated_at) VALUES (?,?,?,?,?)
+		`INSERT INTO push_targets (workspace_id, member_id, endpoint, events, updated_at, p256dh, auth) VALUES (?,?,?,?,?,?,?)
 		 ON CONFLICT (workspace_id, member_id) DO UPDATE SET
-		   endpoint = excluded.endpoint, events = excluded.events, updated_at = excluded.updated_at`,
-		workspaceID, t.MemberID, t.Endpoint, string(events), fmtTime(t.UpdatedAt))
+		   endpoint = excluded.endpoint, events = excluded.events, updated_at = excluded.updated_at,
+		   p256dh = excluded.p256dh, auth = excluded.auth`,
+		workspaceID, t.MemberID, t.Endpoint, string(events), fmtTime(t.UpdatedAt), p256dh, auth)
 	return err
 }
 
 func scanPushTarget(r rowScanner) (store.PushTarget, error) {
 	var t store.PushTarget
-	var events, updated string
-	if err := r.Scan(&t.MemberID, &t.Endpoint, &events, &updated); err != nil {
+	var events, updated, p256dh, auth string
+	if err := r.Scan(&t.MemberID, &t.Endpoint, &events, &updated, &p256dh, &auth); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return t, store.ErrNotFound
 		}
@@ -39,10 +44,13 @@ func scanPushTarget(r rowScanner) (store.PushTarget, error) {
 		return t, err
 	}
 	t.UpdatedAt = parseTime(updated)
+	if p256dh != "" || auth != "" {
+		t.Keys = &store.PushKeys{P256dh: p256dh, Auth: auth}
+	}
 	return t, nil
 }
 
-const pushSelect = `SELECT p.member_id, p.endpoint, p.events, p.updated_at FROM push_targets p
+const pushSelect = `SELECT p.member_id, p.endpoint, p.events, p.updated_at, p.p256dh, p.auth FROM push_targets p
 	JOIN members m ON m.id = p.member_id`
 
 func (d *DB) PushTarget(ctx context.Context, workspaceID, memberID string) (store.PushTarget, error) {

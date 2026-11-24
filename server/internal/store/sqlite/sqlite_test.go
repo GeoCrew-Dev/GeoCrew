@@ -222,11 +222,12 @@ func TestPushTargets(t *testing.T) {
 		}
 	}
 	// Registering again replaces the endpoint.
-	if err := d.SetPushTarget(ctx, ws.ID, store.PushTarget{MemberID: m.ID, Endpoint: "https://b/x", Events: []string{"message", "task"}}); err != nil {
+	keys := &store.PushKeys{P256dh: "pub", Auth: "auth"}
+	if err := d.SetPushTarget(ctx, ws.ID, store.PushTarget{MemberID: m.ID, Endpoint: "https://b/x", Events: []string{"message", "task"}, Keys: keys}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := d.PushTarget(ctx, ws.ID, m.ID)
-	if err != nil || got.Endpoint != "https://b/x" || len(got.Events) != 2 || got.UpdatedAt.IsZero() {
+	if err != nil || got.Endpoint != "https://b/x" || len(got.Events) != 2 || got.UpdatedAt.IsZero() || got.Keys == nil || *got.Keys != *keys {
 		t.Fatalf("target: %+v %v", got, err)
 	}
 	if l, _ := d.PushTargets(ctx, ws.ID); len(l) != 2 {

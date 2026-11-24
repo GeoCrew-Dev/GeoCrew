@@ -181,7 +181,11 @@ func (s *Sender) deliver(j job) {
 		if !j.audience.includes(t.MemberID) || !slices.Contains(t.Events, j.notice.Type) {
 			continue
 		}
-		gone, err := s.post(ctx, t.Endpoint, body)
+		var keys Keys
+		if t.Keys != nil {
+			keys = Keys{P256dh: t.Keys.P256dh, Auth: t.Keys.Auth}
+		}
+		gone, err := s.post(ctx, t.Endpoint, body, keys)
 		switch {
 		case gone:
 			// The distributor says the registration no longer exists.
@@ -193,12 +197,22 @@ func (s *Sender) deliver(j job) {
 	}
 }
 
-func (s *Sender) post(ctx context.Context, endpoint string, body []byte) (gone bool, err error) {
+func (s *Sender) post(ctx context.Context, endpoint string, body []byte, keys Keys) (gone bool, err error) {
+	contentType := "application/json"
+	if !keys.Empty() {
+		if body, err = encrypt(body, keys, nil); err != nil {
+			return false, fmt.Errorf("encrypt: %w", err)
+		}
+		contentType = "application/octet-stream"
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return false, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
+	if !keys.Empty() {
+		req.Header.Set("Content-Encoding", "aes128gcm")
+	}
 	// Web Push style hints, understood by common distributors.
 	req.Header.Set("TTL", "86400")
 	req.Header.Set("Urgency", "normal")

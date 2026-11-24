@@ -114,10 +114,18 @@ type PushResult struct {
 // PushTarget is where a member's device wants notifications: a UnifiedPush
 // or similar endpoint URL that accepts a POSTed message.
 type PushTarget struct {
-	MemberID  string    `json:"-"`
-	Endpoint  string    `json:"endpoint"`
-	Events    []string  `json:"events"`
+	MemberID string   `json:"-"`
+	Endpoint string   `json:"endpoint"`
+	Events   []string `json:"events"`
+	// Keys, when set, make the server encrypt notices (Web Push, RFC 8291).
+	Keys      *PushKeys `json:"keys,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// PushKeys are a device's Web Push keys as base64url strings.
+type PushKeys struct {
+	P256dh string `json:"p256dh"`
+	Auth   string `json:"auth"`
 }
 
 // MaxPushEndpoint bounds a push endpoint URL.

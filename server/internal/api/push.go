@@ -11,8 +11,9 @@ import (
 )
 
 type putPushReq struct {
-	Endpoint string   `json:"endpoint"`
-	Events   []string `json:"events"`
+	Endpoint string          `json:"endpoint"`
+	Events   []string        `json:"events"`
+	Keys     *store.PushKeys `json:"keys"`
 }
 
 func (s *Server) pushDisabled(w http.ResponseWriter) bool {
@@ -47,6 +48,12 @@ func (s *Server) putPush(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_endpoint", err.Error())
 		return
 	}
+	if req.Keys != nil {
+		if err := (push.Keys{P256dh: req.Keys.P256dh, Auth: req.Keys.Auth}).Validate(); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid_keys", err.Error())
+			return
+		}
+	}
 	events := req.Events
 	if events == nil {
 		events = push.Events
@@ -61,7 +68,7 @@ func (s *Server) putPush(w http.ResponseWriter, r *http.Request) {
 			clean = append(clean, e)
 		}
 	}
-	t := store.PushTarget{MemberID: member(r).ID, Endpoint: req.Endpoint, Events: clean, UpdatedAt: time.Now().UTC()}
+	t := store.PushTarget{MemberID: member(r).ID, Endpoint: req.Endpoint, Events: clean, Keys: req.Keys, UpdatedAt: time.Now().UTC()}
 	if err := s.Store.SetPushTarget(r.Context(), r.PathValue("ws"), t); err != nil {
 		s.fail(w, r, err)
 		return
