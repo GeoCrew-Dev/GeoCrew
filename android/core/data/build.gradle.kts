@@ -1,11 +1,17 @@
 plugins {
     alias(libs.plugins.geocrew.android.library)
     alias(libs.plugins.geocrew.android.hilt)
+    alias(libs.plugins.room)
+}
+
+room {
+    // Exported schemas are committed so future migrations can be tested.
+    // The Room plugin writes one copy per variant, so parallel debug and
+    // release builds no longer race on the same file.
+    schemaDirectory("$projectDir/schemas")
 }
 
 ksp {
-    // Exported schemas are committed so future migrations can be tested.
-    arg("room.schemaLocation", "$projectDir/schemas")
     arg("room.generateKotlin", "true")
 }
 
