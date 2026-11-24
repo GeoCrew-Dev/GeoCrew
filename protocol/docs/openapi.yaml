@@ -332,6 +332,27 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/export.samples.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportSamples
+      summary: The sample register as CSV, one row per sample (capability "samples")
+      parameters:
+        - name: tz_offset
+          in: query
+          description: Minutes east of UTC for the sampling times
+          schema: { type: integer, minimum: -840, maximum: 840, default: 0 }
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 样品编号, 样品类型, 所在记录, 经度, 纬度, 高程, 岩性, 采样时间, 样品备注, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/comments:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
