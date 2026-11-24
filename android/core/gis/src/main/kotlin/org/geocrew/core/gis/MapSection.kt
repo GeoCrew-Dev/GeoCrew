@@ -197,6 +197,7 @@ class MapSectionTool : GisTool {
                 this[CHAINAGE_M] = round1(c.chainage)
                 this[SectionTool.SECTION_LENGTH_M] = round1(r.length)
                 this[SOURCE] = c.line.id
+                this[CUT_NAME] = c.line.title ?: "未命名线"
                 c.line.lineStyle?.let { this[Props.LINE_STYLE] = it.id }
                 c.apparentDip?.let { this[SectionTool.APPARENT_DIP] = round1(it) }
                 c.attitude?.let { this[SectionTool.TRUE_ATTITUDE] = it.format() }
@@ -312,6 +313,8 @@ class MapSectionTool : GisTool {
         const val LENGTH_M = "length_m"
         const val CHAINAGE_M = "chainage_m"
         const val SOURCE = "source"
+        /** On a cut: the name of the line it crosses, for labels on drawings. */
+        const val CUT_NAME = "cut_name"
         /** Ground height at a cut, when the section has terrain. */
         const val ELEVATION_M = "elevation_m"
         /** What an output is for; the terrain line has [ROLE_TERRAIN]. */

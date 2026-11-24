@@ -45,4 +45,20 @@ class StripTest {
         assertNull(s.ground)
         assertEquals(1.0, s.exaggeration(0.45), 0.0)
     }
+
+    @Test fun printScaleAndSteps() {
+        val s = Strip(length = 1700.0, bands = emptyList(), ticks = emptyList(), title = "S")
+        // 1.7 km on 250 mm of paper needs 1:6800, so the next round scale.
+        assertEquals(10_000.0, s.scaleToFit(250.0), 0.0)
+        assertEquals(2_000.0, Strip(400.0, emptyList(), emptyList()).scaleToFit(250.0), 0.0)
+        assertEquals(50.0, niceStep(300.0, 7), 0.0)
+        assertEquals(200.0, niceStep(1700.0, 10), 0.0)
+        assertEquals(1.0, niceStep(0.0, 5), 0.0)
+    }
+
+    @Test fun labelsComeAlong() {
+        val s = Strip.of(MapSectionTool().run(input) {})!!
+        assertEquals("S", s.title)
+        assertEquals("灰岩", s.bands.single().label)
+    }
 }

@@ -40,6 +40,8 @@ data class RunState(
     val output: ToolOutput? = null,
     val error: String? = null,
     val saved: Int? = null,
+    /** Outcome of the last PDF export of the section drawing. */
+    val exported: String? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -56,6 +58,7 @@ class AnalysisViewModel @Inject constructor(
     private val clock: Clock,
     pluginTools: PluginTools,
     private val terrain: org.geocrew.core.data.repo.TerrainTiles,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     /** Starts tools from other apps; the screen launches what it asks for. */
     val plugins: PluginHost,
 ) : ViewModel() {
@@ -113,7 +116,7 @@ class AnalysisViewModel @Inject constructor(
 
     fun set(key: String, value: String) {
         _values.value = _values.value + (key to value)
-        _run.value = _run.value.copy(output = null, error = null, saved = null)
+        _run.value = _run.value.copy(output = null, error = null, saved = null, exported = null)
     }
 
     fun start() {
@@ -158,6 +161,22 @@ class AnalysisViewModel @Inject constructor(
                 },
             )
             _run.value = _run.value.copy(saved = out.features.size)
+        }
+    }
+
+    /** Writes the result's cross-section (with terrain) to [uri] as a one-page PDF. */
+    fun exportSection(uri: android.net.Uri) {
+        val out = _run.value.output ?: return
+        val strip = Strip.of(out)?.takeIf { it.ground != null } ?: return
+        viewModelScope.launch {
+            val message = runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri, "wt")?.use {
+                        SectionPdf().write(strip, out.legend.map { e -> e.color to e.label }, it)
+                    } ?: error("无法写入")
+                }
+            }.fold({ "已导出剖面图 PDF" }, { "导出失败：${it.message}" })
+            _run.value = _run.value.copy(exported = message)
         }
     }
 }

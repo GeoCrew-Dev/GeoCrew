@@ -46,6 +46,8 @@ internal data class Strip(
     val ticks: List<Tick>,
     /** Ground heights along the section, chainage to metres, when the tool sampled terrain. */
     val ground: List<Pair<Double, Double>>? = null,
+    /** Name of the section line, when the tool gave one. */
+    val title: String? = null,
 ) {
     /** Ground height at chainage [c], linearly between samples. */
     fun groundAt(c: Double): Double? {
@@ -70,19 +72,33 @@ internal data class Strip(
         return VE.lastOrNull { atOne * it <= fill } ?: (fill / atOne)
     }
 
-    data class Band(val from: Double, val to: Double, val color: String)
-    data class Tick(val at: Double, val dip: Double?, val color: String)
+    data class Band(val from: Double, val to: Double, val color: String, val label: String? = null)
+    data class Tick(val at: Double, val dip: Double?, val color: String, val label: String? = null)
+
+    /**
+     * The smallest round horizontal scale (as 1:N) at which the section fits
+     * [widthMm] of paper.
+     */
+    fun scaleToFit(widthMm: Double): Double {
+        val needed = length * 1000 / widthMm
+        return SCALES.firstOrNull { it >= needed } ?: (Math.ceil(needed / 1_000_000) * 1_000_000)
+    }
 
     companion object {
         fun of(out: ToolOutput): Strip? {
             val bands = out.features.filter { it.kind == FeatureKind.LINE }.mapNotNull { f ->
                 val a = f.properties.double(MapSectionTool.FROM_M) ?: return@mapNotNull null
                 val b = f.properties.double(MapSectionTool.TO_M) ?: return@mapNotNull null
-                Band(a, b, f.properties.string(OutputProps.STROKE) ?: "#9E9E9E")
+                Band(a, b, f.properties.string(OutputProps.STROKE) ?: "#9E9E9E", f.properties.string(MapSectionTool.UNIT))
             }
             val ticks = out.features.filter { it.kind == FeatureKind.POINT }.mapNotNull { f ->
                 val c = f.properties.double(MapSectionTool.CHAINAGE_M) ?: return@mapNotNull null
-                Tick(c, f.properties.double(SectionTool.APPARENT_DIP), f.properties.string("marker-color") ?: "#212121")
+                Tick(
+                    c,
+                    f.properties.double(SectionTool.APPARENT_DIP),
+                    f.properties.string("marker-color") ?: "#212121",
+                    f.properties.string(MapSectionTool.CUT_NAME),
+                )
             }
             if (bands.isEmpty() && ticks.isEmpty()) return null
             val whole = out.features.firstNotNullOfOrNull { it.properties.double(SectionTool.SECTION_LENGTH_M) } ?: 0.0
@@ -96,10 +112,16 @@ internal data class Strip(
                     c to h
                 }
                 ?.takeIf { it.size >= 2 }
-            return if (length > 0) Strip(length, bands, ticks, ground) else null
+            if (length <= 0) return null
+            val title = out.features.firstNotNullOfOrNull { it.properties.string(MapSectionTool.SECTION_LINE) }
+            return Strip(length, bands, ticks, ground, title)
         }
 
         private val VE = listOf(1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0, 100.0)
+        private val SCALES = listOf(
+            500.0, 1000.0, 2000.0, 2500.0, 5000.0, 10_000.0, 20_000.0, 25_000.0,
+            50_000.0, 100_000.0, 200_000.0, 250_000.0, 500_000.0, 1_000_000.0,
+        )
     }
 }
 

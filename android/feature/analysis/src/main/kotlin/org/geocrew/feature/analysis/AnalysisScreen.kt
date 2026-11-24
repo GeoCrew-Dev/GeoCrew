@@ -42,6 +42,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -221,6 +222,16 @@ private fun ToolForm(tool: GisTool, vm: AnalysisViewModel, onShowOnMap: () -> Un
                     Text("结果", style = MaterialTheme.typography.titleMedium)
                     Text(out.summary, style = MaterialTheme.typography.bodyMedium)
                     SectionStrip(out)
+                    if (remember(out) { Strip.of(out)?.ground != null }) {
+                        val exportPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+                            uri?.let(vm::exportSection)
+                        }
+                        OutlinedButton(
+                            onClick = { exportPdf.launch("${Strip.of(out)?.title ?: "剖面"} 图切剖面.pdf") },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("导出剖面图 PDF") }
+                        run.exported?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+                    }
                     if (out.legend.isNotEmpty()) Legend(out.legend)
                     if (out.features.isNotEmpty()) {
                         val saved = run.saved
