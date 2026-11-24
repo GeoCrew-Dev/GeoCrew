@@ -156,7 +156,7 @@ object CsvFormat : FeatureFormat {
     /** Plain numbers only: no leading zeros (codes), no thousands separators. */
     private val NUMBER = Regex("^-?(0|[1-9]\\d*)(\\.\\d+)?$")
 
-    private fun num(d: Double): String = if (d == Math.rint(d) && kotlin.math.abs(d) < 1e15) d.toLong().toString() else d.toString()
+    internal fun num(d: Double): String = if (d == Math.rint(d) && kotlin.math.abs(d) < 1e15) d.toLong().toString() else d.toString()
 
     private fun cell(v: JsonElement?): String = when (v) {
         null, JsonNull -> ""
@@ -165,7 +165,7 @@ object CsvFormat : FeatureFormat {
         else -> v.toString()
     }
 
-    private fun quote(s: String): String =
+    internal fun quote(s: String): String =
         if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' } || s.startsWith(' ') || s.endsWith(' ')) {
             "\"" + s.replace("\"", "\"\"") + "\""
         } else {

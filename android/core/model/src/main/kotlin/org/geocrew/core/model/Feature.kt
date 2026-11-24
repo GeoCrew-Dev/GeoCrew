@@ -87,6 +87,8 @@ object Props {
     const val PHOTO_INFO = "photo_info"
     const val AUDIO = "audio"
     const val AUDIO_INFO = "audio_info"
+    /** Samples taken at the record (§6.4). */
+    const val SAMPLES = "samples"
     const val LITHOLOGY = "lithology"
     const val STRIKE = "strike"
     const val DIP_DIRECTION = "dip_direction"
@@ -107,7 +109,7 @@ object Props {
 
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
-        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, LITHOLOGY, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
+        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, LITHOLOGY, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
         STARTED_AT, ENDED_AT, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
         ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS,
     )

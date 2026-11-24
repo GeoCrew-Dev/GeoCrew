@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -103,6 +104,9 @@ import org.geocrew.core.ui.CommentComposer
 import org.geocrew.core.ui.InfoRow
 import org.geocrew.core.ui.KindUi
 import org.geocrew.core.ui.SectionHeader
+import org.geocrew.core.model.Sample
+import org.geocrew.core.model.SampleTypes
+import org.geocrew.core.model.samples
 import java.io.File
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -182,6 +186,9 @@ fun FeatureDetailScreen(
             Attributes(f, form.map { it.key }.toSet(), viewModel::setAttribute, viewModel::removeAttribute)
             SectionHeader("照片")
             Photos(f, viewModel)
+            val samples = f.samples
+            SectionHeader(if (samples.isEmpty()) "样品" else "样品（${samples.size}）")
+            Samples(f, samples, viewModel)
             SectionHeader(if (f.audio.isEmpty()) "录音" else "录音（${f.audio.size}）")
             VoiceNotes(f, viewModel)
             SectionHeader("信息")
@@ -418,6 +425,79 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
             dismissButton = { TextButton(onClick = { removing = null }) { Text("取消") } },
         )
     }
+}
+
+/** Samples taken at this record (protocol §6.4): tap to edit, long press to remove. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Samples(f: GeoFeature, samples: List<Sample>, vm: FeatureDetailViewModel) {
+    val used by vm.usedSampleNumbers.collectAsStateWithLifecycle()
+    var editing by remember { mutableStateOf<Pair<Sample?, Sample>?>(null) }
+    var removing by remember { mutableStateOf<Sample?>(null) }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        samples.forEach { s ->
+            Column(
+                Modifier.fillMaxWidth()
+                    .combinedClickable(onClick = { editing = s to s }, onLongClick = { removing = s })
+                    .padding(vertical = 6.dp),
+            ) {
+                Text(listOfNotNull(s.no, s.type).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                s.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+        }
+        OutlinedButton(onClick = { editing = null to Sample(SampleTypes.nextNumber(f.title, used)) }) {
+            Icon(Icons.Default.Science, null)
+            Text(" 添加样品")
+        }
+        if (samples.isNotEmpty()) Text("点一下修改，长按移除。导出「样品清单」可得到送样单", style = MaterialTheme.typography.bodySmall)
+    }
+    editing?.let { (original, start) ->
+        SampleDialog(
+            start = start,
+            isNew = original == null,
+            onSave = { vm.saveSample(original, it); editing = null },
+            onDismiss = { editing = null },
+        )
+    }
+    removing?.let { s ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("移除样品 ${s.no}？") },
+            text = { Text("只是从记录上去掉这条登记，不影响已经送出的样品。") },
+            confirmButton = { TextButton(onClick = { vm.removeSample(s.no); removing = null }) { Text("移除") } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("取消") } },
+        )
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SampleDialog(start: Sample, isNew: Boolean, onSave: (Sample) -> Unit, onDismiss: () -> Unit) {
+    var no by remember { mutableStateOf(start.no) }
+    var type by remember { mutableStateOf(start.type.orEmpty()) }
+    var note by remember { mutableStateOf(start.note.orEmpty()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isNew) "添加样品" else "修改样品") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(no, { no = it }, label = { Text("样品编号") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(type, { type = it }, label = { Text("样品类型") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SampleTypes.common.forEach { t ->
+                        FilterChip(selected = type == t, onClick = { type = if (type == t) "" else t }, label = { Text(t) })
+                    }
+                }
+                OutlinedTextField(note, { note = it }, label = { Text("备注（位置、新鲜程度、重量等）") }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(start.copy(no = no.trim(), type = type.trim().ifBlank { null }, note = note.trim().ifBlank { null }))
+            }, enabled = no.isNotBlank()) { Text("保存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 /** Voice notes: record a spoken observation, play it back, long press to remove. */

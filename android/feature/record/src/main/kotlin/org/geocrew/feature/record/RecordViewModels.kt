@@ -38,6 +38,8 @@ import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.PhotoInfo
 import org.geocrew.core.model.photoInfo
 import org.geocrew.core.model.Props
+import org.geocrew.core.model.Sample
+import org.geocrew.core.model.samples
 import org.geocrew.core.model.TaskInfo
 import org.geocrew.core.model.TaskStatus
 import org.geocrew.core.model.task
@@ -168,6 +170,39 @@ class FeatureDetailViewModel @Inject constructor(
             else features.observeProject(pid).map { list -> list.filter { it.id != id }.mapNotNull { it.properties.string(Props.LITHOLOGY) } }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Sample numbers used anywhere in this project, for numbering and duplicate checks. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val usedSampleNumbers: StateFlow<List<String>> = feature.map { it?.projectId }.distinctUntilChanged()
+        .flatMapLatest { pid ->
+            if (pid == null) kotlinx.coroutines.flow.flowOf(emptyList())
+            else features.observeProject(pid).map { list -> list.filterNot { it.deleted }.flatMap { f -> f.samples.map { it.no } } }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Adds [edited], or replaces [original] with it. Refuses a number used by
+     * another sample in the project, since labs and stores key on it.
+     */
+    fun saveSample(original: Sample?, edited: Sample) = viewModelScope.launch {
+        val cur = feature.value ?: return@launch
+        val no = edited.no.trim()
+        if (no.isEmpty()) { _fieldError.value = "请填写样品编号"; return@launch }
+        val others = usedSampleNumbers.value.toMutableList().apply { original?.let { remove(it.no) } }
+        if (others.any { it.trim().equals(no, ignoreCase = true) }) {
+            _fieldError.value = "样品编号 $no 已在本工程用过"; return@launch
+        }
+        val sample = edited.copy(no = no, takenAt = edited.takenAt ?: original?.takenAt ?: java.time.Instant.now())
+        val list = cur.samples.toMutableList()
+        val at = original?.let { o -> list.indexOfFirst { it.no == o.no } } ?: -1
+        if (at >= 0) list[at] = sample else list += sample
+        features.edit(id) { samples(list) }
+    }
+
+    fun removeSample(no: String) = viewModelScope.launch {
+        val cur = feature.value ?: return@launch
+        features.edit(id) { samples(cur.samples.filterNot { it.no == no }) }
+    }
 
     /** The project's form: the fields its records are meant to fill in. */
     val form: StateFlow<List<FieldTemplate>> = projects.current.map { it.config.fields }

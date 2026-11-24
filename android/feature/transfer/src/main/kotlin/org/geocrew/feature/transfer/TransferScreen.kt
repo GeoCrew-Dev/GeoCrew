@@ -158,5 +158,6 @@ private fun exportHint(f: FeatureFormat) = when (f.id) {
     "geojson" -> "保留全部属性，适合 QGIS 等 GIS 软件和备份"
     "kml" -> "可在奥维、Google 地球等软件中打开"
     "gpx" -> "点和轨迹（含时间），适合导航软件；面不导出"
+    "samples" -> "每件样品一行：编号、类型、所在记录、坐标、岩性、采样时间，可直接做送样单"
     else -> f.extension
 }

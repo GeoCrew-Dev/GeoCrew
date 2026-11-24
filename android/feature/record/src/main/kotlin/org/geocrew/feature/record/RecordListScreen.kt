@@ -1,5 +1,6 @@
 package org.geocrew.feature.record
 
+import org.geocrew.core.model.samples
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -147,6 +148,7 @@ private fun RecordRow(f: GeoFeature, me: String?, onClick: () -> Unit) {
                 }
                 if (f.photos.isNotEmpty()) add("${f.photos.size} 张照片")
                 f.attachmentIds(org.geocrew.core.model.AttachmentKind.AUDIO).takeIf { it.isNotEmpty() }?.let { add("${it.size} 段录音") }
+                f.samples.takeIf { it.isNotEmpty() }?.let { add("${it.size} 件样品") }
                 f.task?.let { t ->
                     val who = if (t.assignee == me) "我" else t.assigneeName.ifBlank { "组员" }
                     add("任务：$who · ${t.status.label}")

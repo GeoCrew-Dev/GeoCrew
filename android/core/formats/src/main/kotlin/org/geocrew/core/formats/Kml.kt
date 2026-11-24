@@ -1,5 +1,6 @@
 package org.geocrew.core.formats
 
+import org.geocrew.core.model.samples
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import org.geocrew.core.model.FeatureKind
@@ -134,9 +135,11 @@ object KmlFormat : FeatureFormat {
         sb.append("<ExtendedData>")
         data(sb, Props.KIND, f.kind.id)
         for ((k, v) in simple) {
-            val text = when (v) {
-                is JsonPrimitive -> v.content
-                is JsonArray -> v.joinToString(",") { (it as? JsonPrimitive)?.content ?: it.toString() }
+            val text = when {
+                // Sample objects would read as JSON; their numbers are what a map user needs.
+                k == Props.SAMPLES -> f.samples.joinToString(",") { it.no }.takeIf { it.isNotEmpty() } ?: continue
+                v is JsonPrimitive -> v.content
+                v is JsonArray -> v.joinToString(",") { (it as? JsonPrimitive)?.content ?: it.toString() }
                 else -> continue
             }
             data(sb, k, text)

@@ -53,7 +53,7 @@ interface FeatureFormat {
 }
 
 object FeatureFormats {
-    val all: List<FeatureFormat> = listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat, CsvFormat)
+    val all: List<FeatureFormat> = listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat, CsvFormat, SampleListFormat)
 
     fun byId(id: String) = all.firstOrNull { it.id == id }
 

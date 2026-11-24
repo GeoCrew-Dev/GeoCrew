@@ -15,6 +15,7 @@ import org.geocrew.core.model.string
 import org.geocrew.core.model.task
 import org.geocrew.core.model.audio
 import org.geocrew.core.model.audioInfo
+import org.geocrew.core.model.samples
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -115,6 +116,9 @@ data class FieldReport(
                     if (!field.appliesTo(f.kind)) continue
                     val v = field.display(f.properties[field.key])
                     if (v.isNotBlank()) add(field.label to v + if (field.unit.isNotBlank()) " ${field.unit}" else "")
+                }
+                f.samples.takeIf { it.isNotEmpty() }?.let { list ->
+                    add("样品" to list.joinToString("；") { s -> listOfNotNull(s.no, s.type).joinToString(" ") })
                 }
                 f.task?.let { t -> add("任务" to "${t.assigneeName}：${t.status.label}") }
                 f.audio.takeIf { it.isNotEmpty() }?.let { clips ->
