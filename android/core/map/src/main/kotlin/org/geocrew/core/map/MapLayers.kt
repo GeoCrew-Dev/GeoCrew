@@ -202,6 +202,16 @@ internal object MapLayers {
                 circleStrokeWidth(2f),
             ),
         )
+        style.addLayer(
+            CircleLayer("gc-sketch-picked", SRC_SKETCH)
+                .withFilter(Expression.all(isPoint, eq(get("picked"), literal(true))))
+                .withProperties(
+                    circleRadius(9f),
+                    circleColor(MapColors.SKETCH),
+                    circleStrokeColor("#FFFFFF"),
+                    circleStrokeWidth(3f),
+                ),
+        )
 
         // My location: translucent accuracy circle and a blue dot on top of everything.
         style.addLayer(
@@ -230,8 +240,8 @@ internal object MapLayers {
         if (previous == null || previous.grid !== o.grid) set(SRC_GRID, OverlayGeoJson.grid(o.grid))
         if (previous == null || previous.me != o.me) set(SRC_ME, OverlayGeoJson.me(o.me))
         if (previous == null || previous.team != o.team) set(SRC_TEAM, OverlayGeoJson.team(o.team))
-        if (previous == null || previous.sketch != o.sketch || previous.sketchClosed != o.sketchClosed) {
-            set(SRC_SKETCH, OverlayGeoJson.sketch(o.sketch, o.sketchClosed))
+        if (previous == null || previous.sketch != o.sketch || previous.sketchClosed != o.sketchClosed || previous.sketchPicked != o.sketchPicked) {
+            set(SRC_SKETCH, OverlayGeoJson.sketch(o.sketch, o.sketchClosed, o.sketchPicked))
         }
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.RadioButtonChecked
@@ -106,11 +107,14 @@ internal fun DrawBar(
     onFinish: () -> Unit,
     onCancel: () -> Unit,
     onToggleKind: () -> Unit = {},
+    onRemovePicked: () -> Unit = {},
 ) {
     Surface(shape = MaterialTheme.shapes.large, tonalElevation = 3.dp, shadowElevation = 3.dp) {
         Column(Modifier.fillMaxWidth().padding(8.dp)) {
             val v = mode.vertices
             val measure = when {
+                mode.single -> "点地图上的新位置，或把十字中心对准后点「移到中心」"
+                mode.picked != null -> "已选中第 ${mode.picked + 1} 个节点：点地图把它移过去，再点它一下取消选中"
                 mode.closed && v.size >= 3 -> {
                     val ring = Geometry.Polygon.of(v)
                     "面积 " + CoordinateFormatter.area(ring.areaSquareMeters()) +
@@ -125,18 +129,27 @@ internal fun DrawBar(
                             " 方位 " + "%.0f°".format(Geodesy.bearing(a, b))
                     }
                 }
+                mode.editing != null -> "点节点可选中移动，点线旁边加节点"
                 else -> "点地图或用十字中心添加节点"
             }
             val title = when {
+                mode.single -> "移动点"
+                mode.editing != null -> "改形状"
                 mode.measureOnly -> if (mode.closed) "测面积" else "测距离"
                 mode.closed -> "画面"
                 else -> "画线"
             }
-            Text("$title：${v.size} 个节点 · $measure", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 8.dp))
+            val count = if (mode.single) "" else "${v.size} 个节点 · "
+            Text("$title：$count$measure", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Tool(Icons.Default.Place, "中心加节点", onClick = onAddCenter)
-                Tool(Icons.AutoMirrored.Filled.Undo, "撤销", enabled = v.isNotEmpty(), onClick = onUndo)
-                if (mode.measureOnly) {
+                val moves = mode.single || mode.picked != null
+                Tool(Icons.Default.Place, if (moves) "移到中心" else "中心加节点", onClick = onAddCenter)
+                Tool(Icons.AutoMirrored.Filled.Undo, "撤销", enabled = mode.undo.isNotEmpty(), onClick = onUndo)
+                if (mode.picked != null) Tool(Icons.Default.Delete, "删节点", enabled = mode.canRemovePicked, onClick = onRemovePicked)
+                if (mode.editing != null) {
+                    Tool(Icons.Default.Check, "保存", enabled = mode.canFinish && mode.undo.isNotEmpty(), onClick = onFinish)
+                    Tool(Icons.Default.Close, "取消", onClick = onCancel)
+                } else if (mode.measureOnly) {
                     Tool(Icons.Default.SwapHoriz, if (mode.closed) "改测距离" else "改测面积", onClick = onToggleKind)
                     Tool(Icons.Default.Check, "存为要素", enabled = mode.canFinish, onClick = onFinish)
                     Tool(Icons.Default.Close, "结束", onClick = onCancel)
@@ -150,7 +163,15 @@ internal fun DrawBar(
 }
 
 @Composable
-internal fun SelectedFeatureCard(f: GeoFeature, format: CoordinateFormat, onOpen: () -> Unit, onDelete: () -> Unit, onClose: () -> Unit) {
+internal fun SelectedFeatureCard(
+    f: GeoFeature,
+    format: CoordinateFormat,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+    onClose: () -> Unit,
+    /** Move or reshape on the map; null hides the button. */
+    onEdit: (() -> Unit)? = null,
+) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(KindUi.icon(f.kind), null)
@@ -165,6 +186,7 @@ internal fun SelectedFeatureCard(f: GeoFeature, format: CoordinateFormat, onOpen
                 }
                 Text(KindUi.label(f.kind) + " · " + detail, style = MaterialTheme.typography.bodySmall)
             }
+            onEdit?.let { IconButton(onClick = it) { Icon(Icons.Default.Edit, if (f.geometry is Geometry.Point) "移动" else "改形状") } }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "删除") }
             IconButton(onClick = onClose) { Icon(Icons.Default.Close, "关闭") }
         }

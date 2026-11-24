@@ -28,6 +28,7 @@ import org.geocrew.core.map.StyleBuilder
 import org.geocrew.core.map.TileNetwork
 import org.geocrew.core.map.TileProblem
 import org.geocrew.core.model.FeatureKind
+import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
@@ -37,6 +38,7 @@ import org.geocrew.core.model.MapViewport
 import org.geocrew.core.model.PositionAverage
 import org.geocrew.core.model.Project
 import org.geocrew.core.model.Props
+import org.geocrew.core.model.VertexEdit
 import org.geocrew.core.model.tiles.BuiltInSources
 import org.geocrew.core.model.tiles.TileKeys
 import org.geocrew.core.model.tiles.TileSource
@@ -63,9 +65,23 @@ sealed interface MapMode {
         val kind: FeatureKind,
         val vertices: List<LngLat> = emptyList(),
         val measureOnly: Boolean = false,
+        /** Reshaping this existing record instead of drawing a new one. */
+        val editing: String? = null,
+        /** Moving a point record: the one vertex is its new position. */
+        val single: Boolean = false,
+        /** Vertex chosen to be moved by the next tap or by the crosshair. */
+        val picked: Int? = null,
+        /** Earlier vertex lists, newest last, for undo. */
+        val undo: List<List<LngLat>> = emptyList(),
+        /** Polygon kept closed while reshaping, whatever its record kind. */
+        val ring: Boolean = kind == FeatureKind.POLYGON,
     ) : MapMode {
-        val closed get() = kind == FeatureKind.POLYGON
-        val canFinish get() = vertices.size >= if (closed) 3 else 2
+        val closed get() = ring
+        val canFinish get() = if (single) vertices.size == 1 else vertices.size >= VertexEdit.minimum(closed)
+        val canRemovePicked get() = picked != null && !single && vertices.size > VertexEdit.minimum(closed)
+
+        /** The next state with [next] vertices, remembering this one for undo. */
+        fun change(next: List<LngLat>, picked: Int? = null) = copy(vertices = next, picked = picked, undo = (undo + listOf(vertices)).takeLast(50))
     }
 }
 
@@ -217,12 +233,16 @@ class MapViewModel @Inject constructor(
         MapOverlays(
             legend = lg,
             memberId = me,
-            features = d.filter(list, me, keep = sel),
+            features = d.filter(list, me, keep = sel).let { l ->
+                val editing = (mode as? MapMode.Draw)?.editing
+                if (editing == null) l else l.filterNot { it.id == editing }
+            },
             selectedId = sel,
             me = fix?.let { MyLocation(it.position, it.accuracy, it.bearing) },
             team = if (d.team) mates else emptyList(),
             sketch = (mode as? MapMode.Draw)?.vertices.orEmpty(),
             sketchClosed = (mode as? MapMode.Draw)?.closed == true,
+            sketchPicked = (mode as? MapMode.Draw)?.picked,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, MapOverlays())
 
@@ -282,10 +302,26 @@ class MapViewModel @Inject constructor(
 
     fun dismissTileProblem() = TileNetwork.clear()
 
-    fun onMapClick(position: LngLat, featureId: String?) {
+    /**
+     * A tap on the map. While drawing, [toleranceM] is how close (in metres on
+     * the ground) a tap must be to a vertex to pick it up for moving.
+     */
+    fun onMapClick(position: LngLat, featureId: String?, toleranceM: Double = 0.0) {
         when (val m = _mode.value) {
-            is MapMode.Draw -> _mode.value = m.copy(vertices = m.vertices + position)
+            is MapMode.Draw -> _mode.value = tap(m, position, toleranceM)
             MapMode.Browse -> _selected.value = featureId
+        }
+    }
+
+    private fun tap(m: MapMode.Draw, p: LngLat, toleranceM: Double): MapMode.Draw {
+        if (m.single) return m.change(listOf(p))
+        val hit = VertexEdit.near(m.vertices, p, toleranceM)
+        return when {
+            m.picked != null && hit == m.picked -> m.copy(picked = null)
+            m.picked != null -> m.change(m.vertices.toMutableList().also { it[m.picked] = p })
+            hit != null -> m.copy(picked = hit)
+            m.editing != null -> m.change(VertexEdit.insert(m.vertices, p, m.closed))
+            else -> m.change(m.vertices + p)
         }
     }
 
@@ -392,6 +428,27 @@ class MapViewModel @Inject constructor(
         _averaging.value = null
     }
 
+    /** Starts moving or reshaping the selected record on the map. */
+    fun startEdit() {
+        val f = selected.value ?: return
+        when (val e = VertexEdit.of(f)) {
+            is VertexEdit.Edit.No -> _notice.value = e.reason
+            is VertexEdit.Edit.Move -> {
+                _selected.value = null
+                _mode.value = MapMode.Draw(f.kind, listOf(e.position), editing = f.id, single = true)
+            }
+            is VertexEdit.Edit.Reshape -> {
+                _selected.value = null
+                _mode.value = MapMode.Draw(f.kind, e.vertices, editing = f.id, ring = e.closed)
+            }
+        }
+    }
+
+    /** Removes the picked vertex of the shape being drawn. */
+    fun removePicked() = _mode.update {
+        if (it is MapMode.Draw && it.canRemovePicked) it.change(it.vertices.filterIndexed { i, _ -> i != it.picked }) else it
+    }
+
     fun startDraw(kind: FeatureKind) {
         _selected.value = null
         _mode.value = MapMode.Draw(kind)
@@ -406,13 +463,22 @@ class MapViewModel @Inject constructor(
     /** Switches a measurement between distance (line) and area (polygon), keeping the vertices. */
     fun toggleMeasureKind() = _mode.update {
         if (it is MapMode.Draw && it.measureOnly) {
-            it.copy(kind = if (it.closed) FeatureKind.LINE else FeatureKind.POLYGON)
+            it.copy(kind = if (it.closed) FeatureKind.LINE else FeatureKind.POLYGON, ring = !it.closed)
         } else it
     }
 
-    fun addVertex(p: LngLat) = _mode.update { if (it is MapMode.Draw) it.copy(vertices = it.vertices + p) else it }
+    /** The crosshair button: moves the picked vertex (or the point) there, otherwise adds a vertex. */
+    fun addVertex(p: LngLat) = _mode.update {
+        if (it !is MapMode.Draw) it
+        else if (it.single) it.change(listOf(p))
+        else if (it.picked != null) it.change(it.vertices.toMutableList().also { v -> v[it.picked] = p })
+        else if (it.editing != null) it.change(VertexEdit.insert(it.vertices, p, it.closed))
+        else it.change(it.vertices + p)
+    }
 
-    fun undoVertex() = _mode.update { if (it is MapMode.Draw) it.copy(vertices = it.vertices.dropLast(1)) else it }
+    fun undoVertex() = _mode.update {
+        if (it is MapMode.Draw && it.undo.isNotEmpty()) it.copy(vertices = it.undo.last(), undo = it.undo.dropLast(1), picked = null) else it
+    }
 
     fun cancelDraw() {
         _mode.value = MapMode.Browse
@@ -422,6 +488,7 @@ class MapViewModel @Inject constructor(
         val m = _mode.value as? MapMode.Draw ?: return
         if (!m.canFinish) return
         _mode.value = MapMode.Browse
+        m.editing?.let { id -> return saveShape(id, m) }
         viewModelScope.launch {
             val p = project.value ?: projects.ensureCurrent()
             val geometry = if (m.closed) Geometry.Polygon.of(m.vertices) else Geometry.LineString(m.vertices)
@@ -430,6 +497,32 @@ class MapViewModel @Inject constructor(
                 this[Props.TITLE] = name
             }
             _selected.value = f.id
+        }
+    }
+
+    private fun saveShape(id: String, m: MapMode.Draw) {
+        viewModelScope.launch {
+            val f = features.get(id) ?: return@launch
+            val geometry = when {
+                m.single -> {
+                    val was = (f.geometry as? Geometry.Point)?.position
+                    val to = m.vertices.single()
+                    // A nudge keeps the measured height; a real move leaves it to be measured again.
+                    val alt = was?.alt?.takeIf { Geodesy.distance(was, to) <= 30.0 }
+                    Geometry.Point(LngLat(to.lng, to.lat, alt))
+                }
+                m.closed -> Geometry.Polygon.of(m.vertices)
+                else -> Geometry.LineString(m.vertices)
+            }
+            if (geometry == f.geometry) return@launch
+            features.edit(id, geometry) {
+                if (m.single) {
+                    // These described the original fix, not a position set by hand.
+                    remove(Props.ACCURACY_M); remove(Props.GPS_SAMPLES); remove(Props.GPS_SPREAD_M)
+                }
+            }
+            _selected.value = id
+            _notice.value = if (m.single) "已移动「${f.title ?: "记录"}」，原定位精度不再保留" else "已更新「${f.title ?: "记录"}」的形状，可在记录的修改历史里恢复"
         }
     }
 

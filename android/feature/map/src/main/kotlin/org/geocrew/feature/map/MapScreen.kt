@@ -205,7 +205,8 @@ fun MapScreen(
             overlays = drawn,
             camera = camera,
             modifier = Modifier.fillMaxSize(),
-            onClick = viewModel::onMapClick,
+            // A finger's width (about 24 dp) on the ground, to pick up a vertex.
+            onClick = { p, id -> viewModel.onMapClick(p, id, 24 * org.geocrew.core.model.MapScale.metersPerDp(p.lat, camera.zoom)) },
             onLongClick = { if (mode == MapMode.Browse) viewModel.addPoint(it) },
             labels = gridLabels + overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) } +
                 listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, goneLabel) }) +
@@ -334,7 +335,13 @@ fun MapScreen(
             )
             val sel = selected
             if (sel != null && mode == MapMode.Browse) {
-                SelectedFeatureCard(sel, format, onOpen = { onOpenFeature(sel.id) }, onDelete = viewModel::deleteSelected, onClose = viewModel::clearSelection)
+                SelectedFeatureCard(
+                    sel, format,
+                    onOpen = { onOpenFeature(sel.id) },
+                    onDelete = viewModel::deleteSelected,
+                    onClose = viewModel::clearSelection,
+                    onEdit = viewModel::startEdit.takeIf { org.geocrew.core.model.VertexEdit.of(sel) !is org.geocrew.core.model.VertexEdit.Edit.No },
+                )
             }
             when (val m = mode) {
                 is MapMode.Draw -> DrawBar(
@@ -344,6 +351,7 @@ fun MapScreen(
                     onFinish = viewModel::finishDraw,
                     onCancel = viewModel::cancelDraw,
                     onToggleKind = viewModel::toggleMeasureKind,
+                    onRemovePicked = viewModel::removePicked,
                 )
                 MapMode.Browse -> ToolBar(
                     recording = recording,

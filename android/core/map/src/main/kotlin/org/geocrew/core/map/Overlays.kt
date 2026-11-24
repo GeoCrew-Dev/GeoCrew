@@ -38,6 +38,8 @@ data class MapOverlays(
     /** Vertices of a line or polygon being drawn. */
     val sketch: List<LngLat> = emptyList(),
     val sketchClosed: Boolean = false,
+    /** Index of the sketch vertex picked up for moving, drawn larger. */
+    val sketchPicked: Int? = null,
     /** This device's member id in the project's workspace; its open tasks are highlighted. */
     val memberId: String? = null,
     /** Colours records by an attribute where they have no colour of their own. */
@@ -128,13 +130,15 @@ internal object OverlayGeoJson {
         },
     )
 
-    fun sketch(points: List<LngLat>, closed: Boolean): String = collection(
+    fun sketch(points: List<LngLat>, closed: Boolean, picked: Int? = null): String = collection(
         buildList {
             if (points.size >= 2) {
                 val line = if (closed && points.size >= 3) points + points.first() else points
                 add(feature(Geometry.LineString(line)))
             }
-            points.forEach { add(feature(Geometry.Point(it)) { this["vertex"] = true }) }
+            points.forEachIndexed { i, p ->
+                add(feature(Geometry.Point(p)) { this["vertex"] = true; if (i == picked) this["picked"] = true })
+            }
         },
     )
 
