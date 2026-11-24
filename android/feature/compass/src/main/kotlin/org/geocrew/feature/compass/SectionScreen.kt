@@ -1,6 +1,8 @@
 package org.geocrew.feature.compass
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
@@ -37,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -84,6 +88,25 @@ fun SectionScreen(onBack: () -> Unit, viewModel: SectionViewModel = hiltViewMode
     }
     BackHandler(enabled = draft != null) { viewModel.close() }
 
+    // Stratigraphic column export: ask which way the traverse ran, then where to save.
+    var columnFor by remember { mutableStateOf<GeoFeature?>(null) }
+    var exporting by remember { mutableStateOf<Pair<GeoFeature, Boolean>?>(null) }
+    val createColumn = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        val e = exporting
+        if (uri != null && e != null) viewModel.exportColumn(e.first, uri, e.second)
+        exporting = null
+    }
+    columnFor?.let { f ->
+        ColumnDialog(
+            onDismiss = { columnFor = null },
+            onConfirm = { startIsBase ->
+                columnFor = null
+                exporting = f to startIsBase
+                createColumn.launch(viewModel.columnName(f))
+            },
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -111,7 +134,7 @@ fun SectionScreen(onBack: () -> Unit, viewModel: SectionViewModel = hiltViewMode
     ) { padding ->
         val d = draft
         if (d == null) {
-            SectionList(sections, Modifier.padding(padding), onOpen = viewModel::open, onDelete = viewModel::delete)
+            SectionList(sections, Modifier.padding(padding), onOpen = viewModel::open, onDelete = viewModel::delete, onExport = { columnFor = it })
         } else {
             SectionEditor(d, viewModel, Modifier.padding(padding))
         }
@@ -119,7 +142,7 @@ fun SectionScreen(onBack: () -> Unit, viewModel: SectionViewModel = hiltViewMode
 }
 
 @Composable
-private fun SectionList(items: List<GeoFeature>, modifier: Modifier, onOpen: (GeoFeature) -> Unit, onDelete: (String) -> Unit) {
+private fun SectionList(items: List<GeoFeature>, modifier: Modifier, onOpen: (GeoFeature) -> Unit, onDelete: (String) -> Unit, onExport: (GeoFeature) -> Unit) {
     var confirm by remember { mutableStateOf<GeoFeature?>(null) }
     if (items.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -140,7 +163,10 @@ private fun SectionList(items: List<GeoFeature>, modifier: Modifier, onOpen: (Ge
                         Text("导线 ${s.legs.size} 段 · ${f1(s.length)} m · ${s.layers.size} 层 · 总厚 ${f1(r.total)} m")
                     },
                     trailingContent = {
-                        IconButton(onClick = { confirm = f }) { Icon(Icons.Default.Delete, "删除") }
+                        Row {
+                            if (s.layers.isNotEmpty()) IconButton(onClick = { onExport(f) }) { Icon(Icons.Default.PictureAsPdf, "导出柱状图") }
+                            IconButton(onClick = { confirm = f }) { Icon(Icons.Default.Delete, "删除") }
+                        }
                     },
                     modifier = Modifier.clickable { onOpen(f) },
                 )
@@ -405,3 +431,26 @@ private fun PickList(
 
 private fun <T> List<T>.with(i: Int, v: T): List<T> = toMutableList().also { if (i in it.indices) it[i] = v }
 private fun <T> List<T>.without(i: Int): List<T> = filterIndexed { j, _ -> j != i }
+
+/** Asks which end of the traverse is the base of the sequence before drawing the column. */
+@Composable
+private fun ColumnDialog(onDismiss: () -> Unit, onConfirm: (startIsBase: Boolean) -> Unit) {
+    var base by remember { mutableStateOf(true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("导出柱状图") },
+        text = {
+            Column {
+                Text("按各层真厚度画成 A4 柱状图（PDF），自动选比例尺，岩性按名称配花纹。", style = MaterialTheme.typography.bodyMedium)
+                listOf(true to "导线起点在底部（自下而上测，第 1 层最老）", false to "导线起点在顶部（自上而下测）").forEach { (v, label) ->
+                    Row(Modifier.fillMaxWidth().clickable { base = v }, verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = base == v, onClick = { base = v })
+                        Text(label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(base) }) { Text("导出") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}

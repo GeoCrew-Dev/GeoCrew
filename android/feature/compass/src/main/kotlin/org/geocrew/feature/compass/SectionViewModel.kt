@@ -1,9 +1,13 @@
 package org.geocrew.feature.compass
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -15,11 +19,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.ProjectRepository
+import org.geocrew.core.formats.StratColumn
 import org.geocrew.core.model.Attitude
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.GeoFeature
@@ -109,6 +115,7 @@ class SectionViewModel @Inject constructor(
     private val projects: ProjectRepository,
     private val features: FeatureRepository,
     private val location: LocationSource,
+    @ApplicationContext private val context: Context,
     savedState: SavedStateHandle,
 ) : ViewModel() {
     private val all = projects.current
@@ -229,6 +236,35 @@ class SectionViewModel @Inject constructor(
             }
             if (saved != null) _draft.update { it?.copy(id = saved.id) }
             _message.value = if (geometry == null) "已保存（没有起点，不会显示在地图上）" else "已保存，地图上显示为一条剖面线"
+        }
+    }
+
+    /** A file name for [f]'s stratigraphic column. */
+    fun columnName(f: GeoFeature): String {
+        val name = (f.title?.trim()?.ifEmpty { null } ?: "实测剖面").replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        return "$name-柱状图.pdf"
+    }
+
+    /** Draws [f] as a stratigraphic column (A4 PDF) into [uri]. */
+    fun exportColumn(f: GeoFeature, uri: Uri, startIsBase: Boolean) {
+        viewModelScope.launch {
+            val c = StratColumn.build(f.title?.trim()?.ifEmpty { null } ?: "实测剖面", f.measuredSection, startIsBase)
+            if (c.rows.isEmpty()) {
+                _message.value = "这条剖面还没有分层"
+                return@launch
+            }
+            val pages = runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri, "wt")?.use { StratColumnPdf().write(c, it) } ?: error("无法写入")
+                }
+            }.getOrElse {
+                _message.value = "柱状图没有生成：${it.message ?: it::class.simpleName}"
+                return@launch
+            }
+            _message.value = buildString {
+                append("已生成柱状图，比例尺 1:${c.scale}，共 $pages 页")
+                if (c.unknown > 0) append("；${c.unknown} 层缺产状，厚度未知")
+            }
         }
     }
 
