@@ -294,12 +294,39 @@
     m.el.textContent = pos.nickname || members.get(pos.member_id) || "组员";
     m.at = Date.parse(pos.at) || Date.now();
     m.marker.setLngLat([pos.lon, pos.lat]);
+    addTrail(m, pos.lon, pos.lat, m.at);
     ageMates();
+  }
+
+  // The last half hour of each teammate as a thin line, built from the positions seen
+  // since the page opened: fixes 5 m apart at least, jumps faster than 60 m/s dropped.
+  const TRAIL_MS = 30 * 60 * 1000;
+  function addTrail(m, lon, lat, at) {
+    const t = (m.trail = (m.trail || []).filter((p) => Date.now() - p[2] <= TRAIL_MS));
+    const last = t[t.length - 1];
+    if (last) {
+      if (at <= last[2]) return drawTrails();
+      const r = Math.PI / 180, dx = (lon - last[0]) * r * Math.cos(lat * r) * 6371008.8, dy = (lat - last[1]) * r * 6371008.8;
+      const d = Math.hypot(dx, dy);
+      if (d < 5 || d / Math.max(1, (at - last[2]) / 1000) > 60) return drawTrails();
+    }
+    if (Date.now() - at <= TRAIL_MS) t.push([lon, lat, at]);
+    if (t.length > 300) t.splice(0, t.length - 300);
+    drawTrails();
+  }
+  function drawTrails() {
+    if (!ready || !map.getSource("trails")) return;
+    const fs = [];
+    for (const m of mates.values()) {
+      const c = (m.trail || []).filter((p) => Date.now() - p[2] <= TRAIL_MS).map((p) => [p[0], p[1]]);
+      if (c.length >= 2) fs.push({ type: "Feature", properties: { old: Date.now() - m.at > 5 * 60 * 1000 }, geometry: { type: "LineString", coordinates: c } });
+    }
+    map.getSource("trails").setData({ type: "FeatureCollection", features: fs });
   }
   function ageMates() {
     for (const m of mates.values()) m.el.classList.toggle("old", Date.now() - m.at > 5 * 60 * 1000);
   }
-  setInterval(ageMates, 30 * 1000);
+  setInterval(() => { ageMates(); drawTrails(); }, 30 * 1000);
 
   let backoff = 1000;
   function connect() {
@@ -344,12 +371,16 @@
         paint: { "line-color": ["get", "_color"], "line-width": ["case", ["==", ["get", "_kind"], "track"], 2, 3] } });
       map.addLayer({ id: "point", type: "circle", source: "records", filter: ["==", ["geometry-type"], "Point"],
         paint: { "circle-color": ["get", "_color"], "circle-radius": 6, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+      map.addSource("trails", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({ id: "trails", type: "line", source: "trails",
+        paint: { "line-color": ["case", ["get", "old"], "#78909c", "#1565c0"], "line-width": 2, "line-opacity": 0.7 } });
       for (const id of ["point", "line", "fill"]) {
         map.on("click", id, (e) => { const f = features.get(e.features[0].properties._id); if (f) popup(f, e.lngLat); });
         map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
         map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
       }
       ready = true;
+      drawTrails();
       render();
     });
     $("q").oninput = renderList;
