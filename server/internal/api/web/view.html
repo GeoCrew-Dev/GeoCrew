@@ -228,6 +228,26 @@
     const silent = roster.filter((id) => !answers.has(id)).map((id) => members.get(id));
     return { call, answers, roster, help, silent };
   }
+  // Meeting points (protocol §6.8): a point with meet_at. The one closest in time from an hour ago to a day ahead.
+  function meetAt(f) {
+    const t = f.geometry && f.geometry.type === "Point" && typeof (f.properties || {}).meet_at === "string" ? Date.parse(f.properties.meet_at) : NaN;
+    return isNaN(t) ? null : new Date(t);
+  }
+  function nextMeeting() {
+    const now = Date.now();
+    let best = null;
+    for (const f of features.values()) {
+      const at = meetAt(f);
+      if (!at || at.getTime() < now - 3600e3 || at.getTime() > now + 24 * 3600e3) continue;
+      if (!best || Math.abs(at - now) < Math.abs(best.at - now)) best = { f, at };
+    }
+    return best;
+  }
+  function countdown(at) {
+    const mins = Math.round(Math.abs(at - Date.now()) / 60000);
+    const t = mins >= 60 ? Math.floor(mins / 60) + " 小时" + (mins % 60 ? " " + (mins % 60) + " 分" : "") : mins + " 分钟";
+    return mins < 1 ? "就是现在" : at < Date.now() ? "已过 " + t : "还有 " + t;
+  }
   function rollLine(r) {
     return "点名（" + (r.call.nickname || "组长") + " " + when(r.call.created_at) + "）：已回应 " + r.answers.size + "/" + r.roster.length +
       (r.help.length ? "，求助：" + r.help.map((a) => a.nickname || "组员").join("、") : "") +
@@ -240,6 +260,11 @@
     if (alert) box.append(Object.assign(document.createElement("div"), { className: "urgent", textContent: "紧急：" + (alert.nickname || "组员") + " " + when(alert.created_at) + " · " + alert.body, onclick: open }));
     const r = rollCall();
     if (r) box.append(Object.assign(document.createElement("div"), { className: r.help.length ? "urgent" : "call", textContent: rollLine(r), onclick: open }));
+    const m = nextMeeting();
+    if (m) box.append(Object.assign(document.createElement("div"), {
+      className: "call", textContent: "集合：" + (text(m.f.properties, "title") || "集合点") + " " + when(m.at.toISOString()) + " · " + countdown(m.at),
+      onclick: () => { map.flyTo({ center: m.f.geometry.coordinates.slice(0, 2), zoom: Math.max(map.getZoom(), 15) }); popup(m.f, { lng: m.f.geometry.coordinates[0], lat: m.f.geometry.coordinates[1] }); },
+    }));
     const n = team().length;
     $("msgs").textContent = n ? "组内消息 " + n : "组内消息";
   }
@@ -284,7 +309,7 @@
         return {
           _id: f.id, _kind: kindOf(f.properties || {}), _fo: byLegend ? 0.45 : 0.2,
           _color: ls && !own ? (ls.fault ? "#d32f2f" : "#212121") : c,
-          _w: ls && ls.fault ? 4 : 3, _dash: !!(ls && ls.dash),
+          _w: ls && ls.fault ? 4 : 3, _dash: !!(ls && ls.dash), _meet: !!meetAt(f),
         };
       })(colorOf(f)),
     })) };
@@ -300,6 +325,7 @@
     renderLegend();
     renderList();
     renderToday();
+    renderBanner();
     if (ready && !fitted && features.size) { fitted = true; fitAll(); }
   }
 
@@ -454,6 +480,7 @@
     const row = (label, value) => { if (!value) return; const dt = document.createElement("dt"); dt.textContent = label; const dd = document.createElement("dd"); dd.textContent = value; dl.append(dt, dd); };
     row("类型", KINDS[k][0]);
     if (lineStyleOf(f)) row("线型", lineStyleOf(f).label);
+    if (meetAt(f)) row("集合", when(meetAt(f).toISOString()) + " · " + countdown(meetAt(f)));
     if (f.geometry.type === "Point") {
       const c = f.geometry.coordinates;
       row("坐标", c[0].toFixed(6) + ", " + c[1].toFixed(6));
@@ -593,6 +620,8 @@
         paint: { "line-color": ["get", "_color"], "line-width": ["case", ["==", ["get", "_kind"], "track"], 2, ["get", "_w"]] } });
       map.addLayer({ id: "line-dashed", type: "line", source: "records", filter: ["all", ["!=", ["geometry-type"], "Point"], ["get", "_dash"]],
         paint: { "line-color": ["get", "_color"], "line-width": ["get", "_w"], "line-dasharray": [3, 2] } });
+      map.addLayer({ id: "meet", type: "circle", source: "records", filter: ["all", ["==", ["geometry-type"], "Point"], ["get", "_meet"]],
+        paint: { "circle-color": "#6a1b9a", "circle-opacity": 0.18, "circle-radius": 18, "circle-stroke-color": "#6a1b9a", "circle-stroke-width": 3 } });
       map.addLayer({ id: "point", type: "circle", source: "records", filter: ["==", ["geometry-type"], "Point"],
         paint: { "circle-color": ["get", "_color"], "circle-radius": 6, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
       map.addSource("trails", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
