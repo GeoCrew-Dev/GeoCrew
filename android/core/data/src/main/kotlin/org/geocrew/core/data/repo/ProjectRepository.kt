@@ -56,6 +56,18 @@ class ProjectRepository @Inject constructor(
         dao.upsert(p.copy(name = name.trim().ifEmpty { p.name }))
     }
 
+    /**
+     * Deletes a project and its features from this device. Callers unlink
+     * it from its workspace first; the team's copy is not touched.
+     */
+    suspend fun delete(id: String) {
+        dao.delete(id)
+        if (settings.current().currentProjectId == id) {
+            val next = dao.first()?.toModel() ?: create("默认工程")
+            settings.setCurrentProject(next.id)
+        }
+    }
+
     suspend fun linkTeam(id: String, team: TeamLink?) {
         val p = dao.get(id)?.toModel() ?: return
         dao.upsert(p.copy(team = team).toEntity())

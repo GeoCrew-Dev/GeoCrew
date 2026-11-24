@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -50,6 +51,7 @@ fun RecordListScreen(
     onBack: () -> Unit,
     onOpen: (String) -> Unit,
     onImportExport: () -> Unit,
+    onProjects: () -> Unit = {},
     viewModel: RecordListViewModel = hiltViewModel(),
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
@@ -63,7 +65,10 @@ fun RecordListScreen(
             TopAppBar(
                 title = { Text(if (project.isBlank()) "记录" else "记录 · $project") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
-                actions = { IconButton(onClick = onImportExport) { Icon(Icons.Default.ImportExport, "导入导出") } },
+                actions = {
+                    IconButton(onClick = onProjects) { Icon(Icons.Default.Folder, "切换工程") }
+                    IconButton(onClick = onImportExport) { Icon(Icons.Default.ImportExport, "导入导出") }
+                },
             )
         },
     ) { padding ->

@@ -135,7 +135,11 @@ class TeamViewModel @Inject constructor(
             } catch (e: ApiException) {
                 _message.value = explain(e)
             } catch (e: IOException) {
-                _message.value = "连接失败：${e.message ?: "请检查服务器地址和网络"}"
+                _message.value = if (e.message?.contains("CLEARTEXT", ignoreCase = true) == true) {
+                    "只能通过 HTTPS 连接服务器，请为服务器配置证书"
+                } else {
+                    "连接失败：${e.message ?: "请检查服务器地址和网络"}"
+                }
             } catch (e: IllegalArgumentException) {
                 _message.value = "地址无效：${e.message}"
             } catch (e: IllegalStateException) {
@@ -150,6 +154,8 @@ class TeamViewModel @Inject constructor(
         e.code == "protocol" -> e.message
         e.status == 404 && e.code == "bad_invite" -> "邀请码无效或已更换"
         e.status == 404 -> "服务器上找不到对应内容（${e.code}）"
+        e.status == 403 && e.code == "create_disabled" -> "这台服务器不接受新建工作组，请向组长要邀请码加入"
+        e.status == 429 -> "尝试次数过多，请稍后再试"
         e.status == 401 -> "身份已失效，请重新加入"
         e.status == 403 -> "当前角色没有这个权限"
         e.status == 400 -> "输入有误：${e.message}"

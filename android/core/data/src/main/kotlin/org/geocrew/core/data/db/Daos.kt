@@ -62,6 +62,9 @@ interface FeatureDao {
     @Query("UPDATE features SET dirty = 0, seq = :seq, updatedBy = :by WHERE id = :id AND version = :version")
     suspend fun markSynced(id: String, version: Long, seq: Long, by: String?)
 
+    @Query("SELECT projectId, COUNT(*) AS count FROM features WHERE deleted = 0 GROUP BY projectId")
+    fun observeCounts(): Flow<List<ProjectCount>>
+
     @Query("DELETE FROM features WHERE projectId = :projectId AND deleted = 1 AND dirty = 0")
     suspend fun purgeDeleted(projectId: String)
 }
@@ -84,3 +87,6 @@ interface TrackPointDao {
     @Query("DELETE FROM track_points WHERE trackId = :trackId")
     suspend fun clear(trackId: String)
 }
+
+/** Number of live features in a project. */
+data class ProjectCount(val projectId: String, val count: Int)

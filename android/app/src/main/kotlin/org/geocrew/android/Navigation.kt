@@ -15,6 +15,7 @@ import org.geocrew.feature.compass.TARGET_FEATURE_ARG
 import org.geocrew.feature.map.MapScreen
 import org.geocrew.feature.record.FEATURE_ID_ARG
 import org.geocrew.feature.record.FeatureDetailScreen
+import org.geocrew.feature.record.ProjectsScreen
 import org.geocrew.feature.record.RecordListScreen
 import org.geocrew.feature.settings.SettingsScreen
 import org.geocrew.feature.team.TeamScreen
@@ -32,6 +33,7 @@ object Routes {
     const val TRANSFER = "transfer"
     const val TEAM = "team"
     const val ANALYSIS = "analysis"
+    const val PROJECTS = "projects"
     const val COMPASS = "compass?$TARGET_FEATURE_ARG={$TARGET_FEATURE_ARG}"
     fun compassFor(featureId: String) = "compass?$TARGET_FEATURE_ARG=$featureId"
 
@@ -62,6 +64,9 @@ fun GeoCrewNavHost() {
                 onFocusHandled = { entry.savedStateHandle[Routes.FOCUS] = null },
             )
         }
+        composable(Routes.PROJECTS) {
+            ProjectsScreen(onBack = { nav.popBackStack() }, onOpened = { nav.popBackStack(Routes.MAP, inclusive = false) })
+        }
         composable(Routes.ANALYSIS) {
             AnalysisScreen(onBack = { nav.popBackStack() }, onShowOnMap = { nav.popBackStack(Routes.MAP, inclusive = false) })
         }
@@ -76,6 +81,7 @@ fun GeoCrewNavHost() {
                 onBack = { nav.popBackStack() },
                 onOpen = { nav.navigate(Routes.feature(it)) },
                 onImportExport = { nav.navigate(Routes.TRANSFER) },
+                onProjects = { nav.navigate(Routes.PROJECTS) },
             )
         }
         composable(Routes.FEATURE, arguments = listOf(navArgument(FEATURE_ID_ARG) { type = NavType.StringType })) {

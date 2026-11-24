@@ -24,6 +24,9 @@ class FeatureRepository @Inject constructor(
     fun observeProject(projectId: String): Flow<List<GeoFeature>> =
         dao.observeLive(projectId).map { list -> list.map { it.toModel() } }
 
+    /** Live feature count per project id. */
+    fun observeCounts(): Flow<Map<String, Int>> = dao.observeCounts().map { l -> l.associate { it.projectId to it.count } }
+
     fun observe(id: String): Flow<GeoFeature?> = dao.observe(id).map { it?.toModel() }
 
     suspend fun get(id: String): GeoFeature? = dao.get(id)?.toModel()
