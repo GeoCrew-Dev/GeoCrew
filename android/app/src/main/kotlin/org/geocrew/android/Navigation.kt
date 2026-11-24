@@ -61,6 +61,7 @@ object Routes {
     const val STEREONET = "stereonet"
     const val THICKNESS = "thickness"
     const val COORDINATES = "coordinates"
+    const val SUN = "sun"
     const val SEEK = "seek?$SEEK_FEATURE_ARG={$SEEK_FEATURE_ARG}"
     const val SEEK_ANY = "seek"
     fun seek(featureId: String) = "seek?$SEEK_FEATURE_ARG=$featureId"
@@ -183,6 +184,9 @@ fun GeoCrewNavHost() {
         }
         composable(Routes.COORDINATES) {
             CoordinatesScreen(onBack = { nav.popBackStack() })
+        }
+        composable(Routes.SUN) {
+            org.geocrew.feature.compass.SunScreen(onBack = { nav.popBackStack() })
         }
         composable(
             Routes.SEEK,
