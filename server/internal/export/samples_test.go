@@ -25,10 +25,10 @@ func TestSamplesRegister(t *testing.T) {
 	fs := []store.Feature{
 		{ID: "a", Version: 1, UpdatedAt: at,
 			Geometry:   json.RawMessage(`{"type":"Point","coordinates":[116.5,39.9,52]}`),
-			Properties: json.RawMessage(`{"title":"D10","lithology":"花岗岩","samples":[{"no":"D10-1","type":"薄片","taken_at":"2026-11-24T20:00:00Z","note":"=HYPERLINK(1)"}]}`)},
+			Properties: json.RawMessage(`{"title":"D10","lithology":"花岗岩","samples":[{"no":"D10-1","type":"薄片","taken_at":"2026-11-24T20:00:00Z","note":"=HYPERLINK(1)","results":{"Cu(ppm)":35.2,"Au(ppb)":"<0.5","bad":"x"}}]}`)},
 		{ID: "b", Version: 1, UpdatedAt: at,
 			Geometry:   json.RawMessage(`{"type":"LineString","coordinates":[[110,30],[111,31]]}`),
-			Properties: json.RawMessage(`{"title":"D2","samples":[{"no":"D2-2"},{"type":"no number"},{"no":"D2-1","note":"-0.5 m"}]}`)},
+			Properties: json.RawMessage(`{"title":"D2","samples":[{"no":"D2-2"},{"type":"no number"},{"no":"D2-1","note":"-0.5 m","results":{"Cu(ppm)":7}}]}`)},
 		{ID: "c", Version: 1, UpdatedAt: at, Deleted: true,
 			Properties: json.RawMessage(`{"samples":[{"no":"X-1"}]}`)},
 		{ID: "d", Version: 1, UpdatedAt: at, Properties: json.RawMessage(`{"title":"no samples"}`)},
@@ -50,10 +50,10 @@ func TestSamplesRegister(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := [][]string{
-		SampleHeader,
-		{"D2-1", "", "D2", "110", "30", "", "", "", "-0.5 m", "b"},
-		{"D2-2", "", "D2", "110", "30", "", "", "", "", "b"},
-		{"D10-1", "薄片", "D10", "116.5", "39.9", "52", "花岗岩", "2026-11-25 04:00", "'=HYPERLINK(1)", "a"},
+		append(append([]string{}, SampleHeader...), "Au(ppb)", "Cu(ppm)"),
+		{"D2-1", "", "D2", "110", "30", "", "", "", "-0.5 m", "b", "", "7"},
+		{"D2-2", "", "D2", "110", "30", "", "", "", "", "b", "", ""},
+		{"D10-1", "薄片", "D10", "116.5", "39.9", "52", "花岗岩", "2026-11-25 04:00", "'=HYPERLINK(1)", "a", "<0.5", "35.2"},
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("rows: %q", rows)

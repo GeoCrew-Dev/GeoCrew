@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -19,8 +20,9 @@ import (
 var SampleHeader = []string{"样品编号", "样品类型", "所在记录", "经度", "纬度", "高程", "岩性", "采样时间", "样品备注", "记录ID"}
 
 type sampleRow struct {
-	no     string
-	fields []string
+	no      string
+	fields  []string
+	results map[string]string
 }
 
 // Samples writes the workspace's sample register (protocol v0 §6.4) as CSV,
@@ -52,7 +54,7 @@ func Samples(ctx context.Context, st store.Store, workspaceID string, zone *time
 			if t, err := time.Parse(time.RFC3339Nano, str(s["taken_at"])); err == nil {
 				taken = t.In(zone).Format("2006-01-02 15:04")
 			}
-			rows = append(rows, sampleRow{no, []string{no, str(s["type"]), str(p.Title), lon, lat, alt, str(p.Lithology), taken, str(s["note"]), f.ID}})
+			rows = append(rows, sampleRow{no, []string{no, str(s["type"]), str(p.Title), lon, lat, alt, str(p.Lithology), taken, str(s["note"]), f.ID}, sampleResults(s["results"])})
 		}
 		return nil
 	})
@@ -60,15 +62,30 @@ func Samples(ctx context.Context, st store.Store, workspaceID string, zone *time
 		return 0, err
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return naturalLess(rows[i].no, rows[j].no) })
+	// Lab results (§6.4), one column per analysed item, after the fixed columns.
+	seen := map[string]bool{}
+	var extra []string
+	for _, r := range rows {
+		for k := range r.results {
+			if !seen[k] {
+				seen[k] = true
+				extra = append(extra, k)
+			}
+		}
+	}
+	sort.Slice(extra, func(i, j int) bool { return naturalLess(extra[i], extra[j]) })
 
 	bw := bufio.NewWriter(out)
 	bw.WriteString("\uFEFF")
 	w := csv.NewWriter(bw)
 	w.UseCRLF = true
-	if err := w.Write(SampleHeader); err != nil {
+	if err := w.Write(append(append([]string{}, SampleHeader...), extra...)); err != nil {
 		return 0, err
 	}
 	for _, r := range rows {
+		for _, k := range extra {
+			r.fields = append(r.fields, r.results[k])
+		}
 		for i, c := range r.fields {
 			r.fields[i] = defuse(c)
 		}
@@ -81,6 +98,26 @@ func Samples(ctx context.Context, st store.Store, workspaceID string, zone *time
 		return len(rows), err
 	}
 	return len(rows), bw.Flush()
+}
+
+// sampleResults reads a sample's lab results: numbers, or "<limit" for values below the detection limit.
+func sampleResults(v any) map[string]string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	out := map[string]string{}
+	for k, x := range m {
+		switch y := x.(type) {
+		case float64:
+			out[k] = strconv.FormatFloat(y, 'f', -1, 64)
+		case string:
+			if t := strings.TrimSpace(y); strings.HasPrefix(t, "<") {
+				out[k] = t
+			}
+		}
+	}
+	return out
 }
 
 func str(v any) string {

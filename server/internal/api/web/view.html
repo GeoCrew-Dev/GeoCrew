@@ -317,6 +317,14 @@
     row("小结", s(r.summary));
   }
 
+  // Lab results on a sample (protocol v0 §6.4): numbers, or "<limit" below the detection limit.
+  function results(r) {
+    if (!r || typeof r !== "object") return "";
+    const parts = Object.keys(r).filter((k) => typeof r[k] === "number" || (typeof r[k] === "string" && r[k].trim().startsWith("<")))
+      .slice(0, 6).map((k) => k + " " + r[k]);
+    return parts.length ? "：" + parts.join("，") : "";
+  }
+
   function popup(f, lngLat) {
     const p = f.properties || {}, k = kindOf(p);
     const box = document.createElement("div"); box.className = "pop";
@@ -336,7 +344,7 @@
     if (text(p, "assignee_name")) row("任务", text(p, "assignee_name") + "：" + (STATUS[p.task_status] || "待办"));
     if (Array.isArray(p.samples)) {
       const list = p.samples.filter((x) => x && typeof x.no === "string" && x.no)
-        .map((x) => x.no + (typeof x.type === "string" && x.type ? "（" + x.type + "）" : ""));
+        .map((x) => x.no + (typeof x.type === "string" && x.type ? "（" + x.type + "）" : "") + results(x.results));
       if (list.length) row("样品", list.join("、"));
     }
     if (k === "section") sectionRows(p.section, row);
