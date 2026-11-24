@@ -23,6 +23,7 @@ tags:
   - name: files
   - name: realtime
   - name: push
+  - name: view
 
 paths:
   /healthz:
@@ -514,6 +515,52 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/view-links:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    post:
+      tags: [view]
+      operationId: createViewLink
+      summary: Make a read-only, expiring view link (capability "view")
+      description: |
+        The token (prefix `v_`) reads as the calling member with the
+        readonly role, and cannot write anything, post comments (urgent
+        ones included), register push or send positions. Its realtime
+        connection does not count as the member being online. The server
+        serves a browser viewer at `GET /view/` that reads the token from
+        the URL fragment (`#ws=<id>&t=<token>`), so it never reaches the server.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hours: { type: integer, minimum: 1, maximum: 168, default: 24 }
+      responses:
+        "201":
+          description: New link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ViewLink" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [view]
+      operationId: revokeViewLinks
+      summary: Revoke every view link the calling member made
+      responses:
+        "200":
+          description: Number of links that were still valid
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revoked]
+                properties:
+                  revoked: { type: integer }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
 components:
   securitySchemes:
     bearer:
@@ -730,6 +777,13 @@ components:
         events: { type: array, items: { $ref: "#/components/schemas/PushEvent" } }
         keys: { $ref: "#/components/schemas/PushKeys" }
         updated_at: { type: string, format: date-time }
+    ViewLink:
+      type: object
+      required: [token, expires_at, path]
+      properties:
+        token: { type: string, description: "Bearer token, prefix v_" }
+        expires_at: { type: string, format: date-time }
+        path: { type: string, description: "Viewer page on this server, token in the fragment", example: "/view/#ws=w-1c2d&t=v_abc" }
     PushKeys:
       type: object
       description: "Web Push keys (base64url); when given, notices are encrypted per RFC 8291 (aes128gcm)"

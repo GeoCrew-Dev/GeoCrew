@@ -99,6 +99,8 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | GET / HEAD | `/api/v0/workspaces/{id}/files/{sha256}` | 任意 | 下载附件 / 查询是否存在 |
 | GET | `/api/v0/workspaces/{id}/ws` | 任意 | 升级为 WebSocket 实时通道 |
 | GET / PUT / DELETE | `/api/v0/workspaces/{id}/push` | 任意 | 查看、登记、取消我的推送地址（见第 9 节） |
+| POST / DELETE | `/api/v0/workspaces/{id}/view-links` | 任意（不含查看链接本身） | 生成一个只读查看链接 / 撤销我生成的全部查看链接（见第 10 节） |
+| GET | `/view/` | 无 | 浏览器查看页（令牌在网址 `#` 后面，见第 10 节） |
 
 `info` 示例：
 
@@ -107,7 +109,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "create"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "alerts", "view", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
@@ -373,7 +375,29 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 
 为防止服务端被用来访问它所在的内网，服务端默认只接受公网的 `https` 地址，并在连接时检查解析出的 IP，不跟随重定向。
 
-## 10. 版本演进
+## 10. 查看链接
+
+服务器能力里有 `view` 时可用。成员可以生成一个有时限的只读令牌，在电脑浏览器上查看工作组（例如组长在驻地看全组进度），不必在电脑上加入工作组。
+
+- 生成：`POST …/view-links` 提交 `{hours?}`，`hours` 为 1 到 168，省略时为 24，越界返回 `400 bad_hours`。返回 `201`：
+
+```json
+{ "token": "v_…", "expires_at": "2026-11-25T19:30:00Z", "path": "/view/#ws=w-1c2d&t=v_…" }
+```
+
+- 令牌以 `v_` 开头，和普通令牌一样放在 `Authorization: Bearer` 或实时通道的 `access_token` 里。服务端只保存它的哈希。
+- `path` 是服务器上的查看页；客户端把服务器地址和它拼起来交给用户（复制、分享）。令牌放在 `#` 后面，浏览器不会把它发给服务器，所以不会进入访问日志或 `Referer`。
+- 撤销：`DELETE …/view-links` 撤销调用者生成的全部链接，返回 `{revoked: n}`（仍有效的条数）。成员被吊销时，他生成的链接一并失效。过期或撤销后，用这个令牌的请求返回 `401`。
+
+持查看链接的请求以生成者的身份、按**只读**角色处理，并且进一步限制：
+
+- 可以读：工作区信息、成员、共享设置、要素拉取与历史、两种导出、讨论、附件下载、实时通道。
+- 不能写：提交要素、上传附件、发言（包括紧急消息）、推送登记、生成或撤销查看链接，一律返回 `403`。
+- 实时通道上可以收到全部消息，但发送 `position` 会收到 `{"type":"error","code":"read_only"}`；这个连接不算该成员在线，不触发 `presence`，也不更新 `last_seen`。
+
+查看页是服务端自带的一张静态网页，不需要另外部署；它只用上面的公开接口，第三方也可以用查看链接做自己的看板。
+
+## 11. 版本演进
 
 - 同一主版本（v0）内只增加字段、接口和消息类型，不删除、不改变含义。
 - 不兼容的修改会使用新的路径前缀（`/api/v1/`），服务端可同时提供多个版本。
