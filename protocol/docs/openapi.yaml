@@ -422,6 +422,21 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/export.gpkg:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportGeoPackage
+      summary: Live records as a GeoPackage, one table each for points, lines and polygons (capability "gpkg")
+      responses:
+        "200":
+          description: GeoPackage 1.3 file
+          content:
+            application/geopackage+sqlite3:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/comments:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
