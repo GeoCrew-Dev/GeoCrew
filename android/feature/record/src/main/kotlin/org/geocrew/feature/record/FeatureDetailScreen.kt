@@ -31,7 +31,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.NearMe
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenuItem
@@ -45,6 +48,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -90,6 +94,9 @@ import org.geocrew.core.model.areaSquareMeters
 import org.geocrew.core.model.lengthMeters
 import org.geocrew.core.model.string
 import org.geocrew.core.model.double
+import org.geocrew.core.model.AudioInfo
+import org.geocrew.core.model.audio
+import org.geocrew.core.model.audioInfo
 import org.geocrew.core.data.team.CommentItem
 import org.geocrew.core.ui.CommentBubble
 import org.geocrew.core.ui.CommentComposer
@@ -175,6 +182,8 @@ fun FeatureDetailScreen(
             Attributes(f, form.map { it.key }.toSet(), viewModel::setAttribute, viewModel::removeAttribute)
             SectionHeader("照片")
             Photos(f, viewModel)
+            SectionHeader(if (f.audio.isEmpty()) "录音" else "录音（${f.audio.size}）")
+            VoiceNotes(f, viewModel)
             SectionHeader("信息")
             Info(f, format)
             if (onSection != null && (f.geometry is Geometry.LineString || f.geometry is Geometry.MultiLineString) && f.kind != FeatureKind.TRACK) {
@@ -397,6 +406,85 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
             onDismissRequest = { removing = null },
             title = { Text("移除这张照片？") },
             confirmButton = { TextButton(onClick = { vm.removePhoto(sha); removing = null }) { Text("移除") } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("取消") } },
+        )
+    }
+}
+
+/** Voice notes: record a spoken observation, play it back, long press to remove. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VoiceNotes(f: GeoFeature, vm: FeatureDetailViewModel) {
+    val context = LocalContext.current
+    val recording by vm.recording.collectAsStateWithLifecycle()
+    val playback by vm.playback.collectAsStateWithLifecycle()
+    var removing by remember { mutableStateOf<String?>(null) }
+    var denied by remember { mutableStateOf(false) }
+    val mic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.startRecording() else denied = true
+    }
+    val info = f.audioInfo
+    val zone = java.time.ZoneId.systemDefault()
+    val time = remember { java.time.format.DateTimeFormatter.ofPattern("M月d日 HH:mm") }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedButton(onClick = {
+            val has = context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (has) vm.startRecording() else mic.launch(android.Manifest.permission.RECORD_AUDIO)
+        }) {
+            Icon(Icons.Default.Mic, null)
+            Text(" 录一段")
+        }
+        if (denied) Text("没有麦克风权限，可以在系统设置里给同勘打开", style = MaterialTheme.typography.bodySmall)
+        f.audio.forEachIndexed { i, sha ->
+            val a = info[sha]
+            val playing = playback?.takeIf { it.sha == sha }
+            Row(
+                Modifier.fillMaxWidth().combinedClickable(onClick = { vm.togglePlay(sha) }, onLongClick = { removing = sha }),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(if (playing != null) Icons.Default.Stop else Icons.Default.PlayArrow, if (playing != null) "停止" else "播放")
+                Column(Modifier.weight(1f).padding(start = 8.dp, top = 6.dp, bottom = 6.dp)) {
+                    Text(
+                        listOfNotNull(
+                            "录音 ${i + 1}",
+                            a?.durationSeconds?.let(AudioInfo::clock),
+                            a?.recordedAt?.let { time.withZone(zone).format(it) },
+                        ).joinToString(" · "),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (playing != null && playing.durationMillis > 0) {
+                        LinearProgressIndicator(
+                            progress = { playing.positionMillis.toFloat() / playing.durationMillis },
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
+        if (f.audio.isNotEmpty()) Text("点一下播放，长按移除", style = MaterialTheme.typography.bodySmall)
+    }
+    recording?.let { r ->
+        AlertDialog(
+            onDismissRequest = {},
+            properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+            icon = { Icon(Icons.Default.Mic, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("正在录音 " + AudioInfo.clock(r.elapsedMillis / 1000.0)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LinearProgressIndicator(progress = { r.level }, modifier = Modifier.fillMaxWidth())
+                    Text("说出看到的现象，停止后附在这条记录上，同步时一起上传。", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = vm::stopRecording) { Text("停止并保存") } },
+            dismissButton = { TextButton(onClick = vm::cancelRecording) { Text("放弃") } },
+        )
+    }
+    removing?.let { sha ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("移除这段录音？") },
+            confirmButton = { TextButton(onClick = { vm.removeAudio(sha); removing = null }) { Text("移除") } },
             dismissButton = { TextButton(onClick = { removing = null }) { Text("取消") } },
         )
     }

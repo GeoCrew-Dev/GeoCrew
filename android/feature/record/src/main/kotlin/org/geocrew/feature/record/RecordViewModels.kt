@@ -28,6 +28,9 @@ import org.geocrew.core.data.team.TeamComments
 import org.geocrew.core.data.team.TeamRepository
 import org.geocrew.core.data.team.TeamSession
 import org.geocrew.core.model.Attitude
+import org.geocrew.core.model.AudioInfo
+import org.geocrew.core.model.audio
+import org.geocrew.core.model.audioInfo
 import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.FieldTemplate
@@ -44,6 +47,9 @@ import org.geocrew.core.sensors.OrientationSource
 import java.io.File
 import java.time.Instant
 import javax.inject.Inject
+
+/** Longest voice note; a longer talk becomes several. */
+private const val MAX_RECORDING_MILLIS = 10 * 60_000L
 
 data class Revision(val feature: GeoFeature, val author: String)
 
@@ -112,6 +118,7 @@ const val FEATURE_ID_ARG = "featureId"
 @HiltViewModel
 class FeatureDetailViewModel @Inject constructor(
     savedState: SavedStateHandle,
+    @dagger.hilt.android.qualifiers.ApplicationContext appContext: android.content.Context,
     private val features: FeatureRepository,
     val photos: PhotoStore,
     private val settings: SettingsRepository,
@@ -292,6 +299,148 @@ class FeatureDetailViewModel @Inject constructor(
     private val _photoMessage = MutableStateFlow<String?>(null)
     val photoMessage: StateFlow<String?> = _photoMessage.asStateFlow()
     fun consumePhotoMessage() { _photoMessage.value = null }
+
+    // --- voice notes (protocol v0 §6.3) --------------------------------------
+
+    /** A recording in progress. */
+    data class RecordingUi(val startedAt: Instant, val elapsedMillis: Long, val level: Float)
+
+    /** The voice note playing now. */
+    data class PlaybackUi(val sha: String, val positionMillis: Int, val durationMillis: Int)
+
+    private val recorder = VoiceRecorder(appContext)
+    private val player = VoicePlayer()
+    private var recordFile: File? = null
+    private var recordStart = 0L
+    private var recordPosition: org.geocrew.core.model.LngLat? = null
+    private var recordJob: kotlinx.coroutines.Job? = null
+    private var playJob: kotlinx.coroutines.Job? = null
+    private val _recording = MutableStateFlow<RecordingUi?>(null)
+    val recording: StateFlow<RecordingUi?> = _recording.asStateFlow()
+    private val _playback = MutableStateFlow<PlaybackUi?>(null)
+    val playback: StateFlow<PlaybackUi?> = _playback.asStateFlow()
+
+    /** Starts a voice note; the microphone permission must already be granted. */
+    fun startRecording() {
+        if (recorder.active) return
+        stopPlayback()
+        val target = photos.newRecordingTarget()
+        try {
+            recorder.start(target)
+        } catch (e: Exception) {
+            target.delete()
+            _photoMessage.value = "无法开始录音" + (e.message?.let { "：$it" } ?: "")
+            return
+        }
+        recordFile = target
+        recordStart = android.os.SystemClock.elapsedRealtime()
+        recordPosition = null
+        val started = Instant.now()
+        _recording.value = RecordingUi(started, 0, 0f)
+        recordJob = viewModelScope.launch {
+            launch {
+                if (location.hasPermission()) {
+                    recordPosition = withTimeoutOrNull(5_000) { location.fixes().first() }
+                        ?.takeIf { java.time.Duration.between(it.time, Instant.now()).abs().seconds < 120 }?.position
+                }
+            }
+            while (true) {
+                val elapsed = android.os.SystemClock.elapsedRealtime() - recordStart
+                if (elapsed >= MAX_RECORDING_MILLIS) break
+                _recording.value = RecordingUi(started, elapsed, recorder.level())
+                kotlinx.coroutines.delay(200)
+            }
+            _photoMessage.value = "录音已到 ${MAX_RECORDING_MILLIS / 60_000} 分钟上限，已自动保存"
+            stopRecording()
+        }
+    }
+
+    /** Stops and attaches the voice note to the record. */
+    fun stopRecording() {
+        val ui = _recording.value ?: return
+        val file = recordFile ?: return
+        val seconds = (android.os.SystemClock.elapsedRealtime() - recordStart) / 1000.0
+        val position = recordPosition
+        val ok = recorder.stop()
+        _recording.value = null
+        recordFile = null
+        recordJob?.cancel()
+        recordJob = null
+        viewModelScope.launch {
+            if (!ok || seconds < 0.5) {
+                file.delete()
+                _photoMessage.value = "录音太短，没有保存"
+                return@launch
+            }
+            val sha = photos.commit(file, org.geocrew.core.model.AttachmentKind.AUDIO) ?: return@launch
+            val cur = feature.value ?: return@launch
+            if (sha in cur.audio) return@launch
+            features.edit(id) {
+                strings(Props.AUDIO, cur.audio + sha)
+                audioInfo(sha, AudioInfo(seconds, ui.startedAt, position))
+            }
+        }
+    }
+
+    /** Throws the recording in progress away. */
+    fun cancelRecording() {
+        _recording.value ?: return
+        recorder.stop()
+        recordFile?.delete()
+        recordFile = null
+        _recording.value = null
+        recordJob?.cancel()
+        recordJob = null
+    }
+
+    /** Plays [sha], or stops it when it is already playing. */
+    fun togglePlay(sha: String) {
+        val wasThis = _playback.value?.sha == sha
+        stopPlayback()
+        if (wasThis) return
+        val file = photos.file(sha, org.geocrew.core.model.AttachmentKind.AUDIO)
+        if (!file.isFile) {
+            _photoMessage.value = "这段录音还没有下载到手机，联网同步后再试"
+            return
+        }
+        val length = try {
+            player.play(file) { stopPlayback() }
+        } catch (e: Exception) {
+            _photoMessage.value = "无法播放这段录音"
+            return
+        }
+        playJob = viewModelScope.launch {
+            while (true) {
+                _playback.value = PlaybackUi(sha, player.positionMillis, length)
+                kotlinx.coroutines.delay(200)
+            }
+        }
+    }
+
+    fun stopPlayback() {
+        playJob?.cancel()
+        playJob = null
+        player.stop()
+        _playback.value = null
+    }
+
+    fun removeAudio(sha: String) = viewModelScope.launch {
+        if (_playback.value?.sha == sha) stopPlayback()
+        val cur = feature.value ?: return@launch
+        features.edit(id) {
+            strings(Props.AUDIO, cur.audio - sha)
+            audioInfo(sha, null)
+        }
+    }
+
+    override fun onCleared() {
+        // A recording still running here was abandoned with the screen.
+        if (recorder.active) {
+            recorder.stop()
+            recordFile?.delete()
+        }
+        player.stop()
+    }
 
     fun delete() = viewModelScope.launch { features.delete(id) }
 

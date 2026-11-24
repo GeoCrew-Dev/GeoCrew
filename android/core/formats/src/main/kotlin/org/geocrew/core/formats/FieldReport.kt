@@ -1,5 +1,6 @@
 package org.geocrew.core.formats
 
+import org.geocrew.core.model.AudioInfo
 import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.CoordinateFormatter
 import org.geocrew.core.model.FeatureKind
@@ -12,6 +13,8 @@ import org.geocrew.core.model.bounds
 import org.geocrew.core.model.lengthMeters
 import org.geocrew.core.model.string
 import org.geocrew.core.model.task
+import org.geocrew.core.model.audio
+import org.geocrew.core.model.audioInfo
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -114,6 +117,10 @@ data class FieldReport(
                     if (v.isNotBlank()) add(field.label to v + if (field.unit.isNotBlank()) " ${field.unit}" else "")
                 }
                 f.task?.let { t -> add("任务" to "${t.assigneeName}：${t.status.label}") }
+                f.audio.takeIf { it.isNotEmpty() }?.let { clips ->
+                    val total = clips.sumOf { f.audioInfo[it]?.durationSeconds ?: 0.0 }
+                    add("录音" to "${clips.size} 段" + if (total > 0) "，共 ${AudioInfo.clock(total)}" else "")
+                }
             }
             return Entry(f.id, heading, facts, f.note?.takeIf { it.isNotBlank() }, f.photos)
         }
