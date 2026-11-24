@@ -8,23 +8,47 @@ import (
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
 
-// PhotoRefs returns the attachment hashes a record's properties list under
-// "photos" (protocol v0 §6), in order and without duplicates. Anything
-// that is not a valid hash is ignored.
-func PhotoRefs(props json.RawMessage) []string {
-	var p struct {
-		Photos []json.RawMessage `json:"photos"`
-	}
+// Kind is where a record refers to an attachment and how a package names it.
+type Kind struct {
+	Property string // array of hashes in a record's properties
+	Dir      string // folder inside a project package
+	Ext      string // file extension inside a project package
+}
+
+// Kinds lists every property that refers to attachments (protocol v0 §6).
+// A new kind of attachment is one line here; pruning and packages follow.
+var Kinds = []Kind{
+	{Property: "photos", Dir: "photos", Ext: ".jpg"},
+	{Property: "audio", Dir: "audio", Ext: ".m4a"},
+}
+
+// Ref is one attachment a record refers to.
+type Ref struct {
+	SHA  string
+	Kind Kind
+}
+
+// Refs returns the attachments a record's properties refer to, kind by kind
+// in the order of [Kinds] and in list order within a kind, without
+// duplicates. Anything that is not a valid hash is ignored.
+func Refs(props json.RawMessage) []Ref {
+	var p map[string]json.RawMessage
 	if len(props) == 0 || json.Unmarshal(props, &p) != nil {
 		return nil
 	}
-	var out []string
+	var out []Ref
 	seen := map[string]bool{}
-	for _, raw := range p.Photos {
-		var sha string
-		if json.Unmarshal(raw, &sha) == nil && blob.ValidHash(sha) && !seen[sha] {
-			seen[sha] = true
-			out = append(out, sha)
+	for _, k := range Kinds {
+		var list []json.RawMessage
+		if json.Unmarshal(p[k.Property], &list) != nil {
+			continue
+		}
+		for _, raw := range list {
+			var sha string
+			if json.Unmarshal(raw, &sha) == nil && blob.ValidHash(sha) && !seen[sha] {
+				seen[sha] = true
+				out = append(out, Ref{SHA: sha, Kind: k})
+			}
 		}
 	}
 	return out
@@ -43,16 +67,16 @@ func Referenced(ctx context.Context, st store.Store, workspaceID string) (map[st
 		}
 		for _, f := range fs {
 			since = f.Seq
-			for _, sha := range PhotoRefs(f.Properties) {
-				refs[sha] = true
+			for _, r := range Refs(f.Properties) {
+				refs[r.SHA] = true
 			}
 			old, err := st.FeatureHistory(ctx, workspaceID, f.ID)
 			if err != nil {
 				return nil, err
 			}
 			for _, o := range old {
-				for _, sha := range PhotoRefs(o.Properties) {
-					refs[sha] = true
+				for _, r := range Refs(o.Properties) {
+					refs[r.SHA] = true
 				}
 			}
 		}

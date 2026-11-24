@@ -31,19 +31,23 @@ func TestPackageMatchesTheAppFormat(t *testing.T) {
 	}
 	have := strings.Repeat("a", 64)
 	lost := strings.Repeat("b", 64)
+	voice := strings.Repeat("c", 64)
 	at := time.Date(2026, 11, 24, 8, 0, 0, 0, time.UTC)
 	fs := []store.Feature{
 		{ID: "p1", Version: 1, UpdatedAt: at, Geometry: json.RawMessage(`{"type":"Point","coordinates":[116,40]}`),
 			Properties: json.RawMessage(`{"title":"D001","photos":["` + have + `","` + lost + `","../evil"]}`)},
 		{ID: "p2", Version: 1, UpdatedAt: at, Deleted: true, Properties: json.RawMessage(`{"photos":["` + have + `"]}`)},
-		{ID: "p3", Version: 1, UpdatedAt: at, Properties: json.RawMessage(`{"title":"文字记录","photos":["` + have + `"]}`)},
+		{ID: "p3", Version: 1, UpdatedAt: at, Properties: json.RawMessage(`{"title":"文字记录","photos":["` + have + `"],"audio":["` + voice + `"]}`)},
 	}
 	if _, _, err := db.PushFeatures(ctx, ws.ID, m.ID, fs); err != nil {
 		t.Fatal(err)
 	}
 	open := func(sha string) (io.ReadCloser, error) {
-		if sha == have {
+		switch sha {
+		case have:
 			return io.NopCloser(strings.NewReader("JPEG")), nil
+		case voice:
+			return io.NopCloser(strings.NewReader("M4A")), nil
 		}
 		return nil, os.ErrNotExist
 	}
@@ -52,7 +56,7 @@ func TestPackageMatchesTheAppFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sum != (PackageSummary{Features: 2, Photos: 1, Missing: 1}) {
+	if sum != (PackageSummary{Features: 2, Photos: 1, Audio: 1, Missing: 1}) {
 		t.Fatalf("summary %+v", sum)
 	}
 
@@ -67,7 +71,7 @@ func TestPackageMatchesTheAppFormat(t *testing.T) {
 		r.Close()
 		files[f.Name] = string(b)
 	}
-	if len(files) != 3 || files["photos/"+have+".jpg"] != "JPEG" {
+	if len(files) != 4 || files["photos/"+have+".jpg"] != "JPEG" || files["audio/"+voice+".m4a"] != "M4A" {
 		t.Fatalf("entries %v", keys(files))
 	}
 	var man struct {
@@ -102,4 +106,15 @@ func keys(m map[string]string) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestRefsCoverEveryKind(t *testing.T) {
+	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	got := Refs(json.RawMessage(`{"photos":["` + a + `","` + a + `",3],"audio":["` + b + `","` + a + `"],"note":"x"}`))
+	if len(got) != 2 || got[0].SHA != a || got[0].Kind.Dir != "photos" || got[1].SHA != b || got[1].Kind.Ext != ".m4a" {
+		t.Fatalf("refs %+v", got)
+	}
+	if Refs(json.RawMessage(`{"photos":"`+a+`"}`)) != nil || Refs(nil) != nil {
+		t.Fatal("non-arrays should give nothing")
+	}
 }

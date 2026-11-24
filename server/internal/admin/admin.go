@@ -161,7 +161,7 @@ func RunWith(ctx context.Context, st store.Store, opt Options, args []string, ou
 			}
 			var sum export.PackageSummary
 			sum, err = export.Package(ctx, st, ws.ID, open, "geocrew-server admin", time.Now(), f)
-			msg = fmt.Sprintf("已把「%s」的 %d 条记录、%d 张照片打包到 %s", ws.Name, sum.Features, sum.Photos, rest[1])
+			msg = fmt.Sprintf("已把「%s」的 %d 条记录、%d 张照片、%d 段录音打包到 %s", ws.Name, sum.Features, sum.Photos, sum.Audio, rest[1])
 			if sum.Missing > 0 {
 				msg += fmt.Sprintf("（%d 张照片服务器上没有，已跳过）", sum.Missing)
 			}

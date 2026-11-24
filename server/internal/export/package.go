@@ -39,7 +39,8 @@ type manifest struct {
 type PackageSummary struct {
 	Features int
 	Photos   int
-	// Missing counts photos the records refer to that are not on this server.
+	Audio    int
+	// Missing counts attachments the records refer to that are not on this server.
 	Missing int
 }
 
@@ -52,6 +53,7 @@ type OpenFile func(sha string) (io.ReadCloser, error)
 //	project.json          name, dates and the shared record form
 //	features.geojson      every live record
 //	photos/<sha256>.jpg   attachments the records refer to under "photos"
+//	audio/<sha256>.m4a    voice notes the records refer to under "audio"
 //
 // Workspace credentials, members and history are never included. The
 // Android app imports the file as a new, unlinked project.
@@ -106,13 +108,13 @@ func Package(ctx context.Context, st store.Store, workspaceID string, open OpenF
 	if err != nil {
 		return sum, err
 	}
-	var photos []string
+	var files []Ref
 	known := map[string]bool{}
 	sum.Features, err = writeCollection(ctx, st, workspaceID, body, func(f store.Feature) {
-		for _, sha := range PhotoRefs(f.Properties) {
-			if !known[sha] {
-				known[sha] = true
-				photos = append(photos, sha)
+		for _, r := range Refs(f.Properties) {
+			if !known[r.SHA] {
+				known[r.SHA] = true
+				files = append(files, r)
 			}
 		}
 	})
@@ -120,11 +122,11 @@ func Package(ctx context.Context, st store.Store, workspaceID string, open OpenF
 		return sum, err
 	}
 
-	for _, sha := range photos {
+	for _, ref := range files {
 		if err := ctx.Err(); err != nil {
 			return sum, err
 		}
-		r, err := open(sha)
+		r, err := open(ref.SHA)
 		if errors.Is(err, os.ErrNotExist) {
 			sum.Missing++
 			continue
@@ -132,7 +134,7 @@ func Package(ctx context.Context, st store.Store, workspaceID string, open OpenF
 		if err != nil {
 			return sum, err
 		}
-		w, err := entry("photos/" + sha + ".jpg")
+		w, err := entry(ref.Kind.Dir + "/" + ref.SHA + ref.Kind.Ext)
 		if err == nil {
 			_, err = io.Copy(w, r)
 		}
@@ -140,7 +142,11 @@ func Package(ctx context.Context, st store.Store, workspaceID string, open OpenF
 		if err != nil {
 			return sum, err
 		}
-		sum.Photos++
+		if ref.Kind.Property == "audio" {
+			sum.Audio++
+		} else {
+			sum.Photos++
+		}
 	}
 	return sum, z.Close()
 }
