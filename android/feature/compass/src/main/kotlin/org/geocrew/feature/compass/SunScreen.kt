@@ -120,9 +120,10 @@ private fun TimeRow(label: String, at: Instant?, zone: ZoneId) {
 internal fun countdown(d: SunDay, now: Instant): String {
     d.polar?.let { return if (it == SunDay.Polar.DAY) "今天太阳不落山" else "今天太阳不升起" }
     val sunset = d.sunset ?: return ""
+    val sunrise = d.sunrise
     val dusk = d.dusk
     return when {
-        d.sunrise != null && now < d.sunrise -> "还有 ${left(now, d.sunrise)} 日出"
+        sunrise != null && now < sunrise -> "还有 ${left(now, sunrise)} 日出"
         now < sunset -> "距日落还有 ${left(now, sunset)}" + (dusk?.let { "，天黑前 ${left(now, it)}" } ?: "")
         dusk != null && now < dusk -> "太阳已落，还有 ${left(now, dusk)} 天黑"
         else -> "天已经黑了"
