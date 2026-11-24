@@ -285,7 +285,10 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             val legendShown = remember(overlays.features, overlays.legend) { overlays.legend.used(overlays.features) }
-            MapLegend(legendTitle(overlays.legend.key, project?.config?.fields.orEmpty()), legendShown)
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MapLegend(legendTitle(overlays.legend.key, project?.config?.fields.orEmpty()), legendShown)
+                ScaleBar(camera)
+            }
             StatusLine(
                 onClick = { showGoTo = true },
                 text = buildString {
