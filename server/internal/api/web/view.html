@@ -77,6 +77,7 @@
   const KINDS = {
     point: ["标注点", "#e53935"], geo_point: ["地质点", "#8e24aa"], photo: ["照片点", "#fb8c00"],
     line: ["线", "#1e88e5"], polygon: ["面", "#43a047"], track: ["轨迹", "#00897b"],
+    section: ["实测剖面", "#795548"],
   };
   const STATUS = { todo: "待办", doing: "进行中", done: "已完成" };
   const kindOf = (p) => KINDS[p.kind] ? p.kind : "point";
@@ -174,6 +175,41 @@
     return URL.createObjectURL(await r.blob());
   }
 
+  // Measured section (protocol v0 §6.5): per-layer true thickness from the traverse and the bedding normal.
+  function sectionRows(sec, row) {
+    if (!sec || typeof sec !== "object") return;
+    const num = (v) => typeof v === "number" && isFinite(v);
+    const rad = Math.PI / 180;
+    const legs = (Array.isArray(sec.legs) ? sec.legs : []).filter((l) => l && num(l.azimuth) && num(l.distance) && l.distance > 0)
+      .map((l) => { const b = (num(l.slope) ? l.slope : 0) * rad, a = l.azimuth * rad, h = l.distance * Math.cos(b);
+        return { d: l.distance, v: [h * Math.sin(a), h * Math.cos(a), l.distance * Math.sin(b)] }; });
+    const layers = (Array.isArray(sec.layers) ? sec.layers : []).filter((l) => l && num(l.top));
+    const total = legs.reduce((s, l) => s + l.d, 0);
+    row("导线", legs.length + " 段，共 " + total.toFixed(1) + " m");
+    const att = (l) => num(l.dip_direction) && num(l.dip) ? l : null;
+    const known = layers.map((l, i) => [i, att(l)]).filter((x) => x[1]);
+    let from = 0, sum = 0;
+    const lines = layers.map((l, i) => {
+      const a = from, b = Math.min(l.top, total); from = Math.max(from, l.top);
+      let t = att(l);
+      if (!t && known.length) t = known.reduce((best, x) => { const c = Math.abs(x[0] - i) * 2 + (x[0] < i ? 0 : 1); return c < best[0] ? [c, x[1]] : best; }, [Infinity, null])[1];
+      let thick = null;
+      if (t && b > a) {
+        const dd = t.dip_direction * rad, dp = t.dip * rad;
+        const n = [Math.sin(dp) * Math.sin(dd), Math.sin(dp) * Math.cos(dd), Math.cos(dp)];
+        let s = 0, start = 0;
+        for (const leg of legs) {
+          const end = start + leg.d, len = Math.min(end, b) - Math.max(start, a);
+          if (len > 0) s += (leg.v[0] * n[0] + leg.v[1] * n[1] + leg.v[2] * n[2]) * len / leg.d;
+          start = end;
+        }
+        thick = Math.abs(s); sum += thick;
+      }
+      return [typeof l.no === "string" ? l.no : String(i + 1), typeof l.lithology === "string" ? l.lithology : "", thick == null ? "" : thick.toFixed(1) + " m"].filter(Boolean).join(" ");
+    });
+    if (lines.length) { row("分层", lines.slice(0, 8).join("；") + (lines.length > 8 ? "……" : "")); row("总厚度", sum.toFixed(1) + " m"); }
+  }
+
   function popup(f, lngLat) {
     const p = f.properties || {}, k = kindOf(p);
     const box = document.createElement("div"); box.className = "pop";
@@ -196,6 +232,7 @@
         .map((x) => x.no + (typeof x.type === "string" && x.type ? "（" + x.type + "）" : ""));
       if (list.length) row("样品", list.join("、"));
     }
+    if (k === "section") sectionRows(p.section, row);
     row("备注", text(p, "note"));
     row("修改", [members.get(by(f)) || "", upd(f).replace("T", " ").slice(0, 16)].filter(Boolean).join(" · "));
     box.append(dl);
