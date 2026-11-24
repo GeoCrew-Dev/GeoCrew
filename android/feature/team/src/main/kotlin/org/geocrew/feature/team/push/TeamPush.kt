@@ -45,7 +45,7 @@ class TeamPush @Inject constructor(
      */
     fun enable(activity: Activity, projectId: String, done: (Boolean) -> Unit) {
         UnifiedPush.tryUseCurrentOrDefaultDistributor(activity) { ok ->
-            if (ok) UnifiedPush.register(context, projectId, messageForDistributor = "同勘工作组通知")
+            if (ok) UnifiedPush.register(context, projectId, "同勘工作组通知")
             done(ok)
         }
     }
