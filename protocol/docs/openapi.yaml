@@ -916,7 +916,7 @@ components:
       properties:
         feature: { type: string, description: Record id }
         title: { type: string }
-        code: { type: string, enum: [duplicate_number, duplicate_sample, no_position, poor_accuracy, far_away, missing_stop] }
+        code: { type: string, enum: [duplicate_number, duplicate_sample, no_position, poor_accuracy, far_away, missing_stop, redo] }
         message: { type: string, description: For display only }
     RealtimeMessage:
       description: Any message on the realtime channel

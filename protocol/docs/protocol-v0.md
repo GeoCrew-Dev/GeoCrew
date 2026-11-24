@@ -96,7 +96,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | GET | `/api/v0/workspaces/{id}/export.samples.csv?tz_offset=` | 任意 | 样品清单（第 6.4 节），UTF-8 CSV（带 BOM），每件样品一行：样品编号、样品类型、所在记录、经度、纬度、高程、岩性、采样时间、样品备注、记录ID，按编号自然排序；线面上的样品取第一个顶点。`tz_offset` 为采样时间所用时区（东为正，分钟，默认 0）。能力名 `samples` |
 | GET | `/api/v0/workspaces/{id}/export.sections.csv` | 任意 | 实测剖面分层表（第 6.5 节），UTF-8 CSV（带 BOM），每个剖面的每一层一行：剖面、层号、起点斜距、终点斜距、岩性、倾向、倾角、产状来源（实测 / 借用）、真厚度、备注、记录ID，剖面按名称自然排序。能力名 `sections` |
 | GET | `/api/v0/workspaces/{id}/export.routes.csv` | 任意 | 地质路线记录表（第 6.6 节），UTF-8 CSV（带 BOM）：每条路线一个目的行、按 `stops` 顺序每个点一行（路线、日期、参加人员、序号、点号、类型、经度、纬度、海拔、岩性、产状、点上描述、至下一点描述、记录ID）和一个小结行，找不到的点跳过，路线按日期和路线号自然排序。能力名 `routes` |
-| GET | `/api/v0/workspaces/{id}/checks` | 任意 | 记录核对：`{"issues": [{"feature", "title", "code", "message"}]}`，列出值得再看一眼的记录，按记录名自然排序。`code` 固定为 `duplicate_number`（地质点、照片点、剖面、路线等带数字的编号重名，不分大小写）、`duplicate_sample`（样品编号在工程内重复）、`no_position`（点、线、面、轨迹、照片没有几何）、`poor_accuracy`（`accuracy_m` 超过 `?accuracy_m=`，默认 30）、`far_away`（离全部记录位置中位点超过 `?far_km=`，默认 50 千米，且超过典型距离 10 倍；至少 5 条有位置的记录才判断）、`missing_stop`（路线 `stops` 指向不存在或已删除的记录）；`message` 只供显示，客户端可按 `code` 自行措辞。能力名 `checks` |
+| GET | `/api/v0/workspaces/{id}/checks` | 任意 | 记录核对：`{"issues": [{"feature", "title", "code", "message"}]}`，列出值得再看一眼的记录，按记录名自然排序。`code` 固定为 `duplicate_number`（地质点、照片点、剖面、路线等带数字的编号重名，不分大小写）、`duplicate_sample`（样品编号在工程内重复）、`no_position`（点、线、面、轨迹、照片没有几何）、`poor_accuracy`（`accuracy_m` 超过 `?accuracy_m=`，默认 30）、`far_away`（离全部记录位置中位点超过 `?far_km=`，默认 50 千米，且超过典型距离 10 倍；至少 5 条有位置的记录才判断）、`missing_stop`（路线 `stops` 指向不存在或已删除的记录）、`redo`（组长退回的记录，见 §6.9）；`message` 只供显示，客户端可按 `code` 自行措辞。能力名 `checks` |
 | GET | `/api/v0/workspaces/{id}/export.kml` | 任意 | KML 2.2：每条有几何的记录一个地标，`title`、`note` 作名称和说明，其余简单属性写成 ExtendedData；颜色取记录自带的 simplestyle，否则取共享设置里的 `legend`，每种颜色一个共享 Style。能力名 `kml` |
 | GET | `/api/v0/workspaces/{id}/export.gpkg` | 任意 | GeoPackage 1.3（`application/geopackage+sqlite3`）：点、线、面各一张表（`points`、`lines`、`polygons`，EPSG:4326），列有 `record_id`、`kind`、`title`、`note`、`lithology`、`strike`、`dip_direction`、`dip`、`line_style`、`meet_at`、`color`、`updated_at`、`updated_by`（昵称）和 `properties`（全部属性的 JSON）；没有记录的表不建。能力名 `gpkg` |
 | GET | `/api/v0/workspaces/{id}/comments?since=&limit=` | 任意 | 增量拉取讨论（见第 8 节） |
@@ -394,6 +394,23 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 ### 6.8 集合点
 
 任何点记录都可以带 `meet_at`（ISO 8601 时间，例如 `"2026-11-24T09:30:00Z"`），表示全组在这个时间到这个点集合：出发、吃饭、等车接。客户端应在地图上把它和普通点区分开，并提示离现在最近的一次集合：从集合时间前 24 小时开始显示，过了时间再保留 1 小时，给迟到的人看；同时有几处时取时间上离现在最近的。显示时给出集合时间、还剩多久，以及本机到集合点的距离和方位。取消集合点就是删掉这个属性；`meet_at` 不是合法时间时当作没有。服务端不解析这个属性。
+
+### 6.9 审核
+
+组长可以给任何记录加 `review`，表示看过了：
+
+```json
+"review": { "state": "approved", "by": "<member_id>", "at": "2026-11-24T18:30:00Z", "note": "" }
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `state` | `approved` 通过；`redo` 退回，要记录人补充或改正 |
+| `by` | 审核的组长的成员 id |
+| `at` | 审核时间 |
+| `note` | 给记录人的话，退回时写要改什么 |
+
+只有组长能设、改或删 `review`。服务端对组员提交的修改，一律保留库里已有的 `review`（没有就去掉提交里带的），组员的其他修改照常生效；所以客户端不必另外防伪，组员改了审核过的记录，审核也还在。审核之后记录又被改过（`sync.updated_at` 晚于 `review.at`）时，客户端应提示「审核后有改动」，由组长决定要不要再看一遍。退回的记录出现在「待核对」里，代码 `redo`。不认识的 `state` 当作没有审核显示，但要原样保留。
 
 ## 7. 实时通道
 
