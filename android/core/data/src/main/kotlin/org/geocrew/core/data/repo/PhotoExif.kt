@@ -1,4 +1,4 @@
-package org.geocrew.feature.record
+package org.geocrew.core.data.repo
 
 import android.media.ExifInterface
 import org.geocrew.core.model.Geodesy
@@ -12,7 +12,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /** What a camera wrote into a JPEG's EXIF: position, direction, time. */
-internal object PhotoExif {
+object PhotoExif {
     private val EXIF_TIME = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
 
     fun read(file: File): PhotoInfo? = runCatching {

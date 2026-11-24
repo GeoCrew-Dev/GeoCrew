@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,7 +36,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -59,6 +64,10 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
     val createFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val f = exportFormat
         if (uri != null && f != null) viewModel.export(f, uri)
+    }
+    var cameraAhead by remember { mutableStateOf("0") }
+    val openPhotos = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) viewModel.importPhotos(uris, cameraAhead.trim().toIntOrNull()?.coerceIn(-24 * 60, 24 * 60) ?: 0)
     }
     val openAssays = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.openAssays(uri)
@@ -116,6 +125,31 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
             ) {
                 Icon(Icons.Default.FileDownload, null)
                 Text(" 导入分析结果")
+            }
+
+            SectionHeader("照片落点")
+            Text(
+                "把相机或手机相册里的照片批量变成照片点。照片自带位置的直接落点；没有位置的（相机没有 GPS、手机关了定位）按拍摄时间对到当前工程同一时间记录的轨迹上。相机时钟不准时，填它比实际快几分钟（慢就填负数）。部分系统选图时会去掉照片里的位置，这时仍可按轨迹落点。",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = cameraAhead,
+                    onValueChange = { v -> if (v.length <= 5 && v.all { it.isDigit() || it == '-' }) cameraAhead = v },
+                    label = { Text("相机时钟快（分钟）") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+                FilledTonalButton(
+                    onClick = { viewModel.clearMessage(); openPhotos.launch(arrayOf("image/jpeg", "image/*")) },
+                    enabled = !busy,
+                    modifier = Modifier.padding(start = 12.dp),
+                ) {
+                    Icon(Icons.Default.PhotoLibrary, null)
+                    Text(" 选择照片")
+                }
             }
 
             SectionHeader("导出当前工程")

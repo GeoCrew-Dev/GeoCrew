@@ -144,6 +144,68 @@ class TransferViewModel @Inject constructor(
         _assays.value = null
     }
 
+    /**
+     * Adds gallery photos as photo points. A photo is placed by its own GPS
+     * tag, or else by its time on the project's tracks (the camera clock
+     * [cameraAheadMinutes] fast, negative if slow). Photos already in the
+     * project and photos that cannot be placed are left out and counted.
+     */
+    fun importPhotos(uris: List<Uri>, cameraAheadMinutes: Int) = work {
+        if (uris.isEmpty()) return@work
+        val project = projects.ensureCurrent()
+        val existing = features.all(project.id)
+        val known = existing.flatMap { it.photos }.toMutableSet()
+        val trackPoints = existing.filter { it.kind == FeatureKind.TRACK }
+            .associate { t -> t.id to tracks.points(t.id) }
+            .filterValues { it.isNotEmpty() }
+        val offset = java.time.Duration.ofMinutes(cameraAheadMinutes.toLong())
+        val zone = ZoneId.systemDefault()
+        val stamp = DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(zone)
+        var byGps = 0; var byTrack = 0; var noTime = 0; var unplaced = 0; var dup = 0; var failed = 0
+        for (uri in uris) {
+            val sha = photoStore.import(uri)
+            if (sha == null) { failed++; continue }
+            if (!known.add(sha)) { dup++; continue }
+            val exif = withContext(Dispatchers.IO) { org.geocrew.core.data.repo.PhotoExif.read(photoStore.file(sha)) }
+            val taken = exif?.takenAt
+            val fromGps = exif?.position != null
+            val position = exif?.position?.also { byGps++ }
+                ?: taken?.let { org.geocrew.core.model.PhotoGeotag.place(it, trackPoints, offset) }?.position?.also { byTrack++ }
+            if (position == null) {
+                if (taken == null) noTime++ else unplaced++
+                known.remove(sha)
+                continue
+            }
+            // The real time, when the clock was corrected along a track.
+            val info = (exif ?: org.geocrew.core.model.PhotoInfo()).copy(
+                position = position,
+                takenAt = taken?.let { if (fromGps) it else it.minus(offset) },
+            )
+            features.create(project.id, FeatureKind.PHOTO, org.geocrew.core.model.Geometry.Point(position)) {
+                this[org.geocrew.core.model.Props.TITLE] = info.takenAt?.let { "照片 ${stamp.format(it)}" } ?: "照片"
+                strings(org.geocrew.core.model.Props.PHOTOS, listOf(sha))
+                photoInfo(sha, info)
+            }
+        }
+        val added = byGps + byTrack
+        val parts = buildList {
+            if (byGps > 0) add("$byGps 张按照片自带的位置")
+            if (byTrack > 0) add("$byTrack 张按轨迹时间")
+        }
+        val skipped = buildList {
+            if (dup > 0) add("$dup 张已在工程里")
+            if (unplaced > 0) add("$unplaced 张拍摄时没有对得上的轨迹（前后 2 分钟内没有定位）")
+            if (noTime > 0) add("$noTime 张既没有位置也没有拍摄时间")
+            if (failed > 0) add("$failed 张读不出来")
+        }
+        val text = buildString {
+            append(if (added > 0) "已导入 $added 张照片点（${parts.joinToString("，")}）。" else "没有导入照片点。")
+            if (skipped.isNotEmpty()) append("未导入：${skipped.joinToString("；")}。")
+            if (unplaced > 0 && trackPoints.isEmpty()) append("当前工程没有记录轨迹，没有位置的照片只能按轨迹时间落点。")
+        }
+        _message.value = if (added > 0) TransferMessage.Info(text) else TransferMessage.Error(text)
+    }
+
     /** Suggested file name for an export in [format]. */
     fun exportName(format: FeatureFormat): String {
         val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm").withZone(ZoneId.systemDefault()).format(Instant.now())

@@ -1,5 +1,6 @@
 package org.geocrew.feature.record
 
+import org.geocrew.core.data.repo.PhotoExif
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap

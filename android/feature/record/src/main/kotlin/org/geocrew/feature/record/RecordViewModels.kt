@@ -1,5 +1,6 @@
 package org.geocrew.feature.record
 
+import org.geocrew.core.data.repo.PhotoExif
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
