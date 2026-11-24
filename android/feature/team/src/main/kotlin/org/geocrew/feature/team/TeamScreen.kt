@@ -18,8 +18,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -56,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -65,6 +69,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.geocrew.core.data.team.TeamRepository
 import org.geocrew.core.data.team.TeamStatus
+import org.geocrew.core.network.Invite
 import org.geocrew.core.network.Member
 import org.geocrew.core.network.RealtimeState
 import org.geocrew.core.ui.InfoRow
@@ -82,6 +87,7 @@ fun TeamScreen(onBack: () -> Unit, viewModel: TeamViewModel = hiltViewModel()) {
     val invite by viewModel.invite.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val incoming by viewModel.incoming.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -113,10 +119,21 @@ fun TeamScreen(onBack: () -> Unit, viewModel: TeamViewModel = hiltViewModel()) {
                     projectName = p.name,
                     defaultNickname = settings?.nickname.orEmpty(),
                     busy = busy,
+                    incoming = incoming,
+                    onIncomingUsed = viewModel::consumeIncoming,
                     onCreate = viewModel::create,
                     onJoin = viewModel::join,
                 )
             } else {
+                incoming?.let { inv ->
+                    InviteElsewhere(
+                        invite = inv,
+                        projectName = p.name,
+                        busy = busy,
+                        onNewProject = { viewModel.newProjectFor(inv) },
+                        onIgnore = viewModel::consumeIncoming,
+                    )
+                }
                 LinkedPanel(
                     status = status,
                     myId = p.team!!.memberId,
@@ -143,6 +160,8 @@ private fun ConnectPanel(
     projectName: String,
     defaultNickname: String,
     busy: Boolean,
+    incoming: Invite?,
+    onIncomingUsed: () -> Unit,
     onCreate: (ConnectForm) -> Unit,
     onJoin: (ConnectForm) -> Unit,
 ) {
@@ -151,6 +170,16 @@ private fun ConnectPanel(
     var value by rememberSaveable { mutableStateOf("") }
     var nickname by rememberSaveable(defaultNickname) { mutableStateOf(defaultNickname) }
     var share by rememberSaveable { mutableStateOf(true) }
+    var fromLink by rememberSaveable { mutableStateOf(false) }
+    var pasteFailed by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+
+    fun fill(inv: Invite, viaLink: Boolean) {
+        tab = 0; server = inv.server; value = inv.code; fromLink = viaLink; pasteFailed = false
+    }
+    LaunchedEffect(incoming) {
+        incoming?.let { fill(it, viaLink = true); onIncomingUsed() }
+    }
 
     LazyColumn(Modifier.fillMaxSize()) {
         item {
@@ -167,8 +196,28 @@ private fun ConnectPanel(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (tab == 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = {
+                            val inv = clipboard.getText()?.text?.let(Invite::find)
+                            if (inv != null) fill(inv, viaLink = false) else pasteFailed = true
+                        }) {
+                            Icon(Icons.Default.ContentPaste, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("粘贴收到的邀请")
+                        }
+                        if (pasteFailed) Text("剪贴板里没有邀请", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (fromLink && tab == 0) {
+                    Text(
+                        "已按邀请链接填好。加入前请确认服务器地址是组长给你的，工程数据会上传到这台服务器。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
                 OutlinedTextField(
-                    value = server, onValueChange = { server = it.trim() },
+                    value = server, onValueChange = { server = it.trim(); fromLink = false },
                     label = { Text("服务器地址") }, placeholder = { Text("geocrew.example.com") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -218,7 +267,11 @@ private fun LinkedPanel(
 ) {
     var confirmLeave by remember { mutableStateOf(false) }
     var confirmRevoke by remember { mutableStateOf<Member?>(null) }
+    var showQr by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val shareable = invite?.let { Invite.of(serverUrl, it) }
+    val workspace = status.workspaceName.ifBlank { "工作组" }
 
     LazyColumn(Modifier.fillMaxSize()) {
         item {
@@ -263,9 +316,15 @@ private fun LinkedPanel(
                     headlineContent = {
                         Text(invite ?: "—", style = MaterialTheme.typography.headlineSmall, fontFamily = FontFamily.Monospace)
                     },
-                    supportingContent = { Text("把服务器地址和邀请码发给组员。更换后旧码立即失效。") },
+                    supportingContent = { Text("分享给组员，或让组员扫二维码。更换后旧码立即失效。") },
                     trailingContent = {
                         Row {
+                            IconButton(onClick = { shareable?.let { shareInvite(context, workspace, it) } }, enabled = shareable != null) {
+                                Icon(Icons.Default.Share, "分享邀请")
+                            }
+                            IconButton(onClick = { showQr = true }, enabled = shareable != null) {
+                                Icon(Icons.Default.QrCode2, "显示二维码")
+                            }
                             IconButton(onClick = { invite?.let { clipboard.setText(AnnotatedString(it)) } }, enabled = invite != null) {
                                 Icon(Icons.Default.ContentCopy, "复制邀请码")
                             }
@@ -288,6 +347,7 @@ private fun LinkedPanel(
         }
     }
 
+    if (showQr && shareable != null) InviteQrDialog(workspace, shareable) { showQr = false }
     if (confirmLeave) {
         AlertDialog(
             onDismissRequest = { confirmLeave = false },
@@ -359,3 +419,21 @@ private fun connectionLabel(s: RealtimeState) = when (s) {
 }
 
 private val TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss").withZone(ZoneId.systemDefault())
+
+/** An invite arrived while this project is already linked to a workspace. */
+@Composable
+private fun InviteElsewhere(invite: Invite, projectName: String, busy: Boolean, onNewProject: () -> Unit, onIgnore: () -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("收到新的邀请", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "服务器 ${invite.server}，邀请码 ${invite.code}。工程「$projectName」已连接工作组，可以新建一个工程来加入。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(onClick = onNewProject, enabled = !busy) { Text("新建工程并加入") }
+                TextButton(onClick = onIgnore) { Text("忽略") }
+            }
+        }
+    }
+}

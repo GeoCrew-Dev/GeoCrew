@@ -9,6 +9,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
+import org.geocrew.core.network.Invite
 import org.geocrew.feature.analysis.AnalysisScreen
 import org.geocrew.feature.compass.CompassScreen
 import org.geocrew.feature.compass.TARGET_FEATURE_ARG
@@ -18,6 +20,8 @@ import org.geocrew.feature.record.FeatureDetailScreen
 import org.geocrew.feature.record.ProjectsScreen
 import org.geocrew.feature.record.RecordListScreen
 import org.geocrew.feature.settings.SettingsScreen
+import org.geocrew.feature.team.INVITE_CODE_ARG
+import org.geocrew.feature.team.INVITE_SERVER_ARG
 import org.geocrew.feature.team.TeamScreen
 import org.geocrew.feature.transfer.TransferScreen
 
@@ -31,7 +35,9 @@ object Routes {
 
     const val TOOLS = "tools"
     const val TRANSFER = "transfer"
-    const val TEAM = "team"
+    /** Optional arguments come from an invite link; plain navigation uses "team". */
+    const val TEAM = "team?$INVITE_SERVER_ARG={$INVITE_SERVER_ARG}&$INVITE_CODE_ARG={$INVITE_CODE_ARG}"
+    const val TEAM_PLAIN = "team"
     const val ANALYSIS = "analysis"
     const val PROJECTS = "projects"
     const val COMPASS = "compass?$TARGET_FEATURE_ARG={$TARGET_FEATURE_ARG}"
@@ -59,7 +65,7 @@ fun GeoCrewNavHost() {
                 onOpenFeature = { nav.navigate(Routes.feature(it)) },
                 onOpenRecords = { nav.navigate(Routes.RECORDS) { launchSingleTop = true } },
                 onOpenTools = { nav.navigate(Routes.TOOLS) { launchSingleTop = true } },
-                onOpenTeam = { nav.navigate(Routes.TEAM) { launchSingleTop = true } },
+                onOpenTeam = { nav.navigate(Routes.TEAM_PLAIN) { launchSingleTop = true } },
                 focusFeatureId = focus,
                 onFocusHandled = { entry.savedStateHandle[Routes.FOCUS] = null },
             )
@@ -70,7 +76,18 @@ fun GeoCrewNavHost() {
         composable(Routes.ANALYSIS) {
             AnalysisScreen(onBack = { nav.popBackStack() }, onShowOnMap = { nav.popBackStack(Routes.MAP, inclusive = false) })
         }
-        composable(Routes.TEAM) {
+        composable(
+            Routes.TEAM,
+            arguments = listOf(INVITE_SERVER_ARG, INVITE_CODE_ARG).map { name ->
+                navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null }
+            },
+            // Invite QR codes and shared links (protocol v0 §2) open the join form, filled in.
+            deepLinks = listOf(
+                navDeepLink {
+                    uriPattern = "${Invite.SCHEME}://${Invite.HOST}?$INVITE_SERVER_ARG={$INVITE_SERVER_ARG}&$INVITE_CODE_ARG={$INVITE_CODE_ARG}"
+                },
+            ),
+        ) {
             TeamScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.SETTINGS) {

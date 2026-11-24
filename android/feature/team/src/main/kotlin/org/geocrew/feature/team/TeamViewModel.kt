@@ -1,5 +1,6 @@
 package org.geocrew.feature.team
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,9 +20,14 @@ import org.geocrew.core.data.team.TeamSession
 import org.geocrew.core.data.team.TeamStatus
 import org.geocrew.core.model.Project
 import org.geocrew.core.network.ApiException
+import org.geocrew.core.network.Invite
 import org.geocrew.core.network.Member
 import java.io.IOException
 import javax.inject.Inject
+
+/** Navigation arguments a `geocrew://join` link fills in. */
+const val INVITE_SERVER_ARG = "server"
+const val INVITE_CODE_ARG = "code"
 
 /** Form for creating or joining a workspace. */
 data class ConnectForm(
@@ -34,6 +40,7 @@ data class ConnectForm(
 
 @HiltViewModel
 class TeamViewModel @Inject constructor(
+    private val savedState: SavedStateHandle,
     private val projects: ProjectRepository,
     private val team: TeamRepository,
     private val session: TeamSession,
@@ -54,6 +61,24 @@ class TeamViewModel @Inject constructor(
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    /** An invite that arrived through a link or QR code, waiting to be confirmed. */
+    private val _incoming = MutableStateFlow(Invite.of(savedState[INVITE_SERVER_ARG], savedState[INVITE_CODE_ARG]))
+    val incoming: StateFlow<Invite?> = _incoming.asStateFlow()
+
+    fun consumeIncoming() {
+        _incoming.value = null
+        // Forget the link's arguments too, so it is not offered again after rotation.
+        savedState[INVITE_SERVER_ARG] = null
+        savedState[INVITE_CODE_ARG] = null
+    }
+
+    /** Opens a fresh project so an invite can be accepted without touching the linked one. */
+    fun newProjectFor(invite: Invite) = act(null) {
+        val p = projects.create("新工程")
+        projects.select(p.id)
+        _incoming.value = invite
+    }
 
     init {
         // Reload the roster whenever the project's link changes or the channel (re)connects.
