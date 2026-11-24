@@ -33,6 +33,7 @@ import org.maplibre.android.style.layers.PropertyFactory.lineCap
 import org.maplibre.android.style.layers.PropertyFactory.lineColor
 import org.maplibre.android.style.layers.PropertyFactory.lineDasharray
 import org.maplibre.android.style.layers.PropertyFactory.lineJoin
+import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.sources.GeoJsonSource
 
@@ -60,6 +61,7 @@ internal object MapLayers {
     private val isPoint = eq(geometryType(), literal("Point"))
     private val selected = eq(get("selected"), literal(true))
     private val hasAttitude = Expression.has("dipdir")
+    private val myTask = eq(get("mytask"), literal(true))
 
     /** Colour for a feature: selection first, then its own simplestyle colour [own], then by kind. */
     private fun kindColor(default: String, own: String? = null): Expression = switchCase(
@@ -78,6 +80,26 @@ internal object MapLayers {
 
     fun install(style: Style) {
         listOf(SRC_FEATURES, SRC_ME, SRC_TEAM, SRC_SKETCH).forEach { style.addSource(GeoJsonSource(it, EMPTY)) }
+
+        // Open tasks handed to me: a soft halo under the feature itself.
+        style.addLayer(
+            LineLayer("gc-mytask-line", SRC_FEATURES).withFilter(Expression.all(myTask, Expression.any(isLine, isPolygon))).withProperties(
+                lineColor(MapColors.MY_TASK),
+                lineWidth(10f),
+                lineOpacity(0.45f),
+                lineJoin(Property.LINE_JOIN_ROUND),
+                lineCap(Property.LINE_CAP_ROUND),
+            ),
+        )
+        style.addLayer(
+            CircleLayer("gc-mytask-point", SRC_FEATURES).withFilter(Expression.all(myTask, isPoint)).withProperties(
+                circleRadius(14f),
+                circleColor(MapColors.MY_TASK),
+                circleOpacity(0.25f),
+                circleStrokeColor(MapColors.MY_TASK),
+                circleStrokeWidth(2f),
+            ),
+        )
 
         style.addLayer(
             FillLayer(L_FILL, SRC_FEATURES).withFilter(isPolygon).withProperties(
@@ -183,7 +205,7 @@ internal object MapLayers {
         fun set(id: String, json: String) = style.getSourceAs<GeoJsonSource>(id)?.setGeoJson(json)
         if (previous == null || previous.features !== o.features || previous.selectedId != o.selectedId) {
             AttitudeSymbols.ensureDipLabels(style, o.features.mapNotNull { f -> f.attitude?.dip?.let { Math.round(it).toInt() } }.toSet())
-            set(SRC_FEATURES, OverlayGeoJson.features(o.features, o.selectedId))
+            set(SRC_FEATURES, OverlayGeoJson.features(o.features, o.selectedId, o.memberId))
         }
         if (previous == null || previous.me != o.me) set(SRC_ME, OverlayGeoJson.me(o.me))
         if (previous == null || previous.team != o.team) set(SRC_TEAM, OverlayGeoJson.team(o.team))

@@ -24,6 +24,16 @@ class MapLogicTest {
     val sk = Json.parseToJsonElement(OverlayGeoJson.sketch(listOf(LngLat(1.0,1.0),LngLat(2.0,1.0),LngLat(2.0,2.0)), true)).jsonObject
     assertEquals(4, sk["features"]!!.jsonArray.size)
   }
+  @Test fun myOpenTasksAreMarked() {
+    fun f(id: String, who: String, st: TaskStatus) = GeoFeature(id,"p",FeatureKind.POINT, Geometry.Point(LngLat(116.0,40.0)),
+      buildProperties { TaskInfo(who, "x", st).writeTo(this) }, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))
+    val list = listOf(f("a","me",TaskStatus.TODO), f("b","me",TaskStatus.DONE), f("c","other",TaskStatus.DOING))
+    val props = Json.parseToJsonElement(OverlayGeoJson.features(list, null, "me")).jsonObject["features"]!!.jsonArray
+      .map { it.jsonObject["properties"]!!.jsonObject }
+    assertEquals(listOf(true, false, false), props.map { it["mytask"]?.jsonPrimitive?.boolean == true })
+    val none = Json.parseToJsonElement(OverlayGeoJson.features(list, null, null)).jsonObject["features"]!!.jsonArray
+    assertTrue(none.none { it.jsonObject["properties"]!!.jsonObject.containsKey("mytask") })
+  }
   @Test fun simpleStyleIsCopiedOnlyWhenValid() {
     val props = buildJsonObject { put("fill", "#22A884"); put("stroke", "red; drop"); put("fill-opacity", 0.5); put("stroke-width", 99) }
     val f = GeoFeature("b","p",FeatureKind.POLYGON, Geometry.Polygon.of(listOf(LngLat(1.0,1.0),LngLat(2.0,1.0),LngLat(2.0,2.0))), props, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))

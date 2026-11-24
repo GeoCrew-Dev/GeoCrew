@@ -11,6 +11,8 @@ import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
+import org.geocrew.core.model.TaskStatus
+import org.geocrew.core.model.task
 
 /** The user's own position as drawn on the map. */
 data class MyLocation(val position: LngLat, val accuracy: Float?, val bearing: Float?)
@@ -27,6 +29,8 @@ data class MapOverlays(
     /** Vertices of a line or polygon being drawn. */
     val sketch: List<LngLat> = emptyList(),
     val sketchClosed: Boolean = false,
+    /** This device's member id in the project's workspace; its open tasks are highlighted. */
+    val memberId: String? = null,
 )
 
 /** Converts overlays into GeoJSON strings for MapLibre sources. */
@@ -42,13 +46,16 @@ internal object OverlayGeoJson {
         put("properties", JsonObjectBuilder().apply(props).build())
     }
 
-    fun features(list: List<GeoFeature>, selectedId: String?): String = collection(
+    fun features(list: List<GeoFeature>, selectedId: String?, memberId: String? = null): String = collection(
         list.mapNotNull { f ->
             val g = f.geometry ?: return@mapNotNull null
             feature(g) {
                 this["fid"] = f.id
                 this["kind"] = f.kind.id
                 this["selected"] = f.id == selectedId
+                if (memberId != null) f.task?.let { t ->
+                    if (t.assignee == memberId && t.status != TaskStatus.DONE) this["mytask"] = true
+                }
                 if (g is Geometry.Point) f.attitude?.let { a ->
                     this["dipdir"] = a.dipDirection
                     this["dip"] = Math.round(a.dip).toDouble()

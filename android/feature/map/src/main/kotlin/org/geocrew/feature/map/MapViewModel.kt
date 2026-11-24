@@ -163,8 +163,11 @@ class MapViewModel @Inject constructor(
     val selected: StateFlow<GeoFeature?> = combine(featureList, _selected) { list, id -> list.firstOrNull { it.id == id } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val overlays: StateFlow<MapOverlays> = combine(featureList, _selected, _fix, _mode, teamMarkers) { list, sel, fix, mode, mates ->
+    private val featuresWithMe = combine(featureList, project.map { it?.team?.memberId }.distinctUntilChanged()) { l, me -> l to me }
+
+    val overlays: StateFlow<MapOverlays> = combine(featuresWithMe, _selected, _fix, _mode, teamMarkers) { (list, me), sel, fix, mode, mates ->
         MapOverlays(
+            memberId = me,
             features = list,
             selectedId = sel,
             me = fix?.let { MyLocation(it.position, it.accuracy, it.bearing) },

@@ -44,6 +44,8 @@ object MapColors {
     const val ME = "#1E88E5"
     const val TEAM = "#43A047"
     const val SKETCH = "#FF1744"
+    /** Ring around open tasks handed to this device's member. */
+    const val MY_TASK = "#FF6F00"
     /** Strike-and-dip symbols. */
     const val ATTITUDE = "#212121"
 }
