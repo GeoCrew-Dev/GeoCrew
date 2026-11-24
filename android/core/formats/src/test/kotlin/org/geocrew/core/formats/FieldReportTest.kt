@@ -72,4 +72,22 @@ class FieldReportTest {
         val none = FieldReport.build("秦岭", emptyList(), fields, { it.id }, zone)
         assertTrue(none.subtitle.startsWith("没有记录"))
     }
+
+    @Test fun sectionFacts() {
+        val sec = org.geocrew.core.model.MeasuredSection(
+            listOf(org.geocrew.core.model.TraverseLeg(90.0, 0.0, 20.0)),
+            listOf(
+                org.geocrew.core.model.SectionLayer("1", 10.0, "灰岩", org.geocrew.core.model.Attitude(90.0, 30.0)),
+                org.geocrew.core.model.SectionLayer("2", 20.0),
+            ),
+        )
+        val f = feature("s", FeatureKind.SECTION, "2026-11-24T02:00:00Z", null) {
+            this[Props.TITLE] = "P1"
+            put(Props.SECTION, sec.toJson())
+        }
+        val facts = FieldReport.entry(f, emptyList(), { "实测剖面" }, zone, CoordinateFormat.DECIMAL).facts.toMap()
+        assertEquals("1 段，共 20.0 m", facts["导线"])
+        assertEquals("1 灰岩 5.0 m；2 5.0 m", facts["分层"])
+        assertEquals("10.0 m", facts["总厚度"])
+    }
 }

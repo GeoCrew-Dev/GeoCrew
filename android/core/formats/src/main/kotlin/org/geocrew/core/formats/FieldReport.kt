@@ -15,6 +15,7 @@ import org.geocrew.core.model.string
 import org.geocrew.core.model.task
 import org.geocrew.core.model.audio
 import org.geocrew.core.model.audioInfo
+import org.geocrew.core.model.measuredSection
 import org.geocrew.core.model.samples
 import java.time.Instant
 import java.time.LocalDate
@@ -119,6 +120,20 @@ data class FieldReport(
                 }
                 f.samples.takeIf { it.isNotEmpty() }?.let { list ->
                     add("样品" to list.joinToString("；") { s -> listOfNotNull(s.no, s.type).joinToString(" ") })
+                }
+                if (f.kind == FeatureKind.SECTION) {
+                    val sec = f.measuredSection
+                    val r = sec.compute()
+                    if (sec.legs.isNotEmpty()) add("导线" to "${sec.legs.size} 段，共 ${"%.1f".format(java.util.Locale.ROOT, sec.length)} m")
+                    if (r.layers.isNotEmpty()) {
+                        add(
+                            "分层" to r.layers.joinToString("；") { l ->
+                                listOf(l.layer.no, l.layer.lithology, l.thickness?.let { "%.1f m".format(java.util.Locale.ROOT, it) }.orEmpty())
+                                    .filter { it.isNotBlank() }.joinToString(" ")
+                            },
+                        )
+                        add("总厚度" to "%.1f m".format(java.util.Locale.ROOT, r.total))
+                    }
                 }
                 f.task?.let { t -> add("任务" to "${t.assigneeName}：${t.status.label}") }
                 f.audio.takeIf { it.isNotEmpty() }?.let { clips ->
