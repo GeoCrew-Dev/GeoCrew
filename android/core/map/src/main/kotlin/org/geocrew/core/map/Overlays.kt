@@ -46,6 +46,16 @@ data class MapOverlays(
     val legend: Legend = Legend(),
     /** Kilometre grid lines over the current view; see [org.geocrew.core.model.PlaneGrid]. */
     val grid: List<org.geocrew.core.model.PlaneGrid.Line> = emptyList(),
+    /** Pictures pinned to the map under everything else, bottom first. */
+    val images: List<MapImage> = emptyList(),
+)
+
+/** A decoded picture to draw over the base map, stretched to its four corners (top left first, clockwise). */
+data class MapImage(
+    val id: String,
+    val bitmap: android.graphics.Bitmap,
+    val quad: List<LngLat>,
+    val opacity: Float,
 )
 
 /** Converts overlays into GeoJSON strings for MapLibre sources. */

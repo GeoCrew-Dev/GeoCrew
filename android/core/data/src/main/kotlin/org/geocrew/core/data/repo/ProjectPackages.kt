@@ -26,6 +26,7 @@ class ProjectPackages @Inject constructor(
     private val tracks: TrackRepository,
     private val trackPoints: TrackPointDao,
     private val photos: PhotoStore,
+    private val overlayImages: OverlayImages,
     private val defaults: BuildDefaults,
     private val clock: Clock,
 ) {
@@ -41,7 +42,7 @@ class ProjectPackages @Inject constructor(
             config = p.config.copy(teamFormVersion = 0, teamFormPending = false, teamCommentSeq = 0, chatReadSeq = 0, pushEnabled = false),
             generator = defaults.userAgent,
         )
-        val n = ProjectPackage.write(output, manifest, list, { points[it].orEmpty() }) { ref -> photos.file(ref.sha, ref.kind) }
+        val n = ProjectPackage.write(output, manifest, list, { points[it].orEmpty() }, overlay = overlayImages::file) { ref -> photos.file(ref.sha, ref.kind) }
         PackageExport(list.size, n[AttachmentKind.PHOTO] ?: 0, n[AttachmentKind.AUDIO] ?: 0)
     }
 
@@ -50,7 +51,10 @@ class ProjectPackages @Inject constructor(
         val target = java.util.UUID.randomUUID().toString()
         val stored = mutableMapOf<AttachmentKind, Int>()
         val warnings = mutableListOf<String>()
-        val c = ProjectPackage.read(input, ImportContext(target, clock.instant())) { ref, data ->
+        val overlayFiles = mutableSetOf<String>()
+        val c = ProjectPackage.read(input, ImportContext(target, clock.instant()), overlay = { name, data ->
+            if (overlayImages.putBlocking(name, data)) overlayFiles += name
+        }) { ref, data ->
             val what = if (ref.kind == AttachmentKind.AUDIO) "录音" else "照片"
             val actual = photos.putBlocking(data, ref.kind)
             if (actual == null) warnings += "$what ${ref.sha.take(8)} 是空文件"
@@ -59,7 +63,10 @@ class ProjectPackages @Inject constructor(
         }
         val existing = projects.all().map { it.name }.toSet()
         val name = c.manifest.name.trim().ifEmpty { "导入的工程" }.let { if (it in existing) "$it（导入）" else it }
-        val project = projects.create(name, id = target, config = c.manifest.config.copy())
+        // Overlays whose picture did not come along are left out rather than shown blank.
+        val (overlays, lost) = c.manifest.config.overlays.partition { it.file in overlayFiles }
+        if (lost.isNotEmpty()) warnings += "${lost.size} 张叠加图片缺少图片文件，未导入"
+        val project = projects.create(name, id = target, config = c.manifest.config.copy(overlays = overlays))
         features.importAll(c.features)
         for ((trackId, pts) in c.tracks) {
             trackPoints.insertAll(

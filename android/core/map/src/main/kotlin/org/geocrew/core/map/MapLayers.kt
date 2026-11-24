@@ -35,7 +35,13 @@ import org.maplibre.android.style.layers.PropertyFactory.lineDasharray
 import org.maplibre.android.style.layers.PropertyFactory.lineJoin
 import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngQuad
+import org.maplibre.android.style.layers.PropertyFactory.rasterFadeDuration
+import org.maplibre.android.style.layers.PropertyFactory.rasterOpacity
+import org.maplibre.android.style.layers.RasterLayer
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.android.style.sources.ImageSource
 
 /**
  * The runtime overlay layers drawn above any base map. Keeping their ids here
@@ -240,8 +246,37 @@ internal object MapLayers {
         if (previous == null || previous.grid !== o.grid) set(SRC_GRID, OverlayGeoJson.grid(o.grid))
         if (previous == null || previous.me != o.me) set(SRC_ME, OverlayGeoJson.me(o.me))
         if (previous == null || previous.team != o.team) set(SRC_TEAM, OverlayGeoJson.team(o.team))
+        if (previous == null || previous.images != o.images) images(style, o.images, previous?.images.orEmpty())
         if (previous == null || previous.sketch != o.sketch || previous.sketchClosed != o.sketchClosed || previous.sketchPicked != o.sketchPicked) {
             set(SRC_SKETCH, OverlayGeoJson.sketch(o.sketch, o.sketchClosed, o.sketchPicked))
         }
     }
+
+    private const val IMG = "gc-img-"
+
+    /** Adds, changes and removes the image overlays; each is a source and a raster layer just under the grid. */
+    private fun images(style: Style, now: List<MapImage>, before: List<MapImage>) {
+        val keep = now.map { it.id }.toSet()
+        for (old in before) if (old.id !in keep) {
+            style.removeLayer(IMG + old.id)
+            style.removeSource(IMG + old.id)
+        }
+        val was = before.associateBy { it.id }
+        for (img in now) {
+            val quad = LatLngQuad(img.quad[0].latLng(), img.quad[1].latLng(), img.quad[2].latLng(), img.quad[3].latLng())
+            val src = style.getSourceAs<ImageSource>(IMG + img.id)
+            if (src == null) {
+                style.addSource(ImageSource(IMG + img.id, quad, img.bitmap))
+                // Added in order just under the grid, so later images lie on top of earlier ones.
+                style.addLayerBelow(RasterLayer(IMG + img.id, IMG + img.id).withProperties(rasterOpacity(img.opacity), rasterFadeDuration(0f)), "gc-grid")
+                continue
+            }
+            val prev = was[img.id]
+            if (prev?.bitmap !== img.bitmap) src.setImage(img.bitmap)
+            if (prev?.quad != img.quad) src.setCoordinates(quad)
+            if (prev?.opacity != img.opacity) style.getLayer(IMG + img.id)?.setProperties(rasterOpacity(img.opacity))
+        }
+    }
+
+    private fun org.geocrew.core.model.LngLat.latLng() = LatLng(lat, lng)
 }

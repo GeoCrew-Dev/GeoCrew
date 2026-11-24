@@ -22,7 +22,14 @@ import org.geocrew.core.data.repo.AppSettings
 import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.SettingsRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.withContext
+import org.geocrew.core.map.MapImage
 import org.geocrew.core.map.MapOverlays
+import org.geocrew.core.model.Bounds
+import org.geocrew.core.model.ImageOverlay
+import org.geocrew.core.model.WorldFile
 import org.geocrew.core.map.MyLocation
 import org.geocrew.core.map.StyleBuilder
 import org.geocrew.core.map.TileNetwork
@@ -85,6 +92,9 @@ sealed interface MapMode {
     }
 }
 
+/** An image overlay as the layer list shows it. */
+data class OverlayItem(val overlay: ImageOverlay, val missing: Boolean)
+
 /** Base map state for the screen. */
 data class BaseMapUi(
     val source: TileSource,
@@ -109,6 +119,7 @@ class MapViewModel @Inject constructor(
     private val teamComments: org.geocrew.core.data.team.TeamComments,
     @ApplicationScope private val appScope: CoroutineScope,
     private val downloads: org.geocrew.core.data.repo.BasemapDownloads,
+    private val overlayImages: org.geocrew.core.data.repo.OverlayImages,
 ) : ViewModel() {
 
     /** Downloading an area of the base map for offline use; survives leaving the screen. */
@@ -246,6 +257,85 @@ class MapViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, MapOverlays())
 
+    /** The project's image overlays, each with whether its file is on this device. */
+    val overlayItems: StateFlow<List<OverlayItem>> = project.map { it?.config?.overlays.orEmpty() }.distinctUntilChanged()
+        .map { list -> withContext(Dispatchers.IO) { list.map { OverlayItem(it, overlayImages.file(it.file)?.isFile != true) } } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val bitmaps = java.util.concurrent.ConcurrentHashMap<String, android.graphics.Bitmap>()
+
+    /** Decoded pictures for the visible overlays, kept while they stay in use. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val images: StateFlow<List<MapImage>> = overlayItems.mapLatest { list ->
+        withContext(Dispatchers.IO) {
+            val shown = list.filter { it.overlay.visible && !it.missing }.map { it.overlay }
+            bitmaps.keys.retainAll(shown.map { it.file }.toSet())
+            shown.mapNotNull { o ->
+                val b = bitmaps[o.file] ?: overlayImages.load(o.file)?.also { bitmaps[o.file] = it } ?: return@mapNotNull null
+                MapImage(o.id, b, o.quad, o.opacity)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * Adds the picked image (and world file, if one was picked with it) as an
+     * overlay. With a world file it goes where the file says and [onPlaced]
+     * gets its extent; otherwise it is laid over [view].
+     */
+    fun addOverlay(uris: List<android.net.Uri>, view: Bounds, onPlaced: (Bounds) -> Unit) = viewModelScope.launch {
+        val id = project.value?.id ?: return@launch
+        val imported = runCatching { overlayImages.import(uris) }.getOrElse { e ->
+            _notice.value = (e as? IllegalArgumentException)?.message ?: "图片导入失败"
+            return@launch
+        }
+        val world = imported.worldFile
+        val crs = world?.let(WorldFile::guess)
+        val placed = if (world != null && crs != null) WorldFile.corners(world, imported.sourceWidth, imported.sourceHeight, crs) else null
+        val overlay = ImageOverlay(
+            id = java.util.UUID.randomUUID().toString(),
+            name = imported.name,
+            file = imported.file,
+            width = imported.width,
+            height = imported.height,
+            corners = ImageOverlay.corners(placed ?: ImageOverlay.fit(view, imported.width, imported.height)),
+            placement = if (placed != null) ImageOverlay.Placement.WORLD_FILE else ImageOverlay.Placement.VIEW,
+        )
+        projects.updateConfig(id) { it.copy(overlays = it.overlays + overlay) }
+        _notice.value = when {
+            placed != null -> "已按 world 文件放置「${overlay.name}」" + ((crs as? WorldFile.Crs.Plane)?.let { "（${it.width}° 带高斯坐标）" } ?: "")
+            world != null -> "world 文件的坐标看不出是经纬度还是带号高斯坐标，已先铺在当前视野里"
+            else -> "已把「${overlay.name}」铺在当前视野里，可在图层里调透明度"
+        }
+        placed?.let(Bounds::of)?.let(onPlaced)
+    }
+
+    /** Changes one overlay of the open project. */
+    fun setOverlay(overlayId: String, change: (ImageOverlay) -> ImageOverlay) = viewModelScope.launch {
+        val id = project.value?.id ?: return@launch
+        projects.updateConfig(id) { c -> c.copy(overlays = c.overlays.map { if (it.id == overlayId) change(it) else it }) }
+    }
+
+    /** Lays an overlay over [view] again, e.g. when its world file put it in the wrong place. */
+    fun fitOverlay(overlayId: String, view: Bounds) = setOverlay(overlayId) {
+        it.copy(corners = ImageOverlay.corners(ImageOverlay.fit(view, it.width, it.height)), placement = ImageOverlay.Placement.VIEW)
+    }
+
+    /** Moves an overlay one step up (drawn later) or down in the list. */
+    fun moveOverlay(overlayId: String, up: Boolean) = viewModelScope.launch {
+        val id = project.value?.id ?: return@launch
+        projects.updateConfig(id) { c ->
+            val i = c.overlays.indexOfFirst { it.id == overlayId }
+            val j = if (up) i + 1 else i - 1
+            if (i < 0 || j !in c.overlays.indices) c
+            else c.copy(overlays = c.overlays.toMutableList().apply { add(j, removeAt(i)) })
+        }
+    }
+
+    fun removeOverlay(overlayId: String) = viewModelScope.launch {
+        val id = project.value?.id ?: return@launch
+        projects.updateConfig(id) { c -> c.copy(overlays = c.overlays.filterNot { it.id == overlayId }) }
+    }
+
     private var locationJob: Job? = null
 
     init {
@@ -286,13 +376,13 @@ class MapViewModel @Inject constructor(
         if (settingsRepo.needsTiandituKey(settingsRepo.current())) chooseSource(BuiltInSources.OSM.id)
     }
 
-    /** Remembers where the map was, so the project opens there next time. */
     /** Changes what the map draws for the open project. */
     fun setDisplay(change: (MapDisplay) -> MapDisplay) = viewModelScope.launch {
         val id = project.value?.id ?: return@launch
         projects.updateConfig(id) { it.copy(display = change(it.display)) }
     }
 
+    /** Remembers where the map was, so the project opens there next time. */
     fun saveView(center: LngLat, zoom: Double, bearing: Double) {
         val id = project.value?.id ?: return
         appScope.launch { projects.updateConfig(id) { it.copy(view = MapViewport(center.lng, center.lat, zoom, bearing)) } }

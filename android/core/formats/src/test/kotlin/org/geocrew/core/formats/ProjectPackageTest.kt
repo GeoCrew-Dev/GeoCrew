@@ -90,6 +90,24 @@ class ProjectPackageTest {
     }
 
     @Test
+    fun carriesOverlayImagesListedInTheConfig() {
+        val name = "d".repeat(64) + ".png"
+        val image = tmp.newFile("o.png").apply { writeBytes(byteArrayOf(7, 7)) }
+        val overlay = org.geocrew.core.model.ImageOverlay(
+            id = "o1", name = "1:5万地质图", file = name, width = 2, height = 1,
+            corners = listOf(listOf(110.0, 31.0), listOf(111.0, 31.0), listOf(111.0, 30.0), listOf(110.0, 30.0)),
+        )
+        val manifest = PackageManifest(name = "图", createdAt = t0.toString(), exportedAt = t0.toString(), config = ProjectConfig(overlays = listOf(overlay)))
+        val out = ByteArrayOutputStream()
+        ProjectPackage.write(out, manifest, emptyList(), { emptyList() }, overlay = { if (it == name) image else null }) { null }
+        val got = mutableMapOf<String, List<Byte>>()
+        val c = ProjectPackage.read(ByteArrayInputStream(out.toByteArray()), ImportContext("p"), overlay = { n, d -> got[n] = d.readBytes().toList() }) { _, _ -> }
+        assertEquals(listOf(overlay), c.manifest.config.overlays)
+        assertEquals(mapOf(name to listOf<Byte>(7, 7)), got)
+        assertTrue(c.warnings.isEmpty())
+    }
+
+    @Test
     fun rejectsZipsThatAreNotPackages() {
         val out = ByteArrayOutputStream()
         ZipOutputStream(out).use { z ->

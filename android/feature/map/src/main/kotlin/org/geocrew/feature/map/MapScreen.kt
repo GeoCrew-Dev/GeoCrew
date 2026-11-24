@@ -192,7 +192,16 @@ fun MapScreen(
             grid = org.geocrew.core.model.PlaneGrid.of(view, width)
         }
     }
-    val drawn = remember(overlays, grid) { grid?.let { overlays.copy(grid = it.lines) } ?: overlays }
+    val overlayItems by viewModel.overlayItems.collectAsStateWithLifecycle()
+    // An image to lay over the map, optionally picked together with its world file.
+    val pickOverlay = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) {
+            showLayers = false
+            viewModel.addOverlay(uris, camera.visibleBounds()) { camera.fit(it) }
+        }
+    }
+    val images by viewModel.images.collectAsStateWithLifecycle()
+    val drawn = remember(overlays, grid, images) { overlays.copy(grid = grid?.lines.orEmpty(), images = images) }
     val gridLabels = remember(grid) {
         grid?.lines?.mapNotNull { l -> l.anchor?.let { org.geocrew.core.map.MapLabel(it, l.label) } }.orEmpty()
     }
@@ -400,6 +409,16 @@ fun MapScreen(
                 },
                 onManage = { showLayers = false; onOpenSettings() },
                 onDownload = { showLayers = false; downloadArea = camera.visibleBounds() },
+                overlays = overlayItems,
+                overlayActions = remember(viewModel, camera) {
+                    OverlayActions(
+                        add = { pickOverlay.launch(arrayOf("*/*")) },
+                        change = viewModel::setOverlay,
+                        fit = { id -> viewModel.fitOverlay(id, camera.visibleBounds()) },
+                        move = viewModel::moveOverlay,
+                        remove = viewModel::removeOverlay,
+                    )
+                },
                 onDismiss = { showLayers = false },
             )
         }

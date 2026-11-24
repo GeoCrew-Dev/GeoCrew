@@ -49,6 +49,7 @@ data class PackageContents(
  * tracks/<id>.csv       recorded fixes of each track: time,lng,lat,alt,accuracy,speed,bearing
  * photos/<sha256>.jpg   photos, named by content hash as the records refer to them
  * audio/<sha256>.m4a    voice notes, likewise
+ * overlays/<sha256>.jpg  pictures laid over the map (or .png), as listed in project.json
  * ```
  *
  * Workspace links and credentials are never included. Reading gives every
@@ -65,6 +66,7 @@ object ProjectPackage {
     private val ATTACHMENT = AttachmentKind.entries.associateWith { k ->
         Regex("^" + Regex.escape(k.dir) + "/([0-9a-f]{64})" + Regex.escape(k.ext) + "$")
     }
+    private val OVERLAY = Regex("^overlays/([0-9a-f]{64}\\.(jpg|png))$")
     private val TRACK = Regex("^tracks/([A-Za-z0-9._-]{1,64})\\.csv$")
     private const val MAX_TEXT = 256L shl 20
 
@@ -74,6 +76,8 @@ object ProjectPackage {
         manifest: PackageManifest,
         features: List<GeoFeature>,
         trackPoints: (featureId: String) -> List<TrackPoint>,
+        /** File of an image overlay in [manifest]'s config, by its stored name. */
+        overlay: (String) -> File? = { null },
         attachment: (AttachmentRef) -> File?,
     ): Map<AttachmentKind, Int> {
         val live = features.filterNot { it.deleted }
@@ -100,6 +104,12 @@ object ProjectPackage {
                 zip.closeEntry()
                 written.merge(ref.kind, 1, Int::plus)
             }
+            for (name in manifest.config.overlays.map { it.file }.distinct()) {
+                val file = overlay(name)?.takeIf { it.isFile } ?: continue
+                zip.putNextEntry(ZipEntry("overlays/$name"))
+                file.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
         }
         return written
     }
@@ -108,7 +118,13 @@ object ProjectPackage {
      * Reads a package. Attachments are handed to [attachment] as they are
      * met, by the hash they are filed under; records are returned with new ids.
      */
-    fun read(input: InputStream, ctx: ImportContext, attachment: (AttachmentRef, data: InputStream) -> Unit): PackageContents {
+    fun read(
+        input: InputStream,
+        ctx: ImportContext,
+        /** Gets each overlay image by its stored name; ignored by default. */
+        overlay: (name: String, data: InputStream) -> Unit = { _, _ -> },
+        attachment: (AttachmentRef, data: InputStream) -> Unit,
+    ): PackageContents {
         var manifest: PackageManifest? = null
         var features: List<GeoFeature> = emptyList()
         val rawTracks = mutableMapOf<String, List<TrackPoint>>()
@@ -127,6 +143,7 @@ object ProjectPackage {
                         features = r.features
                         warnings += r.warnings
                     }
+                    OVERLAY.matches(name) -> overlay(OVERLAY.find(name)!!.groupValues[1], NonClosing(zip))
                     TRACK.matches(name) -> {
                         val id = TRACK.find(name)!!.groupValues[1]
                         rawTracks[id] = parseTrack(zip.textOf(), warnings, id)
