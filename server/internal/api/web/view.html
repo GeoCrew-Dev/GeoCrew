@@ -67,6 +67,8 @@
     <header><h1 id="name">工作组</h1><div id="status">正在读取…</div><div id="today"></div><div id="banner"></div></header>
     <div id="tools">
       <input id="q" type="search" placeholder="按名称、岩性、备注筛选">
+      <select id="who" title="只看这位组员最后改过的记录"><option value="">全部组员</option></select>
+      <input id="day" type="date" title="只看这一天改过的记录（本机时区）">
       <button id="fit" type="button">全部</button>
       <button id="check" type="button" hidden>待核对</button>
       <button id="msgs" type="button">组内消息</button>
@@ -213,6 +215,21 @@
     const list = await (await api("/members")).json();
     members.clear();
     for (const m of list) if (!m.revoked) members.set(m.id, m.nickname);
+    const sel = $("who"), keep = sel.value;
+    sel.replaceChildren(new Option("全部组员", ""), ...[...members].map(([id, name]) => new Option(name || "未命名", id)));
+    sel.value = members.has(keep) ? keep : "";
+  }
+
+  // Who last changed a record and on which local day, from the two filters above the list.
+  function localDay(t) {
+    const d = t ? new Date(t) : null;
+    if (!d || isNaN(d)) return "";
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function filtering() { return !!($("who").value || $("day").value); }
+  function shown(f) {
+    const who = $("who").value, day = $("day").value;
+    return (!who || by(f) === who) && (!day || localDay(upd(f)) === day);
   }
 
   // Team messages and record discussions (protocol v0 §8), read-only here.
@@ -330,6 +347,7 @@
   function anchors() {
     const out = [];
     for (const f of features.values()) {
+      if (!shown(f)) continue;
       const a = attitudeOf(f.properties || {}), g = f.geometry;
       if (!a || !g || g.type === "Point" || g.type === "MultiPoint") continue;
       const path = g.type === "LineString" ? g.coordinates : g.type === "Polygon" ? g.coordinates[0]
@@ -360,7 +378,7 @@
   }
 
   function collection() {
-    return { type: "FeatureCollection", features: [...features.values()].map((f) => ({
+    return { type: "FeatureCollection", features: [...features.values()].filter(shown).map((f) => ({
       type: "Feature", id: undefined, geometry: f.geometry,
       properties: (([c, byLegend]) => {
         const ls = lineStyleOf(f);
@@ -381,7 +399,8 @@
   function text(p, key) { const v = p && p[key]; return typeof v === "string" ? v : (typeof v === "number" ? String(v) : ""); }
 
   function render() {
-    $("status").textContent = features.size + " 条记录 · " + members.size + " 位组员";
+    const n = filtering() ? [...features.values()].filter(shown).length : features.size;
+    $("status").textContent = (filtering() ? "显示 " + n + " / " + features.size : features.size) + " 条记录 · " + members.size + " 位组员";
     if (ready) map.getSource("records").setData(collection());
     renderLegend();
     renderList();
@@ -400,6 +419,7 @@
       ? [...issues.keys()].map((id) => features.get(id) || { id, properties: { title: issues.get(id)[0].title } })
       : [...features.values()];
     const rows = pool
+      .filter((f) => checking || shown(f))
       .filter((f) => !q || ["title", "note", "lithology"].some((k) => text(f.properties, k).toLowerCase().includes(q)))
       .sort((a, b) => upd(b).localeCompare(upd(a)))
       .slice(0, 500);
@@ -754,6 +774,8 @@
       render();
     });
     $("q").oninput = renderList;
+    $("who").onchange = render;
+    $("day").onchange = render;
     $("fit").onclick = fitAll;
     $("check").onclick = () => { checking = !checking; messaging = false; $("msgs").classList.remove("on"); $("check").classList.toggle("on", checking); renderList(); };
     $("msgs").onclick = () => { messaging = !messaging; checking = false; $("check").classList.remove("on"); $("msgs").classList.toggle("on", messaging); renderList(); };
