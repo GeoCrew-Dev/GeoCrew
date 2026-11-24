@@ -95,6 +95,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | GET | `/api/v0/workspaces/{id}/export.geocrew.zip` | 任意 | 工程包（zip）：`project.json`（`format: "geocrew-project"`、名称、日期，`config.fields` 为共享设置里的 `form`）、`features.geojson`、`photos/<sha256>.jpg`（记录 `photos` 引用且服务器上有的附件）、`audio/<sha256>.m4a`（记录 `audio` 引用的录音，第 6.3 节）。与客户端导出的工程包同一格式，可直接导入为新工程；不含成员、凭据和历史。能力名 `package` |
 | GET | `/api/v0/workspaces/{id}/export.samples.csv?tz_offset=` | 任意 | 样品清单（第 6.4 节），UTF-8 CSV（带 BOM），每件样品一行：样品编号、样品类型、所在记录、经度、纬度、高程、岩性、采样时间、样品备注、记录ID，按编号自然排序；线面上的样品取第一个顶点。`tz_offset` 为采样时间所用时区（东为正，分钟，默认 0）。能力名 `samples` |
 | GET | `/api/v0/workspaces/{id}/export.sections.csv` | 任意 | 实测剖面分层表（第 6.5 节），UTF-8 CSV（带 BOM），每个剖面的每一层一行：剖面、层号、起点斜距、终点斜距、岩性、倾向、倾角、产状来源（实测 / 借用）、真厚度、备注、记录ID，剖面按名称自然排序。能力名 `sections` |
+| GET | `/api/v0/workspaces/{id}/export.kml` | 任意 | KML 2.2：每条有几何的记录一个地标，`title`、`note` 作名称和说明，其余简单属性写成 ExtendedData；颜色取记录自带的 simplestyle，否则取共享设置里的 `legend`，每种颜色一个共享 Style。能力名 `kml` |
 | GET | `/api/v0/workspaces/{id}/comments?since=&limit=` | 任意 | 增量拉取讨论（见第 8 节） |
 | POST | `/api/v0/workspaces/{id}/comments` | 组长、成员 | 发言 |
 | DELETE | `/api/v0/workspaces/{id}/comments/{comment_id}` | 作者、组长 | 删除发言 |

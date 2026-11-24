@@ -368,6 +368,21 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/export.kml:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportKML
+      summary: Live records with geometry as KML, styled by own simplestyle colours or the shared legend (capability "kml")
+      responses:
+        "200":
+          description: KML 2.2 document
+          content:
+            application/vnd.google-earth.kml+xml:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/comments:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
@@ -638,7 +653,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
