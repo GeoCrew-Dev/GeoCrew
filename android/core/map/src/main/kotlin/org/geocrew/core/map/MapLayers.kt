@@ -53,6 +53,7 @@ internal object MapLayers {
     const val SRC_TEAM = "gc-team"
     const val SRC_SKETCH = "gc-sketch"
     const val SRC_GRID = "gc-grid"
+    const val SRC_SHEETS = "gc-sheets"
 
     const val L_FILL = "gc-fill"
     const val L_LINE = "gc-line"
@@ -88,7 +89,7 @@ internal object MapLayers {
     )
 
     fun install(style: Style) {
-        listOf(SRC_GRID, SRC_FEATURES, SRC_ME, SRC_TEAM, SRC_SKETCH).forEach { style.addSource(GeoJsonSource(it, EMPTY)) }
+        listOf(SRC_GRID, SRC_SHEETS, SRC_FEATURES, SRC_ME, SRC_TEAM, SRC_SKETCH).forEach { style.addSource(GeoJsonSource(it, EMPTY)) }
 
         // Kilometre grid: thin and below everything else, like the grid on a printed topographic map.
         style.addLayer(
@@ -96,6 +97,14 @@ internal object MapLayers {
                 lineColor(MapColors.GRID),
                 lineWidth(0.8f),
                 lineOpacity(0.7f),
+            ),
+        )
+        // Map sheet frames, like the neat lines of a printed sheet.
+        style.addLayer(
+            LineLayer("gc-sheets", SRC_SHEETS).withProperties(
+                lineColor(MapColors.SHEET),
+                lineWidth(1.5f),
+                lineOpacity(0.8f),
             ),
         )
 
@@ -244,6 +253,7 @@ internal object MapLayers {
             set(SRC_FEATURES, OverlayGeoJson.features(o.features, o.selectedId, o.memberId, o.legend))
         }
         if (previous == null || previous.grid !== o.grid) set(SRC_GRID, OverlayGeoJson.grid(o.grid))
+        if (previous == null || previous.sheets != o.sheets) set(SRC_SHEETS, OverlayGeoJson.sheets(o.sheets))
         if (previous == null || previous.me != o.me) set(SRC_ME, OverlayGeoJson.me(o.me))
         if (previous == null || previous.team != o.team) set(SRC_TEAM, OverlayGeoJson.team(o.team))
         if (previous == null || previous.images != o.images) images(style, o.images, previous?.images.orEmpty())

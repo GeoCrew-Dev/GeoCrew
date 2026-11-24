@@ -47,6 +47,7 @@ object MapColors {
     const val SELECTED = "#00E5FF"
     /** Kilometre grid lines. */
     const val GRID = "#5C6BC0"
+    const val SHEET = "#C2185B"
     const val ME = "#1E88E5"
     const val TEAM = "#43A047"
     const val SKETCH = "#FF1744"

@@ -213,7 +213,8 @@ internal fun SelectedFeatureCard(
                 Text(f.title ?: KindUi.label(f.kind), style = MaterialTheme.typography.titleMedium)
                 val g = f.geometry
                 val detail = when (g) {
-                    is Geometry.Point -> CoordinateFormatter.format(g.position, format)
+                    is Geometry.Point -> CoordinateFormatter.format(g.position, format) +
+                        (org.geocrew.core.model.MapSheet.of(g.position, org.geocrew.core.model.MapSheet.Scale.M50K)?.let { " · 1:5万 ${it.code}" } ?: "")
                     is Geometry.Polygon, is Geometry.MultiPolygon -> "面积 " + CoordinateFormatter.area(g.areaSquareMeters())
                     null -> KindUi.label(f.kind)
                     else -> "长度 " + CoordinateFormatter.distance(g.lengthMeters())
@@ -277,6 +278,30 @@ internal fun LayerSheet(
                     },
                 )
             }
+            item {
+                ListItem(
+                    headlineContent = { Text("图幅线") },
+                    supportingContent = {
+                        Column {
+                            Text("国家基本比例尺地形图分幅（GB/T 13989），中间标注新图幅号；视野里图幅太多时不画")
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                (listOf<org.geocrew.core.model.MapSheet.Scale?>(null) + listOf(
+                                    org.geocrew.core.model.MapSheet.Scale.M100K,
+                                    org.geocrew.core.model.MapSheet.Scale.M50K,
+                                    org.geocrew.core.model.MapSheet.Scale.M25K,
+                                    org.geocrew.core.model.MapSheet.Scale.M10K,
+                                )).forEach { s ->
+                                    FilterChip(
+                                        selected = display.sheetScale == s,
+                                        onClick = { onDisplay { it.copy(sheets = s?.name) } },
+                                        label = { Text(s?.label ?: "不显示") },
+                                    )
+                                }
+                            }
+                        }
+                    },
+                )
+            }
             if (inTeam) {
                 item { DisplaySwitch("组员位置", null, display.team) { v -> onDisplay { it.copy(team = v) } } }
                 item { DisplaySwitch("只看我的任务", "只显示指派给我、还没完成的记录", display.onlyMyTasks) { v -> onDisplay { it.copy(onlyMyTasks = v) } } }
@@ -320,10 +345,13 @@ internal fun LayerSheet(
 internal fun GoToDialog(
     format: org.geocrew.core.model.CoordinateFormat,
     onGo: (org.geocrew.core.model.LngLat, addPoint: Boolean) -> Unit,
+    /** Show a map sheet typed by its code, e.g. J50E004003. */
+    onSheet: (org.geocrew.core.model.MapSheet.Sheet) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     var text by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf("") }
     val parsed = androidx.compose.runtime.remember(text) { org.geocrew.core.model.CoordinateParser.parse(text) }
+    val sheet = androidx.compose.runtime.remember(text) { if (parsed == null) org.geocrew.core.model.MapSheet.parse(text) else null }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { androidx.compose.material3.Text("前往坐标") },
@@ -332,18 +360,19 @@ internal fun GoToDialog(
                 androidx.compose.material3.OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    label = { androidx.compose.material3.Text("经纬度") },
+                    label = { androidx.compose.material3.Text("经纬度或图幅号") },
                     placeholder = { androidx.compose.material3.Text("116.391, 39.907 或 N39°54′25″ E116°23′28″") },
                     minLines = 2,
                 )
                 androidx.compose.material3.Text(
                     when {
-                        text.isBlank() -> "可粘贴十进制度或度分秒，带不带 N/E、经度/纬度 都可以。"
-                        parsed == null -> "读不出坐标，请检查格式"
+                        text.isBlank() -> "可粘贴十进制度或度分秒，带不带 N/E、经度/纬度 都可以；也可以输入图幅号，如 J50E004003。"
+                        sheet != null -> "图幅：${sheet.scale.label} ${sheet.code}"
+                        parsed == null -> "读不出坐标或图幅号，请检查格式"
                         else -> "读作：" + org.geocrew.core.model.CoordinateFormatter.format(parsed, format)
                     },
                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                    color = if (text.isNotBlank() && parsed == null) {
+                    color = if (text.isNotBlank() && parsed == null && sheet == null) {
                         androidx.compose.material3.MaterialTheme.colorScheme.error
                     } else {
                         androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
@@ -353,11 +382,15 @@ internal fun GoToDialog(
         },
         confirmButton = {
             androidx.compose.foundation.layout.Row {
-                androidx.compose.material3.TextButton(enabled = parsed != null, onClick = { parsed?.let { onGo(it, true) } }) {
-                    androidx.compose.material3.Text("前往并标点")
-                }
-                androidx.compose.material3.TextButton(enabled = parsed != null, onClick = { parsed?.let { onGo(it, false) } }) {
-                    androidx.compose.material3.Text("前往")
+                if (sheet != null) {
+                    androidx.compose.material3.TextButton(onClick = { onSheet(sheet) }) { androidx.compose.material3.Text("前往图幅") }
+                } else {
+                    androidx.compose.material3.TextButton(enabled = parsed != null, onClick = { parsed?.let { onGo(it, true) } }) {
+                        androidx.compose.material3.Text("前往并标点")
+                    }
+                    androidx.compose.material3.TextButton(enabled = parsed != null, onClick = { parsed?.let { onGo(it, false) } }) {
+                        androidx.compose.material3.Text("前往")
+                    }
                 }
             }
         },

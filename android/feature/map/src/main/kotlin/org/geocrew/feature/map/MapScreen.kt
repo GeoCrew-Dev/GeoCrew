@@ -192,6 +192,23 @@ fun MapScreen(
             grid = org.geocrew.core.model.PlaneGrid.of(view, width)
         }
     }
+    // Map sheet frames for the view at the chosen scale; none when the view holds too many.
+    var sheets by remember { mutableStateOf<List<org.geocrew.core.model.MapSheet.Sheet>>(emptyList()) }
+    LaunchedEffect(display.sheetScale) {
+        val scale = display.sheetScale
+        if (scale == null) {
+            sheets = emptyList()
+            return@LaunchedEffect
+        }
+        androidx.compose.runtime.snapshotFlow { camera.center to camera.zoom }.collectLatest {
+            kotlinx.coroutines.delay(150)
+            val view = camera.visibleBounds() ?: return@collectLatest
+            sheets = org.geocrew.core.model.MapSheet.covering(view, scale, max = 200).orEmpty()
+        }
+    }
+    val sheetLabels = remember(sheets) {
+        sheets.map { s -> org.geocrew.core.map.MapLabel(org.geocrew.core.model.LngLat((s.bounds.west + s.bounds.east) / 2, (s.bounds.south + s.bounds.north) / 2), s.code, faded = true) }
+    }
     // Control points while aligning a picture: where each pair now sits, and the half-made one.
     val alignLabels = remember(mode) {
         (mode as? AlignMode)?.let { m ->
@@ -208,7 +225,7 @@ fun MapScreen(
         }
     }
     val images by viewModel.images.collectAsStateWithLifecycle()
-    val drawn = remember(overlays, grid, images) { overlays.copy(grid = grid?.lines.orEmpty(), images = images) }
+    val drawn = remember(overlays, grid, images, sheets) { overlays.copy(grid = grid?.lines.orEmpty(), images = images, sheets = sheets.map { it.bounds }) }
     val gridLabels = remember(grid) {
         grid?.lines?.mapNotNull { l -> l.anchor?.let { org.geocrew.core.map.MapLabel(it, l.label) } }.orEmpty()
     }
@@ -226,7 +243,7 @@ fun MapScreen(
             onLongClick = { if (mode == MapMode.Browse) viewModel.addPoint(it) },
             labels = gridLabels + overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) } +
                 listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, goneLabel) }) +
-                alignLabels +
+                alignLabels + sheetLabels +
                 nameLabels,
         )
 
@@ -399,6 +416,12 @@ fun MapScreen(
                     goneLabel = GONE_TO_LABEL
                     camera.animateTo(p, maxOf(camera.zoom, 15.0))
                     if (add) viewModel.addPoint(p)
+                },
+                onSheet = { s ->
+                    showGoTo = false
+                    goneTo = org.geocrew.core.model.LngLat((s.bounds.west + s.bounds.east) / 2, (s.bounds.south + s.bounds.north) / 2)
+                    goneLabel = s.scale.label + " " + s.code
+                    camera.fit(s.bounds)
                 },
                 onDismiss = { showGoTo = false },
             )

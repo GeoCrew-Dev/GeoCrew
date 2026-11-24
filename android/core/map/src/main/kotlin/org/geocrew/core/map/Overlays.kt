@@ -46,6 +46,8 @@ data class MapOverlays(
     val legend: Legend = Legend(),
     /** Kilometre grid lines over the current view; see [org.geocrew.core.model.PlaneGrid]. */
     val grid: List<org.geocrew.core.model.PlaneGrid.Line> = emptyList(),
+    /** Map sheet frames over the current view (see [org.geocrew.core.model.MapSheet]). */
+    val sheets: List<org.geocrew.core.model.Bounds> = emptyList(),
     /** Pictures pinned to the map under everything else, bottom first. */
     val images: List<MapImage> = emptyList(),
 )
@@ -154,6 +156,12 @@ internal object OverlayGeoJson {
 
     fun grid(lines: List<org.geocrew.core.model.PlaneGrid.Line>): String = collection(
         lines.map { l -> feature(Geometry.LineString(l.positions)) { this["northing"] = l.northing } },
+    )
+
+    fun sheets(frames: List<org.geocrew.core.model.Bounds>): String = collection(
+        frames.map { b ->
+            feature(Geometry.LineString(listOf(LngLat(b.west, b.south), LngLat(b.east, b.south), LngLat(b.east, b.north), LngLat(b.west, b.north), LngLat(b.west, b.south))))
+        },
     )
 
     /** Accuracy circle as a 48-gon. */

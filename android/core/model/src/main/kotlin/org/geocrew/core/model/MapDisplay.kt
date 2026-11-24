@@ -20,7 +20,11 @@ data class MapDisplay(
     val onlyMyTasks: Boolean = false,
     /** Kilometre grid of the 3° or 6° Gauss-Krüger zone; 0 draws none. See [PlaneGrid]. */
     val grid: Int = 0,
+    /** Map sheet boundaries at this [MapSheet.Scale] (by name); null draws none. */
+    val sheets: String? = null,
 ) {
+    val sheetScale: MapSheet.Scale? get() = sheets?.let { n -> MapSheet.Scale.entries.firstOrNull { it.name == n } }
+
     fun shows(kind: FeatureKind) = kind.id !in hiddenKinds
 
     fun toggle(kind: FeatureKind) = copy(
