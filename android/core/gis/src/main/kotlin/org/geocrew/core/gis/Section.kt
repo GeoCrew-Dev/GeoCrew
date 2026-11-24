@@ -131,6 +131,7 @@ class SectionTool : GisTool {
                 this[Props.TITLE] = "${h.name} 视倾角 ${"%.0f".format(abs(h.beta))}°"
                 this[SECTION_LINE] = l.title ?: l.id
                 this[CHAINAGE_M] = round1(h.st.chainage)
+                this[SECTION_LENGTH_M] = round1(poly.length)
                 this[OFFSET_M] = round1(h.st.offset)
                 this[APPARENT_DIP] = round1(h.beta)
                 this[SOURCE] = h.name
@@ -156,6 +157,8 @@ class SectionTool : GisTool {
     companion object {
         const val SECTION_LINE = "section_line"
         const val CHAINAGE_M = "chainage_m"
+        /** The whole section line's length, on every output, so a strip can be drawn to scale. */
+        const val SECTION_LENGTH_M = "section_length_m"
         const val OFFSET_M = "offset_m"
         const val APPARENT_DIP = "apparent_dip"
         const val SOURCE = "source"

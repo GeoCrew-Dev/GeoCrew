@@ -83,6 +83,7 @@ class MapSectionTest {
         // The same unit keeps one colour.
         assertEquals(lines[0].properties.string(OutputProps.STROKE), lines[2].properties.string(OutputProps.STROKE))
         assertEquals(3, out.legend.size)
+        assertEquals(0.05 * 111_320.0 * kotlin.math.cos(40.005 * Math.PI / 180), points.single().properties.double(SectionTool.SECTION_LENGTH_M)!!, 0.5)
         assertEquals("fault", points.single().properties.string(Props.LINE_STYLE))
         assertEquals(60.0, points.single().properties.double(SectionTool.APPARENT_DIP)!!, 0.1)
         assertTrue(out.summary, out.summary.contains("在面外"))

@@ -220,6 +220,7 @@ private fun ToolForm(tool: GisTool, vm: AnalysisViewModel, onShowOnMap: () -> Un
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("结果", style = MaterialTheme.typography.titleMedium)
                     Text(out.summary, style = MaterialTheme.typography.bodyMedium)
+                    SectionStrip(out)
                     if (out.legend.isNotEmpty()) Legend(out.legend)
                     if (out.features.isNotEmpty()) {
                         val saved = run.saved

@@ -132,6 +132,7 @@ class MapSectionTool : GisTool {
                 this[FROM_M] = round1(i.from)
                 this[TO_M] = round1(i.to)
                 this[LENGTH_M] = round1(i.length)
+                this[SectionTool.SECTION_LENGTH_M] = round1(r.length)
                 this[SOURCE] = i.polygon.id
                 style(stroke = colorOf(i), strokeWidth = 6.0)
             })
@@ -141,6 +142,7 @@ class MapSectionTool : GisTool {
                 this[Props.TITLE] = "${c.line.title ?: "未命名线"} 距起点 ${CoordinateFormatter.distance(c.chainage)}"
                 this[SECTION_LINE] = title
                 this[CHAINAGE_M] = round1(c.chainage)
+                this[SectionTool.SECTION_LENGTH_M] = round1(r.length)
                 this[SOURCE] = c.line.id
                 c.line.lineStyle?.let { this[Props.LINE_STYLE] = it.id }
                 c.apparentDip?.let { this[SectionTool.APPARENT_DIP] = round1(it) }
