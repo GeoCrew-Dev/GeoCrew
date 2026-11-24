@@ -239,7 +239,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 
 | kind | 几何 | 主要属性 |
 | --- | --- | --- |
-| `point` | Point | `title`、`note`、`photos`、`audio` |
+| `point` | Point | `title`、`note`、`photos`、`audio`、`meet_at`（第 6.8 节） |
 | `geo_point` | Point | 地质点：`title`、`lithology`、`strike`、`dip_direction`、`dip`、`note`、`photos`、`audio` |
 | `line` | LineString | `title`、`note`、`length_m`、`line_style`（第 6.7 节） |
 | `polygon` | Polygon | `title`、`note`、`area_m2` |
@@ -389,6 +389,10 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `inferred_fault` | 推测断层 | 红色粗虚线 |
 
 记录自带 simplestyle 颜色（`stroke`）时颜色以自带的为准，虚实和粗细仍按线型。不认识的值当作没有线型画，但要原样保留。DXF 等导出时，带线型的线放在以线型命名的图层上，推测的用虚线线型。
+
+### 6.8 集合点
+
+任何点记录都可以带 `meet_at`（ISO 8601 时间，例如 `"2026-11-24T09:30:00Z"`），表示全组在这个时间到这个点集合：出发、吃饭、等车接。客户端应在地图上把它和普通点区分开，并提示离现在最近的一次集合：从集合时间前 24 小时开始显示，过了时间再保留 1 小时，给迟到的人看；同时有几处时取时间上离现在最近的。显示时给出集合时间、还剩多久，以及本机到集合点的距离和方位。取消集合点就是删掉这个属性；`meet_at` 不是合法时间时当作没有。服务端不解析这个属性。
 
 ## 7. 实时通道
 
