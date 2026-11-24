@@ -69,6 +69,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | 键 | 内容 |
 | --- | --- |
 | `form` | 记录表单：属性数组，每项 `{key, label?, type?, options?, unit?, kinds?, required?}`。`type` 为 `TEXT`（默认）、`NUMBER` 或 `CHOICE`；`kinds` 为适用的要素种类，空表示全部；`required: true` 表示这些种类的记录应当填写该属性，客户端据此提示「待补全」，但服务端不校验，提交时也不应拒绝。值写在要素 `properties[key]` 里，文字始终是字符串，数字是 JSON 数字。 |
+| `legend` | 地图图例：`{key, entries: [{value, color}]}`。`key` 是用来着色的要素属性（例如 `lithology` 或表单里的 `formation`），空串表示不着色；`color` 为 `#RRGGBB`。要素 `properties[key]` 的文字（去掉首尾空白、不区分大小写）等于某项 `value` 时，用该颜色画出；要素自带 simplestyle 颜色（`fill`、`stroke`、`marker-color`）时以自带的为准。客户端应忽略颜色格式不对或 `value` 为空、重复的项。 |
 
 不认识的键必须原样保留：客户端修改设置时先读取、只改自己负责的键、再整体提交。
 
