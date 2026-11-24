@@ -49,6 +49,7 @@ dependencies {
     implementation(project(":feature:compass"))
     implementation(project(":feature:transfer"))
     implementation(project(":feature:team"))
+    implementation(project(":feature:analysis"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

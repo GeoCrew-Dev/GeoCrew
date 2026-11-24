@@ -113,6 +113,8 @@ fun FeatureDetailScreen(
                 SectionHeader("产状")
                 AttitudeEditor(f.attitude, viewModel::setAttitude, onMeasure = onMeasureAttitude?.let { { it(f.id) } })
             }
+            SectionHeader("属性")
+            Attributes(f, viewModel::setAttribute, viewModel::removeAttribute)
             SectionHeader("照片")
             Photos(f, viewModel)
             SectionHeader("信息")
@@ -290,5 +292,50 @@ private fun Info(f: GeoFeature, format: org.geocrew.core.model.CoordinateFormat)
         InfoRow("修改", fullTime.format(f.sync.updatedAt))
         InfoRow("版本", f.sync.version.toString())
         InfoRow("同步", if (f.sync.dirty) "未同步" else "已同步")
+    }
+}
+
+/** Free key/value attributes, e.g. a sample number or a measured grade. */
+@Composable
+private fun Attributes(f: GeoFeature, onSet: (String, String) -> Unit, onRemove: (String) -> Unit) {
+    val entries = f.properties.entries.filter { it.key !in RESERVED_KEYS && it.value is kotlinx.serialization.json.JsonPrimitive }
+    var editing by remember { mutableStateOf<Pair<String, String>?>(null) }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        entries.forEach { (k, v) ->
+            val text = (v as kotlinx.serialization.json.JsonPrimitive).content
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(k, Modifier.weight(0.4f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text, Modifier.weight(0.6f), style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = { editing = k to text }) { Text("改") }
+                IconButton(onClick = { onRemove(k) }) { Icon(Icons.Default.Delete, "删除属性 $k") }
+            }
+        }
+        if (entries.isEmpty()) {
+            Text("没有其他属性。数值属性（如品位、厚度）可用于插值和统计。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        TextButton(onClick = { editing = "" to "" }) { Text("添加属性") }
+    }
+    editing?.let { (k0, v0) ->
+        var key by remember(k0) { mutableStateOf(k0) }
+        var value by remember(k0) { mutableStateOf(v0) }
+        val bad = key.trim() in RESERVED_KEYS
+        AlertDialog(
+            onDismissRequest = { editing = null },
+            title = { Text(if (k0.isEmpty()) "添加属性" else "修改属性") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = key, onValueChange = { key = it }, label = { Text("名称") }, singleLine = true,
+                        enabled = k0.isEmpty(), isError = bad,
+                        supportingText = if (bad) ({ Text("这个名称由应用使用，请换一个") }) else null,
+                    )
+                    OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text("值") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = key.isNotBlank() && !bad, onClick = { onSet(key, value); editing = null }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } },
+        )
     }
 }

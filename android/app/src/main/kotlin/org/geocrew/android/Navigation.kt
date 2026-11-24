@@ -9,6 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import org.geocrew.feature.analysis.AnalysisScreen
 import org.geocrew.feature.compass.CompassScreen
 import org.geocrew.feature.compass.TARGET_FEATURE_ARG
 import org.geocrew.feature.map.MapScreen
@@ -30,6 +31,7 @@ object Routes {
     const val TOOLS = "tools"
     const val TRANSFER = "transfer"
     const val TEAM = "team"
+    const val ANALYSIS = "analysis"
     const val COMPASS = "compass?$TARGET_FEATURE_ARG={$TARGET_FEATURE_ARG}"
     fun compassFor(featureId: String) = "compass?$TARGET_FEATURE_ARG=$featureId"
 
@@ -59,6 +61,9 @@ fun GeoCrewNavHost() {
                 focusFeatureId = focus,
                 onFocusHandled = { entry.savedStateHandle[Routes.FOCUS] = null },
             )
+        }
+        composable(Routes.ANALYSIS) {
+            AnalysisScreen(onBack = { nav.popBackStack() }, onShowOnMap = { nav.popBackStack(Routes.MAP, inclusive = false) })
         }
         composable(Routes.TEAM) {
             TeamScreen(onBack = { nav.popBackStack() })

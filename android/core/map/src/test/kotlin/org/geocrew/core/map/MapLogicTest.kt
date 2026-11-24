@@ -24,4 +24,12 @@ class MapLogicTest {
     val sk = Json.parseToJsonElement(OverlayGeoJson.sketch(listOf(LngLat(1.0,1.0),LngLat(2.0,1.0),LngLat(2.0,2.0)), true)).jsonObject
     assertEquals(4, sk["features"]!!.jsonArray.size)
   }
+  @Test fun simpleStyleIsCopiedOnlyWhenValid() {
+    val props = buildJsonObject { put("fill", "#22A884"); put("stroke", "red; drop"); put("fill-opacity", 0.5); put("stroke-width", 99) }
+    val f = GeoFeature("b","p",FeatureKind.POLYGON, Geometry.Polygon.of(listOf(LngLat(1.0,1.0),LngLat(2.0,1.0),LngLat(2.0,2.0))), props, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))
+    val p = Json.parseToJsonElement(OverlayGeoJson.features(listOf(f), null)).jsonObject["features"]!!.jsonArray[0].jsonObject["properties"]!!.jsonObject
+    assertEquals("#22A884", p["fill"]!!.jsonPrimitive.content)
+    assertEquals(0.5, p["fill-opacity"]!!.jsonPrimitive.double, 0.0)
+    assertNull(p["stroke"]); assertNull(p["stroke-width"])
+  }
 }

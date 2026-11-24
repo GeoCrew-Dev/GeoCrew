@@ -49,9 +49,30 @@ internal object OverlayGeoJson {
                 this["fid"] = f.id
                 this["kind"] = f.kind.id
                 this["selected"] = f.id == selectedId
+                simpleStyle(f.properties)
             }
         },
     )
+
+    /**
+     * Copies GeoJSON simplestyle keys (used by analysis output and by files
+     * from other GIS) so layers can colour features individually. Values are
+     * checked here so a bad file cannot break the style expressions.
+     */
+    private fun JsonObjectBuilder.simpleStyle(p: JsonObject) {
+        for (k in COLOR_KEYS) {
+            val v = (p[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (v != null && HEX_COLOR.matches(v)) this[k] = v
+        }
+        for ((k, range) in NUMBER_KEYS) {
+            val v = (p[k] as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toDoubleOrNull()
+            if (v != null && v in range) this[k] = v
+        }
+    }
+
+    private val COLOR_KEYS = listOf("fill", "stroke", "marker-color")
+    private val NUMBER_KEYS = listOf("fill-opacity" to 0.0..1.0, "stroke-width" to 0.0..20.0)
+    private val HEX_COLOR = Regex("#[0-9a-fA-F]{6}")
 
     fun me(me: MyLocation?): String = collection(
         buildList {

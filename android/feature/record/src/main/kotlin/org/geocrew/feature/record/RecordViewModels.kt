@@ -92,6 +92,26 @@ class FeatureDetailViewModel @Inject constructor(
         }
     }
 
+    /** Sets a free attribute. Numbers are stored as numbers so analysis tools can use them. */
+    fun setAttribute(key: String, raw: String) = viewModelScope.launch {
+        val k = key.trim()
+        if (k.isEmpty() || k in RESERVED_KEYS) return@launch
+        val v = raw.trim()
+        features.edit(id) {
+            val n = v.toDoubleOrNull()?.takeIf { it.isFinite() }
+            when {
+                v.isEmpty() -> remove(k)
+                n != null -> this[k] = n
+                else -> this[k] = v
+            }
+        }
+    }
+
+    fun removeAttribute(key: String) = viewModelScope.launch {
+        if (key in RESERVED_KEYS) return@launch
+        features.edit(id) { remove(key) }
+    }
+
     fun setKind(kind: FeatureKind) = viewModelScope.launch {
         features.changeKind(id, kind)
     }
@@ -119,3 +139,9 @@ class FeatureDetailViewModel @Inject constructor(
 
     fun delete() = viewModelScope.launch { features.delete(id) }
 }
+
+/** Properties with their own editors or managed by the app; free attributes never overwrite them. */
+internal val RESERVED_KEYS = setOf(
+    Props.KIND, Props.TITLE, Props.NOTE, Props.PHOTOS, Props.LITHOLOGY, Props.STRIKE, Props.DIP_DIRECTION, Props.DIP,
+    Props.STARTED_AT, Props.ENDED_AT, Props.ACCURACY_M, Props.LENGTH_M, Props.AREA_M2,
+)

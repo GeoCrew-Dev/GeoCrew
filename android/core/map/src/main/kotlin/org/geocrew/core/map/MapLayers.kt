@@ -50,8 +50,10 @@ internal object MapLayers {
     private val isPoint = eq(geometryType(), literal("Point"))
     private val selected = eq(get("selected"), literal(true))
 
-    private fun kindColor(default: String): Expression = switchCase(
+    /** Colour for a feature: selection first, then its own simplestyle colour [own], then by kind. */
+    private fun kindColor(default: String, own: String? = null): Expression = switchCase(
         selected, literal(MapColors.SELECTED),
+        *(if (own != null) arrayOf(Expression.has(own), Expression.toColor(get(own))) else emptyArray()),
         match(
             get("kind"), literal(default),
             stop("point", MapColors.POINT),
@@ -68,14 +70,16 @@ internal object MapLayers {
 
         style.addLayer(
             FillLayer(L_FILL, SRC_FEATURES).withFilter(isPolygon).withProperties(
-                fillColor(kindColor(MapColors.POLYGON)),
-                fillOpacity(switchCase(selected, literal(0.35f), literal(0.2f))),
+                fillColor(kindColor(MapColors.POLYGON, "fill")),
+                fillOpacity(
+                    switchCase(selected, literal(0.35f), Expression.has("fill-opacity"), get("fill-opacity"), literal(0.2f)),
+                ),
             ),
         )
         style.addLayer(
             LineLayer(L_LINE, SRC_FEATURES).withFilter(Expression.any(isLine, isPolygon)).withProperties(
-                lineColor(kindColor(MapColors.LINE)),
-                lineWidth(switchCase(selected, literal(5f), literal(3f))),
+                lineColor(kindColor(MapColors.LINE, "stroke")),
+                lineWidth(switchCase(selected, literal(5f), Expression.has("stroke-width"), get("stroke-width"), literal(3f))),
                 lineJoin(Property.LINE_JOIN_ROUND),
                 lineCap(Property.LINE_CAP_ROUND),
             ),
@@ -83,7 +87,7 @@ internal object MapLayers {
         style.addLayer(
             CircleLayer(L_POINT, SRC_FEATURES).withFilter(isPoint).withProperties(
                 circleRadius(switchCase(selected, literal(9f), literal(6f))),
-                circleColor(kindColor(MapColors.POINT)),
+                circleColor(kindColor(MapColors.POINT, "marker-color")),
                 circleStrokeColor("#FFFFFF"),
                 circleStrokeWidth(2f),
             ),

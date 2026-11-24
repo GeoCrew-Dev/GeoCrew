@@ -32,12 +32,33 @@
 | `app` | 应用入口、导航、依赖注入装配 |
 | `core:model` | 纯 Kotlin 领域模型：几何、测地计算、要素、产状、图源定义 |
 | `core:formats` | GeoJSON / GPX / KML 读写，可注册新格式 |
-| `core:data` | Room 数据库、设置（DataStore）、要素/轨迹/照片仓库 |
+| `core:network` | 纯 Kotlin 协议客户端：REST、实时通道、同步引擎 |
+| `core:gis` | 纯 Kotlin 空间分析工具与插件接口（`GisTool`） |
+| `core:data` | Room 数据库、设置（DataStore）、要素/轨迹/照片仓库、工作组会话 |
 | `core:sensors` | 定位（不依赖 Google 服务）、方向传感器、轨迹前台服务 |
 | `core:map` | MapLibre 地图组件、图源样式、叠加图层、瓦片网络监测 |
 | `core:ui` | 主题与通用组件 |
 | `feature:map` | 地图主界面：图层切换、定位、定点、轨迹、画线面 |
 | `feature:settings` | 设置：Key、自定义图源、坐标格式、磁偏角、轨迹参数 |
+| `feature:record` | 记录列表与详情：名称、岩性、产状、自定义属性、照片 |
+| `feature:compass` | 罗盘与产状测量 |
+| `feature:transfer` | GeoJSON / KML / GPX 导入导出 |
+| `feature:team` | 工作组：新建、加入、成员与邀请码管理、位置共享开关 |
+| `feature:analysis` | 空间分析：反距离加权插值、统计、凸包范围、点缓冲区 |
+
+### 添加分析工具
+
+实现 `core:gis` 里的 `GisTool` 接口（声明参数、读取要素、返回新要素和说明），再在任意模块用 Hilt 注册：
+
+```kotlin
+@Provides @IntoSet fun myTool(): GisTool = MyTool()
+```
+
+分析界面会按参数自动生成表单，结果作为普通记录保存，可同步、可导出。输出要素可用 GeoJSON simplestyle 属性（`fill`、`stroke` 等）指定颜色。
+
+### 小组协同
+
+在「工作组」页面填写自部署服务端地址：组长新建工作组并把邀请码发给组员，组员用邀请码加入。当前工程的记录、照片会在后台同步，组员位置显示在地图上（位置共享默认关闭，可随时开关）。成员凭据只保存在本机且不参与系统备份。
 
 构建约定集中在 `build-logic`（`geocrew.android.library`、`geocrew.android.feature` 等插件），新增模块只需几行配置。
 
