@@ -50,10 +50,22 @@ interface FeatureFormat {
 
     fun write(features: List<GeoFeature>, output: OutputStream, ctx: ExportContext = ExportContext()): ExportResult =
         throw UnsupportedOperationException("$displayName cannot be exported")
+
+    /**
+     * Report formats that write something other than one row per record
+     * (samples, section layers) say what they count and what to call the file.
+     */
+    val unit: String get() = "个要素"
+
+    /** Part of the suggested file name, e.g. "samples" in geocrew-samples-20261124.csv; null for plain exports. */
+    val fileTag: String? get() = null
+
+    /** Why there is nothing to write, shown instead of exporting an empty file; null when there is something. */
+    fun nothingToWrite(features: List<GeoFeature>): String? = null
 }
 
 object FeatureFormats {
-    val all: List<FeatureFormat> = listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat, CsvFormat, SampleListFormat)
+    val all: List<FeatureFormat> = listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat, CsvFormat, SampleListFormat, SectionTableFormat)
 
     fun byId(id: String) = all.firstOrNull { it.id == id }
 

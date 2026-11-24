@@ -26,6 +26,11 @@ object SampleListFormat : FeatureFormat {
     override val canRead = false
     override val canWrite = true
 
+    override val unit get() = "件样品"
+    override val fileTag get() = "samples"
+    override fun nothingToWrite(features: List<GeoFeature>) =
+        if (features.none { !it.deleted && it.samples.isNotEmpty() }) "当前工程还没有登记样品。在记录详情的「样品」里添加。" else null
+
     val HEADER = listOf("样品编号", "样品类型", "所在记录", "经度", "纬度", "高程", "岩性", "采样时间", "样品备注", "记录ID")
 
     private val TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")

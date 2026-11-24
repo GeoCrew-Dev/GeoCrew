@@ -21,9 +21,7 @@ import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.TrackRepository
 import org.geocrew.core.formats.ExportContext
 import org.geocrew.core.formats.FeatureFormat
-import org.geocrew.core.formats.SampleListFormat
 import org.geocrew.core.formats.SampleLabels
-import org.geocrew.core.model.samples
 import org.geocrew.core.formats.FeatureFormats
 import org.geocrew.core.formats.FieldReport
 import org.geocrew.core.formats.ImportContext
@@ -106,7 +104,7 @@ class TransferViewModel @Inject constructor(
     /** Suggested file name for an export in [format]. */
     fun exportName(format: FeatureFormat): String {
         val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm").withZone(ZoneId.systemDefault()).format(Instant.now())
-        val what = if (format == SampleListFormat) "samples-" else ""
+        val what = format.fileTag?.let { "$it-" }.orEmpty()
         return "geocrew-$what$stamp.${format.extension}"
     }
 
@@ -114,9 +112,7 @@ class TransferViewModel @Inject constructor(
         val project = projects.ensureCurrent()
         val list = features.all(project.id)
         if (list.isEmpty()) return@work fail("当前工程还没有要素可以导出。")
-        if (format == SampleListFormat && list.none { !it.deleted && it.samples.isNotEmpty() }) {
-            return@work fail("当前工程还没有登记样品。在记录详情的「样品」里添加。")
-        }
+        format.nothingToWrite(list)?.let { return@work fail(it) }
         // GPX keeps per-point times for tracks; collect them up front.
         val times = list.filter { it.kind == FeatureKind.TRACK }
             .associate { t -> t.id to tracks.points(t.id).map { it.time } }
@@ -125,8 +121,7 @@ class TransferViewModel @Inject constructor(
             context.contentResolver.openOutputStream(uri, "wt")?.use { format.write(list, it, ctx) }
         } ?: return@work fail("无法写入所选位置。")
         val skipped = if (result.skipped > 0) "，${result.skipped} 个此格式不支持已跳过" else ""
-        val unit = if (format == SampleListFormat) "件样品" else "个要素"
-        _message.value = TransferMessage.Info("已导出 ${result.written} $unit$skipped。")
+        _message.value = TransferMessage.Info("已导出 ${result.written} ${format.unit}$skipped。")
     }
 
     fun reportName(todayOnly: Boolean): String {
