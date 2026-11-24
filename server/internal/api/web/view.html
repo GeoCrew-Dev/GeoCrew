@@ -28,7 +28,11 @@
   #list li { padding: 8px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
   #list li:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   #list .sub { color: var(--muted); font-size: 12px; }
-  #map { flex: 1; }
+  #mapwrap { flex: 1; position: relative; }
+  #map { position: absolute; inset: 0; }
+  #legend { position: absolute; left: 10px; bottom: 30px; z-index: 1; background: color-mix(in srgb, var(--bg) 92%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 12px; max-width: 220px; cursor: pointer; }
+  #legend b { font-weight: 600; }
+  #legend .sw { display: inline-block; width: 16px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
   .mate { background: #1565c0; color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 10px; border: 2px solid #fff; white-space: nowrap; box-shadow: 0 1px 3px #0006; }
   .mate.old { background: #78909c; }
@@ -57,7 +61,7 @@
     </div>
     <ul id="list"></ul>
   </aside>
-  <div id="map"></div>
+  <div id="mapwrap"><div id="map"></div><div id="legend" hidden></div></div>
 </div>
 <div id="gate" hidden>
   <h1>同勘 GeoCrew</h1>
@@ -107,6 +111,58 @@
     render();
   }
 
+  // Shared map legend (protocol §2.2 key `legend`): colours records by one attribute.
+  let legend = { key: "", entries: [] };
+  let legendOpen = true;
+  const HEX = /^#[0-9a-fA-F]{6}$/;
+  async function loadSettings() {
+    try {
+      const s = await (await api("/settings")).json();
+      const l = (s.settings || {}).legend || {};
+      const seen = new Set();
+      legend = {
+        key: typeof l.key === "string" ? l.key.trim() : "",
+        entries: (Array.isArray(l.entries) ? l.entries : []).filter((e) => {
+          const v = e && typeof e.value === "string" ? e.value.trim().toLowerCase() : "";
+          if (!v || !HEX.test(e.color) || seen.has(v)) return false;
+          seen.add(v); return true;
+        }).map((e) => ({ value: e.value.trim(), color: e.color })),
+      };
+    } catch (e) { if (e.message === "unauthorized") throw e; }
+  }
+  function legendValue(p) {
+    if (!legend.key || !legend.entries.length) return "";
+    const v = p && p[legend.key];
+    return (typeof v === "string" || typeof v === "number") ? String(v).trim().toLowerCase() : "";
+  }
+  // A record's own simplestyle colour first, then the legend, then its kind.
+  function colorOf(f) {
+    const p = f.properties || {};
+    for (const k of ["fill", "stroke", "marker-color"]) if (typeof p[k] === "string" && HEX.test(p[k])) return [p[k], false];
+    const v = legendValue(p);
+    const e = v && legend.entries.find((x) => x.value.toLowerCase() === v);
+    return e ? [e.color, true] : [KINDS[kindOf(p)][1], false];
+  }
+  function renderLegend() {
+    const box = $("legend");
+    const used = new Set([...features.values()].map((f) => legendValue(f.properties || {})));
+    const shown = legend.entries.filter((e) => used.has(e.value.toLowerCase()));
+    box.hidden = !shown.length;
+    if (!shown.length) return;
+    box.replaceChildren();
+    const head = document.createElement("b");
+    head.textContent = "图例" + (legendOpen ? "" : "（" + shown.length + "）");
+    box.append(head);
+    if (!legendOpen) return;
+    for (const e of shown.slice(0, 12)) {
+      const row = document.createElement("div");
+      const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = e.color;
+      row.append(sw, document.createTextNode(e.value));
+      box.append(row);
+    }
+    if (shown.length > 12) { const more = document.createElement("div"); more.textContent = "另有 " + (shown.length - 12) + " 项"; box.append(more); }
+  }
+
   async function loadMembers() {
     const list = await (await api("/members")).json();
     members.clear();
@@ -116,7 +172,7 @@
   function collection() {
     return { type: "FeatureCollection", features: [...features.values()].map((f) => ({
       type: "Feature", id: undefined, geometry: f.geometry,
-      properties: { _id: f.id, _kind: kindOf(f.properties || {}), _color: KINDS[kindOf(f.properties || {})][1] },
+      properties: (([c, byLegend]) => ({ _id: f.id, _kind: kindOf(f.properties || {}), _color: c, _fo: byLegend ? 0.45 : 0.2 }))(colorOf(f)),
     })) };
   }
 
@@ -127,6 +183,7 @@
   function render() {
     $("status").textContent = features.size + " 条记录 · " + members.size + " 位组员";
     if (ready) map.getSource("records").setData(collection());
+    renderLegend();
     renderList();
     renderToday();
     if (ready && !fitted && features.size) { fitted = true; fitAll(); }
@@ -143,7 +200,7 @@
     for (const f of rows) {
       const p = f.properties || {}, k = kindOf(p);
       const li = document.createElement("li");
-      const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = KINDS[k][1];
+      const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = colorOf(f)[0];
       const t = document.createElement("span"); t.textContent = text(p, "title") || KINDS[k][0];
       const sub = document.createElement("div"); sub.className = "sub";
       sub.textContent = [KINDS[k][0], text(p, "lithology"), members.get(by(f)) || "", upd(f).slice(0, 10)].filter(Boolean).join(" · ");
@@ -339,6 +396,7 @@
       else if (m.type === "position") showMate(m);
       else if (m.type === "feature_changed") pull().catch(() => {});
       else if (m.type === "members_changed") loadMembers().then(render).catch(() => {});
+      else if (m.type === "settings_changed") loadSettings().then(render).catch(() => {});
     };
     sock.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 60 * 1000); };
   }
@@ -366,7 +424,7 @@
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
     map.on("load", () => {
       map.addSource("records", { type: "geojson", data: collection() });
-      map.addLayer({ id: "fill", type: "fill", source: "records", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ["get", "_color"], "fill-opacity": 0.2 } });
+      map.addLayer({ id: "fill", type: "fill", source: "records", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ["get", "_color"], "fill-opacity": ["get", "_fo"] } });
       map.addLayer({ id: "line", type: "line", source: "records", filter: ["!=", ["geometry-type"], "Point"],
         paint: { "line-color": ["get", "_color"], "line-width": ["case", ["==", ["get", "_kind"], "track"], 2, 3] } });
       map.addLayer({ id: "point", type: "circle", source: "records", filter: ["==", ["geometry-type"], "Point"],
@@ -394,7 +452,9 @@
     const ws = await (await api("")).json();
     $("name").textContent = ws.name || "工作组";
     document.title = (ws.name || "工作组") + " · 同勘 GeoCrew";
+    $("legend").onclick = () => { legendOpen = !legendOpen; renderLegend(); };
     await loadMembers();
+    await loadSettings();
     await pull();
     connect();
   }
