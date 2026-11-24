@@ -54,8 +54,11 @@ class AnalysisViewModel @Inject constructor(
     private val projects: ProjectRepository,
     private val features: FeatureRepository,
     private val clock: Clock,
+    pluginTools: PluginTools,
+    /** Starts tools from other apps; the screen launches what it asks for. */
+    val plugins: PluginHost,
 ) : ViewModel() {
-    val registry = ToolRegistry(tools)
+    val registry = ToolRegistry(tools + pluginTools.load())
 
     private val _tool = MutableStateFlow<GisTool?>(null)
     val tool: StateFlow<GisTool?> = _tool.asStateFlow()

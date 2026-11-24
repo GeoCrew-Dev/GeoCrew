@@ -1,6 +1,9 @@
 package org.geocrew.feature.analysis
 
+import android.content.ActivityNotFoundException
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +60,23 @@ fun AnalysisScreen(onBack: () -> Unit, onShowOnMap: () -> Unit, viewModel: Analy
     val tool by viewModel.tool.collectAsStateWithLifecycle()
     val t = tool
     BackHandler(enabled = t != null) { viewModel.choose(null) }
+
+    // A tool from another app asks to start its screen; its result goes back to the waiting run.
+    val pluginRequest by viewModel.plugins.request.collectAsStateWithLifecycle()
+    val pluginLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        viewModel.plugins.finish(it.resultCode)
+    }
+    LaunchedEffect(pluginRequest) {
+        val r = pluginRequest ?: return@LaunchedEffect
+        viewModel.plugins.launched(r.id)
+        try {
+            pluginLauncher.launch(r.intent)
+        } catch (_: ActivityNotFoundException) {
+            viewModel.plugins.finish(PluginHost.LAUNCH_FAILED)
+        } catch (_: SecurityException) {
+            viewModel.plugins.finish(PluginHost.LAUNCH_FAILED)
+        }
+    }
 
     Scaffold(
         topBar = {

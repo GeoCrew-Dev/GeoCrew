@@ -3,4 +3,5 @@
     <cache-path name="capture" path="capture/" />
     <files-path name="photos" path="photos/" />
     <cache-path name="export" path="export/" />
+    <cache-path name="plugin" path="plugin/" />
 </paths>
