@@ -176,3 +176,34 @@ func TestFileMetaAndReopen(t *testing.T) {
 		t.Fatalf("missing meta: %v", err)
 	}
 }
+
+// An existing database from before a migration keeps its data and gains the new tables.
+func TestMigratesOlderDatabase(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "old.db")
+	full := migrations
+	migrations = full[:1]
+	d, err := Open(path)
+	migrations = full
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, m, tok, _ := d.CreateWorkspace(ctx, "w", "a")
+	d.Close()
+
+	d, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if _, err := d.Authenticate(ctx, ws.ID, tok); err != nil {
+		t.Fatalf("token after migration: %v", err)
+	}
+	if _, v, err := d.Settings(ctx, ws.ID); err != nil || v != 0 {
+		t.Fatalf("settings after migration: %v %d", err, v)
+	}
+	c, err := d.AddComment(ctx, ws.ID, m.ID, store.Comment{ID: "c1", Body: "hi"})
+	if err != nil || c.Seq != 1 || c.Nickname != "a" {
+		t.Fatalf("comment after migration: %v %+v", err, c)
+	}
+}
