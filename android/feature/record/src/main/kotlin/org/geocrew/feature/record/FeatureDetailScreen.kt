@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Map
@@ -338,6 +339,8 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
     var pending by remember { mutableStateOf<File?>(null) }
     var removing by remember { mutableStateOf<String?>(null) }
     var viewing by remember { mutableStateOf<String?>(null) }
+    // "" for a blank page, else the photo to draw on.
+    var sketching by remember { mutableStateOf<String?>(null) }
     val photoMessage by vm.photoMessage.collectAsStateWithLifecycle()
     LaunchedEffect(photoMessage) {
         photoMessage?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show(); vm.consumePhotoMessage() }
@@ -371,6 +374,10 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
                 Icon(Icons.Default.AddPhotoAlternate, null)
                 Text(" 相册")
             }
+            OutlinedButton(onClick = { sketching = "" }) {
+                Icon(Icons.Default.Edit, null)
+                Text(" 素描")
+            }
         }
         if (f.photos.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -383,6 +390,17 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
                                 onLongClick = { removing = sha },
                             ),
                         )
+                        if (info[sha]?.sketch == true) {
+                            Text(
+                                "素描",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = androidx.compose.ui.graphics.Color.White,
+                                modifier = Modifier.align(Alignment.TopStart)
+                                    .padding(4.dp)
+                                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp),
+                            )
+                        }
                         info[sha]?.azimuth?.let { az ->
                             Text(
                                 "%.0f°".format(java.util.Locale.ROOT, az),
@@ -419,6 +437,7 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
                             runCatching { context.startActivity(intent) }
                         }
                     }) { Text("用其他应用查看原图") }
+                    TextButton(onClick = { viewing = null; sketching = sha }) { Text("在照片上画（另存为素描）") }
                 }
             },
             confirmButton = {
@@ -426,6 +445,19 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
             },
             dismissButton = { TextButton(onClick = { viewing = null }) { Text("关闭") } },
         )
+    }
+    sketching?.let { target ->
+        val bg = target.takeIf { it.isNotEmpty() }
+        val bitmap by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, bg) {
+            value = bg?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { vm.photos.decodeUpright(it, 1600) } }
+        }
+        if (bg == null || bitmap != null) {
+            SketchEditor(
+                background = bitmap,
+                onSave = { strokes -> vm.saveSketch(strokes, bg); sketching = null },
+                onCancel = { sketching = null },
+            )
+        }
     }
     removing?.let { sha ->
         AlertDialog(

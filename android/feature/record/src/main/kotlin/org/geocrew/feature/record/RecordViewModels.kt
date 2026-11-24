@@ -343,6 +343,41 @@ class FeatureDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Renders a field sketch, over photo [background] or on a white page,
+     * and adds it to the record's photos marked as a sketch. A sketch over a
+     * photo keeps that photo's direction.
+     */
+    fun saveSketch(strokes: List<org.geocrew.core.model.SketchStroke>, background: String?) = viewModelScope.launch {
+        if (strokes.isEmpty()) return@launch
+        val file = withContext(Dispatchers.Default) {
+            val bg = background?.let { photos.decodeUpright(it, 2048) }
+            val bmp = bg?.copy(android.graphics.Bitmap.Config.ARGB_8888, true)?.also { if (it !== bg) bg.recycle() }
+                ?: android.graphics.Bitmap.createBitmap(
+                    org.geocrew.core.model.Sketch.BLANK_WIDTH, org.geocrew.core.model.Sketch.BLANK_HEIGHT, android.graphics.Bitmap.Config.ARGB_8888,
+                ).also { it.eraseColor(android.graphics.Color.WHITE) }
+            SketchRender.draw(android.graphics.Canvas(bmp), strokes, bmp.width.toFloat(), bmp.height.toFloat())
+            val out = photos.newCaptureTarget().first
+            val ok = runCatching { out.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) } }.getOrDefault(false)
+            bmp.recycle()
+            out.takeIf { ok }
+        }
+        if (file == null) {
+            _photoMessage.value = "素描保存失败"
+            return@launch
+        }
+        val f = feature.value
+        val info = PhotoInfo(
+            position = (f?.geometry as? org.geocrew.core.model.Geometry.Point)?.position,
+            takenAt = Instant.now(),
+            sketch = true,
+            drawnOn = background,
+        ).orElse(background?.let { f?.photoInfo?.get(it) }?.copy(position = null, takenAt = null))
+        val sha = photos.commit(file) ?: return@launch
+        addPhoto(sha, info)
+        _photoMessage.value = "素描已加到这条记录的照片里"
+    }
+
     fun removePhoto(sha: String) = viewModelScope.launch {
         val cur = feature.value ?: return@launch
         features.edit(id) {

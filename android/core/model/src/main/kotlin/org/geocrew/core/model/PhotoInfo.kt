@@ -1,6 +1,7 @@
 package org.geocrew.core.model
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.Instant
@@ -10,21 +11,27 @@ import java.time.format.DateTimeFormatter
 /**
  * Where and which way a photo was taken (protocol v0 §6.2). Kept per
  * attachment hash in the record's `photo_info` object, so a record with
- * several photos knows each one's direction.
+ * several photos knows each one's direction. A field sketch drawn in the
+ * app is a photo too, marked [sketch]; [drawnOn] is the photo it was drawn
+ * over, if any.
  */
 data class PhotoInfo(
     /** True bearing the camera looked along, 0–360°. */
     val azimuth: Double? = null,
     val position: LngLat? = null,
     val takenAt: Instant? = null,
+    val sketch: Boolean = false,
+    val drawnOn: String? = null,
 ) {
-    val isEmpty: Boolean get() = azimuth == null && position == null && takenAt == null
+    val isEmpty: Boolean get() = azimuth == null && position == null && takenAt == null && !sketch && drawnOn == null
 
     /** Fills what this one lacks from [other]. */
     fun orElse(other: PhotoInfo?): PhotoInfo = if (other == null) this else PhotoInfo(
         azimuth = azimuth ?: other.azimuth,
         position = position ?: other.position,
         takenAt = takenAt ?: other.takenAt,
+        sketch = sketch || other.sketch,
+        drawnOn = drawnOn ?: other.drawnOn,
     )
 
     fun toJson(): JsonObject = buildJsonObject {
@@ -35,6 +42,8 @@ data class PhotoInfo(
             p.alt?.let { put("alt", round(it, 2)) }
         }
         takenAt?.let { put("taken_at", it.toString()) }
+        if (sketch) put("sketch", true)
+        drawnOn?.let { put("drawn_on", it) }
     }
 
     /** Lines stamped onto an exported copy of the photo, most important first. */
@@ -44,6 +53,7 @@ data class PhotoInfo(
         position?.let { p ->
             add(CoordinateFormatter.format(p, format) + (p.alt?.let { " · 海拔 %.0f m".fmt(it) } ?: ""))
         }
+        if (sketch) add(if (drawnOn != null) "野外素描（画在照片上）" else "野外素描")
         azimuth?.let { add("拍摄方向 %.0f°（%s）".fmt(it, SeekGuide.direction(it))) }
         takenAt?.let { add(STAMP_TIME.withZone(zone).format(it)) }
     }
@@ -59,6 +69,8 @@ data class PhotoInfo(
                 azimuth = o.double("azimuth")?.takeIf { it.isFinite() }?.let(Geodesy::normalizeDegrees),
                 position = pos,
                 takenAt = o.string("taken_at")?.let { runCatching { Instant.parse(it) }.getOrNull() },
+                sketch = (o["sketch"] as? kotlinx.serialization.json.JsonPrimitive)?.booleanOrNull == true,
+                drawnOn = o.string("drawn_on")?.takeIf(::isAttachmentId),
             )
         }
 
