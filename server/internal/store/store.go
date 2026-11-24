@@ -55,6 +55,9 @@ type Member struct {
 	Role        Role      `json:"role"`
 	JoinedAt    time.Time `json:"joined_at"`
 	Revoked     bool      `json:"revoked,omitempty"`
+	// LastSeen is when the member last made an authenticated request,
+	// to the minute; nil before the first one (protocol v0 §3).
+	LastSeen *time.Time `json:"last_seen,omitempty"`
 }
 
 // Feature is one GeoJSON feature plus its sync metadata.
@@ -188,6 +191,8 @@ type Store interface {
 	Join(ctx context.Context, inviteCode, nickname string) (Workspace, Member, string, error)
 	// Authenticate resolves a bearer token to a non-revoked member of the workspace.
 	Authenticate(ctx context.Context, workspaceID, token string) (Member, error)
+	// Touch records that the member was active at the given time.
+	Touch(ctx context.Context, memberID string, at time.Time) error
 
 	Workspace(ctx context.Context, id string) (Workspace, error)
 	// Workspaces lists every workspace on the server, oldest first (for administration).

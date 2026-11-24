@@ -132,6 +132,7 @@ var migrations = []string{
 	);`,
 	`ALTER TABLE push_targets ADD COLUMN p256dh TEXT NOT NULL DEFAULT '';
 	ALTER TABLE push_targets ADD COLUMN auth TEXT NOT NULL DEFAULT '';`,
+	`ALTER TABLE members ADD COLUMN last_seen TEXT NOT NULL DEFAULT '';`,
 }
 
 func (d *DB) migrate(ctx context.Context) error {
@@ -278,18 +279,27 @@ func scanWorkspace(r rowScanner) (store.Workspace, error) {
 	return ws, err
 }
 
-const memberSelect = `SELECT id, workspace_id, nickname, role, joined_at, revoked FROM members`
+const memberSelect = `SELECT id, workspace_id, nickname, role, joined_at, revoked, last_seen FROM members`
 
 func scanMember(r rowScanner) (store.Member, error) {
 	var m store.Member
-	var role, joined string
-	err := r.Scan(&m.ID, &m.WorkspaceID, &m.Nickname, &role, &joined, &m.Revoked)
+	var role, joined, seen string
+	err := r.Scan(&m.ID, &m.WorkspaceID, &m.Nickname, &role, &joined, &m.Revoked, &seen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, store.ErrNotFound
 	}
 	m.Role = store.Role(role)
 	m.JoinedAt = parseTime(joined)
+	if seen != "" {
+		t := parseTime(seen)
+		m.LastSeen = &t
+	}
 	return m, err
+}
+
+func (d *DB) Touch(ctx context.Context, memberID string, at time.Time) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE members SET last_seen = ? WHERE id = ?`, fmtTime(at.Truncate(time.Minute)), memberID)
+	return err
 }
 
 func (d *DB) Authenticate(ctx context.Context, workspaceID, token string) (store.Member, error) {

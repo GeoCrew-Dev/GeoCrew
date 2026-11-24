@@ -141,8 +141,21 @@ func (s *Server) auth(next http.HandlerFunc, allowed roleCheck) http.Handler {
 			writeErr(w, http.StatusForbidden, "forbidden", "your role does not allow this action")
 			return
 		}
+		s.touch(r.Context(), m)
 		next(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, m)))
 	})
+}
+
+// touch keeps last_seen to the minute: at most one write per member and
+// minute, so busy clients cost nothing extra. Failures only log.
+func (s *Server) touch(ctx context.Context, m store.Member) {
+	now := time.Now().UTC().Truncate(time.Minute)
+	if m.LastSeen != nil && !now.After(*m.LastSeen) {
+		return
+	}
+	if err := s.Store.Touch(ctx, m.ID, now); err != nil {
+		s.logger().Warn("touch member", "err", err)
+	}
 }
 
 type statusWriter struct {

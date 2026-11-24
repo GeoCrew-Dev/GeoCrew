@@ -585,3 +585,37 @@ func TestPushIsEncryptedWhenKeysAreGiven(t *testing.T) {
 		t.Fatalf("not encrypted: %q %q", g.encoding, g.body)
 	}
 }
+
+func TestLastSeen(t *testing.T) {
+	e := newEnv(t)
+	var leader, member joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "组员"}, &member)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+
+	var list []map[string]any
+	if c := e.call("GET", base+"/members", leader.Token, nil, &list); c != 200 {
+		t.Fatalf("members: %d", c)
+	}
+	seen := map[string]any{}
+	for _, m := range list {
+		seen[m["nickname"].(string)] = m["last_seen"]
+	}
+	// The leader's own request counts; the member has not made one yet.
+	if s, ok := seen["组长"].(string); !ok || s == "" {
+		t.Fatalf("leader last_seen: %v", list)
+	}
+	if v := seen["组员"]; v != nil {
+		t.Fatalf("member has not been seen yet: %v", v)
+	}
+	if ts, err := time.Parse(time.RFC3339, seen["组长"].(string)); err != nil || time.Since(ts) > 2*time.Minute || ts.Second() != 0 {
+		t.Fatalf("last_seen %v %v", ts, err)
+	}
+	e.call("GET", base, member.Token, nil, nil)
+	e.call("GET", base+"/members", leader.Token, nil, &list)
+	for _, m := range list {
+		if m["nickname"] == "组员" && m["last_seen"] == nil {
+			t.Fatalf("member seen after a request: %v", list)
+		}
+	}
+}

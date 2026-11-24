@@ -219,13 +219,17 @@ func listMembers(ctx context.Context, st store.Store, ws store.Workspace, out io
 	}
 	fmt.Fprintf(out, "「%s」 邀请码 %s\n", ws.Name, ws.InviteCode)
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\t昵称\t角色\t加入时间\t状态")
+	fmt.Fprintln(tw, "ID\t昵称\t角色\t加入时间\t最后活动\t状态")
 	for _, m := range ms {
 		state := ""
 		if m.Revoked {
 			state = "已移出"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", m.ID, m.Nickname, m.Role, m.JoinedAt.Local().Format(time.DateTime), state)
+		seen := "-"
+		if m.LastSeen != nil {
+			seen = m.LastSeen.Local().Format("2006-01-02 15:04")
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", m.ID, m.Nickname, m.Role, m.JoinedAt.Local().Format(time.DateTime), seen, state)
 	}
 	return tw.Flush()
 }
