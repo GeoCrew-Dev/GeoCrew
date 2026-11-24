@@ -538,7 +538,8 @@
     const r = (f.properties || {}).review;
     if (!r || typeof r !== "object" || (r.state !== "approved" && r.state !== "redo")) return "";
     const parts = [r.state === "approved" ? "已通过" : "退回重做"];
-    if (typeof r.by === "string" && members.get(r.by)) parts.push(members.get(r.by));
+    const who = (typeof r.by === "string" && members.get(r.by)) || (typeof r.by_name === "string" && r.by_name);
+    if (who) parts.push(who);
     if (typeof r.at === "string" && !isNaN(Date.parse(r.at))) {
       parts.push(when(r.at));
       if (Date.parse(upd(f)) > Date.parse(r.at) + 1000) parts.push("之后有改动");
