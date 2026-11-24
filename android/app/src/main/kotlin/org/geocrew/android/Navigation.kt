@@ -12,6 +12,7 @@ import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import org.geocrew.core.network.Invite
 import org.geocrew.feature.analysis.AnalysisScreen
+import org.geocrew.feature.analysis.StereonetScreen
 import org.geocrew.feature.compass.CompassScreen
 import org.geocrew.feature.compass.TARGET_FEATURE_ARG
 import org.geocrew.feature.map.MapScreen
@@ -40,6 +41,7 @@ object Routes {
     const val TEAM_PLAIN = "team"
     const val ANALYSIS = "analysis"
     const val PROJECTS = "projects"
+    const val STEREONET = "stereonet"
     const val COMPASS = "compass?$TARGET_FEATURE_ARG={$TARGET_FEATURE_ARG}"
     fun compassFor(featureId: String) = "compass?$TARGET_FEATURE_ARG=$featureId"
 
@@ -82,6 +84,9 @@ fun GeoCrewNavHost() {
                 onOpened = { nav.navigate(Routes.MAP) { launchSingleTop = true } },
                 onOpenSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.STEREONET) {
+            StereonetScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.ANALYSIS) {
             AnalysisScreen(onBack = { nav.popBackStack() }, onShowOnMap = { nav.popBackStack(Routes.MAP, inclusive = false) })

@@ -1,0 +1,227 @@
+package org.geocrew.feature.analysis
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import org.geocrew.core.data.repo.FeatureRepository
+import org.geocrew.core.data.repo.ProjectRepository
+import org.geocrew.core.gis.FisherStats
+import org.geocrew.core.gis.Lineation
+import org.geocrew.core.gis.NetPoint
+import org.geocrew.core.gis.Stereonet
+import org.geocrew.core.model.Attitude
+import org.geocrew.core.model.Props
+import org.geocrew.core.model.string
+import javax.inject.Inject
+
+enum class NetDisplay(val label: String) { POLES("极点"), PLANES("大圆"), BOTH("两者") }
+
+data class StereonetUi(
+    val attitudes: List<Attitude> = emptyList(),
+    /** Lithology values present, for filtering; "" stands for records without one. */
+    val groups: List<String> = emptyList(),
+    val group: String? = null,
+    val display: NetDisplay = NetDisplay.POLES,
+    val stats: FisherStats? = null,
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@HiltViewModel
+class StereonetViewModel @Inject constructor(
+    projects: ProjectRepository,
+    features: FeatureRepository,
+) : ViewModel() {
+    private val group = MutableStateFlow<String?>(null)
+    private val display = MutableStateFlow(NetDisplay.POLES)
+
+    private val readings = projects.current.map { it.id }.distinctUntilChanged()
+        .flatMapLatest { features.observeProject(it) }
+        .map { list ->
+            list.mapNotNull { f -> Attitude.fromProperties(f.properties)?.let { (f.properties.string(Props.LITHOLOGY)?.trim().orEmpty()) to it } }
+        }
+
+    val ui: StateFlow<StereonetUi> = combine(readings, group, display) { all, g, d ->
+        val chosen = all.filter { g == null || it.first == g }.map { it.second }
+        StereonetUi(
+            attitudes = chosen,
+            groups = all.map { it.first }.distinct().sorted(),
+            group = g,
+            display = d,
+            stats = Stereonet.fisher(chosen.map(Stereonet::pole)),
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, StereonetUi())
+
+    fun setGroup(g: String?) { group.value = g }
+    fun setDisplay(d: NetDisplay) { display.value = d }
+}
+
+/**
+ * Lower-hemisphere equal-area net of every attitude in the open project,
+ * with the Fisher mean of their poles.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StereonetScreen(onBack: () -> Unit, viewModel: StereonetViewModel = hiltViewModel()) {
+    val ui by viewModel.ui.collectAsStateWithLifecycle()
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("赤平投影") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
+            )
+        },
+    ) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                NetDisplay.entries.forEachIndexed { i, d ->
+                    SegmentedButton(
+                        selected = ui.display == d,
+                        onClick = { viewModel.setDisplay(d) },
+                        shape = SegmentedButtonDefaults.itemShape(i, NetDisplay.entries.size),
+                    ) { Text(d.label) }
+                }
+            }
+            if (ui.groups.size > 1) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = ui.group == null, onClick = { viewModel.setGroup(null) }, label = { Text("全部") })
+                    ui.groups.forEach { g ->
+                        FilterChip(selected = ui.group == g, onClick = { viewModel.setGroup(g) }, label = { Text(g.ifEmpty { "未填岩性" }) })
+                    }
+                }
+            }
+            Net(ui, Modifier.fillMaxWidth().aspectRatio(1f))
+            Summary(ui)
+        }
+    }
+}
+
+@Composable
+private fun Summary(ui: StereonetUi) {
+    val s = ui.stats
+    if (s == null) {
+        Text("当前工程还没有产状记录。用罗盘测量，或在记录详情里填写倾向和倾角。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("共 ${s.count} 条产状 · 下半球等面积投影（施密特网）", style = MaterialTheme.typography.bodyMedium)
+        Text("平均产状 ${Stereonet.planeOfPole(s.mean).format()}", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "平均极点 %03.0f°/%02.0f° · R̄ %.3f".format(s.mean.trend, s.mean.plunge, s.resultant) +
+                (s.kappa?.let { " · k %.1f".format(it) } ?: "") +
+                (s.alpha95?.let { " · α95 %.1f°".format(it) } ?: ""),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (s.count < 5) {
+            Text("读数较少，统计量仅供参考。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Grid lines of a Schmidt net every 10°, computed once. */
+private val GRID: List<List<NetPoint>> by lazy {
+    buildList {
+        for (dip in 10..80 step 10) {
+            add(Stereonet.greatCircle(Attitude.of(90.0, dip.toDouble())))
+            add(Stereonet.greatCircle(Attitude.of(270.0, dip.toDouble())))
+        }
+        for (a in 10..80 step 10) {
+            addAll(Stereonet.smallCircle(Lineation(0.0, 0.0), a.toDouble()))
+            addAll(Stereonet.smallCircle(Lineation(180.0, 0.0), a.toDouble()))
+        }
+    }
+}
+
+@Composable
+private fun Net(ui: StereonetUi, modifier: Modifier) {
+    val outline = MaterialTheme.colorScheme.onSurface
+    val grid = MaterialTheme.colorScheme.outlineVariant
+    val plane = MaterialTheme.colorScheme.primary
+    val pole = MaterialTheme.colorScheme.tertiary
+    val mean = MaterialTheme.colorScheme.error
+    val measurer = rememberTextMeasurer()
+    val label = MaterialTheme.typography.labelMedium.copy(color = outline)
+    val poles = remember(ui.attitudes) { ui.attitudes.map { Stereonet.project(Stereonet.pole(it)) } }
+    val circles = remember(ui.attitudes) { ui.attitudes.map { Stereonet.greatCircle(it, steps = 60) } }
+
+    Canvas(modifier.padding(16.dp)) {
+        val r = size.minDimension / 2
+        val c = Offset(size.width / 2, size.height / 2)
+        fun at(p: NetPoint) = Offset(c.x + p.x.toFloat() * r, c.y - p.y.toFloat() * r)
+        fun line(points: List<NetPoint>, color: Color, width: Float) {
+            if (points.size < 2) return
+            val path = Path().apply {
+                moveTo(at(points[0]).x, at(points[0]).y)
+                points.drop(1).forEach { val o = at(it); lineTo(o.x, o.y) }
+            }
+            drawPath(path, color, style = Stroke(width))
+        }
+
+        GRID.forEach { line(it, grid, 1f) }
+        drawCircle(outline, r, c, style = Stroke(2.dp.toPx()))
+        drawLine(outline, Offset(c.x, c.y - 6.dp.toPx()), Offset(c.x, c.y + 6.dp.toPx()), 1.5f)
+        drawLine(outline, Offset(c.x - 6.dp.toPx(), c.y), Offset(c.x + 6.dp.toPx(), c.y), 1.5f)
+        val n = measurer.measure("N", label)
+        drawText(n, topLeft = Offset(c.x - n.size.width / 2f, c.y - r - n.size.height - 2.dp.toPx()))
+
+        if (ui.display != NetDisplay.POLES) circles.forEach { line(it, plane.copy(alpha = 0.7f), 1.5.dp.toPx()) }
+        if (ui.display != NetDisplay.PLANES) poles.forEach { drawCircle(pole, 3.5.dp.toPx(), at(it)) }
+        ui.stats?.let { s -> meanMarker(at(Stereonet.project(s.mean)), mean) }
+    }
+}
+
+private fun DrawScope.meanMarker(o: Offset, color: Color) {
+    val d = 7.dp.toPx()
+    drawLine(color, Offset(o.x - d, o.y - d), Offset(o.x + d, o.y + d), 2.5.dp.toPx())
+    drawLine(color, Offset(o.x - d, o.y + d), Offset(o.x + d, o.y - d), 2.5.dp.toPx())
+}

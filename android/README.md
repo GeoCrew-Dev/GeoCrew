@@ -45,7 +45,7 @@
 | `feature:compass` | 罗盘与产状测量 |
 | `feature:transfer` | GeoJSON / KML / GPX 导入导出 |
 | `feature:team` | 工作组：新建、加入、成员与邀请码管理、位置共享开关 |
-| `feature:analysis` | 空间分析：反距离加权插值、统计、凸包范围、点缓冲区 |
+| `feature:analysis` | 空间分析：反距离加权插值、统计、凸包范围、点缓冲区；赤平投影（施密特网、Fisher 统计） |
 
 ### 工程
 
