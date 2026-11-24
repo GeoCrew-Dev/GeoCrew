@@ -15,7 +15,8 @@ import java.time.format.DateTimeFormatter
  * The sample register (protocol v0 §6.4) as CSV, one row per sample, for the
  * lab submission sheet and the sample store. Samples on lines or polygons
  * get the first vertex as their position, which is where a route sample is
- * usually logged from; the record id lets the sheet be joined back.
+ * usually logged from; the record id lets the sheet be joined back. Cells a
+ * spreadsheet would run as a formula get a leading apostrophe, as on the server.
  */
 object SampleListFormat : FeatureFormat {
     override val id = "samples"
@@ -47,7 +48,7 @@ object SampleListFormat : FeatureFormat {
                 s.takenAt?.atZone(zone)?.format(TIME).orEmpty(),
                 s.note.orEmpty(), f.id,
             )
-            w.write(cells.joinToString(",") { CsvFormat.quote(it) })
+            w.write(cells.joinToString(",") { CsvFormat.quote(defuse(it)) })
             w.write("\r\n")
         }
         w.flush()
@@ -59,6 +60,14 @@ object SampleListFormat : FeatureFormat {
         null -> null
         else -> g.positions().firstOrNull()
     }
+}
+
+/** Keeps spreadsheet programs from running a cell as a formula; negative numbers stay as they are. */
+internal fun defuse(s: String): String = when {
+    s.isEmpty() -> s
+    s[0] in "=+@\t\r" -> "'$s"
+    s[0] == '-' && !(s.length > 1 && (s[1].isDigit() || s[1] == '.')) -> "'$s"
+    else -> s
 }
 
 /** Orders "D2-1" before "D10-1": digit runs compare as numbers. */

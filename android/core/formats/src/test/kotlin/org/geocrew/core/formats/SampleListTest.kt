@@ -43,4 +43,12 @@ class SampleListTest {
         assertEquals("D2-1,岩石化学,D2,110,30,,花岗岩,,,b", lines[1])
         assertEquals("D10-1,薄片,D10,116.5,39.9,52,花岗岩,,\"新鲜面, 无风化\",a", lines[3])
     }
+
+    @Test
+    fun formulasAreDefused() {
+        assertEquals("'=1+1", defuse("=1+1"))
+        assertEquals("-0.5", defuse("-0.5"))
+        assertEquals("'-x", defuse("-x"))
+        assertEquals("D-1", defuse("D-1"))
+    }
 }
