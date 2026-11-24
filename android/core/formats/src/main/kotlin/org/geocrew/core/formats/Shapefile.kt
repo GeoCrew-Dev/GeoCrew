@@ -16,14 +16,15 @@ import java.util.zip.ZipOutputStream
 /**
  * ESRI Shapefile export, as a zip with one shapefile per geometry type
  * (points, lines, polygons). Attributes go to the DBF in UTF-8 (declared in
- * the .cpg file); numeric properties become numeric fields.
+ * the .cpg file); numeric properties become numeric fields. Import reads a
+ * zip of shapefiles, see [ShapefileReader].
  */
 object ShapefileFormat : FeatureFormat {
     override val id = "shapefile"
     override val displayName = "Shapefile（zip）"
     override val extension = "zip"
     override val mimeType = "application/zip"
-    override val canRead = false
+    override val canRead = true
     override val canWrite = true
 
     private const val WGS84_PRJ =
@@ -44,6 +45,8 @@ object ShapefileFormat : FeatureFormat {
         /** Parts are lines (PolyLine) or rings (Polygon). */
         data class Parts(val parts: List<List<LngLat>>) : Shape
     }
+
+    override fun read(input: java.io.InputStream, ctx: ImportContext): ImportResult = ShapefileReader.read(input, ctx)
 
     override fun write(features: List<GeoFeature>, output: OutputStream, ctx: ExportContext): ExportResult {
         val rows = mutableMapOf<Layer, MutableList<Row>>()
