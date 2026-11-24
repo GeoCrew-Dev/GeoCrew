@@ -36,6 +36,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -98,6 +103,8 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
     val invite by viewModel.invite.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val pushAvailable by viewModel.pushAvailable.collectAsStateWithLifecycle()
+    val viewAvailable by viewModel.viewAvailable.collectAsStateWithLifecycle()
+    val viewLink by viewModel.viewLink.collectAsStateWithLifecycle()
     val progress by viewModel.progress.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val incoming by viewModel.incoming.collectAsStateWithLifecycle()
@@ -162,6 +169,9 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
                     onShare = viewModel::setShare,
                     onDownload = { uri -> viewModel.downloadPackage(appContext, uri) },
                     pushAvailable = pushAvailable,
+                    viewAvailable = viewAvailable,
+                    onCreateViewLink = viewModel::createViewLink,
+                    onRevokeViewLinks = viewModel::revokeViewLinks,
                     progress = progress,
                     pushOn = p.config.pushEnabled,
                     onPushOn = viewModel::enablePush,
@@ -175,6 +185,7 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
             }
         }
     }
+    viewLink?.let { ViewLinkDialog(it, onDismiss = viewModel::consumeViewLink) }
 }
 
 @Composable
@@ -284,6 +295,9 @@ private fun LinkedPanel(
     onShare: (Boolean) -> Unit,
     onDownload: (android.net.Uri) -> Unit,
     pushAvailable: Boolean,
+    viewAvailable: Boolean,
+    onCreateViewLink: (Int) -> Unit,
+    onRevokeViewLinks: () -> Unit,
     progress: Map<String, MemberProgress>,
     pushOn: Boolean,
     onPushOn: (Activity) -> Unit,
@@ -297,6 +311,7 @@ private fun LinkedPanel(
     var confirmLeave by remember { mutableStateOf(false) }
     var confirmRevoke by remember { mutableStateOf<Member?>(null) }
     var showQr by remember { mutableStateOf(false) }
+    var askView by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val shareable = invite?.let { Invite.of(serverUrl, it) }
@@ -381,6 +396,16 @@ private fun LinkedPanel(
                 },
             )
         }
+        if (viewAvailable && !status.needsRejoin) {
+            item {
+                ListItem(
+                    headlineContent = { Text("在电脑上查看") },
+                    supportingContent = { Text("生成一个有时限的只读链接，在电脑浏览器里看全组的记录、照片、录音和组员位置") },
+                    trailingContent = { Icon(Icons.Default.Computer, null) },
+                    modifier = Modifier.clickable(enabled = !busy) { askView = true },
+                )
+            }
+        }
         if (isLeader) {
             item { SectionHeader("邀请码") }
             item {
@@ -431,6 +456,13 @@ private fun LinkedPanel(
     }
 
     if (showQr && shareable != null) InviteQrDialog(workspace, shareable) { showQr = false }
+    if (askView) {
+        ViewLinkRequest(
+            onCreate = { hours -> askView = false; onCreateViewLink(hours) },
+            onRevokeAll = { askView = false; onRevokeViewLinks() },
+            onDismiss = { askView = false },
+        )
+    }
     if (confirmLeave) {
         AlertDialog(
             onDismissRequest = { confirmLeave = false },
@@ -449,6 +481,67 @@ private fun LinkedPanel(
             dismissButton = { TextButton(onClick = { confirmRevoke = null }) { Text("取消") } },
         )
     }
+}
+
+private val VIEW_HOURS = listOf(2 to "2 小时", 24 to "1 天", 72 to "3 天", 168 to "7 天")
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ViewLinkRequest(onCreate: (Int) -> Unit, onRevokeAll: () -> Unit, onDismiss: () -> Unit) {
+    var hours by remember { mutableStateOf(24) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("在电脑上查看") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("拿到链接的人在有效期内都能看到全组数据，但不能修改。只发给你信任的人，用完可以撤销。")
+                Text("有效期", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    VIEW_HOURS.forEach { (h, label) ->
+                        FilterChip(selected = hours == h, onClick = { hours = h }, label = { Text(label) })
+                    }
+                }
+                TextButton(onClick = onRevokeAll) { Text("撤销我生成的全部链接") }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onCreate(hours) }) { Text("生成链接") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun ViewLinkDialog(link: ViewLinkUi, onDismiss: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("查看链接") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("在电脑浏览器里打开：")
+                SelectionContainer {
+                    Text(link.url, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                }
+                Text(
+                    link.expiresAt?.let { "有效期到 ${TIME.format(it)}" } ?: "有效期 ${link.hours} 小时",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { clipboard.setText(AnnotatedString(link.url)); onDismiss() }) { Text("复制") }
+        },
+        dismissButton = {
+            TextButton(onClick = {
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, link.url)
+                }
+                context.startActivity(android.content.Intent.createChooser(send, "分享查看链接"))
+                onDismiss()
+            }) { Text("分享") }
+        },
+    )
 }
 
 @Composable

@@ -169,6 +169,25 @@ class GeoCrewApi(
         exec(wsUrl(ws, "push"), "DELETE", null)
     }
 
+    /**
+     * Makes a read-only link that opens the workspace in a browser for
+     * [hours] (1 to 168). Needs the "view" capability.
+     */
+    suspend fun createViewLink(ws: String, hours: Int = 24): ViewLink {
+        val req = json.encodeToString(ViewLinkReq.serializer(), ViewLinkReq(hours)).toRequestBody(JSON)
+        return send(wsUrl(ws, "view-links"), "POST", req, ViewLink.serializer())
+    }
+
+    /** Revokes every view link this member made; returns how many were still valid. */
+    suspend fun revokeViewLinks(ws: String): Int =
+        send(wsUrl(ws, "view-links"), "DELETE", null, RevokedResp.serializer()).revoked
+
+    /**
+     * The full address to open for [link]. The server's path is relative to
+     * its root, which is this client's base (also behind a sub-path proxy).
+     */
+    fun viewUrl(link: ViewLink): String = base.toString().trimEnd('/') + "/" + link.path.trimStart('/')
+
     /** True if the server already has the attachment. */
     suspend fun hasFile(ws: String, sha256: String): Boolean = call(request(wsUrl(ws, "files", sha256)).head().build()) { r ->
         when (r.code) {

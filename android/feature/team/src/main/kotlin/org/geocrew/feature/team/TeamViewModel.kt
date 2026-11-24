@@ -33,6 +33,9 @@ const val INVITE_SERVER_ARG = "server"
 const val INVITE_CODE_ARG = "code"
 
 /** Form for creating or joining a workspace. */
+/** A view link ready to copy or share. */
+data class ViewLinkUi(val url: String, val expiresAt: java.time.Instant?, val hours: Int)
+
 data class ConnectForm(
     val server: String = "",
     /** Workspace name when creating, invite code when joining. */
@@ -73,6 +76,14 @@ class TeamViewModel @Inject constructor(
         .flatMapLatest { p -> features.observeProject(p.id) }
         .map { list -> MemberProgress.of(list) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Whether the linked server can make browser view links (its "view" capability). */
+    private val _viewAvailable = MutableStateFlow(false)
+    val viewAvailable: StateFlow<Boolean> = _viewAvailable.asStateFlow()
+
+    /** The view link just made, shown until dismissed. */
+    private val _viewLink = MutableStateFlow<ViewLinkUi?>(null)
+    val viewLink: StateFlow<ViewLinkUi?> = _viewLink.asStateFlow()
 
     /** Whether the linked server offers push notices (its "push" capability). */
     private val _pushAvailable = MutableStateFlow(false)
@@ -130,7 +141,11 @@ class TeamViewModel @Inject constructor(
                 _invite.value = ws.inviteCode
                 _members.value = team.members(h)
             }
-            runCatching { _pushAvailable.value = "push" in h.api.info().capabilities }
+            runCatching {
+                val caps = h.api.info().capabilities
+                _pushAvailable.value = "push" in caps
+                _viewAvailable.value = "view" in caps
+            }
         }
     }
 
@@ -174,6 +189,26 @@ class TeamViewModel @Inject constructor(
         }
         if (bytes == 0L) throw IOException("服务器没有返回数据")
     }
+
+    /** Makes a read-only link to open the workspace in a browser for [hours]. */
+    fun createViewLink(hours: Int) = withHandle("已生成查看链接") { h ->
+        val link = h.api.createViewLink(h.link.workspaceId, hours)
+        _viewLink.value = ViewLinkUi(
+            url = h.api.viewUrl(link),
+            expiresAt = runCatching { java.time.Instant.parse(link.expiresAt) }.getOrNull(),
+            hours = hours,
+        )
+    }
+
+    /** Revokes every view link this member made. */
+    fun revokeViewLinks() = act(null) {
+        val h = project.value?.id?.let { team.handle(it) } ?: throw IllegalStateException("当前工程未连接工作组")
+        val n = h.api.revokeViewLinks(h.link.workspaceId)
+        _viewLink.value = null
+        _message.value = if (n == 0) "没有有效的查看链接" else "已撤销 $n 个查看链接"
+    }
+
+    fun consumeViewLink() { _viewLink.value = null }
 
     /**
      * Turns background notices on through the user's UnifiedPush

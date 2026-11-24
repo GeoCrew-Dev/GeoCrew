@@ -50,6 +50,13 @@ class ParseTest {
         assertEquals("https://example.org/", GeoCrewApi.normalize("example.org").toString())
         assertEquals("http://10.0.0.2:8080/geo/", GeoCrewApi.normalize("http://10.0.0.2:8080/geo").toString())
     }
+
+    @Test
+    fun viewUrlKeepsTheServerSubPath() {
+        val link = ViewLink("v_x", "2026-11-25T00:00:00Z", "/view/#ws=w1&t=v_x")
+        assertEquals("http://10.0.0.2:8080/geo/view/#ws=w1&t=v_x", GeoCrewApi("http://10.0.0.2:8080/geo", OkHttpClient()).viewUrl(link))
+        assertEquals("https://example.org/view/#ws=w1&t=v_x", GeoCrewApi("https://example.org/", OkHttpClient()).viewUrl(link))
+    }
 }
 
 /** In-memory stand-in for the Room-backed store, same rules as FeatureRepository. */
@@ -187,9 +194,17 @@ class ServerIntegrationTest {
             assertEquals(leaderJoin.memberId, p.memberId)
             assertEquals("组长", p.nickname)
 
+            // A view link reads but cannot write, and dies with its maker's revocation.
+            val link = member.createViewLink(ws, hours = 2)
+            val viewer = GeoCrewApi(server!!, http, link.token)
+            assertTrue(viewer.pull(ws, "p", 0).features.isNotEmpty())
+            val denied = runCatching { viewer.addComment(ws, "c-view", "hi") }.exceptionOrNull()
+            assertEquals(403, (denied as ApiException).status)
+
             // Revoking the member closes its channel for good.
             leader.revoke(ws, memberJoin.memberId)
             withTimeout(10000) { rtB.state.first { it == RealtimeState.Unauthorized } }
+            assertEquals(401, (runCatching { viewer.members(ws) }.exceptionOrNull() as ApiException).status)
         } finally {
             scope.cancel()
         }

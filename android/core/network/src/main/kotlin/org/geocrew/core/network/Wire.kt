@@ -114,6 +114,21 @@ data class PushNotice(
     }
 }
 
+/** A read-only, expiring link to look at the workspace in a browser (protocol §10). */
+@Serializable
+data class ViewLink(
+    val token: String,
+    @SerialName("expires_at") val expiresAt: String,
+    /** Page on the server, token in the fragment; see [GeoCrewApi.viewUrl]. */
+    val path: String,
+)
+
+@Serializable
+internal data class ViewLinkReq(val hours: Int)
+
+@Serializable
+internal data class RevokedResp(val revoked: Int = 0)
+
 @Serializable
 internal data class InviteResp(@SerialName("invite_code") val inviteCode: String)
 
