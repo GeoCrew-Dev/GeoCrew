@@ -276,6 +276,7 @@ fun MapScreen(
                     onUndo = viewModel::undoVertex,
                     onFinish = viewModel::finishDraw,
                     onCancel = viewModel::cancelDraw,
+                    onToggleKind = viewModel::toggleMeasureKind,
                 )
                 MapMode.Browse -> ToolBar(
                     recording = recording,
@@ -285,6 +286,7 @@ fun MapScreen(
                     onTrack = { if (recording) viewModel.tracking.stop(context) else viewModel.tracking.start(context) },
                     onLine = { viewModel.startDraw(FeatureKind.LINE) },
                     onPolygon = { viewModel.startDraw(FeatureKind.POLYGON) },
+                    onMeasure = viewModel::startMeasure,
                 )
             }
         }

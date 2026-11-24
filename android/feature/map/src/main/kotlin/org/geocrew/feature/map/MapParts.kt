@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.FormatShapes
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -43,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.CoordinateFormatter
 import org.geocrew.core.model.GeoFeature
+import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.areaSquareMeters
 import org.geocrew.core.model.lengthMeters
@@ -57,6 +60,7 @@ internal fun ToolBar(
     onTrack: () -> Unit,
     onLine: () -> Unit,
     onPolygon: () -> Unit,
+    onMeasure: () -> Unit,
 ) {
     Surface(shape = MaterialTheme.shapes.large, tonalElevation = 3.dp, shadowElevation = 3.dp) {
         Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -70,6 +74,7 @@ internal fun ToolBar(
             )
             Tool(Icons.Default.Timeline, "画线", onClick = onLine)
             Tool(Icons.Default.FormatShapes, "画面", onClick = onPolygon)
+            Tool(Icons.Default.Straighten, "测量", onClick = onMeasure)
         }
     }
 }
@@ -91,21 +96,51 @@ private fun Tool(icon: ImageVector, label: String, enabled: Boolean = true, tint
 }
 
 @Composable
-internal fun DrawBar(mode: MapMode.Draw, onAddCenter: () -> Unit, onUndo: () -> Unit, onFinish: () -> Unit, onCancel: () -> Unit) {
+internal fun DrawBar(
+    mode: MapMode.Draw,
+    onAddCenter: () -> Unit,
+    onUndo: () -> Unit,
+    onFinish: () -> Unit,
+    onCancel: () -> Unit,
+    onToggleKind: () -> Unit = {},
+) {
     Surface(shape = MaterialTheme.shapes.large, tonalElevation = 3.dp, shadowElevation = 3.dp) {
         Column(Modifier.fillMaxWidth().padding(8.dp)) {
-            val what = if (mode.closed) "面" else "线"
+            val v = mode.vertices
             val measure = when {
-                mode.closed && mode.vertices.size >= 3 -> "面积 " + CoordinateFormatter.area(Geometry.Polygon.of(mode.vertices).areaSquareMeters())
-                mode.vertices.size >= 2 -> "长度 " + CoordinateFormatter.distance(Geometry.LineString(mode.vertices).lengthMeters())
+                mode.closed && v.size >= 3 -> {
+                    val ring = Geometry.Polygon.of(v)
+                    "面积 " + CoordinateFormatter.area(ring.areaSquareMeters()) +
+                        " · 周长 " + CoordinateFormatter.distance(ring.lengthMeters())
+                }
+                v.size >= 2 -> {
+                    val total = "长度 " + CoordinateFormatter.distance(Geometry.LineString(v).lengthMeters())
+                    if (mode.closed) total else {
+                        val a = v[v.size - 2]
+                        val b = v.last()
+                        total + " · 末段 " + CoordinateFormatter.distance(Geodesy.distance(a, b)) +
+                            " 方位 " + "%.0f°".format(Geodesy.bearing(a, b))
+                    }
+                }
                 else -> "点地图或用十字中心添加节点"
             }
-            Text("画$what：${mode.vertices.size} 个节点 · $measure", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 8.dp))
+            val title = when {
+                mode.measureOnly -> if (mode.closed) "测面积" else "测距离"
+                mode.closed -> "画面"
+                else -> "画线"
+            }
+            Text("$title：${v.size} 个节点 · $measure", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 Tool(Icons.Default.Place, "中心加节点", onClick = onAddCenter)
-                Tool(Icons.AutoMirrored.Filled.Undo, "撤销", enabled = mode.vertices.isNotEmpty(), onClick = onUndo)
-                Tool(Icons.Default.Check, "完成", enabled = mode.canFinish, onClick = onFinish)
-                Tool(Icons.Default.Close, "取消", onClick = onCancel)
+                Tool(Icons.AutoMirrored.Filled.Undo, "撤销", enabled = v.isNotEmpty(), onClick = onUndo)
+                if (mode.measureOnly) {
+                    Tool(Icons.Default.SwapHoriz, if (mode.closed) "改测距离" else "改测面积", onClick = onToggleKind)
+                    Tool(Icons.Default.Check, "存为要素", enabled = mode.canFinish, onClick = onFinish)
+                    Tool(Icons.Default.Close, "结束", onClick = onCancel)
+                } else {
+                    Tool(Icons.Default.Check, "完成", enabled = mode.canFinish, onClick = onFinish)
+                    Tool(Icons.Default.Close, "取消", onClick = onCancel)
+                }
             }
         }
     }

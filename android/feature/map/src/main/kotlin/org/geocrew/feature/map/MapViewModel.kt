@@ -52,8 +52,15 @@ import javax.inject.Inject
 sealed interface MapMode {
     data object Browse : MapMode
 
-    /** Drawing a line or polygon vertex by vertex. */
-    data class Draw(val kind: FeatureKind, val vertices: List<LngLat> = emptyList()) : MapMode {
+    /**
+     * Drawing a line or polygon vertex by vertex. With [measureOnly] the sketch
+     * only shows its length or area; finishing it is optional and saves a feature.
+     */
+    data class Draw(
+        val kind: FeatureKind,
+        val vertices: List<LngLat> = emptyList(),
+        val measureOnly: Boolean = false,
+    ) : MapMode {
         val closed get() = kind == FeatureKind.POLYGON
         val canFinish get() = vertices.size >= if (closed) 3 else 2
     }
@@ -251,6 +258,19 @@ class MapViewModel @Inject constructor(
     fun startDraw(kind: FeatureKind) {
         _selected.value = null
         _mode.value = MapMode.Draw(kind)
+    }
+
+    /** Starts measuring distance; the sketch is not saved unless the user asks. */
+    fun startMeasure() {
+        _selected.value = null
+        _mode.value = MapMode.Draw(FeatureKind.LINE, measureOnly = true)
+    }
+
+    /** Switches a measurement between distance (line) and area (polygon), keeping the vertices. */
+    fun toggleMeasureKind() = _mode.update {
+        if (it is MapMode.Draw && it.measureOnly) {
+            it.copy(kind = if (it.closed) FeatureKind.LINE else FeatureKind.POLYGON)
+        } else it
     }
 
     fun addVertex(p: LngLat) = _mode.update { if (it is MapMode.Draw) it.copy(vertices = it.vertices + p) else it }
