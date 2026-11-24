@@ -48,6 +48,7 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
     val preview by viewModel.preview.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val assays by viewModel.assays.collectAsStateWithLifecycle()
     var exportFormat by remember { mutableStateOf<FeatureFormat?>(null) }
     var todayOnly by remember { mutableStateOf(false) }
     var withPhotos by remember { mutableStateOf(true) }
@@ -58,6 +59,9 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
     val createFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val f = exportFormat
         if (uri != null && f != null) viewModel.export(f, uri)
+    }
+    val openAssays = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.openAssays(uri)
     }
     val createLabels = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) viewModel.exportLabels(uri)
@@ -97,6 +101,21 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
             ) {
                 Icon(Icons.Default.FileDownload, null)
                 Text(" 选择文件")
+            }
+
+            SectionHeader("样品分析结果")
+            Text(
+                "化验室返回的结果表（CSV，可从 Excel 另存）：一列样品编号，其余每列一个元素或氧化物，第二行可以是单位行。按编号对上已登记的样品，结果存到样品上，同一记录各样品的平均值写成记录属性（低于检出限的「<0.05」按一半计），之后可直接用于图例着色、统计和插值。",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            FilledTonalButton(
+                onClick = { viewModel.clearMessage(); openAssays.launch(arrayOf("text/*", "application/octet-stream", "application/vnd.ms-excel")) },
+                enabled = !busy,
+                modifier = Modifier.padding(16.dp),
+            ) {
+                Icon(Icons.Default.FileDownload, null)
+                Text(" 导入分析结果")
             }
 
             SectionHeader("导出当前工程")
@@ -153,6 +172,33 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
                 Text(" 生成标签")
             }
         }
+    }
+
+    assays?.let { a ->
+        val plan = a.plan
+        AlertDialog(
+            onDismissRequest = viewModel::cancelAssays,
+            title = { Text("写入「${a.fileName}」的分析结果？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("对上 ${plan.sampleCount} 件样品，涉及 ${plan.records.size} 条记录。")
+                    Text("分析项：" + plan.columns.joinToString("、"))
+                    if (plan.belowLimit > 0) Text("其中 ${plan.belowLimit} 个值低于检出限，记录属性按检出限的一半计。", style = MaterialTheme.typography.bodySmall)
+                    if (plan.unmatched.isNotEmpty()) {
+                        Text(
+                            "${plan.unmatched.size} 个编号在工程里找不到：" + plan.unmatched.take(8).joinToString("、") + if (plan.unmatched.size > 8) "……" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (plan.reserved.isNotEmpty()) {
+                        Text("这些列名与应用自带属性重名，没有写入：" + plan.reserved.joinToString("、"), style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("同名的分析项会被新值覆盖，原值可在记录的修改历史里找回。", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = viewModel::confirmAssays) { Text("写入") } },
+            dismissButton = { TextButton(onClick = viewModel::cancelAssays) { Text("取消") } },
+        )
     }
 
     preview?.let { p ->

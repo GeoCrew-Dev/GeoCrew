@@ -19,6 +19,7 @@ import org.geocrew.core.data.repo.PhotoStore
 import org.geocrew.core.data.repo.SettingsRepository
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.TrackRepository
+import org.geocrew.core.model.applyAssays
 import org.geocrew.core.formats.ExportContext
 import org.geocrew.core.formats.FeatureFormat
 import org.geocrew.core.formats.SampleLabels
@@ -40,6 +41,9 @@ import javax.inject.Inject
 data class ImportPreview(val fileName: String, val format: FeatureFormat, val result: ImportResult) {
     val counts: Map<FeatureKind, Int> get() = result.features.groupingBy { it.kind }.eachCount()
 }
+
+/** A lab result sheet matched against the project's samples, waiting for confirmation. */
+data class AssayPreview(val fileName: String, val plan: org.geocrew.core.model.AssayPlan)
 
 sealed interface TransferMessage {
     data class Info(val text: String) : TransferMessage
@@ -99,6 +103,45 @@ class TransferViewModel @Inject constructor(
 
     fun cancelImport() {
         _preview.value = null
+    }
+
+    private val _assays = MutableStateFlow<AssayPreview?>(null)
+    val assays: StateFlow<AssayPreview?> = _assays.asStateFlow()
+
+    /** Reads a lab result sheet (CSV) and matches it to the project's samples by number; nothing is saved yet. */
+    fun openAssays(uri: Uri) = work {
+        val name = displayName(uri) ?: "未命名文件"
+        val project = projects.ensureCurrent()
+        val bytes = withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
+            ?: return@work fail("打不开「$name」。")
+        val table = try {
+            org.geocrew.core.formats.AssayCsv.read(bytes)
+        } catch (e: org.geocrew.core.formats.FormatException) {
+            return@work fail("「$name」：${e.message}")
+        }
+        val plan = org.geocrew.core.model.AssayPlan.of(table, features.all(project.id))
+        if (plan.records.isEmpty()) {
+            return@work fail("「$name」里的 ${table.rows.size} 个样品编号在当前工程里都找不到。请确认编号和记录里登记的样品编号一致（不分大小写）。")
+        }
+        _assays.value = AssayPreview(name, plan)
+    }
+
+    fun confirmAssays() = work {
+        val p = _assays.value ?: return@work
+        var n = 0
+        for (r in p.plan.records) {
+            val cur = features.get(r.featureId) ?: continue
+            features.edit(r.featureId) { applyAssays(cur, r) }
+            n++
+        }
+        _assays.value = null
+        _message.value = TransferMessage.Info(
+            "已把 ${p.plan.sampleCount} 件样品的分析结果写入 $n 条记录（${p.plan.columns.joinToString("、")}），可在图例、统计和插值里选用。",
+        )
+    }
+
+    fun cancelAssays() {
+        _assays.value = null
     }
 
     /** Suggested file name for an export in [format]. */

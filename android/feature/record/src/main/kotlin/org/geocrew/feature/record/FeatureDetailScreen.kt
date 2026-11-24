@@ -105,6 +105,7 @@ import org.geocrew.core.ui.InfoRow
 import org.geocrew.core.ui.KindUi
 import org.geocrew.core.ui.SectionHeader
 import org.geocrew.core.model.Sample
+import org.geocrew.core.model.results
 import org.geocrew.core.model.SampleTypes
 import org.geocrew.core.model.samples
 import java.io.File
@@ -452,6 +453,13 @@ private fun Samples(f: GeoFeature, samples: List<Sample>, vm: FeatureDetailViewM
             ) {
                 Text(listOfNotNull(s.no, s.type).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
                 s.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                s.results.takeIf { it.isNotEmpty() }?.let { r ->
+                    Text(
+                        "分析结果：" + r.entries.joinToString("，") { (k, v) -> "$k ${v.text}" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
         OutlinedButton(onClick = { editing = null to Sample(SampleTypes.nextNumber(f.title, used)) }) {
