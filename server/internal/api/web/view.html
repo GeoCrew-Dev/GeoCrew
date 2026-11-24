@@ -18,7 +18,7 @@
   #side { width: 320px; max-width: 45vw; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
   #side header { padding: 12px 14px; border-bottom: 1px solid var(--line); }
   #side h1 { font-size: 17px; margin: 0 0 2px; }
-  #status { color: var(--muted); font-size: 12px; }
+  #status, #today { color: var(--muted); font-size: 12px; }
   #tools { display: flex; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   button, input { font: inherit; color: inherit; }
   button { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
@@ -46,7 +46,7 @@
 <body>
 <div id="app" hidden>
   <aside id="side">
-    <header><h1 id="name">工作组</h1><div id="status">正在读取…</div></header>
+    <header><h1 id="name">工作组</h1><div id="status">正在读取…</div><div id="today"></div></header>
     <div id="tools">
       <input id="q" type="search" placeholder="按名称、岩性、备注筛选">
       <button id="fit" type="button">全部</button>
@@ -128,6 +128,7 @@
     $("status").textContent = features.size + " 条记录 · " + members.size + " 位组员";
     if (ready) map.getSource("records").setData(collection());
     renderList();
+    renderToday();
     if (ready && !fitted && features.size) { fitted = true; fitAll(); }
   }
 
@@ -150,6 +151,36 @@
       li.onclick = () => focus(f);
       ul.append(li);
     }
+  }
+
+  // Today's work per member (browser's local day), as the Android team page shows it:
+  // records they last edited today, samples logged today, and tracks started today.
+  function renderToday() {
+    const day = new Date().toDateString();
+    const today = (t) => { const d = t ? new Date(t) : null; return !!d && !isNaN(d) && d.toDateString() === day; };
+    const meters = (g) => {
+      if (!g || g.type !== "LineString" || !Array.isArray(g.coordinates)) return 0;
+      let m = 0;
+      for (let i = 1; i < g.coordinates.length; i++) {
+        const [a, b] = [g.coordinates[i - 1], g.coordinates[i]], r = Math.PI / 180;
+        const h = Math.sin((b[1] - a[1]) * r / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin((b[0] - a[0]) * r / 2) ** 2;
+        m += 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(h)));
+      }
+      return m;
+    };
+    const per = new Map();
+    for (const f of features.values()) {
+      const who = by(f); if (!who) continue;
+      const p = f.properties || {}, a = per.get(who) || { n: 0, s: 0, m: 0 };
+      if (p.kind === "track") { if (today(typeof p.started_at === "string" ? p.started_at : upd(f))) a.m += meters(f.geometry); }
+      else if (today(upd(f))) a.n++;
+      if (Array.isArray(p.samples)) a.s += p.samples.filter((x) => x && typeof x.no === "string" && today(x.taken_at)).length;
+      if (a.n || a.s || a.m) per.set(who, a);
+    }
+    const parts = [...per.entries()].map(([who, a]) => (members.get(who) || "组员") + " " + [
+      a.n ? a.n + " 条记录" : "", a.s ? a.s + " 件样品" : "", a.m ? "轨迹 " + (a.m < 1000 ? a.m.toFixed(0) + " m" : (a.m / 1000).toFixed(2) + " km") : "",
+    ].filter(Boolean).join("、"));
+    $("today").textContent = parts.length ? "今天：" + parts.join("；") : "";
   }
 
   function bbox(geom, b = [180, 90, -180, -90]) {
