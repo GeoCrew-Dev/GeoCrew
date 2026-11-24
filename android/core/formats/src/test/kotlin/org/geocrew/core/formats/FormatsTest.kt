@@ -9,6 +9,7 @@ import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.SyncInfo
 import org.geocrew.core.model.buildProperties
+import org.geocrew.core.model.edit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -88,6 +89,20 @@ class FormatsTest {
         assertEquals("D001", back[0].title)
         assertEquals("灰岩 <层理> & 节理", back[0].note)
         assertEquals(JsonPrimitive(42.0), back[0].properties[Props.DIP])
+    }
+
+    @Test
+    fun kmlCarriesLegendColoursAsSharedStyles() {
+        val withRock = sample.map { it.copy(properties = it.properties.edit { this[Props.LITHOLOGY] = "灰岩" }) }
+        val legend = org.geocrew.core.model.Legend(Props.LITHOLOGY, listOf(org.geocrew.core.model.LegendEntry("灰岩", "#64B5F6")))
+        val xml = write(KmlFormat, withRock, ExportContext(legend = legend)).second.decodeToString()
+        assertEquals(1, Regex("<Style id=\"c64B5F6\">").findAll(xml).count())
+        assertTrue(xml.contains("<LineStyle><color>fff6b564</color>"))
+        assertTrue(xml.contains("<PolyStyle><color>73f6b564</color>"))
+        assertEquals(3, Regex("<styleUrl>#c64B5F6</styleUrl>").findAll(xml).count())
+        // Styles do not get in the way of reading the file back.
+        assertEquals(3, KmlFormat.read(xml.byteInputStream(), ctx).features.size)
+        assertTrue("<Style" !in write(KmlFormat, sample).second.decodeToString())
     }
 
     @Test

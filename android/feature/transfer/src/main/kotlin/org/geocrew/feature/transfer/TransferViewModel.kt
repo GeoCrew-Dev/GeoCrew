@@ -116,7 +116,7 @@ class TransferViewModel @Inject constructor(
         // GPX keeps per-point times for tracks; collect them up front.
         val times = list.filter { it.kind == FeatureKind.TRACK }
             .associate { t -> t.id to tracks.points(t.id).map { it.time } }
-        val ctx = ExportContext(title = project.name, trackTimes = { id -> times[id]?.takeIf { it.isNotEmpty() } }, fields = project.config.fields)
+        val ctx = ExportContext(title = project.name, trackTimes = { id -> times[id]?.takeIf { it.isNotEmpty() } }, fields = project.config.fields, legend = project.config.legend)
         val result = withContext(Dispatchers.IO) {
             context.contentResolver.openOutputStream(uri, "wt")?.use { format.write(list, it, ctx) }
         } ?: return@work fail("无法写入所选位置。")

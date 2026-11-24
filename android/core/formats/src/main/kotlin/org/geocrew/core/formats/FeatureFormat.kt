@@ -2,6 +2,7 @@ package org.geocrew.core.formats
 
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.GeoFeature
+import org.geocrew.core.model.Legend
 import java.io.InputStream
 import java.io.OutputStream
 import java.time.Instant
@@ -22,6 +23,8 @@ data class ExportContext(
     val trackTimes: (featureId: String) -> List<Instant>? = { null },
     /** The project's form: tabular formats put these columns first, headed by their labels. */
     val fields: List<FieldTemplate> = emptyList(),
+    /** The project's map legend: formats with styles (KML) colour records the same way. */
+    val legend: Legend = Legend(),
 )
 
 data class ImportResult(

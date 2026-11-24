@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
+import org.geocrew.core.model.Legend
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.SyncInfo
@@ -109,9 +110,13 @@ object KmlFormat : FeatureFormat {
         sb.append("""<?xml version="1.0" encoding="UTF-8"?>""").append('\n')
         sb.append("""<kml xmlns="http://www.opengis.net/kml/2.2"><Document>""").append('\n')
         sb.append("<name>").append(Xml.escape(ctx.title)).append("</name>\n")
+        val live = features.filterNot { it.deleted }
+        val colors = live.associate { it.id to colorOf(it, ctx.legend) }
+        // One shared style per colour, so Google Earth and 奥维 users see the map's colours.
+        for (c in colors.values.filterNotNull().distinct()) style(sb, c)
         var written = 0
         var skipped = 0
-        for (f in features.filterNot { it.deleted }) {
+        for (f in live) {
             val g = f.geometry
             if (g == null) {
                 skipped++
@@ -120,6 +125,7 @@ object KmlFormat : FeatureFormat {
             sb.append("<Placemark>")
             f.title?.let { sb.append("<name>").append(Xml.escape(it)).append("</name>") }
             f.note?.let { sb.append("<description>").append(Xml.escape(it)).append("</description>") }
+            colors[f.id]?.let { sb.append("<styleUrl>#").append(styleId(it)).append("</styleUrl>") }
             extendedData(sb, f)
             geometryKml(sb, g)
             sb.append("</Placemark>\n")
@@ -128,6 +134,29 @@ object KmlFormat : FeatureFormat {
         sb.append("</Document></kml>\n")
         output.write(sb.toString().toByteArray(Charsets.UTF_8))
         return ExportResult(written, skipped)
+    }
+
+    /** A record's own simplestyle colour, else its legend colour, as #RRGGBB; null when it has neither. */
+    internal fun colorOf(f: GeoFeature, legend: Legend): String? {
+        for (k in listOf("stroke", "fill", "marker-color")) {
+            val v = (f.properties[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (v != null && Legend.isColor(v)) return v.uppercase()
+        }
+        return legend.colorOf(f)?.uppercase()
+    }
+
+    private fun styleId(hex: String) = "c" + hex.drop(1)
+
+    /** KML colours are aabbggrr. */
+    private fun kmlColor(hex: String, alpha: String): String =
+        (alpha + hex.substring(5, 7) + hex.substring(3, 5) + hex.substring(1, 3)).lowercase()
+
+    private fun style(sb: StringBuilder, hex: String) {
+        sb.append("<Style id=\"").append(styleId(hex)).append("\">")
+            .append("<IconStyle><color>").append(kmlColor(hex, "ff")).append("</color></IconStyle>")
+            .append("<LineStyle><color>").append(kmlColor(hex, "ff")).append("</color><width>3</width></LineStyle>")
+            .append("<PolyStyle><color>").append(kmlColor(hex, "73")).append("</color></PolyStyle>")
+            .append("</Style>\n")
     }
 
     private fun extendedData(sb: StringBuilder, f: GeoFeature) {
