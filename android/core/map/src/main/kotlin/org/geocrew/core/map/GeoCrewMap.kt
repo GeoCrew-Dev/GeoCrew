@@ -79,6 +79,20 @@ class MapCameraState(center: LngLat = LngLat(105.0, 35.0), zoom: Double = 3.5) {
         }
     }
 
+    /** Moves without animation, e.g. to restore where a project was left. */
+    fun jumpTo(target: LngLat, zoom: Double, bearing: Double = 0.0) {
+        center = target
+        this.zoom = zoom
+        this.bearing = bearing
+        whenReady { m ->
+            m.moveCamera(
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.Builder().target(LatLng(target.lat, target.lng)).zoom(zoom).bearing(bearing).build(),
+                ),
+            )
+        }
+    }
+
     fun resetNorth() = whenReady { m ->
         m.animateCamera(CameraUpdateFactory.bearingTo(0.0), 300)
     }

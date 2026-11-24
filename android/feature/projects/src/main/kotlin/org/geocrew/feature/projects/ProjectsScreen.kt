@@ -1,4 +1,4 @@
-package org.geocrew.feature.record
+package org.geocrew.feature.projects
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -7,17 +7,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -47,6 +47,16 @@ import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.team.TeamRepository
 import org.geocrew.core.model.Project
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 import javax.inject.Inject
 
 data class ProjectRow(val project: Project, val count: Int, val current: Boolean)
@@ -58,16 +68,21 @@ class ProjectsViewModel @Inject constructor(
     private val team: TeamRepository,
     private val storage: org.geocrew.core.data.repo.StorageMaintenance,
 ) : ViewModel() {
-    val rows: StateFlow<List<ProjectRow>> = combine(projects.projects, features.observeCounts(), projects.current) { list, counts, cur ->
-        list.map { ProjectRow(it, counts[it.id] ?: 0, it.id == cur.id) }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    /** Null until loaded, so the empty state does not flash. */
+    val rows: StateFlow<List<ProjectRow>?> = combine(projects.projects, features.observeCounts(), projects.currentId) { list, counts, cur ->
+        list.map { ProjectRow(it, counts[it.id] ?: 0, it.id == cur) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    fun create(name: String) = viewModelScope.launch {
+    fun create(name: String, then: () -> Unit) = viewModelScope.launch {
         val p = projects.create(name)
-        projects.select(p.id)
+        projects.open(p.id)
+        then()
     }
 
-    fun select(id: String) = viewModelScope.launch { projects.select(id) }
+    fun open(id: String, then: () -> Unit) = viewModelScope.launch {
+        projects.open(id)
+        then()
+    }
     fun rename(id: String, name: String) = viewModelScope.launch { projects.rename(id, name) }
 
     fun delete(id: String) = viewModelScope.launch {
@@ -79,22 +94,36 @@ class ProjectsViewModel @Inject constructor(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProjectsScreen(onBack: () -> Unit, onOpened: () -> Unit, viewModel: ProjectsViewModel = hiltViewModel()) {
-    val rows by viewModel.rows.collectAsStateWithLifecycle()
+/**
+ * The start screen: every project on this device, most recently opened
+ * first. Opening one leads to its map; everything else in the app works
+ * inside the open project.
+ */
+fun ProjectsScreen(onOpened: () -> Unit, onOpenSettings: () -> Unit, viewModel: ProjectsViewModel = hiltViewModel()) {
+    val loaded by viewModel.rows.collectAsStateWithLifecycle()
     var naming by remember { mutableStateOf<Pair<String?, String>?>(null) }
     var deleting by remember { mutableStateOf<ProjectRow?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("工程") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
+                title = { Text("同勘 · 工程") },
+                actions = { IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, "设置") } },
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { naming = null to "" }) { Icon(Icons.Default.Add, "新建工程") }
+            ExtendedFloatingActionButton(
+                onClick = { naming = null to "" },
+                icon = { Icon(Icons.Default.Add, null) },
+                text = { Text("新建工程") },
+            )
         },
     ) { padding ->
+        val rows = loaded ?: return@Scaffold
+        if (rows.isEmpty()) {
+            Empty(Modifier.fillMaxSize().padding(padding))
+            return@Scaffold
+        }
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             items(rows, key = { it.project.id }) { r ->
                 var menu by remember { mutableStateOf(false) }
@@ -108,7 +137,11 @@ fun ProjectsScreen(onBack: () -> Unit, onOpened: () -> Unit, viewModel: Projects
                     },
                     headlineContent = { Text(r.project.name) },
                     supportingContent = {
-                        Text("${r.count} 条记录" + (r.project.team?.let { " · 工作组「${it.workspaceName}」" } ?: ""))
+                        Text(
+                            "${r.count} 条记录" +
+                                (r.project.team?.let { " · 工作组「${it.workspaceName}」" } ?: "") +
+                                " · " + opened(r.project.openedAt),
+                        )
                     },
                     trailingContent = {
                         Box {
@@ -122,10 +155,7 @@ fun ProjectsScreen(onBack: () -> Unit, onOpened: () -> Unit, viewModel: Projects
                             }
                         }
                     },
-                    modifier = Modifier.clickable {
-                        viewModel.select(r.project.id)
-                        onOpened()
-                    },
+                    modifier = Modifier.clickable { viewModel.open(r.project.id, onOpened) },
                 )
             }
         }
@@ -139,7 +169,7 @@ fun ProjectsScreen(onBack: () -> Unit, onOpened: () -> Unit, viewModel: Projects
             text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("名称") }, singleLine = true) },
             confirmButton = {
                 TextButton(enabled = name.isNotBlank(), onClick = {
-                    if (id == null) viewModel.create(name) else viewModel.rename(id, name)
+                    if (id == null) viewModel.create(name, onOpened) else viewModel.rename(id, name)
                     naming = null
                 }) { Text("确定") }
             },
@@ -162,3 +192,21 @@ fun ProjectsScreen(onBack: () -> Unit, onOpened: () -> Unit, viewModel: Projects
         )
     }
 }
+
+@Composable
+private fun Empty(modifier: Modifier) {
+    Column(modifier.padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("还没有工程", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "一个工程装着一次野外工作的全部内容：地图与底图、定点和轨迹、照片和产状，以及它共享的工作组。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+private val DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
+
+private fun opened(at: Instant?) = if (at == null) "未打开过" else "上次打开 " + DAY.format(at)

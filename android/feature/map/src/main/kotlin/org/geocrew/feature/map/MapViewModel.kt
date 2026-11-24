@@ -3,6 +3,7 @@ package org.geocrew.feature.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.geocrew.core.data.di.ApplicationScope
 import org.geocrew.core.data.repo.AppSettings
 import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.ProjectRepository
@@ -29,6 +31,7 @@ import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
+import org.geocrew.core.model.MapViewport
 import org.geocrew.core.model.Project
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.tiles.BuiltInSources
@@ -77,6 +80,7 @@ class MapViewModel @Inject constructor(
     private val location: LocationSource,
     val tracking: TrackingController,
     private val teamSession: TeamSession,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     val team: StateFlow<TeamStatus> = teamSession.status
@@ -99,17 +103,22 @@ class MapViewModel @Inject constructor(
     val settings: StateFlow<AppSettings?> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val baseMap: StateFlow<BaseMapUi?> = settingsRepo.settings.map { s ->
+    /** The base map is a project setting; projects without one use the app-wide default. */
+    val baseMap: StateFlow<BaseMapUi?> = combine(
+        settingsRepo.settings,
+        projects.current.map { it.config.baseSourceId }.distinctUntilChanged(),
+    ) { s, own ->
         val keys = settingsRepo.keysOf(s)
         val catalog = settingsRepo.catalogOf(s)
-        val effective = catalog.effective(s.baseSourceId, keys)
+        val chosen = own ?: s.baseSourceId
+        val effective = catalog.effective(chosen, keys)
         BaseMapUi(
             source = effective,
             keys = keys,
-            chosenId = s.baseSourceId,
+            chosenId = chosen,
             sources = catalog.sources,
             locked = catalog.sources.filterNot(keys::has).map { it.id }.toSet(),
-            usingFallback = effective.id != s.baseSourceId,
+            usingFallback = effective.id != chosen,
             showKeyPrompt = !s.keyPromptDone && settingsRepo.needsTiandituKey(s),
         )
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -179,12 +188,22 @@ class MapViewModel @Inject constructor(
 
     fun locationEnabled() = location.isEnabled()
 
-    fun chooseSource(id: String) = viewModelScope.launch { settingsRepo.setBaseSource(id) }
+    /** Sets this project's base map; the choice also becomes the default for new projects. */
+    fun chooseSource(id: String) = viewModelScope.launch {
+        settingsRepo.setBaseSource(id)
+        projects.ensureCurrent().let { p -> projects.updateConfig(p.id) { it.copy(baseSourceId = id) } }
+    }
 
     /** "Use another map for now": remember the choice and switch to a keyless source. */
     fun skipKeyPrompt() = viewModelScope.launch {
         settingsRepo.setKeyPromptDone()
-        if (settingsRepo.needsTiandituKey(settingsRepo.current())) settingsRepo.setBaseSource(BuiltInSources.OSM.id)
+        if (settingsRepo.needsTiandituKey(settingsRepo.current())) chooseSource(BuiltInSources.OSM.id)
+    }
+
+    /** Remembers where the map was, so the project opens there next time. */
+    fun saveView(center: LngLat, zoom: Double, bearing: Double) {
+        val id = project.value?.id ?: return
+        appScope.launch { projects.updateConfig(id) { it.copy(view = MapViewport(center.lng, center.lat, zoom, bearing)) } }
     }
 
     fun keyPromptSeen() = viewModelScope.launch { settingsRepo.setKeyPromptDone() }

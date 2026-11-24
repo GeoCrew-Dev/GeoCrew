@@ -17,8 +17,8 @@ import org.geocrew.feature.compass.TARGET_FEATURE_ARG
 import org.geocrew.feature.map.MapScreen
 import org.geocrew.feature.record.FEATURE_ID_ARG
 import org.geocrew.feature.record.FeatureDetailScreen
-import org.geocrew.feature.record.ProjectsScreen
 import org.geocrew.feature.record.RecordListScreen
+import org.geocrew.feature.projects.ProjectsScreen
 import org.geocrew.feature.settings.SettingsScreen
 import org.geocrew.feature.team.INVITE_CODE_ARG
 import org.geocrew.feature.team.INVITE_SERVER_ARG
@@ -47,6 +47,11 @@ object Routes {
     const val FOCUS = "focus"
 }
 
+/** Back to the project list, which is always at the bottom of the stack. */
+private fun NavHostController.toProjects() {
+    if (!popBackStack(Routes.PROJECTS, inclusive = false)) navigate(Routes.PROJECTS)
+}
+
 /** Returns to the map and asks it to show [featureId]. */
 private fun NavHostController.showOnMap(featureId: String) {
     getBackStackEntry(Routes.MAP).savedStateHandle[Routes.FOCUS] = featureId
@@ -56,7 +61,8 @@ private fun NavHostController.showOnMap(featureId: String) {
 @Composable
 fun GeoCrewNavHost() {
     val nav = rememberNavController()
-    NavHost(navController = nav, startDestination = Routes.MAP) {
+    // Everything happens inside a project, so the app starts at the project list.
+    NavHost(navController = nav, startDestination = Routes.PROJECTS) {
         composable(Routes.MAP) { entry ->
             val focus by entry.savedStateHandle.getStateFlow<String?>(Routes.FOCUS, null)
                 .collectAsStateWithLifecycle()
@@ -66,12 +72,16 @@ fun GeoCrewNavHost() {
                 onOpenRecords = { nav.navigate(Routes.RECORDS) { launchSingleTop = true } },
                 onOpenTools = { nav.navigate(Routes.TOOLS) { launchSingleTop = true } },
                 onOpenTeam = { nav.navigate(Routes.TEAM_PLAIN) { launchSingleTop = true } },
+                onOpenProjects = { nav.toProjects() },
                 focusFeatureId = focus,
                 onFocusHandled = { entry.savedStateHandle[Routes.FOCUS] = null },
             )
         }
         composable(Routes.PROJECTS) {
-            ProjectsScreen(onBack = { nav.popBackStack() }, onOpened = { nav.popBackStack(Routes.MAP, inclusive = false) })
+            ProjectsScreen(
+                onOpened = { nav.navigate(Routes.MAP) { launchSingleTop = true } },
+                onOpenSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
+            )
         }
         composable(Routes.ANALYSIS) {
             AnalysisScreen(onBack = { nav.popBackStack() }, onShowOnMap = { nav.popBackStack(Routes.MAP, inclusive = false) })
@@ -98,7 +108,7 @@ fun GeoCrewNavHost() {
                 onBack = { nav.popBackStack() },
                 onOpen = { nav.navigate(Routes.feature(it)) },
                 onImportExport = { nav.navigate(Routes.TRANSFER) },
-                onProjects = { nav.navigate(Routes.PROJECTS) },
+                onProjects = { nav.toProjects() },
             )
         }
         composable(Routes.FEATURE, arguments = listOf(navArgument(FEATURE_ID_ARG) { type = NavType.StringType })) {

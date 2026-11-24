@@ -9,7 +9,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,9 +26,8 @@ data class ToolEntry(val title: String, val description: String, val icon: Image
 
 val builtInTools = listOf(
     ToolEntry("罗盘 · 产状", "测量方位和岩层产状，保存为地质点", Icons.Default.Explore, "compass"),
-    ToolEntry("工程", "新建、切换、重命名和删除工程", Icons.Default.Folder, Routes.PROJECTS),
     ToolEntry("空间分析", "插值、统计、范围、缓冲区", Icons.Default.Analytics, Routes.ANALYSIS),
-    ToolEntry("导入 / 导出", "GeoJSON、KML、GPX", Icons.Default.ImportExport, Routes.TRANSFER),
+    ToolEntry("导入 / 导出", "GeoJSON、KML、GPX、Shapefile", Icons.Default.ImportExport, Routes.TRANSFER),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

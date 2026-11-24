@@ -1,5 +1,6 @@
 package org.geocrew.core.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -18,6 +19,10 @@ data class ProjectEntity(
     val nickname: String? = null,
     val role: String? = null,
     val lastSeq: Long = 0,
+    /** [org.geocrew.core.model.ProjectConfig] as JSON (added in schema 2). */
+    @ColumnInfo(defaultValue = "{}") val config: String = "{}",
+    /** Epoch millis of the last time it was opened, 0 if never (added in schema 2). */
+    @ColumnInfo(defaultValue = "0") val openedAt: Long = 0,
 )
 
 @Entity(

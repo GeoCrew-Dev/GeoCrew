@@ -76,7 +76,7 @@ class TeamViewModel @Inject constructor(
     /** Opens a fresh project so an invite can be accepted without touching the linked one. */
     fun newProjectFor(invite: Invite) = act(null) {
         val p = projects.create("新工程")
-        projects.select(p.id)
+        projects.open(p.id)
         _incoming.value = invite
     }
 

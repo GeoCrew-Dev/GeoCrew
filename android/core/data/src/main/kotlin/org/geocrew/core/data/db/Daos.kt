@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ProjectDao {
-    @Query("SELECT * FROM projects ORDER BY createdAt")
+    /** Most recently opened first, then newest. */
+    @Query("SELECT * FROM projects ORDER BY openedAt DESC, createdAt DESC")
     fun observeAll(): Flow<List<ProjectEntity>>
 
     @Query("SELECT * FROM projects WHERE id = :id")
@@ -19,11 +20,17 @@ interface ProjectDao {
     @Query("SELECT * FROM projects WHERE id = :id")
     suspend fun get(id: String): ProjectEntity?
 
-    @Query("SELECT * FROM projects ORDER BY createdAt LIMIT 1")
+    @Query("SELECT * FROM projects ORDER BY openedAt DESC, createdAt DESC LIMIT 1")
     suspend fun first(): ProjectEntity?
 
     @Upsert
     suspend fun upsert(p: ProjectEntity)
+
+    @Query("UPDATE projects SET openedAt = :at WHERE id = :id")
+    suspend fun setOpened(id: String, at: Long)
+
+    @Query("UPDATE projects SET config = :config WHERE id = :id")
+    suspend fun setConfig(id: String, config: String)
 
     @Query("UPDATE projects SET lastSeq = :seq WHERE id = :id")
     suspend fun setLastSeq(id: String, seq: Long)

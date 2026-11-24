@@ -17,7 +17,9 @@ object DataModule {
     @Provides
     @Singleton
     fun database(@ApplicationContext context: Context): GeoCrewDatabase =
-        Room.databaseBuilder(context, GeoCrewDatabase::class.java, GeoCrewDatabase.NAME).build()
+        Room.databaseBuilder(context, GeoCrewDatabase::class.java, GeoCrewDatabase.NAME)
+            .addMigrations(*GeoCrewDatabase.MIGRATIONS)
+            .build()
 
     @Provides fun projectDao(db: GeoCrewDatabase) = db.projects()
     @Provides fun featureDao(db: GeoCrewDatabase) = db.features()

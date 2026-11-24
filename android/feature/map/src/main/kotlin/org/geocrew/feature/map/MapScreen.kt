@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import org.geocrew.core.model.LngLat
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -65,6 +69,7 @@ fun MapScreen(
     onOpenRecords: () -> Unit = {},
     onOpenTools: () -> Unit = {},
     onOpenTeam: () -> Unit = {},
+    onOpenProjects: () -> Unit = {},
     /** A feature another screen asked to show; consumed once. */
     focusFeatureId: String? = null,
     onFocusHandled: () -> Unit = {},
@@ -86,6 +91,27 @@ fun MapScreen(
 
     var showLayers by rememberSaveable { mutableStateOf(false) }
     var followOnFirstFix by remember { mutableStateOf(true) }
+    val project by viewModel.project.collectAsStateWithLifecycle()
+
+    // Each project opens where it was left; a new one follows the first fix instead.
+    var restoredFor by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(project?.id) {
+        val p = project ?: return@LaunchedEffect
+        if (restoredFor == p.id) return@LaunchedEffect
+        restoredFor = p.id
+        p.config.view?.let { v ->
+            camera.jumpTo(LngLat(v.lng, v.lat), v.zoom, v.bearing)
+            followOnFirstFix = false
+        }
+    }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) viewModel.saveView(camera.center, camera.zoom, camera.bearing)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         if (granted.values.any { it }) viewModel.startLocation()
@@ -137,6 +163,7 @@ fun MapScreen(
             Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(12.dp).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            project?.let { p -> ProjectChip(p.name, p.team != null, onOpenProjects) }
             when {
                 bm.showKeyPrompt -> KeyPromptCard(
                     onEnterKey = { viewModel.keyPromptSeen(); onOpenSettings() },
@@ -243,6 +270,26 @@ fun MapScreen(
                 onManage = { showLayers = false; onOpenSettings() },
                 onDismiss = { showLayers = false },
             )
+        }
+    }
+}
+
+/** The open project's name; tapping it goes back to the project list. */
+@Composable
+private fun ProjectChip(name: String, shared: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clip(MaterialTheme.shapes.extraLarge).clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        shadowElevation = 2.dp,
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (shared) Icons.Default.Groups else Icons.Default.Folder, null,
+                Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(name, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
     }
 }

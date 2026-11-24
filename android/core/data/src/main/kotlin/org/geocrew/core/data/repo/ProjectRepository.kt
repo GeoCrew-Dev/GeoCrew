@@ -6,10 +6,12 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import org.geocrew.core.data.db.ProjectConfigJson
 import org.geocrew.core.data.db.ProjectDao
 import org.geocrew.core.data.db.toEntity
 import org.geocrew.core.data.db.toModel
 import org.geocrew.core.model.Project
+import org.geocrew.core.model.ProjectConfig
 import org.geocrew.core.model.TeamLink
 import java.time.Clock
 import java.util.UUID
@@ -23,6 +25,9 @@ class ProjectRepository @Inject constructor(
     private val clock: Clock,
 ) {
     val projects: Flow<List<Project>> = dao.observeAll().map { list -> list.map { it.toModel() } }
+
+    /** Id of the open project, without creating one. */
+    val currentId: Flow<String?> = settings.settings.map { it.currentProjectId }.distinctUntilChanged()
 
     /** The project the map is showing; a default one is created on first use. */
     val current: Flow<Project> = settings.settings
@@ -50,6 +55,19 @@ class ProjectRepository @Inject constructor(
     }
 
     suspend fun select(id: String) = settings.setCurrentProject(id)
+
+    /** Makes [id] the current project and records it as recently opened. */
+    suspend fun open(id: String) {
+        dao.setOpened(id, clock.millis())
+        settings.setCurrentProject(id)
+    }
+
+    /** Changes a project's own settings (map, description...). */
+    suspend fun updateConfig(id: String, change: (ProjectConfig) -> ProjectConfig) {
+        val p = dao.get(id)?.toModel() ?: return
+        val next = change(p.config)
+        if (next != p.config) dao.setConfig(id, ProjectConfigJson.encode(next))
+    }
 
     suspend fun rename(id: String, name: String) {
         val p = dao.get(id) ?: return
