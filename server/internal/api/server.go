@@ -20,7 +20,7 @@ import (
 const ProtocolVersion = "0"
 
 // Capabilities advertised by /info so clients can adapt to older servers.
-var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "alerts"}
+var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "alerts", "view"}
 
 // Server wires the store, file storage and realtime hub into HTTP handlers.
 type Server struct {
@@ -77,25 +77,28 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v0/workspaces/join", s.limited(joins, s.join))
 
 	ws := "/api/v0/workspaces/{ws}"
-	mux.Handle("GET "+ws, s.auth(s.workspace, anyRole))
-	mux.Handle("GET "+ws+"/members", s.auth(s.members, anyRole))
+	mux.Handle("GET "+ws, s.view(s.workspace))
+	mux.Handle("GET "+ws+"/members", s.view(s.members))
 	mux.Handle("PATCH "+ws+"/members/{member}", s.auth(s.setRole, leaderOnly))
 	mux.Handle("DELETE "+ws+"/members/{member}", s.auth(s.revoke, leaderOnly))
 	mux.Handle("POST "+ws+"/invite", s.auth(s.resetInvite, leaderOnly))
-	mux.Handle("GET "+ws+"/settings", s.auth(s.settings, anyRole))
+	mux.Handle("GET "+ws+"/settings", s.view(s.settings))
 	mux.Handle("PUT "+ws+"/settings", s.auth(s.putSettings, leaderOnly))
-	mux.Handle("GET "+ws+"/features", s.auth(s.pull, anyRole))
+	mux.Handle("GET "+ws+"/features", s.view(s.pull))
 	mux.Handle("POST "+ws+"/features", s.auth(s.push, writers))
-	mux.Handle("GET "+ws+"/features/{feature}/history", s.auth(s.history, anyRole))
-	mux.Handle("GET "+ws+"/export.geojson", s.auth(s.exportGeoJSON, anyRole))
-	mux.Handle("GET "+ws+"/export.geocrew.zip", s.auth(s.exportPackage, anyRole))
-	mux.Handle("GET "+ws+"/comments", s.auth(s.comments, anyRole))
+	mux.Handle("GET "+ws+"/features/{feature}/history", s.view(s.history))
+	mux.Handle("GET "+ws+"/export.geojson", s.view(s.exportGeoJSON))
+	mux.Handle("GET "+ws+"/export.geocrew.zip", s.view(s.exportPackage))
+	mux.Handle("GET "+ws+"/comments", s.view(s.comments))
 	mux.Handle("POST "+ws+"/comments", s.auth(s.addComment, anyRole)) // read-only: urgent only
 	mux.Handle("DELETE "+ws+"/comments/{comment}", s.auth(s.deleteComment, writers))
 	mux.Handle("PUT "+ws+"/files/{sha}", s.auth(s.putFile, writers))
-	mux.Handle("GET "+ws+"/files/{sha}", s.auth(s.getFile, anyRole))
-	mux.Handle("HEAD "+ws+"/files/{sha}", s.auth(s.getFile, anyRole))
-	mux.Handle("GET "+ws+"/ws", s.auth(s.realtime, anyRole))
+	mux.Handle("GET "+ws+"/files/{sha}", s.view(s.getFile))
+	mux.Handle("HEAD "+ws+"/files/{sha}", s.view(s.getFile))
+	mux.Handle("GET "+ws+"/ws", s.view(s.realtime))
+	mux.Handle("POST "+ws+"/view-links", s.auth(s.createViewLink, anyRole))
+	mux.Handle("DELETE "+ws+"/view-links", s.auth(s.revokeViewLinks, anyRole))
+	mux.HandleFunc("GET /view/{$}", s.viewPage)
 	mux.Handle("GET "+ws+"/push", s.auth(s.getPush, anyRole))
 	mux.Handle("PUT "+ws+"/push", s.auth(s.putPush, anyRole))
 	mux.Handle("DELETE "+ws+"/push", s.auth(s.deletePush, anyRole))
@@ -130,18 +133,37 @@ func token(r *http.Request) string {
 	return ""
 }
 
+// auth admits members whose role passes allowed. View links are refused:
+// only routes registered with [Server.view] take them.
 func (s *Server) auth(next http.HandlerFunc, allowed roleCheck) http.Handler {
+	return s.authenticate(next, allowed, false)
+}
+
+// view admits any member and view links (protocol v0 §10), for routes that
+// only read.
+func (s *Server) view(next http.HandlerFunc) http.Handler {
+	return s.authenticate(next, anyRole, true)
+}
+
+func (s *Server) authenticate(next http.HandlerFunc, allowed roleCheck, viewers bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m, err := s.Store.Authenticate(r.Context(), r.PathValue("ws"), token(r))
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
+		if m.Viewer && !viewers {
+			writeErr(w, http.StatusForbidden, "forbidden", "a view link can only read")
+			return
+		}
 		if !allowed(m.Role) {
 			writeErr(w, http.StatusForbidden, "forbidden", "your role does not allow this action")
 			return
 		}
-		s.touch(r.Context(), m)
+		if !m.Viewer {
+			// Someone looking at a shared link is not the member at work.
+			s.touch(r.Context(), m)
+		}
 		next(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, m)))
 	})
 }

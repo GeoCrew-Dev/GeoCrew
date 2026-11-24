@@ -632,3 +632,83 @@ func TestLastSeen(t *testing.T) {
 		}
 	}
 }
+
+func TestViewLinks(t *testing.T) {
+	e := newEnv(t)
+	var a joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "w", "nickname": "a"}, &a)
+	base := "/api/v0/workspaces/" + a.WorkspaceID
+	e.call("POST", base+"/features", a.Token, map[string]any{"features": []any{feature("f1", 1, "2026-11-24T08:00:00Z")}}, nil)
+
+	if c := e.call("POST", base+"/view-links", a.Token, map[string]int{"hours": 500}, nil); c != 400 {
+		t.Fatalf("bad hours: %d", c)
+	}
+	var link viewLinkResp
+	if c := e.call("POST", base+"/view-links", a.Token, nil, &link); c != 201 || !strings.HasPrefix(link.Token, "v_") ||
+		!strings.Contains(link.Path, "#ws="+a.WorkspaceID+"&t="+link.Token) {
+		t.Fatalf("create: %d %+v", c, link)
+	}
+	if d := time.Until(link.ExpiresAt); d < 23*time.Hour || d > 25*time.Hour {
+		t.Fatalf("default expiry: %v", link.ExpiresAt)
+	}
+
+	// The link reads everything a member can read...
+	var page map[string]any
+	if c := e.call("GET", base+"/features", link.Token, nil, &page); c != 200 {
+		t.Fatalf("viewer pull: %d", c)
+	}
+	for _, p := range []string{base, base + "/members", base + "/comments", base + "/export.geojson"} {
+		if c := e.call("GET", p, link.Token, nil, nil); c != 200 {
+			t.Fatalf("viewer GET %s: %d", p, c)
+		}
+	}
+	// ...and writes nothing, not even an urgent message.
+	for _, w := range []struct{ method, path string }{
+		{"POST", base + "/features"}, {"POST", base + "/comments"}, {"GET", base + "/push"},
+		{"POST", base + "/view-links"}, {"POST", base + "/leave"},
+	} {
+		if c := e.call(w.method, w.path, link.Token, map[string]any{}, nil); c != 403 && c != 404 && c != 405 {
+			t.Fatalf("viewer %s %s: %d", w.method, w.path, c)
+		}
+	}
+
+	// A browser on the link does not make the member look online, and cannot send positions.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(e.srv.URL, "http") + base + "/ws?access_token=" + link.Token
+	cv, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cv.CloseNow()
+	if m := readMsg(t, ctx, cv); m["type"] != "hello" {
+		t.Fatalf("viewer hello: %v", m)
+	}
+	var wsResp workspaceResp
+	e.call("GET", base, a.Token, nil, &wsResp)
+	if len(wsResp.Online) != 0 {
+		t.Fatalf("viewer counted online: %v", wsResp.Online)
+	}
+	_ = cv.Write(ctx, websocket.MessageText, []byte(`{"type":"position","lon":116.4,"lat":39.9}`))
+	if m := readMsg(t, ctx, cv); m["type"] != "error" {
+		t.Fatalf("viewer position: %v", m)
+	}
+
+	resp, err := http.Get(e.srv.URL + "/view/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.Contains(string(body), "maplibre") || resp.Header.Get("Content-Security-Policy") == "" {
+		t.Fatalf("view page: %d %q", resp.StatusCode, resp.Header)
+	}
+
+	var rev struct{ Revoked int }
+	if c := e.call("DELETE", base+"/view-links", a.Token, nil, &rev); c != 200 || rev.Revoked != 1 {
+		t.Fatalf("revoke: %d %+v", c, rev)
+	}
+	if c := e.call("GET", base+"/features", link.Token, nil, nil); c != 401 {
+		t.Fatalf("after revoke: %d", c)
+	}
+}

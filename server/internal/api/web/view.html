@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>同勘 GeoCrew · 工作组查看</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+      integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
+        integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
+<style>
+  :root { --bg: #fff; --fg: #1c1b1f; --muted: #5f5d66; --line: #dcdbe0; --accent: #2e6b4f; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1c1b1f; --fg: #e6e1e5; --muted: #a9a6b0; --line: #3a383f; --accent: #7fc8a4; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 14px/1.45 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--fg); }
+  #app { display: flex; height: 100%; }
+  #side { width: 320px; max-width: 45vw; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  #side header { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  #side h1 { font-size: 17px; margin: 0 0 2px; }
+  #status { color: var(--muted); font-size: 12px; }
+  #tools { display: flex; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  button, input { font: inherit; color: inherit; }
+  button { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  #q { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  #list { flex: 1; overflow: auto; margin: 0; padding: 0; list-style: none; }
+  #list li { padding: 8px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  #list li:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  #list .sub { color: var(--muted); font-size: 12px; }
+  #map { flex: 1; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .mate { background: #1565c0; color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 10px; border: 2px solid #fff; white-space: nowrap; box-shadow: 0 1px 3px #0006; }
+  .mate.old { background: #78909c; }
+  .maplibregl-popup-content { color: #1c1b1f; max-width: 320px; }
+  .pop h3 { margin: 0 0 4px; font-size: 15px; }
+  .pop dl { margin: 6px 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+  .pop dt { color: #5f5d66; }
+  .pop dd { margin: 0; word-break: break-word; }
+  .pop img { max-width: 100%; border-radius: 6px; margin-top: 4px; }
+  .pop audio { width: 100%; margin-top: 4px; }
+  #gate { max-width: 520px; margin: 15vh auto; padding: 0 20px; }
+  @media (max-width: 700px) { #app { flex-direction: column-reverse; } #side { width: 100%; max-width: none; height: 40%; border-right: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="app" hidden>
+  <aside id="side">
+    <header><h1 id="name">工作组</h1><div id="status">正在读取…</div></header>
+    <div id="tools">
+      <input id="q" type="search" placeholder="按名称、岩性、备注筛选">
+      <button id="fit" type="button">全部</button>
+      <button id="geojson" type="button">下载 GeoJSON</button>
+      <button id="package" type="button">下载工程包</button>
+    </div>
+    <ul id="list"></ul>
+  </aside>
+  <div id="map"></div>
+</div>
+<div id="gate" hidden>
+  <h1>同勘 GeoCrew</h1>
+  <p id="gatemsg">这个页面需要组员在手机上生成的查看链接：工作组页 →「在电脑上查看」。链接只读，到期自动失效。</p>
+</div>
+<script>
+"use strict";
+(() => {
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const WS = hash.get("ws"), TOKEN = hash.get("t");
+  const $ = (id) => document.getElementById(id);
+  const gate = (msg) => { if (msg) $("gatemsg").textContent = msg; $("gate").hidden = false; $("app").hidden = true; };
+  if (!WS || !TOKEN || !/^[0-9a-f]{1,64}$/.test(WS)) { gate(); return; }
+  // Keep the token out of the address bar once read; reloading still works from history state.
+  history.replaceState({ ws: WS, t: TOKEN }, "", location.pathname + location.hash);
+
+  const API = "/api/v0/workspaces/" + WS;
+  const KINDS = {
+    point: ["标注点", "#e53935"], geo_point: ["地质点", "#8e24aa"], photo: ["照片点", "#fb8c00"],
+    line: ["线", "#1e88e5"], polygon: ["面", "#43a047"], track: ["轨迹", "#00897b"],
+  };
+  const STATUS = { todo: "待办", doing: "进行中", done: "已完成" };
+  const kindOf = (p) => KINDS[p.kind] ? p.kind : "point";
+
+  async function api(path, opts = {}) {
+    const r = await fetch(API + path, { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + TOKEN } });
+    if (r.status === 401) { gate("查看链接已失效（到期、被撤销或成员已被移出）。请让组员重新生成。"); throw new Error("unauthorized"); }
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r;
+  }
+
+  const features = new Map(); // id -> GeoJSON feature
+  const members = new Map();  // id -> nickname
+  let seq = 0, map, ready = false, fitted = false;
+
+  async function pull() {
+    for (;;) {
+      const page = await (await api("/features?since=" + seq)).json();
+      for (const f of page.features || []) {
+        if ((f.sync && f.sync.deleted) || !f.geometry) features.delete(f.id);
+        else features.set(f.id, f);
+      }
+      if (page.seq > seq) seq = page.seq;
+      if (!page.more || !(page.features || []).length) break;
+    }
+    render();
+  }
+
+  async function loadMembers() {
+    const list = await (await api("/members")).json();
+    members.clear();
+    for (const m of list) if (!m.revoked) members.set(m.id, m.nickname);
+  }
+
+  function collection() {
+    return { type: "FeatureCollection", features: [...features.values()].map((f) => ({
+      type: "Feature", id: undefined, geometry: f.geometry,
+      properties: { _id: f.id, _kind: kindOf(f.properties || {}), _color: KINDS[kindOf(f.properties || {})][1] },
+    })) };
+  }
+
+  const upd = (f) => (f.sync && f.sync.updated_at) || "";
+  const by = (f) => (f.sync && f.sync.updated_by) || "";
+  function text(p, key) { const v = p && p[key]; return typeof v === "string" ? v : (typeof v === "number" ? String(v) : ""); }
+
+  function render() {
+    $("status").textContent = features.size + " 条记录 · " + members.size + " 位组员";
+    if (ready) map.getSource("records").setData(collection());
+    renderList();
+    if (ready && !fitted && features.size) { fitted = true; fitAll(); }
+  }
+
+  function renderList() {
+    const q = $("q").value.trim().toLowerCase();
+    const ul = $("list");
+    ul.replaceChildren();
+    const rows = [...features.values()]
+      .filter((f) => !q || ["title", "note", "lithology"].some((k) => text(f.properties, k).toLowerCase().includes(q)))
+      .sort((a, b) => upd(b).localeCompare(upd(a)))
+      .slice(0, 500);
+    for (const f of rows) {
+      const p = f.properties || {}, k = kindOf(p);
+      const li = document.createElement("li");
+      const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = KINDS[k][1];
+      const t = document.createElement("span"); t.textContent = text(p, "title") || KINDS[k][0];
+      const sub = document.createElement("div"); sub.className = "sub";
+      sub.textContent = [KINDS[k][0], text(p, "lithology"), members.get(by(f)) || "", upd(f).slice(0, 10)].filter(Boolean).join(" · ");
+      li.append(dot, t, sub);
+      li.onclick = () => focus(f);
+      ul.append(li);
+    }
+  }
+
+  function bbox(geom, b = [180, 90, -180, -90]) {
+    const walk = (c) => { if (typeof c[0] === "number") { b[0] = Math.min(b[0], c[0]); b[1] = Math.min(b[1], c[1]); b[2] = Math.max(b[2], c[0]); b[3] = Math.max(b[3], c[1]); } else c.forEach(walk); };
+    if (geom && geom.coordinates) walk(geom.coordinates);
+    return b;
+  }
+
+  function fitAll() {
+    let b = [180, 90, -180, -90];
+    for (const f of features.values()) b = bbox(f.geometry, b);
+    if (b[0] <= b[2]) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 60, maxZoom: 15, duration: 0 });
+  }
+
+  function focus(f) {
+    const b = bbox(f.geometry);
+    if (b[0] === b[2] && b[1] === b[3]) map.flyTo({ center: [b[0], b[1]], zoom: Math.max(map.getZoom(), 15) });
+    else map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 80, maxZoom: 17 });
+    popup(f, f.geometry.type === "Point" ? f.geometry.coordinates : [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]);
+  }
+
+  async function blobURL(sha) {
+    const r = await api("/files/" + sha);
+    return URL.createObjectURL(await r.blob());
+  }
+
+  function popup(f, lngLat) {
+    const p = f.properties || {}, k = kindOf(p);
+    const box = document.createElement("div"); box.className = "pop";
+    const h = document.createElement("h3"); h.textContent = text(p, "title") || KINDS[k][0]; box.append(h);
+    const dl = document.createElement("dl");
+    const row = (label, value) => { if (!value) return; const dt = document.createElement("dt"); dt.textContent = label; const dd = document.createElement("dd"); dd.textContent = value; dl.append(dt, dd); };
+    row("类型", KINDS[k][0]);
+    if (f.geometry.type === "Point") {
+      const c = f.geometry.coordinates;
+      row("坐标", c[0].toFixed(6) + ", " + c[1].toFixed(6));
+      if (c.length > 2 && c[2] != null) row("海拔", Number(c[2]).toFixed(1) + " m");
+    }
+    row("岩性", text(p, "lithology"));
+    if (typeof p.dip_direction === "number" && typeof p.dip === "number") row("产状", Math.round(p.dip_direction) + "°∠" + Math.round(p.dip) + "°");
+    if (typeof p.length_m === "number") row("长度", p.length_m >= 1000 ? (p.length_m / 1000).toFixed(2) + " km" : Math.round(p.length_m) + " m");
+    if (typeof p.area_m2 === "number") row("面积", p.area_m2 >= 1e6 ? (p.area_m2 / 1e6).toFixed(3) + " km²" : Math.round(p.area_m2) + " m²");
+    if (text(p, "assignee_name")) row("任务", text(p, "assignee_name") + "：" + (STATUS[p.task_status] || "待办"));
+    row("备注", text(p, "note"));
+    row("修改", [members.get(by(f)) || "", upd(f).replace("T", " ").slice(0, 16)].filter(Boolean).join(" · "));
+    box.append(dl);
+    const media = document.createElement("div"); box.append(media);
+    const shas = (list) => (Array.isArray(list) ? list : []).filter((s) => typeof s === "string" && /^[0-9a-f]{64}$/.test(s));
+    for (const sha of shas(p.photos).slice(0, 4)) {
+      const img = document.createElement("img"); img.alt = "照片"; media.append(img);
+      blobURL(sha).then((u) => { img.src = u; }).catch(() => { img.replaceWith(Object.assign(document.createElement("div"), { textContent: "照片还没有上传" })); });
+    }
+    for (const sha of shas(p.audio)) {
+      const a = document.createElement("audio"); a.controls = true; a.preload = "none"; media.append(a);
+      blobURL(sha).then((u) => { a.src = u; }).catch(() => { a.replaceWith(Object.assign(document.createElement("div"), { textContent: "录音还没有上传" })); });
+    }
+    new maplibregl.Popup({ maxWidth: "340px" }).setLngLat(lngLat).setDOMContent(box).addTo(map);
+  }
+
+  // Teammates' live positions over the realtime channel.
+  const mates = new Map(); // member id -> {marker, at}
+  function showMate(pos) {
+    if (typeof pos.lon !== "number" || typeof pos.lat !== "number") return;
+    let m = mates.get(pos.member_id);
+    if (!m) {
+      const el = document.createElement("div"); el.className = "mate";
+      m = { el, marker: new maplibregl.Marker({ element: el }).setLngLat([pos.lon, pos.lat]).addTo(map) };
+      mates.set(pos.member_id, m);
+    }
+    m.el.textContent = pos.nickname || members.get(pos.member_id) || "组员";
+    m.at = Date.parse(pos.at) || Date.now();
+    m.marker.setLngLat([pos.lon, pos.lat]);
+    ageMates();
+  }
+  function ageMates() {
+    for (const m of mates.values()) m.el.classList.toggle("old", Date.now() - m.at > 5 * 60 * 1000);
+  }
+  setInterval(ageMates, 30 * 1000);
+
+  let backoff = 1000;
+  function connect() {
+    const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + API + "/ws?access_token=" + encodeURIComponent(TOKEN);
+    const sock = new WebSocket(url);
+    sock.onopen = () => { backoff = 1000; };
+    sock.onmessage = (e) => {
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      if (m.type === "hello") (m.positions || []).forEach(showMate);
+      else if (m.type === "position") showMate(m);
+      else if (m.type === "feature_changed") pull().catch(() => {});
+      else if (m.type === "members_changed") loadMembers().then(render).catch(() => {});
+    };
+    sock.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 60 * 1000); };
+  }
+
+  function download(path, name) {
+    api(path).then((r) => r.blob()).then((b) => {
+      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(b), download: name });
+      document.body.append(a); a.click(); a.remove();
+    }).catch((e) => alert("下载失败：" + e.message));
+  }
+
+  async function start() {
+    $("app").hidden = false;
+    map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        sources: { osm: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, maxzoom: 19,
+          attribution: "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors" } },
+        layers: [{ id: "osm", type: "raster", source: "osm" }],
+      },
+      center: [105, 35], zoom: 3,
+    });
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+    map.on("load", () => {
+      map.addSource("records", { type: "geojson", data: collection() });
+      map.addLayer({ id: "fill", type: "fill", source: "records", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ["get", "_color"], "fill-opacity": 0.2 } });
+      map.addLayer({ id: "line", type: "line", source: "records", filter: ["!=", ["geometry-type"], "Point"],
+        paint: { "line-color": ["get", "_color"], "line-width": ["case", ["==", ["get", "_kind"], "track"], 2, 3] } });
+      map.addLayer({ id: "point", type: "circle", source: "records", filter: ["==", ["geometry-type"], "Point"],
+        paint: { "circle-color": ["get", "_color"], "circle-radius": 6, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+      for (const id of ["point", "line", "fill"]) {
+        map.on("click", id, (e) => { const f = features.get(e.features[0].properties._id); if (f) popup(f, e.lngLat); });
+        map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
+        map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
+      }
+      ready = true;
+      render();
+    });
+    $("q").oninput = renderList;
+    $("fit").onclick = fitAll;
+    $("geojson").onclick = () => download("/export.geojson", "geocrew-" + WS + ".geojson");
+    $("package").onclick = () => download("/export.geocrew.zip", "geocrew-" + WS + ".geocrew.zip");
+
+    const ws = await (await api("")).json();
+    $("name").textContent = ws.name || "工作组";
+    document.title = (ws.name || "工作组") + " · 同勘 GeoCrew";
+    await loadMembers();
+    await pull();
+    connect();
+  }
+
+  if (typeof maplibregl === "undefined") { gate("地图组件没有加载成功（需要能访问 unpkg.com）。"); return; }
+  start().catch((e) => { if (e.message !== "unauthorized") $("status").textContent = "读取失败：" + e.message; });
+})();
+</script>
+</body>
+</html>

@@ -44,6 +44,10 @@ type Workspace struct {
 	SettingsVersion int64 `json:"settings_version"`
 }
 
+// ViewTokenPrefix starts every view-link token, so the two kinds of token
+// never collide and logs or support can tell them apart.
+const ViewTokenPrefix = "v_"
+
 // MaxSettingsBytes bounds a workspace's shared settings document.
 const MaxSettingsBytes = 64 << 10
 
@@ -58,6 +62,10 @@ type Member struct {
 	// LastSeen is when the member last made an authenticated request,
 	// to the minute; nil before the first one (protocol v0 §3).
 	LastSeen *time.Time `json:"last_seen,omitempty"`
+	// Viewer is set when the request came with a view link the member made
+	// (protocol v0 §10): the role is then read-only and the request is not
+	// the member's own activity.
+	Viewer bool `json:"-"`
 }
 
 // Feature is one GeoJSON feature plus its sync metadata.
@@ -194,6 +202,14 @@ type Store interface {
 	Join(ctx context.Context, inviteCode, nickname string) (Workspace, Member, string, error)
 	// Authenticate resolves a bearer token to a non-revoked member of the workspace.
 	Authenticate(ctx context.Context, workspaceID, token string) (Member, error)
+	// CreateViewLink issues a read-only token for a browser, made by
+	// memberID and valid until expires. It starts with [ViewTokenPrefix],
+	// is shown once and only its hash is stored. Authenticate accepts it as
+	// the member with Role readonly and Viewer set, until it expires, the
+	// member revokes their links or the member is removed.
+	CreateViewLink(ctx context.Context, workspaceID, memberID string, expires time.Time) (string, error)
+	// RevokeViewLinks ends the member's view links and returns how many were still valid.
+	RevokeViewLinks(ctx context.Context, workspaceID, memberID string) (int, error)
 	// Touch records that the member was active at the given time.
 	Touch(ctx context.Context, memberID string, at time.Time) error
 

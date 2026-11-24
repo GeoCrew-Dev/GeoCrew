@@ -32,7 +32,7 @@ func (s *Server) realtime(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	c := &realtime.Client{MemberID: m.ID, Nickname: m.Nickname, Send: make(chan []byte, 64)}
+	c := &realtime.Client{MemberID: m.ID, Nickname: m.Nickname, Watcher: m.Viewer, Send: make(chan []byte, 64)}
 	c.Close = func() {
 		cancel()
 		conn.Close(websocket.StatusPolicyViolation, "disconnected by server")
@@ -59,6 +59,11 @@ func (s *Server) realtime(w http.ResponseWriter, r *http.Request) {
 		case realtime.TypePing:
 			s.Hub.Send(c, []byte(`{"type":"pong"}`))
 		case realtime.TypePosition:
+			if c.Watcher {
+				// A browser on a view link is not where the member is.
+				s.Hub.Send(c, errMsg("read_only"))
+				continue
+			}
 			// Read-only members may share their position too: seeing each
 			// other on the map is the point of joining a team.
 			var p realtime.Position

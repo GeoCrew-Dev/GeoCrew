@@ -134,6 +134,14 @@ var migrations = []string{
 	ALTER TABLE push_targets ADD COLUMN auth TEXT NOT NULL DEFAULT '';`,
 	`ALTER TABLE members ADD COLUMN last_seen TEXT NOT NULL DEFAULT '';`,
 	`ALTER TABLE comments ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0;`,
+	`CREATE TABLE view_links (
+		token_hash   TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+		member_id    TEXT NOT NULL REFERENCES members(id),
+		created_at   TEXT NOT NULL,
+		expires_unix INTEGER NOT NULL
+	);
+	CREATE INDEX view_links_member ON view_links(member_id, expires_unix);`,
 }
 
 func (d *DB) migrate(ctx context.Context) error {
@@ -307,11 +315,54 @@ func (d *DB) Authenticate(ctx context.Context, workspaceID, token string) (store
 	if token == "" {
 		return store.Member{}, store.ErrUnauthorized
 	}
+	if strings.HasPrefix(token, store.ViewTokenPrefix) {
+		return d.authenticateView(ctx, workspaceID, token)
+	}
 	m, err := scanMember(d.db.QueryRowContext(ctx, memberSelect+` WHERE token_hash = ?`, hashToken(token)))
 	if errors.Is(err, store.ErrNotFound) || (err == nil && (m.Revoked || m.WorkspaceID != workspaceID)) {
 		return store.Member{}, store.ErrUnauthorized
 	}
 	return m, err
+}
+
+func (d *DB) authenticateView(ctx context.Context, workspaceID, token string) (store.Member, error) {
+	m, err := scanMember(d.db.QueryRowContext(ctx, memberSelect+` WHERE id = (
+		SELECT member_id FROM view_links WHERE token_hash = ? AND workspace_id = ? AND expires_unix > ?)`,
+		hashToken(token), workspaceID, time.Now().Unix()))
+	if errors.Is(err, store.ErrNotFound) || (err == nil && (m.Revoked || m.WorkspaceID != workspaceID)) {
+		return store.Member{}, store.ErrUnauthorized
+	}
+	if err != nil {
+		return store.Member{}, err
+	}
+	m.Role = store.RoleReadonly
+	m.Viewer = true
+	return m, nil
+}
+
+func (d *DB) CreateViewLink(ctx context.Context, workspaceID, memberID string, expires time.Time) (string, error) {
+	token := store.ViewTokenPrefix + randHex(24)
+	now := time.Now()
+	// Expired links of anyone in the workspace are no use to keep.
+	if _, err := d.db.ExecContext(ctx, `DELETE FROM view_links WHERE workspace_id = ? AND expires_unix <= ?`, workspaceID, now.Unix()); err != nil {
+		return "", err
+	}
+	_, err := d.db.ExecContext(ctx, `INSERT INTO view_links (token_hash, workspace_id, member_id, created_at, expires_unix) VALUES (?, ?, ?, ?, ?)`,
+		hashToken(token), workspaceID, memberID, fmtTime(now), expires.Unix())
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (d *DB) RevokeViewLinks(ctx context.Context, workspaceID, memberID string) (int, error) {
+	var n int
+	if err := d.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM view_links WHERE workspace_id = ? AND member_id = ? AND expires_unix > ?`,
+		workspaceID, memberID, time.Now().Unix()).Scan(&n); err != nil {
+		return 0, err
+	}
+	_, err := d.db.ExecContext(ctx, `DELETE FROM view_links WHERE workspace_id = ? AND member_id = ?`, workspaceID, memberID)
+	return n, err
 }
 
 func (d *DB) Workspace(ctx context.Context, id string) (store.Workspace, error) {
@@ -469,6 +520,9 @@ func (d *DB) RevokeMember(ctx context.Context, workspaceID, memberID string) err
 	}
 	// A removed member's device must stop hearing about the workspace.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM push_targets WHERE workspace_id = ? AND member_id = ?`, workspaceID, memberID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM view_links WHERE workspace_id = ? AND member_id = ?`, workspaceID, memberID); err != nil {
 		return err
 	}
 	return tx.Commit()

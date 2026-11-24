@@ -50,7 +50,10 @@ func (p Position) Valid() bool {
 type Client struct {
 	MemberID string
 	Nickname string
-	Send     chan []byte
+	// Watcher clients (a browser on a view link) receive everything but
+	// do not count as the member being online.
+	Watcher bool
+	Send    chan []byte
 	// Close is called (once) when the hub drops the client.
 	Close func()
 
@@ -130,7 +133,7 @@ func (h *Hub) Join(ws string, c *Client) {
 	hi := hello{Type: TypeHello, MemberID: c.MemberID, Online: []string{}, Positions: []Position{}}
 	seen := map[string]bool{}
 	for other := range r.clients {
-		if !seen[other.MemberID] {
+		if !other.Watcher && !seen[other.MemberID] {
 			seen[other.MemberID] = true
 			hi.Online = append(hi.Online, other.MemberID)
 		}
@@ -144,7 +147,7 @@ func (h *Hub) Join(ws string, c *Client) {
 	}
 	r.clients[c] = struct{}{}
 	h.sendLocked(c, marshal(hi))
-	if !seen[c.MemberID] {
+	if !c.Watcher && !seen[c.MemberID] {
 		h.broadcastLocked(r, marshal(presence{TypePresence, c.MemberID, true}), c)
 	}
 }
@@ -161,9 +164,9 @@ func (h *Hub) Leave(ws string, c *Client) {
 		return
 	}
 	delete(r.clients, c)
-	stillOnline := false
+	stillOnline := c.Watcher // a watcher leaving says nothing about the member
 	for other := range r.clients {
-		if other.MemberID == c.MemberID {
+		if !other.Watcher && other.MemberID == c.MemberID {
 			stillOnline = true
 			break
 		}
@@ -277,7 +280,7 @@ func (h *Hub) Online(ws string) []string {
 	if r := h.rooms[ws]; r != nil {
 		seen := map[string]bool{}
 		for c := range r.clients {
-			if !seen[c.MemberID] {
+			if !c.Watcher && !seen[c.MemberID] {
 				seen[c.MemberID] = true
 				out = append(out, c.MemberID)
 			}
