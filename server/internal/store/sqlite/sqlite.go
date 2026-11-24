@@ -133,6 +133,7 @@ var migrations = []string{
 	`ALTER TABLE push_targets ADD COLUMN p256dh TEXT NOT NULL DEFAULT '';
 	ALTER TABLE push_targets ADD COLUMN auth TEXT NOT NULL DEFAULT '';`,
 	`ALTER TABLE members ADD COLUMN last_seen TEXT NOT NULL DEFAULT '';`,
+	`ALTER TABLE comments ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0;`,
 }
 
 func (d *DB) migrate(ctx context.Context) error {

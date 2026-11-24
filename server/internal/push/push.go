@@ -31,10 +31,11 @@ const (
 	EventMessage = "message" // workspace message stream
 	EventComment = "comment" // discussion under a record
 	EventTask    = "task"    // a record was assigned to the member
+	EventAlert   = "alert"   // an urgent workspace message; cannot be unsubscribed
 )
 
 // Events lists every known event type.
-var Events = []string{EventMessage, EventComment, EventTask}
+var Events = []string{EventMessage, EventComment, EventTask, EventAlert}
 
 // Notice is the JSON body POSTed to an endpoint.
 type Notice struct {
@@ -178,7 +179,8 @@ func (s *Sender) deliver(j job) {
 	}
 	body, _ := json.Marshal(j.notice)
 	for _, t := range targets {
-		if !j.audience.includes(t.MemberID) || !slices.Contains(t.Events, j.notice.Type) {
+		wanted := j.notice.Type == EventAlert || slices.Contains(t.Events, j.notice.Type)
+		if !j.audience.includes(t.MemberID) || !wanted {
 			continue
 		}
 		var keys Keys

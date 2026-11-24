@@ -459,6 +459,17 @@ func TestComments(t *testing.T) {
 	if code, _ := post(b.Token, map[string]any{"id": "c4", "body": "x"}); code != 403 {
 		t.Fatalf("readonly post: %d", code)
 	}
+	// ...but may still call for help.
+	code, sos := post(b.Token, map[string]any{"id": "c5", "body": "需要帮忙", "urgent": true})
+	if code != 200 || !sos.Urgent {
+		t.Fatalf("readonly urgent: %d %+v", code, sos)
+	}
+	if code, _ := post(leader.Token, map[string]any{"id": "c6", "feature_id": "f1", "body": "x", "urgent": true}); code != 400 {
+		t.Fatalf("urgent on a record: %d", code)
+	}
+	if code, again := post(b.Token, map[string]any{"id": "c5", "body": "需要帮忙", "urgent": true}); code != 200 || again.Seq != sos.Seq {
+		t.Fatalf("urgent retry: %d %+v", code, again)
+	}
 }
 
 func TestPushNotices(t *testing.T) {
@@ -498,7 +509,7 @@ func TestPushNotices(t *testing.T) {
 		t.Fatalf("bad events: %d", c)
 	}
 	var tgt store.PushTarget
-	if c := e.call("PUT", base+"/push", member.Token, map[string]any{"endpoint": sink.URL + "/m"}, &tgt); c != 200 || len(tgt.Events) != 3 {
+	if c := e.call("PUT", base+"/push", member.Token, map[string]any{"endpoint": sink.URL + "/m"}, &tgt); c != 200 || len(tgt.Events) != len(push.Events) {
 		t.Fatalf("register: %d %+v", c, tgt)
 	}
 	e.call("PUT", base+"/push", leader.Token, map[string]any{"endpoint": sink.URL + "/l", "events": []string{"task"}}, nil)
@@ -517,10 +528,12 @@ func TestPushNotices(t *testing.T) {
 	f3 := feature("f2", 1, "2026-11-24T08:06:00Z")
 	f3["properties"].(map[string]any)["assignee"] = member.MemberID
 	e.call("POST", base+"/features", member.Token, map[string]any{"features": []any{f3}}, nil)
+	// An urgent message reaches the leader although they only follow tasks.
+	e.call("POST", base+"/comments", member.Token, map[string]any{"id": "sos", "body": "崴脚了", "at": []float64{116.1, 40.1}, "urgent": true}, nil)
 	sender.Close()
 
-	if len(got["/l"]) != 0 {
-		t.Fatalf("leader got %v", got["/l"])
+	if l := got["/l"]; len(l) != 1 || l[0].Type != "alert" || l[0].From != member.MemberID {
+		t.Fatalf("leader got %v", l)
 	}
 	m := got["/m"]
 	// Workers deliver in parallel, so order is not guaranteed.

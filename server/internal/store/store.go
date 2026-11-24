@@ -147,6 +147,9 @@ type Comment struct {
 	CreatedAt time.Time `json:"created_at"`
 	Seq       int64     `json:"seq"`
 	Deleted   bool      `json:"deleted,omitempty"`
+	// Urgent marks a workspace message as a call for help or to gather;
+	// clients alert loudly and every member is notified (protocol §8.1).
+	Urgent bool `json:"urgent,omitempty"`
 }
 
 // MaxCommentRunes bounds a comment body.

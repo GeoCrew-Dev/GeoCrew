@@ -19,11 +19,14 @@ type addCommentReq struct {
 	FeatureID string    `json:"feature_id"`
 	Body      string    `json:"body"`
 	At        []float64 `json:"at"`
+	Urgent    bool      `json:"urgent"`
 }
 
 func (q addCommentReq) validate() (store.Comment, error) {
-	c := store.Comment{ID: q.ID, FeatureID: q.FeatureID, Body: strings.TrimSpace(q.Body), At: q.At}
+	c := store.Comment{ID: q.ID, FeatureID: q.FeatureID, Body: strings.TrimSpace(q.Body), At: q.At, Urgent: q.Urgent}
 	switch {
+	case c.Urgent && c.FeatureID != "":
+		return c, fmt.Errorf("urgent is only for workspace messages, not comments on a record")
 	case !commentID.MatchString(c.ID):
 		return c, fmt.Errorf("id must be 1-64 letters, digits, '.', '_' or '-'")
 	case c.FeatureID != "" && len(c.FeatureID) > 64:
@@ -58,6 +61,11 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 	c, err := req.validate()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_comment", err.Error())
+		return
+	}
+	// Read-only members may still call for help (protocol §8.1).
+	if !member(r).Role.CanWrite() && !c.Urgent {
+		writeErr(w, http.StatusForbidden, "forbidden", "read-only members can only send urgent messages")
 		return
 	}
 	ws := r.PathValue("ws")

@@ -11,14 +11,14 @@ import (
 )
 
 const commentSelect = `SELECT c.id, c.seq, c.feature_id, c.body, c.at_lng, c.at_lat, c.author_id,
-	COALESCE(m.nickname, ''), c.created_at, c.deleted
+	COALESCE(m.nickname, ''), c.created_at, c.deleted, c.urgent
 	FROM comments c LEFT JOIN members m ON m.id = c.author_id`
 
 func scanComment(r rowScanner) (store.Comment, error) {
 	var c store.Comment
 	var lng, lat sql.NullFloat64
 	var created string
-	err := r.Scan(&c.ID, &c.Seq, &c.FeatureID, &c.Body, &lng, &lat, &c.AuthorID, &c.Nickname, &created, &c.Deleted)
+	err := r.Scan(&c.ID, &c.Seq, &c.FeatureID, &c.Body, &lng, &lat, &c.AuthorID, &c.Nickname, &created, &c.Deleted, &c.Urgent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, store.ErrNotFound
 	}
@@ -56,7 +56,7 @@ func (d *DB) AddComment(ctx context.Context, workspaceID, authorID string, c sto
 	switch {
 	case err == nil:
 		if cur.AuthorID == authorID && cur.FeatureID == c.FeatureID && cur.Body == c.Body &&
-			!cur.Deleted && slices.Equal(cur.At, c.At) {
+			!cur.Deleted && cur.Urgent == c.Urgent && slices.Equal(cur.At, c.At) {
 			return cur, nil
 		}
 		return cur, store.ErrConflict
@@ -72,9 +72,9 @@ func (d *DB) AddComment(ctx context.Context, workspaceID, authorID string, c sto
 		lng, lat = c.At[0], c.At[1]
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO comments (workspace_id, id, seq, feature_id, body, at_lng, at_lat, author_id, created_at)
-		 VALUES (?,?,?,?,?,?,?,?,?)`,
-		workspaceID, c.ID, seq, c.FeatureID, c.Body, lng, lat, authorID, fmtTime(time.Now())); err != nil {
+		`INSERT INTO comments (workspace_id, id, seq, feature_id, body, at_lng, at_lat, author_id, created_at, urgent)
+		 VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		workspaceID, c.ID, seq, c.FeatureID, c.Body, lng, lat, authorID, fmtTime(time.Now()), c.Urgent); err != nil {
 		return c, err
 	}
 	out, err := d.comment(ctx, tx, workspaceID, c.ID)
@@ -130,7 +130,7 @@ func (d *DB) DeleteComment(ctx context.Context, workspaceID, commentID, memberID
 		return cur, err
 	}
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE comments SET body = '', at_lng = NULL, at_lat = NULL, deleted = 1, seq = ? WHERE workspace_id = ? AND id = ?`,
+		`UPDATE comments SET body = '', at_lng = NULL, at_lat = NULL, deleted = 1, urgent = 0, seq = ? WHERE workspace_id = ? AND id = ?`,
 		seq, workspaceID, commentID); err != nil {
 		return cur, err
 	}

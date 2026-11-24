@@ -93,7 +93,10 @@ func (s *Server) notifyComment(ws string, c store.Comment) {
 		return
 	}
 	n := push.Notice{Type: push.EventMessage, Workspace: ws, From: c.AuthorID, Seq: c.Seq}
-	if c.FeatureID != "" {
+	switch {
+	case c.Urgent:
+		n.Type = push.EventAlert
+	case c.FeatureID != "":
 		n.Type = push.EventComment
 		n.Feature = c.FeatureID
 	}
