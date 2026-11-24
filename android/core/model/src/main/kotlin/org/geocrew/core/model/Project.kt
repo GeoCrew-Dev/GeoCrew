@@ -51,6 +51,8 @@ data class ProjectConfig(
     val numbering: Numbering = Numbering(),
     /** This device asked for background notices from the workspace (UnifiedPush). */
     val pushEnabled: Boolean = false,
+    /** What the map draws for this project (record kinds, names, teammates). */
+    val display: MapDisplay = MapDisplay(),
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 }

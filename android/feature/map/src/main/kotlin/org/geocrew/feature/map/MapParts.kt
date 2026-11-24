@@ -1,6 +1,8 @@
 package org.geocrew.feature.map
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -170,9 +173,39 @@ internal fun SelectedFeatureCard(f: GeoFeature, format: CoordinateFormat, onOpen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun LayerSheet(base: BaseMapUi, onChoose: (String) -> Unit, onManage: () -> Unit, onDismiss: () -> Unit) {
+internal fun LayerSheet(
+    base: BaseMapUi,
+    display: org.geocrew.core.model.MapDisplay,
+    /** Record kinds present in the project, offered as on/off chips. */
+    kinds: List<org.geocrew.core.model.FeatureKind>,
+    inTeam: Boolean,
+    onDisplay: ((org.geocrew.core.model.MapDisplay) -> org.geocrew.core.model.MapDisplay) -> Unit,
+    onChoose: (String) -> Unit,
+    onManage: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(Modifier.navigationBarsPadding()) {
+            item { Text("显示", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) }
+            if (kinds.isNotEmpty()) item {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    kinds.forEach { k ->
+                        FilterChip(
+                            selected = display.shows(k),
+                            onClick = { onDisplay { it.toggle(k) } },
+                            label = { Text(org.geocrew.core.ui.KindUi.label(k)) },
+                        )
+                    }
+                }
+            }
+            item { DisplaySwitch("记录名称", "放大到一定比例后显示", display.names) { v -> onDisplay { it.copy(names = v) } } }
+            if (inTeam) {
+                item { DisplaySwitch("组员位置", null, display.team) { v -> onDisplay { it.copy(team = v) } } }
+                item { DisplaySwitch("只看我的任务", "只显示指派给我、还没完成的记录", display.onlyMyTasks) { v -> onDisplay { it.copy(onlyMyTasks = v) } } }
+            }
             item { Text("底图", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) }
             items(base.sources, key = { it.id }) { s ->
                 val locked = s.id in base.locked
@@ -252,5 +285,15 @@ internal fun GoToDialog(
             }
         },
         dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { androidx.compose.material3.Text("取消") } },
+    )
+}
+
+@Composable
+private fun DisplaySwitch(title: String, hint: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = hint?.let { { Text(it) } },
+        trailingContent = { androidx.compose.material3.Switch(checked = checked, onCheckedChange = onChange) },
+        modifier = Modifier.clickable { onChange(!checked) },
     )
 }

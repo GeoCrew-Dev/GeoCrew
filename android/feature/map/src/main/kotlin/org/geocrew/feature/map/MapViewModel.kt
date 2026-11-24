@@ -31,6 +31,7 @@ import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
+import org.geocrew.core.model.MapDisplay
 import org.geocrew.core.model.MapViewport
 import org.geocrew.core.model.Project
 import org.geocrew.core.model.Props
@@ -163,15 +164,23 @@ class MapViewModel @Inject constructor(
     val selected: StateFlow<GeoFeature?> = combine(featureList, _selected) { list, id -> list.firstOrNull { it.id == id } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    private val featuresWithMe = combine(featureList, project.map { it?.team?.memberId }.distinctUntilChanged()) { l, me -> l to me }
+    /** What this project's map draws; see [MapDisplay]. */
+    val display: StateFlow<MapDisplay> = project.map { it?.config?.display ?: MapDisplay() }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, MapDisplay())
 
-    val overlays: StateFlow<MapOverlays> = combine(featuresWithMe, _selected, _fix, _mode, teamMarkers) { (list, me), sel, fix, mode, mates ->
+    private val featuresWithMe = combine(
+        featureList,
+        project.map { it?.team?.memberId }.distinctUntilChanged(),
+        display,
+    ) { l, me, d -> Triple(l, me, d) }
+
+    val overlays: StateFlow<MapOverlays> = combine(featuresWithMe, _selected, _fix, _mode, teamMarkers) { (list, me, d), sel, fix, mode, mates ->
         MapOverlays(
             memberId = me,
-            features = list,
+            features = d.filter(list, me, keep = sel),
             selectedId = sel,
             me = fix?.let { MyLocation(it.position, it.accuracy, it.bearing) },
-            team = mates,
+            team = if (d.team) mates else emptyList(),
             sketch = (mode as? MapMode.Draw)?.vertices.orEmpty(),
             sketchClosed = (mode as? MapMode.Draw)?.closed == true,
         )
@@ -218,6 +227,12 @@ class MapViewModel @Inject constructor(
     }
 
     /** Remembers where the map was, so the project opens there next time. */
+    /** Changes what the map draws for the open project. */
+    fun setDisplay(change: (MapDisplay) -> MapDisplay) = viewModelScope.launch {
+        val id = project.value?.id ?: return@launch
+        projects.updateConfig(id) { it.copy(display = change(it.display)) }
+    }
+
     fun saveView(center: LngLat, zoom: Double, bearing: Double) {
         val id = project.value?.id ?: return
         appScope.launch { projects.updateConfig(id) { it.copy(view = MapViewport(center.lng, center.lat, zoom, bearing)) } }

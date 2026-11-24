@@ -102,7 +102,13 @@ class MapCameraState(center: LngLat = LngLat(105.0, 35.0), zoom: Double = 3.5) {
 fun rememberMapCameraState(): MapCameraState = remember { MapCameraState() }
 
 /** A short text drawn next to a map position, e.g. a teammate's nickname. */
-data class MapLabel(val position: LngLat, val text: String, val faded: Boolean = false)
+data class MapLabel(
+    val position: LngLat,
+    val text: String,
+    val faded: Boolean = false,
+    /** Hidden while the map is zoomed out further than this. */
+    val minZoom: Double = 0.0,
+)
 
 /**
  * The map surface. Base map comes from [source]; everything the app draws is
@@ -203,7 +209,12 @@ private fun Labels(labels: List<MapLabel>, camera: MapCameraState) {
     camera.center; camera.zoom; camera.bearing
     val projection = camera.map?.projection ?: return
     val density = LocalDensity.current
-    labels.forEach { l ->
+    // Only what is on screen, and not so many that the map turns into text.
+    val view = projection.visibleRegion.latLngBounds
+    labels.asSequence()
+        .filter { camera.zoom >= it.minZoom && view.contains(LatLng(it.position.lat, it.position.lng)) }
+        .take(MAX_LABELS)
+        .forEach { l ->
         val pt = projection.toScreenLocation(LatLng(l.position.lat, l.position.lng))
         val x = with(density) { pt.x.toDp() } + 10.dp
         val y = with(density) { pt.y.toDp() } - 10.dp
@@ -219,6 +230,8 @@ private fun Labels(labels: List<MapLabel>, camera: MapCameraState) {
         )
     }
 }
+
+private const val MAX_LABELS = 80
 
 /** Glue between Compose state and the asynchronous MapLibre objects. */
 private class Holder {

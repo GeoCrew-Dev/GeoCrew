@@ -160,6 +160,14 @@ fun MapScreen(
         onFocusHandled()
     }
 
+    val display by viewModel.display.collectAsStateWithLifecycle()
+    val nameLabels = remember(overlays.features, display.names) {
+        if (!display.names) emptyList() else overlays.features.mapNotNull { f ->
+            val name = f.title?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            org.geocrew.core.model.MapDisplay.anchor(f.geometry)?.let { org.geocrew.core.map.MapLabel(it, name, minZoom = NAME_MIN_ZOOM) }
+        }
+    }
+
     val bm = baseMap ?: return
     Box(Modifier.fillMaxSize()) {
         GeoCrewMap(
@@ -171,7 +179,8 @@ fun MapScreen(
             onClick = viewModel::onMapClick,
             onLongClick = { if (mode == MapMode.Browse) viewModel.addPoint(it) },
             labels = overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) } +
-                listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, goneLabel) }),
+                listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, goneLabel) }) +
+                nameLabels,
         )
 
         if (mode is MapMode.Draw) Crosshair(Modifier.align(Alignment.Center))
@@ -200,6 +209,9 @@ fun MapScreen(
             if (tracking is org.geocrew.core.sensors.TrackingState.Recording) {
                 val t = tracking as org.geocrew.core.sensors.TrackingState.Recording
                 Notice("正在记录轨迹：${t.points} 个点，${CoordinateFormatter.distance(t.lengthMeters)}", null, null)
+            }
+            if (display.filtering) {
+                Notice(if (display.onlyMyTasks) "地图上只显示我的待办任务" else "地图上隐藏了部分记录", "调整") { showLayers = true }
             }
         }
 
@@ -308,6 +320,12 @@ fun MapScreen(
         if (showLayers) {
             LayerSheet(
                 base = bm,
+                display = display,
+                kinds = remember(featureList, display.hiddenKinds) {
+                    (featureList.map { it.kind } + display.hiddenKinds.map(::FeatureKind)).distinct()
+                },
+                inTeam = project?.team != null,
+                onDisplay = viewModel::setDisplay,
                 onChoose = { id ->
                     viewModel.chooseSource(id)
                     showLayers = false
@@ -420,3 +438,4 @@ private fun TileProblemCard(isTianditu: Boolean, host: String, code: Int, onSwit
 }
 
 private const val GONE_TO_LABEL = "◎ 目标坐标"
+private const val NAME_MIN_ZOOM = 13.0
