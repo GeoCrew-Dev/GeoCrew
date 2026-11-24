@@ -11,8 +11,8 @@
 
 | 仓库 | 内容 |
 | --- | --- |
-| [geocrew-android](https://github.com/GeoCrew-Dev/geocrew-android) | Android 客户端 |
-| [geocrew-server](https://github.com/GeoCrew-Dev/geocrew-server) | Linux 自部署服务端（Docker） |
+| [geocrew-android](https://github.com/GeoCrew-Dev/GeoCrew-Android) | Android 客户端 |
+| [geocrew-server](https://github.com/GeoCrew-Dev/GeoCrew-Server) | Linux 自部署服务端（Docker） |
 
 ## 设计原则
 
