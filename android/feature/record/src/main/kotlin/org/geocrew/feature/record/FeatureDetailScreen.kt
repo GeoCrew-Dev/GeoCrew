@@ -47,6 +47,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import org.geocrew.core.model.LineStyle
 import org.geocrew.core.model.lineStyle
 import org.geocrew.core.model.meetAt
+import org.geocrew.core.model.Review
+import org.geocrew.core.model.review
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.FieldType
 import androidx.compose.material3.FilledTonalButton
@@ -171,6 +173,13 @@ fun FeatureDetailScreen(
             if (f.geometry is Geometry.Point) KindSwitch(f.kind, viewModel::setKind)
             if (f.kind == FeatureKind.LINE) LineStyleSwitch(f.lineStyle, viewModel::setLineStyle)
             if (f.geometry is Geometry.Point) MeetingEditor(f.meetAt, viewModel::setMeetAt)
+            commentAccess?.let { access ->
+                val review = f.review
+                if (review != null || access.isLeader) {
+                    SectionHeader("审核")
+                    ReviewSection(f, review, access.isLeader, viewModel::setReview)
+                }
+            }
             commentAccess?.let { access ->
                 SectionHeader("任务")
                 TaskSection(
@@ -878,6 +887,61 @@ private fun ElevationChart(profile: ElevationProfile, modifier: Modifier) {
 }
 
 /** Who this record is handed to and how far they got; synced like any other property. */
+/** The leader's verdict on the record (protocol §6.9). Members only read it; leaders pass, send back or clear. */
+@Composable
+private fun ReviewSection(f: GeoFeature, review: Review?, isLeader: Boolean, onSet: (Review.State?, String) -> Unit) {
+    var sendingBack by remember { mutableStateOf(false) }
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        if (review == null) {
+            Text("还没审核。看过没问题就点通过；要组员补充或改正就退回，写上要改什么。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            val who = listOfNotNull(
+                review.byName,
+                review.at?.let { java.time.format.DateTimeFormatter.ofPattern("M月d日 HH:mm").withZone(java.time.ZoneId.systemDefault()).format(it) },
+            ).joinToString(" · ")
+            Text(
+                review.state.label + if (who.isNotEmpty()) "（$who）" else "",
+                style = MaterialTheme.typography.titleSmall,
+                color = if (review.state == Review.State.REDO) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            )
+            if (review.note.isNotEmpty()) Text(review.note, style = MaterialTheme.typography.bodyMedium)
+            if (review.changedSince(f)) {
+                Text(
+                    if (review.state == Review.State.REDO) "退回后已有改动，等组长再看" else "审核后又有改动",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+        }
+        if (isLeader) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val fresh = review != null && !review.changedSince(f)
+                TextButton(onClick = { onSet(Review.State.APPROVED, "") }, enabled = !(fresh && review?.state == Review.State.APPROVED)) { Text("通过") }
+                TextButton(onClick = { sendingBack = true }) { Text("退回…") }
+                if (review != null) TextButton(onClick = { onSet(null, "") }) { Text("撤销审核") }
+            }
+        }
+    }
+    if (sendingBack) {
+        var note by rememberSaveable { mutableStateOf(review?.takeIf { it.state == Review.State.REDO }?.note.orEmpty()) }
+        AlertDialog(
+            onDismissRequest = { sendingBack = false },
+            title = { Text("退回重做") },
+            text = {
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("要改什么") },
+                    placeholder = { Text("如：补一张近景照片，产状再测一次") },
+                    minLines = 2,
+                )
+            },
+            confirmButton = { TextButton(onClick = { sendingBack = false; onSet(Review.State.REDO, note) }) { Text("退回") } },
+            dismissButton = { TextButton(onClick = { sendingBack = false }) { Text("取消") } },
+        )
+    }
+}
+
 @Composable
 private fun TaskSection(
     task: TaskInfo?,

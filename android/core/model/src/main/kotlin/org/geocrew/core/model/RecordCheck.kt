@@ -7,11 +7,14 @@ import kotlin.math.roundToInt
  * stations with the same number, a sample number used twice (the lab result
  * would land on the wrong bag), a point that never got a position, a fix too
  * poor to plot at map scale, a record far away from all the others (swapped
- * or mistyped coordinates), and route points that were deleted. Only reads;
+ * or mistyped coordinates), route points that were deleted, and records a
+ * leader sent back to be fixed. Only reads;
  * the user decides what to change.
  */
 object RecordCheck {
     enum class Code(val label: String) {
+        /** A leader sent the record back (protocol §6.9). */
+        REDO("组长退回"),
         DUPLICATE_NUMBER("编号重复"),
         DUPLICATE_SAMPLE("样品编号重复"),
         NO_POSITION("没有位置"),
@@ -57,6 +60,11 @@ object RecordCheck {
                     out += Issue(f.id, Code.DUPLICATE_SAMPLE, if (others.isEmpty()) "样品编号「$no」在这条记录里用了两次" else "样品编号「$no」也在 ${others.joinToString("、")}")
                 }
             }
+        }
+
+        live.forEach { f ->
+            val r = f.review?.takeIf { it.state == Review.State.REDO } ?: return@forEach
+            out += Issue(f.id, Code.REDO, r.note.ifEmpty { "需要补充或改正" })
         }
 
         live.filter { it.kind in located && it.geometry == null }.forEach { out += Issue(it.id, Code.NO_POSITION, "没有位置，地图和导出里都不会出现") }

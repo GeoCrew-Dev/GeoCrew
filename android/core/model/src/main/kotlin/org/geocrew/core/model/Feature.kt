@@ -102,6 +102,8 @@ object Props {
     const val LINE_STYLE = "line_style"
     /** When the group meets at this point (protocol §6.8), an ISO-8601 instant. */
     const val MEET_AT = "meet_at"
+    /** A leader's review of the record (protocol §6.9, see [Review]). */
+    const val REVIEW = "review"
     const val STRIKE = "strike"
     const val DIP_DIRECTION = "dip_direction"
     const val DIP = "dip"
@@ -121,7 +123,7 @@ object Props {
 
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
-        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, LITHOLOGY, LINE_STYLE, MEET_AT, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
+        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, LITHOLOGY, LINE_STYLE, MEET_AT, REVIEW, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
         STARTED_AT, ENDED_AT, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
         ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS,
     )

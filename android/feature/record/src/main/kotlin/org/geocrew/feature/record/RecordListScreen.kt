@@ -173,6 +173,9 @@ private fun RecordRow(f: GeoFeature, me: String?, missing: List<FieldTemplate>, 
                     val who = if (t.assignee == me) "我" else t.assigneeName.ifBlank { "组员" }
                     add("任务：$who · ${t.status.label}")
                 }
+                org.geocrew.core.model.Review.of(f.properties[org.geocrew.core.model.Props.REVIEW])
+                    ?.takeIf { it.state == org.geocrew.core.model.Review.State.APPROVED }
+                    ?.let { add(if (it.changedSince(f)) "已审核，之后有改动" else "已审核") }
                 if (f.sync.dirty) add("未同步")
             }
             Column {

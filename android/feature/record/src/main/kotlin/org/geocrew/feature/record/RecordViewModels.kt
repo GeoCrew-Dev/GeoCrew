@@ -28,6 +28,7 @@ import org.geocrew.core.data.team.CommentItem
 import org.geocrew.core.data.team.TeamComments
 import org.geocrew.core.data.team.TeamRepository
 import org.geocrew.core.data.team.TeamSession
+import org.geocrew.core.model.review
 import org.geocrew.core.model.Attitude
 import org.geocrew.core.model.AudioInfo
 import org.geocrew.core.model.audio
@@ -261,6 +262,14 @@ class FeatureDetailViewModel @Inject constructor(
             this[Props.NOTE] = note.trim().ifBlank { null }
             this[Props.LITHOLOGY] = lithology.trim().ifBlank { null }
         }
+    }
+
+    /** A leader's review (protocol §6.9); null clears it. The server ignores this from anyone else. */
+    fun setReview(state: org.geocrew.core.model.Review.State?, note: String) = viewModelScope.launch {
+        val link = feature.value?.projectId?.let { projects.get(it) }?.team ?: return@launch
+        if (link.role != TeamRepository.ROLE_LEADER) return@launch
+        val r = state?.let { org.geocrew.core.model.Review(it, link.memberId, link.nickname, java.time.Instant.now(), note) }
+        features.edit(id) { review(r) }
     }
 
     fun setMeetAt(at: java.time.Instant?) = viewModelScope.launch {

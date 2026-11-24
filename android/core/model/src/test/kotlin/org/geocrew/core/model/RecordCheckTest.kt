@@ -27,7 +27,7 @@ class RecordCheckTest {
             rec("c", "D002", lng = null),
             rec("d", "D003") { this[Props.ACCURACY_M] = 65.0 },
             rec("e", "D004", lng = 120.0),
-            rec("f", "D005"),
+            rec("f", "D005") { review(Review(Review.State.REDO, "L", at = at, note = "补照片")) },
             rec("g", "断层", kind = FeatureKind.LINE),
             rec("h", "断层", kind = FeatureKind.LINE),
             rec("x", "D006", deleted = true) { samples(listOf(Sample("S2"))) },
@@ -46,6 +46,19 @@ class RecordCheckTest {
         assertEquals(listOf(RecordCheck.Code.MISSING_STOP), codes("r"))
         assertTrue(issues.getValue("r")[0].message.contains("2 个"))
         // Text names may repeat, deleted records never count, and a route needs no position.
-        assertEquals(setOf("a", "b", "c", "d", "e", "r"), issues.keys)
+        assertEquals(listOf(RecordCheck.Code.REDO), codes("f"))
+        assertEquals("补照片", issues.getValue("f")[0].message)
+        assertEquals(setOf("a", "b", "c", "d", "e", "f", "r"), issues.keys)
+    }
+
+    @Test fun reviewRoundTripsAndNoticesLaterEdits() {
+        val r = Review(Review.State.APPROVED, "L", "组长", at)
+        val f = rec("a", "D001") { review(r) }
+        assertEquals(r, f.review)
+        assertEquals(false, r.changedSince(f))
+        val later = f.edited(at.plusSeconds(60)) { this[Props.NOTE] = "改了" }
+        assertEquals(true, later.review!!.changedSince(later))
+        assertEquals(null, rec("b", "D2") { put(Props.REVIEW, buildProperties { this["state"] = "maybe" }) }.review)
+        assertEquals(null, f.edited(at) { review(null) }.review)
     }
 }
