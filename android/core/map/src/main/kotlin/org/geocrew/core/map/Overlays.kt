@@ -49,6 +49,10 @@ internal object OverlayGeoJson {
                 this["fid"] = f.id
                 this["kind"] = f.kind.id
                 this["selected"] = f.id == selectedId
+                if (g is Geometry.Point) f.attitude?.let { a ->
+                    this["dipdir"] = a.dipDirection
+                    this["dip"] = Math.round(a.dip).toDouble()
+                }
                 simpleStyle(f.properties)
             }
         },

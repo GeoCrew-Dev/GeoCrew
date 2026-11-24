@@ -13,6 +13,14 @@ import org.maplibre.android.style.expressions.Expression.switchCase
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.FillLayer
 import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
+import org.maplibre.android.style.layers.PropertyFactory.iconAnchor
+import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
+import org.maplibre.android.style.layers.PropertyFactory.iconImage
+import org.maplibre.android.style.layers.PropertyFactory.iconOffset
+import org.maplibre.android.style.layers.PropertyFactory.iconRotate
+import org.maplibre.android.style.layers.PropertyFactory.iconRotationAlignment
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
 import org.maplibre.android.style.layers.PropertyFactory.circleOpacity
@@ -41,7 +49,9 @@ internal object MapLayers {
     const val L_FILL = "gc-fill"
     const val L_LINE = "gc-line"
     const val L_POINT = "gc-point"
-    val clickable = arrayOf(L_POINT, L_LINE, L_FILL)
+    private const val L_ATTITUDE = "gc-attitude"
+    private const val L_DIP = "gc-dip"
+    val clickable = arrayOf(L_ATTITUDE, L_POINT, L_LINE, L_FILL)
 
     private const val EMPTY = """{"type":"FeatureCollection","features":[]}"""
 
@@ -49,6 +59,7 @@ internal object MapLayers {
     private val isLine = eq(geometryType(), literal("LineString"))
     private val isPoint = eq(geometryType(), literal("Point"))
     private val selected = eq(get("selected"), literal(true))
+    private val hasAttitude = Expression.has("dipdir")
 
     /** Colour for a feature: selection first, then its own simplestyle colour [own], then by kind. */
     private fun kindColor(default: String, own: String? = null): Expression = switchCase(
@@ -84,13 +95,43 @@ internal object MapLayers {
                 lineCap(Property.LINE_CAP_ROUND),
             ),
         )
+        // Points with an attitude get a small dot under a strike-and-dip symbol.
         style.addLayer(
             CircleLayer(L_POINT, SRC_FEATURES).withFilter(isPoint).withProperties(
-                circleRadius(switchCase(selected, literal(9f), literal(6f))),
+                circleRadius(switchCase(selected, literal(9f), hasAttitude, literal(3.5f), literal(6f))),
                 circleColor(kindColor(MapColors.POINT, "marker-color")),
                 circleStrokeColor("#FFFFFF"),
                 circleStrokeWidth(2f),
             ),
+        )
+
+        AttitudeSymbols.install(style)
+        style.addLayer(
+            SymbolLayer(L_ATTITUDE, SRC_FEATURES).withFilter(Expression.all(isPoint, hasAttitude)).withProperties(
+                iconImage(
+                    switchCase(
+                        Expression.lt(get("dip"), literal(1)), literal(AttitudeSymbols.HORIZONTAL),
+                        Expression.gte(get("dip"), literal(89)), literal(AttitudeSymbols.VERTICAL),
+                        literal(AttitudeSymbols.INCLINED),
+                    ),
+                ),
+                iconRotate(Expression.toNumber(get("dipdir"))),
+                iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+                iconAllowOverlap(true),
+                iconIgnorePlacement(true),
+            ),
+        )
+        // Dip angle beside the symbol, kept upright; hidden when zoomed far out.
+        style.addLayer(
+            SymbolLayer(L_DIP, SRC_FEATURES)
+                .withFilter(Expression.all(isPoint, hasAttitude, Expression.gte(get("dip"), literal(1)), Expression.lt(get("dip"), literal(89))))
+                .withProperties(
+                    iconImage(Expression.concat(literal(AttitudeSymbols.DIP_PREFIX), Expression.toString(get("dip")))),
+                    iconAnchor(Property.ICON_ANCHOR_TOP_LEFT),
+                    iconOffset(arrayOf(6f, 4f)),
+                    iconAllowOverlap(true),
+                    iconIgnorePlacement(true),
+                ).also { it.minZoom = 13f },
         )
 
         // Team members: green dots, greyed out when their last fix is old.
@@ -141,6 +182,7 @@ internal object MapLayers {
     fun update(style: Style, o: MapOverlays, previous: MapOverlays?) {
         fun set(id: String, json: String) = style.getSourceAs<GeoJsonSource>(id)?.setGeoJson(json)
         if (previous == null || previous.features !== o.features || previous.selectedId != o.selectedId) {
+            AttitudeSymbols.ensureDipLabels(style, o.features.mapNotNull { f -> f.attitude?.dip?.let { Math.round(it).toInt() } }.toSet())
             set(SRC_FEATURES, OverlayGeoJson.features(o.features, o.selectedId))
         }
         if (previous == null || previous.me != o.me) set(SRC_ME, OverlayGeoJson.me(o.me))
