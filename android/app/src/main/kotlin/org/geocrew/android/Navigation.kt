@@ -18,6 +18,7 @@ import org.geocrew.core.gis.SectionTool
 import org.geocrew.feature.analysis.StereonetScreen
 import org.geocrew.feature.compass.CompassScreen
 import org.geocrew.feature.compass.CoordinatesScreen
+import org.geocrew.feature.compass.SECTION_FEATURE_ARG
 import org.geocrew.feature.compass.SEEK_FEATURE_ARG
 import org.geocrew.feature.compass.SeekScreen
 import org.geocrew.feature.compass.ThicknessScreen
@@ -60,7 +61,9 @@ object Routes {
     fun projectSettings(id: String) = "project/${android.net.Uri.encode(id)}/settings"
     const val STEREONET = "stereonet"
     const val THICKNESS = "thickness"
-    const val SECTION = "section"
+    const val SECTION = "section?$SECTION_FEATURE_ARG={$SECTION_FEATURE_ARG}"
+    const val SECTION_ANY = "section"
+    fun measuredSection(featureId: String) = "section?$SECTION_FEATURE_ARG=$featureId"
     const val COORDINATES = "coordinates"
     const val SUN = "sun"
     const val SEEK = "seek?$SEEK_FEATURE_ARG={$SEEK_FEATURE_ARG}"
@@ -178,12 +181,16 @@ fun GeoCrewNavHost() {
                 onMeasureAttitude = { nav.navigate(Routes.compassFor(it)) },
                 onSection = { nav.navigate(Routes.analysis(SectionTool().id, it)) },
                 onSeek = { nav.navigate(Routes.seek(it)) },
+                onOpenMeasuredSection = { nav.navigate(Routes.measuredSection(it)) },
             )
         }
         composable(Routes.THICKNESS) {
             ThicknessScreen(onBack = { nav.popBackStack() })
         }
-        composable(Routes.SECTION) {
+        composable(
+            Routes.SECTION,
+            arguments = listOf(navArgument(SECTION_FEATURE_ARG) { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) {
             org.geocrew.feature.compass.SectionScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.COORDINATES) {

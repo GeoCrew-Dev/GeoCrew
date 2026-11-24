@@ -1,5 +1,6 @@
 package org.geocrew.feature.compass
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,6 +32,9 @@ import org.geocrew.core.model.TraverseLeg
 import org.geocrew.core.model.measuredSection
 import org.geocrew.core.sensors.LocationSource
 import javax.inject.Inject
+
+/** Navigation argument: the id of a section record to open straight away. */
+const val SECTION_FEATURE_ARG = "feature"
 
 /** Text input of one traverse leg of a section. */
 data class SectionLegInput(val azimuth: String = "", val slope: String = "0", val distance: String = "") {
@@ -105,6 +109,7 @@ class SectionViewModel @Inject constructor(
     private val projects: ProjectRepository,
     private val features: FeatureRepository,
     private val location: LocationSource,
+    savedState: SavedStateHandle,
 ) : ViewModel() {
     private val all = projects.current
         .flatMapLatest { p -> features.observeProject(p.id) }
@@ -144,6 +149,12 @@ class SectionViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
     fun consumeMessage() { _message.value = null }
+
+    init {
+        savedState.get<String>(SECTION_FEATURE_ARG)?.let { id ->
+            viewModelScope.launch { features.get(id)?.takeIf { it.kind == FeatureKind.SECTION }?.let(::open) }
+        }
+    }
 
     fun startNew() {
         val n = sections.value.size + 1
