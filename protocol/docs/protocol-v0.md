@@ -82,11 +82,15 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
 ```
+
+`create` 表示该服务器接受新建工作组；运维人员可以在组建好后关闭，此时新建请求返回 `403 create_disabled`，客户端应只显示"加入"。
+
+新建与加入工作组这两个无需凭据的接口按客户端地址限流，超出时返回 `429 rate_limited`，并带 `Retry-After`（秒）。
 
 ## 4. 要素同步
 
