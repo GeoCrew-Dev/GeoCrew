@@ -300,6 +300,51 @@
     return f.geometry && f.geometry.type !== "Point" && f.geometry.type !== "MultiPoint" ? LINE_STYLES[p.line_style] : undefined;
   }
 
+  // Strike-and-dip symbols: on points, and half way along faults and other lines with an attitude.
+  const attitudeOf = (p) => typeof p.dip_direction === "number" && typeof p.dip === "number" && p.dip >= 0 && p.dip <= 90 ? p : null;
+  function midpoint(path) {
+    if (!Array.isArray(path) || !path.length) return null;
+    const k = Math.cos((path[0][1] * Math.PI) / 180);
+    const seg = path.slice(1).map((b, i) => Math.hypot((b[0] - path[i][0]) * k, b[1] - path[i][1]));
+    let left = seg.reduce((a, b) => a + b, 0) / 2;
+    for (let i = 0; i < seg.length; i++) {
+      if (seg[i] >= left && seg[i] > 0) { const t = left / seg[i], a = path[i], b = path[i + 1]; return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+      left -= seg[i];
+    }
+    return path[path.length - 1];
+  }
+  function anchors() {
+    const out = [];
+    for (const f of features.values()) {
+      const a = attitudeOf(f.properties || {}), g = f.geometry;
+      if (!a || !g || g.type === "Point" || g.type === "MultiPoint") continue;
+      const path = g.type === "LineString" ? g.coordinates : g.type === "Polygon" ? g.coordinates[0]
+        : g.type === "MultiLineString" ? g.coordinates[0] : g.type === "MultiPolygon" ? g.coordinates[0] && g.coordinates[0][0] : null;
+      const at = midpoint(path);
+      if (at) out.push({ type: "Feature", geometry: { type: "Point", coordinates: at }, properties: { _id: f.id, _anchor: true, _dipdir: a.dip_direction, _dip: Math.round(a.dip) } });
+    }
+    return out;
+  }
+  // Symbol images are drawn on demand: "att-h|v|i" for flat, vertical and inclined beds, "dip-<n>" for the angle.
+  function drawImage(id) {
+    const r = window.devicePixelRatio || 1, c = document.createElement("canvas");
+    const dip = id.startsWith("dip-");
+    const w = dip ? 30 : 30, h = dip ? 16 : 30;
+    c.width = w * r; c.height = h * r;
+    const x = c.getContext("2d"); x.scale(r, r);
+    if (dip) {
+      x.font = "bold 12px sans-serif"; x.lineWidth = 3; x.strokeStyle = "#fff"; x.fillStyle = "#b71c1c"; x.textBaseline = "top";
+      x.strokeText(id.slice(4), 1, 1); x.fillText(id.slice(4), 1, 1);
+    } else {
+      x.strokeStyle = "#b71c1c"; x.lineWidth = 2.5; x.lineCap = "round";
+      x.beginPath();
+      if (id === "att-h") { x.arc(15, 15, 7, 0, 2 * Math.PI); x.moveTo(15, 13); x.lineTo(15, 17); x.moveTo(13, 15); x.lineTo(17, 15); }
+      else { x.moveTo(3, 15); x.lineTo(27, 15); x.moveTo(15, 15); x.lineTo(15, id === "att-v" ? 27 : 7); if (id === "att-v") { x.moveTo(15, 15); x.lineTo(15, 3); } }
+      x.stroke();
+    }
+    return { width: w * r, height: h * r, data: x.getImageData(0, 0, w * r, h * r).data };
+  }
+
   function collection() {
     return { type: "FeatureCollection", features: [...features.values()].map((f) => ({
       type: "Feature", id: undefined, geometry: f.geometry,
@@ -310,9 +355,11 @@
           _id: f.id, _kind: kindOf(f.properties || {}), _fo: byLegend ? 0.45 : 0.2,
           _color: ls && !own ? (ls.fault ? "#d32f2f" : "#212121") : c,
           _w: ls && ls.fault ? 4 : 3, _dash: !!(ls && ls.dash), _meet: !!meetAt(f),
+          ...(f.geometry && f.geometry.type === "Point" && attitudeOf(f.properties || {})
+            ? { _dipdir: f.properties.dip_direction, _dip: Math.round(f.properties.dip) } : {}),
         };
       })(colorOf(f)),
-    })) };
+    })).concat(anchors()) };
   }
 
   const upd = (f) => (f.sync && f.sync.updated_at) || "";
@@ -616,18 +663,26 @@
     map.on("load", () => {
       map.addSource("records", { type: "geojson", data: collection() });
       map.addLayer({ id: "fill", type: "fill", source: "records", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ["get", "_color"], "fill-opacity": ["get", "_fo"] } });
-      map.addLayer({ id: "line", type: "line", source: "records", filter: ["all", ["!=", ["geometry-type"], "Point"], ["!", ["get", "_dash"]]],
+      map.addLayer({ id: "line", type: "line", source: "records", filter: ["all", ["!=", ["geometry-type"], "Point"], ["!=", ["get", "_dash"], true]],
         paint: { "line-color": ["get", "_color"], "line-width": ["case", ["==", ["get", "_kind"], "track"], 2, ["get", "_w"]] } });
-      map.addLayer({ id: "line-dashed", type: "line", source: "records", filter: ["all", ["!=", ["geometry-type"], "Point"], ["get", "_dash"]],
+      map.addLayer({ id: "line-dashed", type: "line", source: "records", filter: ["all", ["!=", ["geometry-type"], "Point"], ["==", ["get", "_dash"], true]],
         paint: { "line-color": ["get", "_color"], "line-width": ["get", "_w"], "line-dasharray": [3, 2] } });
-      map.addLayer({ id: "meet", type: "circle", source: "records", filter: ["all", ["==", ["geometry-type"], "Point"], ["get", "_meet"]],
+      map.addLayer({ id: "meet", type: "circle", source: "records", filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "_meet"], true]],
         paint: { "circle-color": "#6a1b9a", "circle-opacity": 0.18, "circle-radius": 18, "circle-stroke-color": "#6a1b9a", "circle-stroke-width": 3 } });
-      map.addLayer({ id: "point", type: "circle", source: "records", filter: ["==", ["geometry-type"], "Point"],
-        paint: { "circle-color": ["get", "_color"], "circle-radius": 6, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+      map.addLayer({ id: "point", type: "circle", source: "records", filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "_anchor"]]],
+        paint: { "circle-color": ["get", "_color"], "circle-radius": ["case", ["has", "_dipdir"], 3.5, 6], "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+      map.on("styleimagemissing", (e) => { if (/^(att-[hvi]|dip-\d{1,2})$/.test(e.id)) map.addImage(e.id, drawImage(e.id), { pixelRatio: window.devicePixelRatio || 1 }); });
+      map.addLayer({ id: "attitude", type: "symbol", source: "records", filter: ["has", "_dipdir"],
+        layout: {
+          "icon-image": ["case", ["<", ["get", "_dip"], 1], "att-h", [">=", ["get", "_dip"], 89], "att-v", "att-i"],
+          "icon-rotate": ["get", "_dipdir"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
+        } });
+      map.addLayer({ id: "dip", type: "symbol", source: "records", minzoom: 13, filter: ["all", ["has", "_dipdir"], [">=", ["get", "_dip"], 1], ["<", ["get", "_dip"], 89]],
+        layout: { "icon-image": ["concat", "dip-", ["to-string", ["get", "_dip"]]], "icon-anchor": "top-left", "icon-offset": [6, 4], "icon-allow-overlap": true, "icon-ignore-placement": true } });
       map.addSource("trails", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "trails", type: "line", source: "trails",
         paint: { "line-color": ["case", ["get", "old"], "#78909c", "#1565c0"], "line-width": 2, "line-opacity": 0.7 } });
-      for (const id of ["point", "line", "line-dashed", "fill"]) {
+      for (const id of ["attitude", "point", "line", "line-dashed", "fill"]) {
         map.on("click", id, (e) => { const f = features.get(e.features[0].properties._id); if (f) popup(f, e.lngLat); });
         map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
         map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
