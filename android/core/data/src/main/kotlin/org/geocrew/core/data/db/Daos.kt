@@ -65,6 +65,10 @@ interface FeatureDao {
     @Query("SELECT projectId, COUNT(*) AS count FROM features WHERE deleted = 0 GROUP BY projectId")
     fun observeCounts(): Flow<List<ProjectCount>>
 
+    /** Every feature's properties JSON, for finding which photo files are still referenced. */
+    @Query("SELECT properties FROM features")
+    suspend fun allProperties(): List<String>
+
     @Query("DELETE FROM features WHERE projectId = :projectId AND deleted = 1 AND dirty = 0")
     suspend fun purgeDeleted(projectId: String)
 }

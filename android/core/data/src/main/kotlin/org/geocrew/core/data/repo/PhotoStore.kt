@@ -48,6 +48,23 @@ class PhotoStore @Inject constructor(@ApplicationContext private val context: Co
 
     fun file(sha: String): File = File(dir, "$sha.jpg")
 
+    /**
+     * Deletes stored photos not in [keep] and abandoned capture files. Only
+     * touches files older than [graceMillis], so a photo being attached
+     * right now is never removed. Returns the number of files deleted.
+     */
+    suspend fun sweep(keep: Set<String>, graceMillis: Long = 24 * 60 * 60 * 1000L): Int = withContext(Dispatchers.IO) {
+        val cutoff = System.currentTimeMillis() - graceMillis
+        var n = 0
+        dir.listFiles().orEmpty().forEach { f ->
+            if (f.isFile && f.lastModified() < cutoff && f.nameWithoutExtension !in keep && f.delete()) n++
+        }
+        pending.listFiles().orEmpty().forEach { f ->
+            if (f.isFile && f.lastModified() < cutoff && f.delete()) n++
+        }
+        n
+    }
+
     fun exists(sha: String) = file(sha).exists()
 
     /** A content URI other apps (viewers, share targets) can read. */
