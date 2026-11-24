@@ -68,6 +68,7 @@ fun RecordListScreen(
     val config by viewModel.config.collectAsStateWithLifecycle()
     val taskCounts by viewModel.taskCounts.collectAsStateWithLifecycle()
     val me by viewModel.me.collectAsStateWithLifecycle()
+    val issues by viewModel.issues.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -123,6 +124,14 @@ fun RecordListScreen(
                         label = { Text("待补全 $incomplete") },
                     )
                 }
+                if (issues.isNotEmpty() || taskFilter == RecordListViewModel.TaskFilter.ISSUES) {
+                    val on = taskFilter == RecordListViewModel.TaskFilter.ISSUES
+                    FilterChip(
+                        selected = on,
+                        onClick = { viewModel.taskFilter.value = if (on) RecordListViewModel.TaskFilter.NONE else RecordListViewModel.TaskFilter.ISSUES },
+                        label = { Text("待核对 ${issues.size}") },
+                    )
+                }
                 FeatureKind.builtIn.filter { (counts[it] ?: 0) > 0 }.forEach { k ->
                     FilterChip(
                         selected = kind == k,
@@ -137,7 +146,7 @@ fun RecordListScreen(
                 }
             } else {
                 LazyColumn {
-                    items(items, key = { it.id }) { f -> RecordRow(f, me, config.missing(f)) { onOpen(f.id) } }
+                    items(items, key = { it.id }) { f -> RecordRow(f, me, config.missing(f), issues[f.id].orEmpty()) { onOpen(f.id) } }
                 }
             }
         }
@@ -145,7 +154,7 @@ fun RecordListScreen(
 }
 
 @Composable
-private fun RecordRow(f: GeoFeature, me: String?, missing: List<FieldTemplate>, onClick: () -> Unit) {
+private fun RecordRow(f: GeoFeature, me: String?, missing: List<FieldTemplate>, issues: List<org.geocrew.core.model.RecordCheck.Issue>, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(f.title ?: KindUi.label(f.kind)) },
         supportingContent = {
@@ -172,6 +181,12 @@ private fun RecordRow(f: GeoFeature, me: String?, missing: List<FieldTemplate>, 
                     Text(
                         "待补全：" + missing.joinToString("、") { it.label },
                         color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                issues.forEach { i ->
+                    Text(
+                        "${i.code.label}：${i.message}",
+                        color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }

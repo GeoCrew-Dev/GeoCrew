@@ -39,6 +39,7 @@ import org.geocrew.core.model.PhotoInfo
 import org.geocrew.core.model.photoInfo
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.ProjectConfig
+import org.geocrew.core.model.RecordCheck
 import org.geocrew.core.model.Sample
 import org.geocrew.core.model.samples
 import org.geocrew.core.model.TaskInfo
@@ -73,9 +74,10 @@ class RecordListViewModel @Inject constructor(
 
     /**
      * Narrows the list to open tasks (everyone's, or only those handed to this
-     * device's member), or to records missing a required form field.
+     * device's member), to records missing a required form field, or to
+     * records [RecordCheck] finds something to look at in.
      */
-    enum class TaskFilter { NONE, MINE, OPEN, INCOMPLETE }
+    enum class TaskFilter { NONE, MINE, OPEN, INCOMPLETE, ISSUES }
     val taskFilter = MutableStateFlow(TaskFilter.NONE)
 
     /** This device's member id in the current workspace, if any. */
@@ -96,7 +98,13 @@ class RecordListViewModel @Inject constructor(
 
     private val who = combine(me, config) { m, c -> m to c }
 
-    val items: StateFlow<List<GeoFeature>> = combine(all, kindFilter, query, taskFilter, who) { list, kind, q, tf, (me, config) ->
+    /** Slips worth a second look, by record id. */
+    val issues: StateFlow<Map<String, List<RecordCheck.Issue>>> = all.map { RecordCheck.of(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private val filters = combine(kindFilter, query, taskFilter) { k, q, t -> Triple(k, q, t) }
+
+    val items: StateFlow<List<GeoFeature>> = combine(all, filters, who, issues) { list, (kind, q, tf), (me, config), issues ->
         list.asSequence()
             .filter { kind == null || it.kind == kind }
             .filter { f ->
@@ -106,6 +114,7 @@ class RecordListViewModel @Inject constructor(
                     TaskFilter.OPEN -> t != null && t.status != TaskStatus.DONE
                     TaskFilter.MINE -> t != null && t.status != TaskStatus.DONE && t.assignee == me
                     TaskFilter.INCOMPLETE -> config.missing(f).isNotEmpty()
+                    TaskFilter.ISSUES -> f.id in issues
                 }
             }
             .filter { q.isBlank() || (it.title ?: "").contains(q, ignoreCase = true) || (it.note ?: "").contains(q, ignoreCase = true) }
