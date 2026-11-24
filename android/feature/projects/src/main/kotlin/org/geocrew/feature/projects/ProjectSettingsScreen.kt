@@ -54,12 +54,15 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonPrimitive
+import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.team.TeamForms
 import org.geocrew.core.data.team.TeamRepository
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.FieldType
+import org.geocrew.core.model.Legend
 import org.geocrew.core.model.Project
 import org.geocrew.core.ui.KindUi
 import org.geocrew.core.ui.SectionHeader
@@ -85,6 +88,7 @@ class ProjectSettingsViewModel @Inject constructor(
     private val projects: ProjectRepository,
     private val team: TeamRepository,
     private val forms: TeamForms,
+    features: FeatureRepository,
 ) : ViewModel() {
     private val id: String = checkNotNull(savedState[PROJECT_ID_ARG])
 
@@ -101,6 +105,35 @@ class ProjectSettingsViewModel @Inject constructor(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
     fun consumeMessage() { _message.value = null }
+
+    /** Values the records of this project use, per property key, most used first (legend suggestions). */
+    val usedValues: StateFlow<Map<String, List<String>>> = features.observeProject(id).map { list ->
+        val counts = mutableMapOf<String, MutableMap<String, Int>>()
+        for (f in list) for ((k, v) in f.properties) {
+            val t = (v as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
+            if (t.isNullOrEmpty() || t.length > 40) continue
+            val m = counts.getOrPut(k) { mutableMapOf() }
+            m[t] = (m[t] ?: 0) + 1
+        }
+        counts.mapValues { (_, m) -> m.entries.sortedByDescending { it.value }.map { it.key } }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Saves the map legend; in a team it goes to every member like the form. */
+    fun setLegend(legend: Legend) {
+        if (access.value == FormAccess.TEAM_MEMBER) return
+        viewModelScope.launch {
+            val h = if (access.value == FormAccess.TEAM_LEADER) team.handle(id) else null
+            if (h == null) {
+                projects.updateConfig(id) { it.copy(legend = legend) }
+                return@launch
+            }
+            _message.value = try {
+                forms.publishLegend(h, legend)
+            } catch (e: java.io.IOException) {
+                "已保存在本机，联网后会同步给组员"
+            }
+        }
+    }
 
     fun rename(name: String) = viewModelScope.launch {
         if (name.isNotBlank() && name.trim() != project.value?.name) projects.rename(id, name)
@@ -169,6 +202,7 @@ fun ProjectSettingsScreen(onBack: () -> Unit, viewModel: ProjectSettingsViewMode
     val project by viewModel.project.collectAsStateWithLifecycle()
     val access by viewModel.access.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
+    val usedValues by viewModel.usedValues.collectAsStateWithLifecycle()
     val readOnly = access == FormAccess.TEAM_MEMBER
     var editing by remember { mutableStateOf<Pair<FieldTemplate?, FieldTemplate>?>(null) }
     var editingNumbers by remember { mutableStateOf(false) }
@@ -242,6 +276,15 @@ fun ProjectSettingsScreen(onBack: () -> Unit, viewModel: ProjectSettingsViewMode
                     OutlinedButton(onClick = viewModel::addPreset) { Text("套用地质填图模板") }
                 }
             }
+
+            SectionHeader("地图图例")
+            LegendSection(
+                legend = p.config.legend,
+                fields = p.config.fields,
+                used = usedValues,
+                access = access,
+                onChange = viewModel::setLegend,
+            )
             Spacer(Modifier.height(32.dp))
         }
     }

@@ -212,9 +212,9 @@ internal object MapLayers {
 
     fun update(style: Style, o: MapOverlays, previous: MapOverlays?) {
         fun set(id: String, json: String) = style.getSourceAs<GeoJsonSource>(id)?.setGeoJson(json)
-        if (previous == null || previous.features !== o.features || previous.selectedId != o.selectedId) {
+        if (previous == null || previous.features !== o.features || previous.selectedId != o.selectedId || previous.legend != o.legend) {
             AttitudeSymbols.ensureDipLabels(style, o.features.mapNotNull { f -> f.attitude?.dip?.let { Math.round(it).toInt() } }.toSet())
-            set(SRC_FEATURES, OverlayGeoJson.features(o.features, o.selectedId, o.memberId))
+            set(SRC_FEATURES, OverlayGeoJson.features(o.features, o.selectedId, o.memberId, o.legend))
         }
         if (previous == null || previous.me != o.me) set(SRC_ME, OverlayGeoJson.me(o.me))
         if (previous == null || previous.team != o.team) set(SRC_TEAM, OverlayGeoJson.team(o.team))

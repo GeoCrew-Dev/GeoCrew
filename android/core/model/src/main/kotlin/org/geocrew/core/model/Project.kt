@@ -39,9 +39,11 @@ data class ProjectConfig(
     val description: String = "",
     /** Attribute fields offered on every record of this project, in order. */
     val fields: List<FieldTemplate> = emptyList(),
-    /** Version of the workspace settings [fields] were last in step with (protocol v0 §2.2). */
+    /** Version of the workspace settings [fields] and [legend] were last in step with (protocol v0 §2.2). */
     val teamFormVersion: Long = 0,
-    /** True when a leader changed [fields] locally and the workspace has not received them yet. */
+    /** How the map colours records by an attribute; shared like [fields] in a team project. */
+    val legend: Legend = Legend(),
+    /** True when a leader changed [fields] or [legend] locally and the workspace has not received them yet. */
     val teamFormPending: Boolean = false,
     /** Cursor of the workspace's comments already on this device (protocol v0 §8). */
     val teamCommentSeq: Long = 0,

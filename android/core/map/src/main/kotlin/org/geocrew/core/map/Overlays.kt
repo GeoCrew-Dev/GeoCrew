@@ -10,6 +10,7 @@ import org.geocrew.core.formats.GeoJson
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.Geometry
+import org.geocrew.core.model.Legend
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.TaskStatus
 import org.geocrew.core.model.task
@@ -39,6 +40,8 @@ data class MapOverlays(
     val sketchClosed: Boolean = false,
     /** This device's member id in the project's workspace; its open tasks are highlighted. */
     val memberId: String? = null,
+    /** Colours records by an attribute where they have no colour of their own. */
+    val legend: Legend = Legend(),
 )
 
 /** Converts overlays into GeoJSON strings for MapLibre sources. */
@@ -54,7 +57,7 @@ internal object OverlayGeoJson {
         put("properties", JsonObjectBuilder().apply(props).build())
     }
 
-    fun features(list: List<GeoFeature>, selectedId: String?, memberId: String? = null): String = collection(
+    fun features(list: List<GeoFeature>, selectedId: String?, memberId: String? = null, legend: Legend = Legend()): String = collection(
         list.mapNotNull { f ->
             val g = f.geometry ?: return@mapNotNull null
             feature(g) {
@@ -69,6 +72,11 @@ internal object OverlayGeoJson {
                     this["dip"] = Math.round(a.dip).toDouble()
                 }
                 simpleStyle(f.properties)
+                // A record that brings its own colour (analysis output, an imported file) keeps it.
+                if (COLOR_KEYS.none(::has)) legend.colorOf(f)?.let { c ->
+                    for (k in COLOR_KEYS) this[k] = c
+                    if ((g is Geometry.Polygon || g is Geometry.MultiPolygon) && !has("fill-opacity")) this["fill-opacity"] = 0.45
+                }
             }
         },
     )
@@ -139,5 +147,6 @@ internal class JsonObjectBuilder {
     operator fun set(k: String, v: String?) { map[k] = v?.let(::JsonPrimitive) ?: JsonNull }
     operator fun set(k: String, v: Boolean) { map[k] = JsonPrimitive(v) }
     operator fun set(k: String, v: Double?) { map[k] = v?.let(::JsonPrimitive) ?: JsonNull }
+    fun has(k: String) = k in map
     fun build() = JsonObject(map)
 }

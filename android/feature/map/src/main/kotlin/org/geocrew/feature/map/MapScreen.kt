@@ -284,6 +284,8 @@ fun MapScreen(
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            val legendShown = remember(overlays.features, overlays.legend) { overlays.legend.used(overlays.features) }
+            MapLegend(legendTitle(overlays.legend.key, project?.config?.fields.orEmpty()), legendShown)
             StatusLine(
                 onClick = { showGoTo = true },
                 text = buildString {
@@ -505,3 +507,7 @@ private fun TileProblemCard(isTianditu: Boolean, host: String, code: Int, onSwit
 
 private const val GONE_TO_LABEL = "◎ 目标坐标"
 private const val NAME_MIN_ZOOM = 13.0
+
+/** The legend attribute's name as the form calls it. */
+private fun legendTitle(key: String, fields: List<org.geocrew.core.model.FieldTemplate>): String =
+    if (key == org.geocrew.core.model.Props.LITHOLOGY) "岩性" else fields.firstOrNull { it.key == key }?.label ?: key

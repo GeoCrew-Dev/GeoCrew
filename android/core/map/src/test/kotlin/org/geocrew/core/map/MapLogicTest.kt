@@ -50,4 +50,17 @@ class MapLogicTest {
     assertEquals(0.5, p["fill-opacity"]!!.jsonPrimitive.double, 0.0)
     assertNull(p["stroke"]); assertNull(p["stroke-width"])
   }
+  @Test fun legendColoursRecordsWithoutTheirOwnColour() {
+    val legend = Legend(Props.LITHOLOGY, listOf(LegendEntry("砂岩", "#FFEE58")))
+    val ring = Geometry.Polygon.of(listOf(LngLat(1.0,1.0),LngLat(2.0,1.0),LngLat(2.0,2.0)))
+    val plain = GeoFeature("a","p",FeatureKind.POLYGON, ring, buildJsonObject { put(Props.LITHOLOGY, "砂岩") }, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))
+    val own = GeoFeature("b","p",FeatureKind.POLYGON, ring, buildJsonObject { put(Props.LITHOLOGY, "砂岩"); put("fill", "#22A884") }, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))
+    val ps = Json.parseToJsonElement(OverlayGeoJson.features(listOf(plain, own), null, null, legend)).jsonObject["features"]!!.jsonArray
+      .map { it.jsonObject["properties"]!!.jsonObject }
+    assertEquals("#FFEE58", ps[0]["fill"]!!.jsonPrimitive.content)
+    assertEquals("#FFEE58", ps[0]["stroke"]!!.jsonPrimitive.content)
+    assertEquals(0.45, ps[0]["fill-opacity"]!!.jsonPrimitive.double, 0.0)
+    assertEquals("#22A884", ps[1]["fill"]!!.jsonPrimitive.content)
+    assertNull(ps[1]["stroke"])
+  }
 }

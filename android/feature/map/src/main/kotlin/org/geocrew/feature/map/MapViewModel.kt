@@ -31,6 +31,7 @@ import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
+import org.geocrew.core.model.Legend
 import org.geocrew.core.model.MapDisplay
 import org.geocrew.core.model.MapViewport
 import org.geocrew.core.model.PositionAverage
@@ -185,14 +186,22 @@ class MapViewModel @Inject constructor(
     val display: StateFlow<MapDisplay> = project.map { it?.config?.display ?: MapDisplay() }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, MapDisplay())
 
+    /** How records are coloured by attribute; see [Legend]. */
+    val legend: StateFlow<Legend> = project.map { it?.config?.legend ?: Legend() }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, Legend())
+
+    private data class Drawn(val list: List<GeoFeature>, val me: String?, val display: MapDisplay, val legend: Legend)
+
     private val featuresWithMe = combine(
         featureList,
         project.map { it?.team?.memberId }.distinctUntilChanged(),
         display,
-    ) { l, me, d -> Triple(l, me, d) }
+        legend,
+    ) { l, me, d, lg -> Drawn(l, me, d, lg) }
 
-    val overlays: StateFlow<MapOverlays> = combine(featuresWithMe, _selected, _fix, _mode, teamMarkers) { (list, me, d), sel, fix, mode, mates ->
+    val overlays: StateFlow<MapOverlays> = combine(featuresWithMe, _selected, _fix, _mode, teamMarkers) { (list, me, d, lg), sel, fix, mode, mates ->
         MapOverlays(
+            legend = lg,
             memberId = me,
             features = d.filter(list, me, keep = sel),
             selectedId = sel,
