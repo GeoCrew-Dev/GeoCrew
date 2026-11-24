@@ -29,6 +29,8 @@ data class ImageOverlay(
     val visible: Boolean = true,
     /** How the corners were set, shown so the user knows how far to trust them. */
     val placement: Placement = Placement.VIEW,
+    /** Control points the corners were last fitted to by hand (see [OverlayAlign]); 0 when not aligned since. */
+    val controlPoints: Int = 0,
 ) {
     @Serializable
     enum class Placement { VIEW, WORLD_FILE }

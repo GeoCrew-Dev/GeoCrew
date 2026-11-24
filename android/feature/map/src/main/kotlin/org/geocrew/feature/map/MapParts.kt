@@ -163,6 +163,40 @@ internal fun DrawBar(
 }
 
 @Composable
+internal fun AlignBar(
+    mode: AlignMode,
+    onTapCenter: () -> Unit,
+    onUndo: () -> Unit,
+    onApply: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Surface(shape = MaterialTheme.shapes.large, tonalElevation = 3.dp, shadowElevation = 3.dp) {
+        Column(Modifier.fillMaxWidth().padding(8.dp)) {
+            val n = mode.pairs.size
+            val step = if (mode.pending == null) {
+                "第 ${n + 1} 对：先点图片上认得出的地物（路口、山头、河流交汇处）"
+            } else {
+                "再点它在底图上的真实位置"
+            }
+            val fit = when {
+                n == 0 -> ""
+                mode.preview == null -> " · 这几处点几乎在一条直线上"
+                n == 1 -> " · 已平移"
+                n == 2 -> " · 已旋转缩放"
+                else -> mode.worstResidual?.let { " · 最大偏差约 ${Math.round(it)} 米" }.orEmpty()
+            }
+            Text("对齐「${mode.name}」：$step$fit", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Tool(Icons.Default.Place, "取十字中心", onClick = onTapCenter)
+                Tool(Icons.AutoMirrored.Filled.Undo, "撤销", enabled = n > 0 || mode.pending != null, onClick = onUndo)
+                Tool(Icons.Default.Check, "应用", enabled = n > 0 && mode.pending == null, onClick = onApply)
+                Tool(Icons.Default.Close, "取消", onClick = onCancel)
+            }
+        }
+    }
+}
+
+@Composable
 internal fun SelectedFeatureCard(
     f: GeoFeature,
     format: CoordinateFormat,

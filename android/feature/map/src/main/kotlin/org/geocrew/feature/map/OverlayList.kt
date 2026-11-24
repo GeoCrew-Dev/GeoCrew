@@ -33,6 +33,8 @@ internal class OverlayActions(
     val change: (String, (ImageOverlay) -> ImageOverlay) -> Unit,
     /** Lay the overlay over the current view again. */
     val fit: (String) -> Unit,
+    /** Line the overlay up by control points on the map. */
+    val align: (String) -> Unit,
     val move: (String, up: Boolean) -> Unit,
     val remove: (String) -> Unit,
 )
@@ -64,6 +66,7 @@ private fun OverlayRow(item: OverlayItem, count: Int, index: Int, actions: Overl
                 Text(
                     when {
                         item.missing -> "图片文件不在这台设备上，请删掉后重新添加"
+                        o.controlPoints > 0 -> "按 ${o.controlPoints} 对控制点对齐"
                         o.placement == ImageOverlay.Placement.WORLD_FILE -> "按 world 文件定位"
                         else -> "按视野铺放，位置只是大致的"
                     },
@@ -77,6 +80,7 @@ private fun OverlayRow(item: OverlayItem, count: Int, index: Int, actions: Overl
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                    if (!item.missing) TextButton(onClick = { actions.align(o.id) }) { Text("对齐") }
                     if (!item.missing) TextButton(onClick = { actions.fit(o.id) }) { Text("铺到视野") }
                     if (index < count - 1) TextButton(onClick = { actions.move(o.id, true) }) { Text("上移") }
                     if (index > 0) TextButton(onClick = { actions.move(o.id, false) }) { Text("下移") }

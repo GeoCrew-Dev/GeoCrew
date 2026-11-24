@@ -29,6 +29,7 @@ import org.geocrew.core.map.MapImage
 import org.geocrew.core.map.MapOverlays
 import org.geocrew.core.model.Bounds
 import org.geocrew.core.model.ImageOverlay
+import org.geocrew.core.model.OverlayAlign
 import org.geocrew.core.model.WorldFile
 import org.geocrew.core.map.MyLocation
 import org.geocrew.core.map.StyleBuilder
@@ -94,6 +95,26 @@ sealed interface MapMode {
 
 /** An image overlay as the layer list shows it. */
 data class OverlayItem(val overlay: ImageOverlay, val missing: Boolean)
+
+/**
+ * Lining an image overlay up with the map: tap a spot on the picture, then
+ * where it really is, as often as needed. [original] are the corners before
+ * aligning; [pairs] are kept in that frame so each new one refines the fit.
+ */
+data class AlignMode(
+    val overlayId: String,
+    val name: String,
+    val original: List<LngLat>,
+    val pairs: List<OverlayAlign.Pair> = emptyList(),
+    /** The picture spot of the next pair (in the original frame), and where it was tapped. */
+    val pending: LngLat? = null,
+    val pendingShown: LngLat? = null,
+) : MapMode {
+    /** Corners with the pairs so far applied; null while they cannot define a fit. */
+    val preview: List<LngLat>? get() = OverlayAlign.corners(original, pairs)
+    /** Largest misfit of a control point after the fit, in metres, once there are three or more. */
+    val worstResidual: Double? get() = if (pairs.size < 3) null else OverlayAlign.residuals(pairs).maxOrNull()
+}
 
 /** Base map state for the screen. */
 data class BaseMapUi(
@@ -266,7 +287,7 @@ class MapViewModel @Inject constructor(
 
     /** Decoded pictures for the visible overlays, kept while they stay in use. */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val images: StateFlow<List<MapImage>> = overlayItems.mapLatest { list ->
+    private val decoded = overlayItems.mapLatest { list ->
         withContext(Dispatchers.IO) {
             val shown = list.filter { it.overlay.visible && !it.missing }.map { it.overlay }
             bitmaps.keys.retainAll(shown.map { it.file }.toSet())
@@ -275,14 +296,64 @@ class MapViewModel @Inject constructor(
                 MapImage(o.id, b, o.quad, o.opacity)
             }
         }
+    }
+
+    /** Pictures to draw; the one being aligned shows its fit so far. */
+    val images: StateFlow<List<MapImage>> = combine(decoded, _mode) { list, mode ->
+        if (mode !is AlignMode) list
+        else list.map { if (it.id == mode.overlayId) it.copy(quad = mode.preview ?: it.quad) else it }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Starts lining up an overlay by control points; the layer sheet's "对齐". */
+    fun startAlign(overlayId: String) {
+        val o = project.value?.config?.overlays?.firstOrNull { it.id == overlayId } ?: return
+        _selected.value = null
+        _mode.value = AlignMode(o.id, o.name, o.quad)
+        if (!o.visible) setOverlay(o.id) { it.copy(visible = true) }
+    }
+
+    private fun alignTap(m: AlignMode, p: LngLat): AlignMode {
+        val pending = m.pending ?: run {
+            // The picture is drawn at its fit so far: take the spot back to the original frame.
+            val shown = m.preview ?: m.original
+            val back = if (m.pairs.isEmpty()) p
+            else OverlayAlign.corners(listOf(p), shown.zip(m.original).map { (a, b) -> OverlayAlign.Pair(a, b) })?.single() ?: p
+            return m.copy(pending = back, pendingShown = p)
+        }
+        return m.copy(pairs = m.pairs + OverlayAlign.Pair(pending, p), pending = null, pendingShown = null)
+    }
+
+    /** Takes back the half-made pair, or else the last pair. */
+    fun undoAlign() = _mode.update {
+        when {
+            it !is AlignMode -> it
+            it.pending != null -> it.copy(pending = null, pendingShown = null)
+            else -> it.copy(pairs = it.pairs.dropLast(1))
+        }
+    }
+
+    fun applyAlign() {
+        val m = _mode.value as? AlignMode ?: return
+        val fit = m.preview
+        if (fit == null) {
+            _notice.value = "这几处点几乎在一条直线上，定不了方向；撤销一对，换一处不在一线上的点"
+            return
+        }
+        setOverlay(m.overlayId) { it.copy(corners = ImageOverlay.corners(fit), placement = ImageOverlay.Placement.VIEW, controlPoints = m.pairs.size) }
+        _mode.value = MapMode.Browse
+        _notice.value = "已按 ${m.pairs.size} 对控制点对齐「${m.name}」" + (m.worstResidual?.let { "，最大偏差约 ${Math.round(it)} 米" } ?: "")
+    }
+
+    fun cancelAlign() {
+        if (_mode.value is AlignMode) _mode.value = MapMode.Browse
+    }
 
     /**
      * Adds the picked image (and world file, if one was picked with it) as an
      * overlay. With a world file it goes where the file says and [onPlaced]
      * gets its extent; otherwise it is laid over [view].
      */
-    fun addOverlay(uris: List<android.net.Uri>, view: Bounds, onPlaced: (Bounds) -> Unit) = viewModelScope.launch {
+    fun addOverlay(uris: List<android.net.Uri>, view: Bounds?, onPlaced: (Bounds) -> Unit) = viewModelScope.launch {
         val id = project.value?.id ?: return@launch
         val imported = runCatching { overlayImages.import(uris) }.getOrElse { e ->
             _notice.value = (e as? IllegalArgumentException)?.message ?: "图片导入失败"
@@ -297,7 +368,12 @@ class MapViewModel @Inject constructor(
             file = imported.file,
             width = imported.width,
             height = imported.height,
-            corners = ImageOverlay.corners(placed ?: ImageOverlay.fit(view, imported.width, imported.height)),
+            corners = ImageOverlay.corners(
+                placed ?: view?.let { ImageOverlay.fit(it, imported.width, imported.height) } ?: run {
+                    _notice.value = "地图还没准备好，稍后再添加"
+                    return@launch
+                },
+            ),
             placement = if (placed != null) ImageOverlay.Placement.WORLD_FILE else ImageOverlay.Placement.VIEW,
         )
         projects.updateConfig(id) { it.copy(overlays = it.overlays + overlay) }
@@ -316,8 +392,11 @@ class MapViewModel @Inject constructor(
     }
 
     /** Lays an overlay over [view] again, e.g. when its world file put it in the wrong place. */
-    fun fitOverlay(overlayId: String, view: Bounds) = setOverlay(overlayId) {
-        it.copy(corners = ImageOverlay.corners(ImageOverlay.fit(view, it.width, it.height)), placement = ImageOverlay.Placement.VIEW)
+    fun fitOverlay(overlayId: String, view: Bounds?) {
+        if (view == null) return
+        setOverlay(overlayId) {
+            it.copy(corners = ImageOverlay.corners(ImageOverlay.fit(view, it.width, it.height)), placement = ImageOverlay.Placement.VIEW, controlPoints = 0)
+        }
     }
 
     /** Moves an overlay one step up (drawn later) or down in the list. */
@@ -399,6 +478,7 @@ class MapViewModel @Inject constructor(
     fun onMapClick(position: LngLat, featureId: String?, toleranceM: Double = 0.0) {
         when (val m = _mode.value) {
             is MapMode.Draw -> _mode.value = tap(m, position, toleranceM)
+            is AlignMode -> _mode.value = alignTap(m, position)
             MapMode.Browse -> _selected.value = featureId
         }
     }

@@ -192,6 +192,13 @@ fun MapScreen(
             grid = org.geocrew.core.model.PlaneGrid.of(view, width)
         }
     }
+    // Control points while aligning a picture: where each pair now sits, and the half-made one.
+    val alignLabels = remember(mode) {
+        (mode as? AlignMode)?.let { m ->
+            m.pairs.mapIndexed { i, p -> org.geocrew.core.map.MapLabel(p.to, "✚${i + 1}") } +
+                listOfNotNull(m.pendingShown?.let { org.geocrew.core.map.MapLabel(it, "✚${m.pairs.size + 1}？", faded = true) })
+        }.orEmpty()
+    }
     val overlayItems by viewModel.overlayItems.collectAsStateWithLifecycle()
     // An image to lay over the map, optionally picked together with its world file.
     val pickOverlay = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -219,10 +226,11 @@ fun MapScreen(
             onLongClick = { if (mode == MapMode.Browse) viewModel.addPoint(it) },
             labels = gridLabels + overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) } +
                 listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, goneLabel) }) +
+                alignLabels +
                 nameLabels,
         )
 
-        if (mode is MapMode.Draw) Crosshair(Modifier.align(Alignment.Center))
+        if (mode is MapMode.Draw || mode is AlignMode) Crosshair(Modifier.align(Alignment.Center))
 
         // Top: notices about the base map.
         Column(
@@ -339,7 +347,7 @@ fun MapScreen(
                     } else {
                         append(if (viewModel.locationEnabled()) "等待定位…" else "定位未开启")
                     }
-                    if (mode is MapMode.Draw) append("\n十字中心 " + CoordinateFormatter.format(camera.center, format))
+                    if (mode is MapMode.Draw || mode is AlignMode) append("\n十字中心 " + CoordinateFormatter.format(camera.center, format))
                 },
             )
             val sel = selected
@@ -361,6 +369,13 @@ fun MapScreen(
                     onCancel = viewModel::cancelDraw,
                     onToggleKind = viewModel::toggleMeasureKind,
                     onRemovePicked = viewModel::removePicked,
+                )
+                is AlignMode -> AlignBar(
+                    m,
+                    onTapCenter = { viewModel.onMapClick(camera.center, null) },
+                    onUndo = viewModel::undoAlign,
+                    onApply = viewModel::applyAlign,
+                    onCancel = viewModel::cancelAlign,
                 )
                 MapMode.Browse -> ToolBar(
                     recording = recording,
@@ -415,6 +430,7 @@ fun MapScreen(
                         add = { pickOverlay.launch(arrayOf("*/*")) },
                         change = viewModel::setOverlay,
                         fit = { id -> viewModel.fitOverlay(id, camera.visibleBounds()) },
+                        align = { id -> showLayers = false; viewModel.startAlign(id) },
                         move = viewModel::moveOverlay,
                         remove = viewModel::removeOverlay,
                     )
