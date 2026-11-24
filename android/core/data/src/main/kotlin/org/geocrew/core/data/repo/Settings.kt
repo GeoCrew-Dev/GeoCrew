@@ -50,6 +50,8 @@ data class AppSettings(
     val nickname: String = "",
     /** Send this device's position to the team while the map is open. Off until the user turns it on. */
     val sharePosition: Boolean = false,
+    /** Size of the map tile cache in MB; see MapCache. */
+    val mapCacheMb: Int = 200,
 )
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("settings")
@@ -76,6 +78,7 @@ class SettingsRepository @Inject constructor(
         val PROJECT = stringPreferencesKey("current_project")
         val NICK = stringPreferencesKey("nickname")
         val SHARE = booleanPreferencesKey("share_position")
+        val CACHE = intPreferencesKey("map_cache_mb")
     }
 
     val settings: Flow<AppSettings> = store.data.map { p ->
@@ -93,6 +96,7 @@ class SettingsRepository @Inject constructor(
             currentProjectId = p[K.PROJECT],
             nickname = p[K.NICK].orEmpty(),
             sharePosition = p[K.SHARE] ?: false,
+            mapCacheMb = p[K.CACHE] ?: 200,
         )
     }
 
@@ -128,6 +132,7 @@ class SettingsRepository @Inject constructor(
             if (p[K.SOURCE] == id) p[K.SOURCE] = BuiltInSources.default.id
         }
     }
+    suspend fun setMapCacheMb(mb: Int) { store.edit { it[K.CACHE] = mb.coerceIn(10, 4000) } }
     suspend fun setCoordinateFormat(f: CoordinateFormat) { store.edit { it[K.COORD] = f.name } }
     suspend fun setDeclination(value: Float?) {
         store.edit {

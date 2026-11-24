@@ -186,6 +186,29 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
                 }
             }
 
+            item { SectionHeader("地图缓存") }
+            item {
+                Text(
+                    "联网时看过的底图会存在手机里，没信号时这些地方（看过的缩放级别）还能显示。出发前在有网的地方把测区浏览一遍，缓存够大就能带进山里。",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+            item {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    org.geocrew.core.map.MapCache.SIZES_MB.forEach { mb ->
+                        FilterChip(
+                            selected = s.mapCacheMb == mb,
+                            onClick = { viewModel.setMapCache(mb) },
+                            label = { Text(if (mb >= 1000) "${mb / 1000} GB" else "$mb MB") },
+                        )
+                    }
+                }
+            }
+            item {
+                TextButton(onClick = viewModel::clearMapCache, modifier = Modifier.padding(horizontal = 8.dp)) { Text("清空缓存") }
+            }
+
             item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
             item { SectionHeader("显示") }
             item {

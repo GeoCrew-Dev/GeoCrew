@@ -62,6 +62,7 @@ data class BasemapProgress(val done: Int, val total: Int)
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val repo: SettingsRepository,
     private val defaults: BuildDefaults,
     private val offline: OfflineBasemaps,
@@ -146,6 +147,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun deleteSource(id: String) = viewModelScope.launch { repo.deleteCustomSource(id) }
+
+    fun setMapCache(mb: Int) = viewModelScope.launch { repo.setMapCacheMb(mb) }
+
+    fun clearMapCache() = viewModelScope.launch {
+        _message.value = if (org.geocrew.core.map.MapCache.clear(context)) "已清空地图缓存" else "清空地图缓存失败"
+    }
 
     fun setCoordinateFormat(f: CoordinateFormat) = viewModelScope.launch { repo.setCoordinateFormat(f) }
 
