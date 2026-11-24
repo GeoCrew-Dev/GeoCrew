@@ -13,14 +13,15 @@ import (
 
 // Message types of the v0 realtime channel.
 const (
-	TypeHello          = "hello"
-	TypePosition       = "position"
-	TypeFeatureChanged = "feature_changed"
-	TypeMembersChanged = "members_changed"
-	TypePresence       = "presence"
-	TypePing           = "ping"
-	TypePong           = "pong"
-	TypeError          = "error"
+	TypeHello           = "hello"
+	TypePosition        = "position"
+	TypeFeatureChanged  = "feature_changed"
+	TypeMembersChanged  = "members_changed"
+	TypeSettingsChanged = "settings_changed"
+	TypePresence        = "presence"
+	TypePing            = "ping"
+	TypePong            = "pong"
+	TypeError           = "error"
 )
 
 // Position is a member's live location. It is relayed and kept briefly in
@@ -212,6 +213,14 @@ func (h *Hub) MembersChanged(ws string) {
 	h.Broadcast(ws, marshal(struct {
 		Type string `json:"type"`
 	}{TypeMembersChanged}))
+}
+
+// SettingsChanged tells everyone in ws that the shared settings reached version.
+func (h *Hub) SettingsChanged(ws string, version int64) {
+	h.Broadcast(ws, marshal(struct {
+		Type    string `json:"type"`
+		Version int64  `json:"version"`
+	}{TypeSettingsChanged, version}))
 }
 
 // Broadcast sends msg to every client in ws.

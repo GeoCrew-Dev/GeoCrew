@@ -40,7 +40,12 @@ type Workspace struct {
 	CreatedAt  time.Time `json:"created_at"`
 	InviteCode string    `json:"-"`
 	LastSeq    int64     `json:"last_seq"`
+	// SettingsVersion increases every time the shared settings change.
+	SettingsVersion int64 `json:"settings_version"`
 }
+
+// MaxSettingsBytes bounds a workspace's shared settings document.
+const MaxSettingsBytes = 64 << 10
 
 // Member is one person in a workspace.
 type Member struct {
@@ -119,6 +124,8 @@ var (
 	ErrBadInvite    = errors.New("invalid invite code")
 	ErrInvalid      = errors.New("invalid request")
 	ErrLastLeader   = errors.New("workspace must keep at least one leader")
+	// ErrStale means a conditional update was based on an outdated version.
+	ErrStale = errors.New("stale version")
 )
 
 // Backuper is implemented by stores that can write a consistent copy of
@@ -153,6 +160,13 @@ type Store interface {
 	PullFeatures(ctx context.Context, workspaceID string, since int64, limit int) ([]Feature, bool, error)
 	// FeatureHistory returns superseded revisions of a feature, newest first.
 	FeatureHistory(ctx context.Context, workspaceID, featureID string) ([]Feature, error)
+
+	// Settings returns the workspace's shared settings (a JSON object the
+	// server does not interpret) and their version; a new workspace has "{}" at 0.
+	Settings(ctx context.Context, workspaceID string) (json.RawMessage, int64, error)
+	// PutSettings replaces the settings and returns the new version. A
+	// baseVersion >= 0 must equal the current version, otherwise ErrStale.
+	PutSettings(ctx context.Context, workspaceID string, settings json.RawMessage, baseVersion int64) (int64, error)
 
 	PutFileMeta(ctx context.Context, workspaceID string, meta FileMeta) error
 	FileMeta(ctx context.Context, workspaceID, sha256 string) (FileMeta, error)

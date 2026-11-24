@@ -320,3 +320,39 @@ func TestCreateCanBeDisabled(t *testing.T) {
 		t.Fatalf("create: %d", c)
 	}
 }
+
+func TestSettings(t *testing.T) {
+	e := newEnv(t)
+	var leader, member joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "一组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "A"}, &member)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+
+	var got settingsResp
+	if c := e.call("GET", base+"/settings", member.Token, nil, &got); c != 200 || got.Version != 0 || string(got.Settings) != "{}" {
+		t.Fatalf("initial: %d %+v", c, got)
+	}
+	form := map[string]any{"form": []any{map[string]any{"key": "formation", "label": "地层"}}}
+	if c := e.call("PUT", base+"/settings", member.Token, map[string]any{"settings": form}, nil); c != 403 {
+		t.Fatalf("member put: %d", c)
+	}
+	if c := e.call("PUT", base+"/settings", leader.Token, map[string]any{"settings": form, "base_version": 0}, &got); c != 200 || got.Version != 1 {
+		t.Fatalf("put: %d %+v", c, got)
+	}
+	if c := e.call("PUT", base+"/settings", leader.Token, map[string]any{"settings": form, "base_version": 0}, nil); c != 409 {
+		t.Fatalf("stale put: %d", c)
+	}
+	if c := e.call("PUT", base+"/settings", leader.Token, map[string]any{"settings": []int{1}}, nil); c != 400 {
+		t.Fatalf("non-object: %d", c)
+	}
+	e.call("GET", base+"/settings", member.Token, nil, &got)
+	var back map[string][]map[string]string
+	if err := json.Unmarshal(got.Settings, &back); err != nil || got.Version != 1 || back["form"][0]["label"] != "地层" {
+		t.Fatalf("get after put: %+v %v", got, err)
+	}
+	var wsResp map[string]any
+	e.call("GET", base, member.Token, nil, &wsResp)
+	if wsResp["settings_version"] != float64(1) {
+		t.Fatalf("workspace settings_version: %v", wsResp)
+	}
+}

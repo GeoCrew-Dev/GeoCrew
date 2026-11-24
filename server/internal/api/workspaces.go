@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
@@ -121,4 +122,46 @@ func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 	s.Hub.Kick(ws, target)
 	s.Hub.MembersChanged(ws)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type settingsResp struct {
+	Version  int64           `json:"version"`
+	Settings json.RawMessage `json:"settings"`
+}
+
+// settings returns the workspace's shared settings, e.g. the record form
+// every member fills in. The server stores them without interpreting them.
+func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
+	raw, v, err := s.Store.Settings(r.Context(), r.PathValue("ws"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, settingsResp{v, raw})
+}
+
+func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Settings    json.RawMessage `json:"settings"`
+		BaseVersion *int64          `json:"base_version"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if len(req.Settings) > store.MaxSettingsBytes {
+		writeErr(w, http.StatusRequestEntityTooLarge, "too_large", "settings exceed 64 KiB")
+		return
+	}
+	base := int64(-1)
+	if req.BaseVersion != nil {
+		base = *req.BaseVersion
+	}
+	ws := r.PathValue("ws")
+	v, err := s.Store.PutSettings(r.Context(), ws, req.Settings, base)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.Hub.SettingsChanged(ws, v)
+	writeJSON(w, http.StatusOK, settingsResp{v, req.Settings})
 }

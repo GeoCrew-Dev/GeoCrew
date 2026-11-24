@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -104,6 +105,8 @@ var migrations = []string{
 		created_by   TEXT NOT NULL,
 		PRIMARY KEY (workspace_id, sha256)
 	);`,
+	`ALTER TABLE workspaces ADD COLUMN settings TEXT NOT NULL DEFAULT '{}';
+	ALTER TABLE workspaces ADD COLUMN settings_version INTEGER NOT NULL DEFAULT 0;`,
 }
 
 func (d *DB) migrate(ctx context.Context) error {
@@ -235,14 +238,14 @@ func (d *DB) Join(ctx context.Context, inviteCode, nickname string) (store.Works
 	return ws, m, token, tx.Commit()
 }
 
-const wsSelect = `SELECT id, name, invite_code, created_at, last_seq FROM workspaces`
+const wsSelect = `SELECT id, name, invite_code, created_at, last_seq, settings_version FROM workspaces`
 
 type rowScanner interface{ Scan(...any) error }
 
 func scanWorkspace(r rowScanner) (store.Workspace, error) {
 	var ws store.Workspace
 	var created string
-	err := r.Scan(&ws.ID, &ws.Name, &ws.InviteCode, &created, &ws.LastSeq)
+	err := r.Scan(&ws.ID, &ws.Name, &ws.InviteCode, &created, &ws.LastSeq, &ws.SettingsVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ws, store.ErrNotFound
 	}
@@ -294,6 +297,43 @@ func (d *DB) Workspaces(ctx context.Context) ([]store.Workspace, error) {
 		out = append(out, ws)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) Settings(ctx context.Context, workspaceID string) (json.RawMessage, int64, error) {
+	var raw string
+	var v int64
+	err := d.db.QueryRowContext(ctx, `SELECT settings, settings_version FROM workspaces WHERE id = ?`, workspaceID).Scan(&raw, &v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, 0, store.ErrNotFound
+	}
+	return json.RawMessage(raw), v, err
+}
+
+func (d *DB) PutSettings(ctx context.Context, workspaceID string, settings json.RawMessage, baseVersion int64) (int64, error) {
+	var obj map[string]json.RawMessage
+	if len(settings) > store.MaxSettingsBytes || json.Unmarshal(settings, &obj) != nil || obj == nil {
+		return 0, store.ErrInvalid
+	}
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	var cur int64
+	err = tx.QueryRowContext(ctx, `SELECT settings_version FROM workspaces WHERE id = ?`, workspaceID).Scan(&cur)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, store.ErrNotFound
+	} else if err != nil {
+		return 0, err
+	}
+	if baseVersion >= 0 && baseVersion != cur {
+		return 0, store.ErrStale
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE workspaces SET settings = ?, settings_version = ? WHERE id = ?`,
+		string(settings), cur+1, workspaceID); err != nil {
+		return 0, err
+	}
+	return cur + 1, tx.Commit()
 }
 
 // Backup writes a consistent, compacted copy of the database to dest,

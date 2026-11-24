@@ -19,7 +19,7 @@ import (
 const ProtocolVersion = "0"
 
 // Capabilities advertised by /info so clients can adapt to older servers.
-var Capabilities = []string{"sync", "files", "realtime", "roles", "history"}
+var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings"}
 
 // Server wires the store, file storage and realtime hub into HTTP handlers.
 type Server struct {
@@ -78,6 +78,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PATCH "+ws+"/members/{member}", s.auth(s.setRole, leaderOnly))
 	mux.Handle("DELETE "+ws+"/members/{member}", s.auth(s.revoke, leaderOnly))
 	mux.Handle("POST "+ws+"/invite", s.auth(s.resetInvite, leaderOnly))
+	mux.Handle("GET "+ws+"/settings", s.auth(s.settings, anyRole))
+	mux.Handle("PUT "+ws+"/settings", s.auth(s.putSettings, leaderOnly))
 	mux.Handle("GET "+ws+"/features", s.auth(s.pull, anyRole))
 	mux.Handle("POST "+ws+"/features", s.auth(s.push, writers))
 	mux.Handle("GET "+ws+"/features/{feature}/history", s.auth(s.history, anyRole))
@@ -183,6 +185,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeErr(w, http.StatusNotFound, "bad_invite", "invalid invite code")
 	case errors.Is(err, store.ErrInvalid):
 		writeErr(w, http.StatusBadRequest, "invalid", "invalid request")
+	case errors.Is(err, store.ErrStale):
+		writeErr(w, http.StatusConflict, "stale", "changed by someone else; reload and try again")
 	case errors.Is(err, store.ErrLastLeader):
 		writeErr(w, http.StatusConflict, "last_leader", "a workspace must keep at least one leader")
 	default:
