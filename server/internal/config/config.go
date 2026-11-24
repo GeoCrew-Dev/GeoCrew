@@ -20,6 +20,14 @@ type Config struct {
 	LogLevel       slog.Level
 	LogFormat      string // "text" or "json"
 	HealthcheckURL string // set by -healthcheck: probe and exit
+	DisableCreate  bool
+	TrustProxy     bool
+	JoinPerMinute  int
+}
+
+func envBool(k string) bool {
+	v, _ := strconv.ParseBool(os.Getenv(k))
+	return v
 }
 
 func env(k, def string) string {
@@ -45,6 +53,13 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&level, "log-level", env("GEOCREW_LOG_LEVEL", "info"), "debug, info, warn or error")
 	fs.StringVar(&c.LogFormat, "log-format", env("GEOCREW_LOG_FORMAT", "text"), "text or json")
 	fs.StringVar(&c.HealthcheckURL, "healthcheck", "", "probe this URL's /healthz and exit (for container health checks)")
+	fs.BoolVar(&c.DisableCreate, "disable-create", envBool("GEOCREW_DISABLE_CREATE"), "reject new workspaces")
+	fs.BoolVar(&c.TrustProxy, "trust-proxy", envBool("GEOCREW_TRUST_PROXY"), "use X-Forwarded-For for rate limits (behind a reverse proxy)")
+	joinRate, err := strconv.Atoi(env("GEOCREW_JOIN_PER_MINUTE", "10"))
+	if err != nil {
+		return c, fmt.Errorf("GEOCREW_JOIN_PER_MINUTE: %w", err)
+	}
+	fs.IntVar(&c.JoinPerMinute, "join-per-minute", joinRate, "create/join attempts allowed per client address per minute")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
@@ -53,6 +68,9 @@ func Load(args []string) (Config, error) {
 	}
 	if c.LogFormat != "text" && c.LogFormat != "json" {
 		return c, fmt.Errorf("log format must be text or json")
+	}
+	if c.JoinPerMinute < 1 {
+		return c, fmt.Errorf("join-per-minute must be at least 1")
 	}
 	if c.MaxUploadMB < 1 {
 		return c, fmt.Errorf("max upload must be at least 1 MiB")

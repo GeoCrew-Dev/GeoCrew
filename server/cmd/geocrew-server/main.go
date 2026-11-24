@@ -56,6 +56,10 @@ func run() error {
 		Files:   &blob.Disk{Root: filepath.Join(cfg.DataDir, "files"), MaxSize: cfg.MaxUploadMB << 20},
 		Hub:     realtime.NewHub(),
 		Log:     log,
+
+		DisableCreate: cfg.DisableCreate,
+		TrustProxy:    cfg.TrustProxy,
+		JoinPerMinute: cfg.JoinPerMinute,
 	}
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,

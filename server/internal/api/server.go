@@ -34,6 +34,12 @@ type Server struct {
 	MaxPushFeatures int
 	// MaxPullFeatures bounds one pull page.
 	MaxPullFeatures int
+	// DisableCreate rejects new workspaces, e.g. once a team is set up.
+	DisableCreate bool
+	// TrustProxy keys rate limits on X-Forwarded-For (set behind a reverse proxy).
+	TrustProxy bool
+	// JoinPerMinute limits create and join attempts per client address (default 10).
+	JoinPerMinute int
 }
 
 const maxJSONBody = 16 << 20
@@ -59,8 +65,12 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /api/v0/info", s.info)
-	mux.HandleFunc("POST /api/v0/workspaces", s.createWorkspace)
-	mux.HandleFunc("POST /api/v0/workspaces/join", s.join)
+	if s.JoinPerMinute == 0 {
+		s.JoinPerMinute = 10
+	}
+	joins := newLimiter(s.JoinPerMinute, s.JoinPerMinute)
+	mux.HandleFunc("POST /api/v0/workspaces", s.limited(joins, s.createWorkspace))
+	mux.HandleFunc("POST /api/v0/workspaces/join", s.limited(joins, s.join))
 
 	ws := "/api/v0/workspaces/{ws}"
 	mux.Handle("GET "+ws, s.auth(s.workspace, anyRole))
@@ -204,5 +214,9 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 	if s.Files != nil {
 		maxUpload = s.Files.MaxSize
 	}
-	writeJSON(w, http.StatusOK, infoResp{s.Name, ProtocolVersion, s.Version, Capabilities, maxUpload, s.MaxPushFeatures})
+	caps := Capabilities
+	if !s.DisableCreate {
+		caps = append(append([]string{}, Capabilities...), "create")
+	}
+	writeJSON(w, http.StatusOK, infoResp{s.Name, ProtocolVersion, s.Version, caps, maxUpload, s.MaxPushFeatures})
 }

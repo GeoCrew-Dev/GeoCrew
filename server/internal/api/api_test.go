@@ -280,3 +280,43 @@ func TestRealtime(t *testing.T) {
 		}
 	}
 }
+
+func TestJoinIsRateLimited(t *testing.T) {
+	e := newEnv(t)
+	limited := false
+	for i := 0; i < 15; i++ {
+		c := e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": "WRONG000", "nickname": "x"}, nil)
+		if c == http.StatusTooManyRequests {
+			limited = true
+			break
+		}
+		if c != http.StatusNotFound {
+			t.Fatalf("attempt %d: %d", i, c)
+		}
+	}
+	if !limited {
+		t.Fatal("invite guessing was never limited")
+	}
+}
+
+func TestCreateCanBeDisabled(t *testing.T) {
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := &Server{Name: "t", Store: db, DisableCreate: true, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	e := &env{t, srv}
+	var info infoResp
+	e.call("GET", "/api/v0/info", "", nil, &info)
+	for _, c := range info.Capabilities {
+		if c == "create" {
+			t.Fatal("info still advertises create")
+		}
+	}
+	if c := e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "a", "nickname": "b"}, nil); c != http.StatusForbidden {
+		t.Fatalf("create: %d", c)
+	}
+}

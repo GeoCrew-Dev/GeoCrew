@@ -23,7 +23,9 @@ geo.example.org {
 }
 ```
 
-Caddy 会自动申请证书，并原样转发 WebSocket。
+Caddy 会自动申请证书，并原样转发 WebSocket。放在反向代理后面时请设置 `GEOCREW_TRUST_PROXY=true`，否则所有人共用一个限流额度。
+
+安卓客户端只通过 HTTPS 连接服务器（系统默认禁止明文 HTTP），所以正式使用必须配好证书。
 
 ## 不用 Docker
 
@@ -44,6 +46,9 @@ go build -o geocrew-server ./cmd/geocrew-server
 | `-max-upload-mb` | `GEOCREW_MAX_UPLOAD_MB` | `32` | 单个附件上限（MiB） |
 | `-log-level` | `GEOCREW_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `-log-format` | `GEOCREW_LOG_FORMAT` | `text` | `text` 或 `json` |
+| `-disable-create` | `GEOCREW_DISABLE_CREATE` | `false` | 不再接受新建工作组（自己的组建好后可打开） |
+| `-trust-proxy` | `GEOCREW_TRUST_PROXY` | `false` | 在反向代理后面时打开，按 `X-Forwarded-For` 识别客户端 |
+| `-join-per-minute` | `GEOCREW_JOIN_PER_MINUTE` | `10` | 每个客户端地址每分钟可尝试新建 / 加入的次数，防止猜测邀请码 |
 
 ## 备份
 

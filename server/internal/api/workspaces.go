@@ -21,6 +21,10 @@ type nameReq struct {
 }
 
 func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
+	if s.DisableCreate {
+		writeErr(w, http.StatusForbidden, "create_disabled", "this server does not accept new workspaces")
+		return
+	}
 	var req nameReq
 	if !decode(w, r, &req) {
 		return
