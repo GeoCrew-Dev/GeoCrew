@@ -174,6 +174,17 @@ class GeoCrewApi(
         }
     }
 
+    /**
+     * Streams the whole workspace as a project package (records, photos and
+     * the shared form) into [output] and returns the byte count. Servers
+     * without the "package" capability answer 404.
+     */
+    suspend fun downloadPackage(ws: String, output: java.io.OutputStream): Long =
+        call(request(wsUrl(ws, "export.geocrew.zip")).get().build()) { r ->
+            if (!r.isSuccessful) throw error(r)
+            r.body!!.byteStream().use { it.copyTo(output) }
+        }
+
     /** ws:// URL for the realtime channel (token sent as a header, see [RealtimeClient]). */
     fun realtimeUrl(ws: String): String = wsUrl(ws, "ws").toString()
 

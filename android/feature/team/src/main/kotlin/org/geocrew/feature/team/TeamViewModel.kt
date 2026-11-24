@@ -141,6 +141,20 @@ class TeamViewModel @Inject constructor(
             (if (r.overwritten > 0) "，${r.overwritten} 条本地改动被组员更新覆盖" else "")
     }
 
+    /** Saves the whole workspace as a project package at [uri] (from the system file picker). */
+    fun downloadPackage(context: android.content.Context, uri: android.net.Uri) = withHandle("已保存工作组数据，可在工程列表里导入为新工程") { h ->
+        val bytes = try {
+            context.contentResolver.openOutputStream(uri, "w")?.use { out ->
+                h.api.downloadPackage(h.link.workspaceId, out)
+            } ?: throw IOException("无法写入所选文件")
+        } catch (e: ApiException) {
+            // Delete the empty file the picker created.
+            runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            if (e.status == 404) throw IllegalStateException("服务器版本较旧，不支持下载整组数据") else throw e
+        }
+        if (bytes == 0L) throw IOException("服务器没有返回数据")
+    }
+
     fun setShare(on: Boolean) {
         viewModelScope.launch { settingsRepo.setSharePosition(on) }
     }

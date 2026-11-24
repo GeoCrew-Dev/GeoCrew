@@ -29,6 +29,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -90,6 +94,7 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
     val message by viewModel.message.collectAsStateWithLifecycle()
     val incoming by viewModel.incoming.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val appContext = LocalContext.current.applicationContext
 
     LaunchedEffect(message) {
         message?.let {
@@ -147,6 +152,8 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
                     busy = busy,
                     onSync = viewModel::syncNow,
                     onShare = viewModel::setShare,
+                    onDownload = { uri -> viewModel.downloadPackage(appContext, uri) },
+                    workspaceName = p.team!!.workspaceName,
                     onResetInvite = viewModel::resetInvite,
                     onSetRole = viewModel::setRole,
                     onRevoke = viewModel::revoke,
@@ -262,6 +269,8 @@ private fun LinkedPanel(
     busy: Boolean,
     onSync: () -> Unit,
     onShare: (Boolean) -> Unit,
+    onDownload: (android.net.Uri) -> Unit,
+    workspaceName: String,
     onResetInvite: () -> Unit,
     onSetRole: (Member, String) -> Unit,
     onRevoke: (Member) -> Unit,
@@ -309,6 +318,19 @@ private fun LinkedPanel(
                 headlineContent = { Text("共享我的位置") },
                 supportingContent = { Text("打开地图或记录轨迹时（包括锁屏后），组员能看到你的实时位置") },
                 trailingContent = { Switch(checked = share, onCheckedChange = onShare) },
+            )
+        }
+        item {
+            val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+                if (uri != null) onDownload(uri)
+            }
+            ListItem(
+                headlineContent = { Text("下载整组数据") },
+                supportingContent = { Text("把工作组的全部记录、照片和记录表单存成一个工程包，可以导入为独立工程归档，或交给不在组里的人") },
+                trailingContent = { Icon(Icons.Default.Download, null) },
+                modifier = Modifier.clickable(enabled = !busy) {
+                    save.launch(workspaceName.ifBlank { "工作组" }.replace(Regex("[\\\\/:*?\"<>|]"), "_") + ".geocrew.zip")
+                },
             )
         }
         if (isLeader) {
