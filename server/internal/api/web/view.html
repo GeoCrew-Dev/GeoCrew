@@ -53,6 +53,7 @@
       <button id="geojson" type="button">下载 GeoJSON</button>
       <button id="package" type="button">下载工程包</button>
       <button id="samples" type="button">下载样品清单</button>
+      <button id="sections" type="button">下载剖面分层表</button>
     </div>
     <ul id="list"></ul>
   </aside>
@@ -326,6 +327,7 @@
     $("package").onclick = () => download("/export.geocrew.zip", "geocrew-" + WS + ".geocrew.zip");
     // Sampling times in this computer's zone.
     $("samples").onclick = () => download("/export.samples.csv?tz_offset=" + (-new Date().getTimezoneOffset()), "geocrew-" + WS + "-samples.csv");
+    $("sections").onclick = () => download("/export.sections.csv", "geocrew-" + WS + "-sections.csv");
 
     const ws = await (await api("")).json();
     $("name").textContent = ws.name || "工作组";
