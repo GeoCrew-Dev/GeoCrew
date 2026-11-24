@@ -35,6 +35,9 @@
   #legend { position: absolute; left: 10px; bottom: 30px; z-index: 1; background: color-mix(in srgb, var(--bg) 92%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 12px; max-width: 220px; cursor: pointer; }
   #legend b { font-weight: 600; }
   #legend .sw { display: inline-block; width: 16px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  #legend .ln { display: inline-block; width: 16px; height: 0; border-top: 2px solid #212121; margin-right: 6px; vertical-align: 3px; }
+  #legend .ln.fault { border-top-color: #d32f2f; border-top-width: 3px; }
+  #legend .ln.dash { border-top-style: dashed; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
   .mate { background: #1565c0; color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 10px; border: 2px solid #fff; white-space: nowrap; box-shadow: 0 1px 3px #0006; }
   .mate.old { background: #78909c; }
@@ -178,13 +181,17 @@
   }
   function renderLegend() {
     const box = $("legend");
-    const used = new Set([...features.values()].map((f) => legendValue(f.properties || {})));
+    const all = [...features.values()];
+    const used = new Set(all.map((f) => legendValue(f.properties || {})));
     const shown = legend.entries.filter((e) => used.has(e.value.toLowerCase()));
-    box.hidden = !shown.length;
-    if (!shown.length) return;
+    const styles = new Set(all.map(lineStyleOf).filter(Boolean));
+    const lines = Object.values(LINE_STYLES).filter((ls) => styles.has(ls));
+    const count = shown.length + lines.length;
+    box.hidden = !count;
+    if (!count) return;
     box.replaceChildren();
     const head = document.createElement("b");
-    head.textContent = "图例" + (legendOpen ? "" : "（" + shown.length + "）");
+    head.textContent = "图例" + (legendOpen ? "" : "（" + count + "）");
     box.append(head);
     if (!legendOpen) return;
     for (const e of shown.slice(0, 12)) {
@@ -194,6 +201,12 @@
       box.append(row);
     }
     if (shown.length > 12) { const more = document.createElement("div"); more.textContent = "另有 " + (shown.length - 12) + " 项"; box.append(more); }
+    for (const ls of lines) {
+      const row = document.createElement("div");
+      const sw = document.createElement("span"); sw.className = "ln" + (ls.fault ? " fault" : "") + (ls.dash ? " dash" : "");
+      row.append(sw, document.createTextNode(ls.label));
+      box.append(row);
+    }
   }
 
   async function loadMembers() {
