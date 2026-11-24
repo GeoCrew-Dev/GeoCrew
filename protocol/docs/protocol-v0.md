@@ -53,6 +53,8 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | `member` 成员 | ✓ | ✓ | ✓ | |
 | `readonly` 只读 | ✓ | | ✓ | |
 
+讨论（第 8 节）随"提交要素"一栏：组长和成员可以发言，只读成员只能看。
+
 工作区至少保留一位未被吊销的组长。
 
 ### 2.2 共享设置
@@ -89,6 +91,9 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | POST | `/api/v0/workspaces/{id}/features` | 组长、成员 | 批量提交 |
 | GET | `/api/v0/workspaces/{id}/features/{fid}/history` | 任意 | 被覆盖的历史版本 |
 | GET | `/api/v0/workspaces/{id}/export.geojson` | 任意 | 当前全部未删除记录，标准 GeoJSON FeatureCollection（不含 `sync`），供桌面 GIS 使用 |
+| GET | `/api/v0/workspaces/{id}/comments?since=&limit=` | 任意 | 增量拉取讨论（见第 8 节） |
+| POST | `/api/v0/workspaces/{id}/comments` | 组长、成员 | 发言 |
+| DELETE | `/api/v0/workspaces/{id}/comments/{comment_id}` | 作者、组长 | 删除发言 |
 | PUT | `/api/v0/workspaces/{id}/files/{sha256}` | 组长、成员 | 上传附件 |
 | GET / HEAD | `/api/v0/workspaces/{id}/files/{sha256}` | 任意 | 下载附件 / 查询是否存在 |
 | GET | `/api/v0/workspaces/{id}/ws` | 任意 | 升级为 WebSocket 实时通道 |
@@ -100,7 +105,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "create"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
@@ -247,9 +252,9 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `feature_changed` | 服务端→客户端 | `{seq}`，有新变更，客户端随后增量拉取 |
 | `members_changed` | 服务端→客户端 | 成员或角色有变化，客户端重新获取成员列表 |
 | `settings_changed` | 服务端→客户端 | `{version}`，共享设置有变化，客户端重新读取 |
+| `comments_changed` | 服务端→客户端 | `{seq}`，有新的讨论或删除，客户端随后增量拉取（第 8 节） |
 | `ping` / `pong` | 双向 | 保活 |
 | `error` | 服务端→客户端 | `{error}`，例如 `bad_json` |
-| `comment` | 双向 | 挂在要素上的讨论（第三阶段，尚未实现） |
 
 位置规则：
 
@@ -258,7 +263,29 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 - 位置只在内存中短期保留，不写入要素历史；服务端重启后清空。
 - 客户端可以把轨迹作为 `track` 要素提交，用于长期保存。
 
-## 8. 版本演进
+## 8. 讨论与消息
+
+服务器能力里有 `comments` 时可用。每条发言要么挂在一条记录上（带 `feature_id`），要么是发给全组的消息（不带）；全组消息可以带 `at: [经度, 纬度]`，客户端据此"定位到地图"。
+
+```json
+{
+  "id": "c-01HZX3",
+  "feature_id": "f-8a1c",
+  "body": "这里的接触关系明天再看一下",
+  "author_id": "m-3f2a",
+  "nickname": "小王",
+  "created_at": "2026-11-24T09:12:00Z",
+  "seq": 42
+}
+```
+
+- 发言：`POST …/comments` 提交 `{id, feature_id?, body, at?}`，返回保存后的发言。`id` 由客户端生成（规则同要素），网络重试时用同一个 `id`，服务端会返回已保存的那条；同一个 `id` 被用于不同内容时返回 `409 id_conflict`。`body` 去掉首尾空白后不能为空，最长 2000 字。`author_id`、`nickname`、`created_at`、`seq` 由服务端填写。
+- 拉取：`GET …/comments?since=&limit=`，返回 `{comments, seq, more}`，用法与要素拉取（4.4）相同。讨论有自己的 `seq`，与要素的 `seq` 互不相干。
+- 删除：`DELETE …/comments/{comment_id}`，作者本人或组长可删。被删的发言保留一条 `deleted: true`、`body` 为空的记录并获得新的 `seq`，客户端拉到后删除本地副本。
+- 发言不能修改；`feature_id` 指向的记录被删除时，讨论仍然保留。
+- 每次发言或删除后，服务端通过实时通道广播 `comments_changed`。
+
+## 9. 版本演进
 
 - 同一主版本（v0）内只增加字段、接口和消息类型，不删除、不改变含义。
 - 不兼容的修改会使用新的路径前缀（`/api/v1/`），服务端可同时提供多个版本。

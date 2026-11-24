@@ -19,6 +19,7 @@ tags:
   - name: workspaces
   - name: members
   - name: features
+  - name: comments
   - name: files
   - name: realtime
 
@@ -314,6 +315,70 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/comments:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [comments]
+      operationId: pullComments
+      summary: Comments with seq greater than since, oldest first, including deleted ones
+      parameters:
+        - { name: since, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Page of comments
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [comments, seq, more]
+                properties:
+                  comments: { type: array, items: { $ref: "#/components/schemas/Comment" } }
+                  seq: { type: integer, description: Pass as `since` next time }
+                  more: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [comments]
+      operationId: addComment
+      summary: Post a comment on a record, or a message to the whole team (leaders and members)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, body]
+              properties:
+                id: { type: string, pattern: "^[A-Za-z0-9._-]{1,64}$", description: Chosen by the client so retries are safe }
+                feature_id: { type: string, maxLength: 64, description: The record discussed; omit for a team message }
+                body: { type: string, maxLength: 2000, description: "Trimmed; must not be empty" }
+                at: { type: array, items: { type: number }, minItems: 2, maxItems: 2, description: "Optional [longitude, latitude] to show on the map" }
+      responses:
+        "200":
+          description: Stored (or already stored by an identical retry)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/comments/{comment}:
+    parameters:
+      - { $ref: "#/components/parameters/ws" }
+      - { name: comment, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [comments]
+      operationId: deleteComment
+      summary: Delete a comment (its author or a leader); a tombstone is kept for sync
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/files/{sha256}:
     parameters:
       - { $ref: "#/components/parameters/ws" }
@@ -406,7 +471,7 @@ components:
         error:
           type: string
           description: Stable machine-readable code
-          examples: [unauthorized, forbidden, not_found, bad_invite, invalid, invalid_feature, last_leader, stale, too_large]
+          examples: [unauthorized, forbidden, not_found, bad_invite, invalid, invalid_feature, invalid_comment, id_conflict, last_leader, stale, too_large]
         message: { type: string }
 
     Info:
@@ -418,7 +483,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, create] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
@@ -485,6 +550,20 @@ components:
         options: { type: array, items: { type: string }, description: Allowed values for CHOICE }
         unit: { type: string }
         kinds: { type: array, items: { type: string }, description: Feature kinds it applies to; empty means all }
+
+    Comment:
+      type: object
+      required: [id, body, author_id, nickname, created_at, seq]
+      properties:
+        id: { type: string }
+        feature_id: { type: string, description: Absent for team messages }
+        body: { type: string, description: Empty when deleted }
+        at: { type: array, items: { type: number }, minItems: 2, maxItems: 2, description: "[longitude, latitude]" }
+        author_id: { type: string }
+        nickname: { type: string }
+        created_at: { type: string, format: date-time }
+        seq: { type: integer, description: "Comment sequence, separate from the feature seq" }
+        deleted: { type: boolean, default: false }
 
     Sync:
       type: object
@@ -585,7 +664,7 @@ components:
         - type: object
           required: [type, seq]
           properties:
-            type: { type: string, const: feature_changed }
+            type: { type: string, enum: [feature_changed, comments_changed] }
             seq: { type: integer }
         - type: object
           required: [type, version]
