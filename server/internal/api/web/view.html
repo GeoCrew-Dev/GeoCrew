@@ -263,10 +263,30 @@
     }
   }
 
+  // Geological line styles (protocol §6, line_style): contacts black, faults red and thicker, inferred ones dashed.
+  const LINE_STYLES = {
+    contact: { label: "实测地质界线", dash: false, fault: false },
+    inferred_contact: { label: "推测地质界线", dash: true, fault: false },
+    fault: { label: "实测断层", dash: false, fault: true },
+    inferred_fault: { label: "推测断层", dash: true, fault: true },
+  };
+  function lineStyleOf(f) {
+    const p = f.properties || {};
+    return f.geometry && f.geometry.type !== "Point" && f.geometry.type !== "MultiPoint" ? LINE_STYLES[p.line_style] : undefined;
+  }
+
   function collection() {
     return { type: "FeatureCollection", features: [...features.values()].map((f) => ({
       type: "Feature", id: undefined, geometry: f.geometry,
-      properties: (([c, byLegend]) => ({ _id: f.id, _kind: kindOf(f.properties || {}), _color: c, _fo: byLegend ? 0.45 : 0.2 }))(colorOf(f)),
+      properties: (([c, byLegend]) => {
+        const ls = lineStyleOf(f);
+        const own = typeof (f.properties || {}).stroke === "string";
+        return {
+          _id: f.id, _kind: kindOf(f.properties || {}), _fo: byLegend ? 0.45 : 0.2,
+          _color: ls && !own ? (ls.fault ? "#d32f2f" : "#212121") : c,
+          _w: ls && ls.fault ? 4 : 3, _dash: !!(ls && ls.dash),
+        };
+      })(colorOf(f)),
     })) };
   }
 
@@ -433,6 +453,7 @@
     const dl = document.createElement("dl");
     const row = (label, value) => { if (!value) return; const dt = document.createElement("dt"); dt.textContent = label; const dd = document.createElement("dd"); dd.textContent = value; dl.append(dt, dd); };
     row("类型", KINDS[k][0]);
+    if (lineStyleOf(f)) row("线型", lineStyleOf(f).label);
     if (f.geometry.type === "Point") {
       const c = f.geometry.coordinates;
       row("坐标", c[0].toFixed(6) + ", " + c[1].toFixed(6));
@@ -568,14 +589,16 @@
     map.on("load", () => {
       map.addSource("records", { type: "geojson", data: collection() });
       map.addLayer({ id: "fill", type: "fill", source: "records", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ["get", "_color"], "fill-opacity": ["get", "_fo"] } });
-      map.addLayer({ id: "line", type: "line", source: "records", filter: ["!=", ["geometry-type"], "Point"],
-        paint: { "line-color": ["get", "_color"], "line-width": ["case", ["==", ["get", "_kind"], "track"], 2, 3] } });
+      map.addLayer({ id: "line", type: "line", source: "records", filter: ["all", ["!=", ["geometry-type"], "Point"], ["!", ["get", "_dash"]]],
+        paint: { "line-color": ["get", "_color"], "line-width": ["case", ["==", ["get", "_kind"], "track"], 2, ["get", "_w"]] } });
+      map.addLayer({ id: "line-dashed", type: "line", source: "records", filter: ["all", ["!=", ["geometry-type"], "Point"], ["get", "_dash"]],
+        paint: { "line-color": ["get", "_color"], "line-width": ["get", "_w"], "line-dasharray": [3, 2] } });
       map.addLayer({ id: "point", type: "circle", source: "records", filter: ["==", ["geometry-type"], "Point"],
         paint: { "circle-color": ["get", "_color"], "circle-radius": 6, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
       map.addSource("trails", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "trails", type: "line", source: "trails",
         paint: { "line-color": ["case", ["get", "old"], "#78909c", "#1565c0"], "line-width": 2, "line-opacity": 0.7 } });
-      for (const id of ["point", "line", "fill"]) {
+      for (const id of ["point", "line", "line-dashed", "fill"]) {
         map.on("click", id, (e) => { const f = features.get(e.features[0].properties._id); if (f) popup(f, e.lngLat); });
         map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
         map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
