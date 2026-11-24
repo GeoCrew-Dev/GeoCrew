@@ -244,6 +244,15 @@ private fun TextFields(f: GeoFeature, vm: FeatureDetailViewModel) {
         OutlinedTextField(title, { title = it }, label = { Text("名称 / 编号") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         if (f.kind == FeatureKind.GEO_POINT) {
             OutlinedTextField(lithology, { lithology = it }, label = { Text("岩性") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            val used by vm.usedLithologies.collectAsStateWithLifecycle()
+            val picks = remember(lithology, used) { org.geocrew.core.model.Lithology.suggest(lithology, used) }
+            if (picks.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(picks) { name ->
+                        androidx.compose.material3.SuggestionChip(onClick = { lithology = name }, label = { Text(name) })
+                    }
+                }
+            }
         }
         OutlinedTextField(note, { note = it }, label = { Text("描述 / 备注") }, minLines = 3, modifier = Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

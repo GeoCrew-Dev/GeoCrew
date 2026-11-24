@@ -160,6 +160,15 @@ class FeatureDetailViewModel @Inject constructor(
 
     val feature: StateFlow<GeoFeature?> = features.observe(id).stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** Lithologies written elsewhere in this project, one entry per record, for suggestions. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val usedLithologies: StateFlow<List<String>> = feature.map { it?.projectId }.distinctUntilChanged()
+        .flatMapLatest { pid ->
+            if (pid == null) kotlinx.coroutines.flow.flowOf(emptyList())
+            else features.observeProject(pid).map { list -> list.filter { it.id != id }.mapNotNull { it.properties.string(Props.LITHOLOGY) } }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** The project's form: the fields its records are meant to fill in. */
     val form: StateFlow<List<FieldTemplate>> = projects.current.map { it.config.fields }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
