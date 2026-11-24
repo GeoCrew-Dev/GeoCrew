@@ -31,7 +31,8 @@ class GisToolsTest {
     @Test fun registryHasUniqueTools() {
         val r = ToolRegistry(ToolRegistry.builtIn())
         assertNotNull(r.find("idw"))
-        assertEquals(9, r.all.size)
+        assertEquals(10, r.all.size)
+        assertNotNull(r.find("map-section"))
         assertNotNull(r.find("zonal"))
         assertNotNull(r.find("density"))
     }
