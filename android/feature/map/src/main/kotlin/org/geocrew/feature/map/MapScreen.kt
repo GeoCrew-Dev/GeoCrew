@@ -90,6 +90,9 @@ fun MapScreen(
     val camera = rememberMapCameraState()
 
     var showLayers by rememberSaveable { mutableStateOf(false) }
+    var showGoTo by rememberSaveable { mutableStateOf(false) }
+    /** A position reached through "前往坐标", marked until the next one. */
+    var goneTo by remember { mutableStateOf<LngLat?>(null) }
     var followOnFirstFix by remember { mutableStateOf(true) }
     val project by viewModel.project.collectAsStateWithLifecycle()
 
@@ -153,7 +156,8 @@ fun MapScreen(
             modifier = Modifier.fillMaxSize(),
             onClick = viewModel::onMapClick,
             onLongClick = { if (mode == MapMode.Browse) viewModel.addPoint(it) },
-            labels = overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) },
+            labels = overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) } +
+                listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, "◎ 目标坐标") }),
         )
 
         if (mode is MapMode.Draw) Crosshair(Modifier.align(Alignment.Center))
@@ -227,6 +231,7 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             StatusLine(
+                onClick = { showGoTo = true },
                 text = buildString {
                     val f = fix
                     if (f != null) {
@@ -261,6 +266,19 @@ fun MapScreen(
                     onPolygon = { viewModel.startDraw(FeatureKind.POLYGON) },
                 )
             }
+        }
+
+        if (showGoTo) {
+            GoToDialog(
+                format = format,
+                onGo = { p, add ->
+                    showGoTo = false
+                    goneTo = if (add) null else p
+                    camera.animateTo(p, maxOf(camera.zoom, 15.0))
+                    if (add) viewModel.addPoint(p)
+                },
+                onDismiss = { showGoTo = false },
+            )
         }
 
         if (showLayers) {
@@ -301,9 +319,11 @@ private fun Crosshair(modifier: Modifier) {
     }
 }
 
+/** Coordinates of the fix; tapping it opens "前往坐标". */
 @Composable
-private fun StatusLine(text: String) {
+private fun StatusLine(text: String, onClick: () -> Unit) {
     Surface(
+        onClick = onClick,
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
         tonalElevation = 2.dp,

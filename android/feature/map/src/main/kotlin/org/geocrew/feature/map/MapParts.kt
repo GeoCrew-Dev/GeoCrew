@@ -34,6 +34,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -163,4 +165,57 @@ internal fun LayerSheet(base: BaseMapUi, onChoose: (String) -> Unit, onManage: (
             }
         }
     }
+}
+
+/**
+ * Asks for a position typed or pasted from a document, in any common
+ * notation, and shows how it was read before going there.
+ */
+@Composable
+internal fun GoToDialog(
+    format: org.geocrew.core.model.CoordinateFormat,
+    onGo: (org.geocrew.core.model.LngLat, addPoint: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf("") }
+    val parsed = androidx.compose.runtime.remember(text) { org.geocrew.core.model.CoordinateParser.parse(text) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text("前往坐标") },
+        text = {
+            androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { androidx.compose.material3.Text("经纬度") },
+                    placeholder = { androidx.compose.material3.Text("116.391, 39.907 或 N39°54′25″ E116°23′28″") },
+                    minLines = 2,
+                )
+                androidx.compose.material3.Text(
+                    when {
+                        text.isBlank() -> "可粘贴十进制度或度分秒，带不带 N/E、经度/纬度 都可以。"
+                        parsed == null -> "读不出坐标，请检查格式"
+                        else -> "读作：" + org.geocrew.core.model.CoordinateFormatter.format(parsed, format)
+                    },
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = if (text.isNotBlank() && parsed == null) {
+                        androidx.compose.material3.MaterialTheme.colorScheme.error
+                    } else {
+                        androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.foundation.layout.Row {
+                androidx.compose.material3.TextButton(enabled = parsed != null, onClick = { parsed?.let { onGo(it, true) } }) {
+                    androidx.compose.material3.Text("前往并标点")
+                }
+                androidx.compose.material3.TextButton(enabled = parsed != null, onClick = { parsed?.let { onGo(it, false) } }) {
+                    androidx.compose.material3.Text("前往")
+                }
+            }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { androidx.compose.material3.Text("取消") } },
+    )
 }
