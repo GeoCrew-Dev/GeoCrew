@@ -24,6 +24,14 @@ class MapLogicTest {
     val sk = Json.parseToJsonElement(OverlayGeoJson.sketch(listOf(LngLat(1.0,1.0),LngLat(2.0,1.0),LngLat(2.0,2.0)), true)).jsonObject
     assertEquals(4, sk["features"]!!.jsonArray.size)
   }
+  @Test fun teamTrailsAreLinesBehindTheDots() {
+    val walked = TeamMarker("m", "甲", LngLat(116.002, 40.0), null, false, trail = listOf(LngLat(116.0, 40.0), LngLat(116.001, 40.0)))
+    val still = TeamMarker("n", "乙", LngLat(116.0, 40.0), null, true)
+    val fs = Json.parseToJsonElement(OverlayGeoJson.team(listOf(walked, still))).jsonObject["features"]!!.jsonArray.map { it.jsonObject }
+    assertEquals(listOf("LineString", "Point", "Point"), fs.map { it["geometry"]!!.jsonObject["type"]!!.jsonPrimitive.content })
+    assertEquals(3, fs[0]["geometry"]!!.jsonObject["coordinates"]!!.jsonArray.size)
+    assertEquals("乙", fs[2]["properties"]!!.jsonObject["name"]!!.jsonPrimitive.content)
+  }
   @Test fun myOpenTasksAreMarked() {
     fun f(id: String, who: String, st: TaskStatus) = GeoFeature(id,"p",FeatureKind.POINT, Geometry.Point(LngLat(116.0,40.0)),
       buildProperties { TaskInfo(who, "x", st).writeTo(this) }, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))

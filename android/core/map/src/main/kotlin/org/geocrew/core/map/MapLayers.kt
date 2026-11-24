@@ -157,9 +157,17 @@ internal object MapLayers {
                 ).also { it.minZoom = 13f },
         )
 
-        // Team members: green dots, greyed out when their last fix is old.
+        // Team members: green dots, greyed out when their last fix is old, with
+        // their last half hour as a thin line behind them.
         style.addLayer(
-            CircleLayer("gc-team", SRC_TEAM).withProperties(
+            LineLayer("gc-team-trail", SRC_TEAM).withFilter(isLine).withProperties(
+                lineColor(switchCase(eq(get("stale"), literal(true)), literal("#9E9E9E"), literal(MapColors.TEAM))),
+                lineWidth(2f),
+                lineOpacity(0.7f),
+            ),
+        )
+        style.addLayer(
+            CircleLayer("gc-team", SRC_TEAM).withFilter(isPoint).withProperties(
                 circleRadius(7f),
                 circleColor(switchCase(eq(get("stale"), literal(true)), literal("#9E9E9E"), literal(MapColors.TEAM))),
                 circleStrokeColor("#FFFFFF"),

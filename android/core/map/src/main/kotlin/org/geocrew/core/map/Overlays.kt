@@ -18,7 +18,15 @@ import org.geocrew.core.model.task
 data class MyLocation(val position: LngLat, val accuracy: Float?, val bearing: Float?)
 
 /** Another team member's live position. */
-data class TeamMarker(val memberId: String, val nickname: String, val position: LngLat, val accuracy: Float?, val stale: Boolean)
+data class TeamMarker(
+    val memberId: String,
+    val nickname: String,
+    val position: LngLat,
+    val accuracy: Float?,
+    val stale: Boolean,
+    /** Where they walked recently, oldest first; drawn as a thin line behind the dot. */
+    val trail: List<LngLat> = emptyList(),
+)
 
 /** Everything drawn above the base map. */
 data class MapOverlays(
@@ -95,11 +103,17 @@ internal object OverlayGeoJson {
     )
 
     fun team(list: List<TeamMarker>): String = collection(
-        list.map { m ->
-            feature(Geometry.Point(m.position)) {
-                this["mid"] = m.memberId
-                this["name"] = m.nickname
-                this["stale"] = m.stale
+        list.flatMap { m ->
+            buildList {
+                val path = m.trail + m.position
+                if (path.size >= 2) add(feature(Geometry.LineString(path)) { this["mid"] = m.memberId; this["stale"] = m.stale })
+                add(
+                    feature(Geometry.Point(m.position)) {
+                        this["mid"] = m.memberId
+                        this["name"] = m.nickname
+                        this["stale"] = m.stale
+                    },
+                )
             }
         },
     )

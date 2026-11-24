@@ -102,7 +102,7 @@ class MapViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** Teammates on the map; a position older than [STALE_AFTER] is drawn faded. */
-    private val teamMarkers = combine(teamSession.positions, ticker()) { positions, now ->
+    private val teamMarkers = combine(teamSession.positions, teamSession.trails, ticker()) { positions, trails, now ->
         positions.values.mapNotNull { p ->
             // Skip anything out of range rather than trusting relayed data.
             val at = runCatching { LngLat(p.lon, p.lat, p.alt) }.getOrNull() ?: return@mapNotNull null
@@ -112,6 +112,7 @@ class MapViewModel @Inject constructor(
                 position = at,
                 accuracy = p.accuracy?.toFloat(),
                 stale = p.time?.let { Duration.between(it, now) > STALE_AFTER } ?: true,
+                trail = trails[p.memberId].orEmpty().map { it.position },
             )
         }
     }

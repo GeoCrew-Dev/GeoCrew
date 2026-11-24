@@ -33,6 +33,8 @@ import org.geocrew.core.network.RealtimeState
 import org.geocrew.core.network.SyncEngine
 import org.geocrew.core.network.SyncReport
 import org.geocrew.core.network.TeamPosition
+import org.geocrew.core.model.TrailBuffer
+import org.geocrew.core.model.TrailPoint
 import java.time.Clock
 import java.time.Instant
 import javax.inject.Inject
@@ -81,6 +83,17 @@ class TeamSession @Inject constructor(
     /** Teammates' last known positions by member id (own position excluded). */
     val positions: StateFlow<Map<String, TeamPosition>> = _positions.asStateFlow()
 
+    private val trailBuffer = TrailBuffer()
+    private val _trails = MutableStateFlow<Map<String, List<TrailPoint>>>(emptyMap())
+    /** Teammates' paths over the last half hour, built from the live positions seen this session. */
+    val trails: StateFlow<Map<String, List<TrailPoint>>> = _trails.asStateFlow()
+
+    private fun addTrail(p: TeamPosition) {
+        val at = runCatching { LngLat(p.lon, p.lat) }.getOrNull() ?: return
+        val now = clock.instant()
+        _trails.update { trailBuffer.add(trailBuffer.prune(it, now), p.memberId, TrailPoint(at, p.time ?: now), now) }
+    }
+
     private val syncLock = Mutex()
     private val commentLock = Mutex()
     @Volatile private var active: Active? = null
@@ -113,6 +126,7 @@ class TeamSession @Inject constructor(
                     val projectId = p.id
                     val link = p.team
                     _positions.value = emptyMap()
+                    _trails.value = emptyMap()
                     if (link == null) {
                         _status.value = TeamStatus()
                         return@collectLatest
@@ -197,12 +211,14 @@ class TeamSession @Inject constructor(
                 scope.launch { syncComments(handle) }
                 _status.update { it.copy(online = e.online.toSet()) }
                 _positions.value = e.positions.filter { it.memberId != handle.link.memberId }.associateBy { it.memberId }
+                _positions.value.values.forEach(::addTrail)
             }
             is RealtimeEvent.Presence -> _status.update {
                 it.copy(online = if (e.online) it.online + e.memberId else it.online - e.memberId)
             }
             is RealtimeEvent.Position -> if (e.position.memberId != handle.link.memberId) {
                 _positions.update { it + (e.position.memberId to e.position) }
+                addTrail(e.position)
             }
             is RealtimeEvent.FeatureChanged -> {
                 val known = projects.get(handle.project.id)?.team?.lastSeq ?: 0L
