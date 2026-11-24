@@ -89,3 +89,36 @@ func TestMigratesOlderDatabase(t *testing.T) {
 func TestContract(t *testing.T) {
 	storetest.Run(t, func(t *testing.T) store.Store { return open(t) })
 }
+
+// A copy carries every table, so the new database serves the same tokens,
+// records and counters.
+func TestCopyTo(t *testing.T) {
+	ctx := context.Background()
+	src := open(t)
+	ws, m, tok, _ := src.CreateWorkspace(ctx, "w", "a")
+	at := time.Date(2026, 11, 24, 8, 0, 0, 0, time.UTC)
+	src.PushFeatures(ctx, ws.ID, m.ID, []store.Feature{{ID: "f1", Version: 1, UpdatedAt: at, Geometry: []byte(`null`), Properties: []byte(`{}`)}})
+	src.PushFeatures(ctx, ws.ID, m.ID, []store.Feature{{ID: "f1", Version: 2, UpdatedAt: at, Deleted: true, Geometry: []byte(`null`), Properties: []byte(`{}`)}})
+	src.AddComment(ctx, ws.ID, m.ID, store.Comment{ID: "c1", Body: "hi", At: []float64{116.4, 39.9}, Urgent: true})
+	dst := open(t)
+	counts, err := src.CopyTo(ctx, dst)
+	if err != nil || counts["features"] != 1 || counts["feature_history"] != 1 || counts["comments"] != 1 {
+		t.Fatalf("copy: %v %v", err, counts)
+	}
+	if _, err := dst.Authenticate(ctx, ws.ID, tok); err != nil {
+		t.Fatalf("token in copy: %v", err)
+	}
+	res, seq, err := dst.PushFeatures(ctx, ws.ID, m.ID, []store.Feature{{ID: "f2", Version: 1, UpdatedAt: at, Geometry: []byte(`null`), Properties: []byte(`{}`)}})
+	if err != nil || seq != 3 || res[0].Seq != 3 {
+		t.Fatalf("seq continues: %v %d", err, seq)
+	}
+	if fs, _, _ := dst.PullFeatures(ctx, ws.ID, 0, 10); len(fs) != 2 || !fs[0].Deleted {
+		t.Fatalf("features: %+v", fs)
+	}
+	if cs, _, _ := dst.Comments(ctx, ws.ID, 0, 10); len(cs) != 1 || !cs[0].Urgent || len(cs[0].At) != 2 {
+		t.Fatalf("comments: %+v", cs)
+	}
+	if _, err := src.CopyTo(ctx, dst); err == nil {
+		t.Fatal("copied into a database that already has workspaces")
+	}
+}

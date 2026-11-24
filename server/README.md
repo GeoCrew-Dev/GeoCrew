@@ -62,7 +62,13 @@ createdb geocrew
 geocrew-server -data /var/lib/geocrew -database "postgres://geocrew:密码@localhost/geocrew"
 ```
 
-首次启动自动建表；多个进程同时启动时用咨询锁保证只迁移一次。附件仍放在 `-data` 目录的 `files/` 下，多台机器时需要共享这个目录（NFS 等）。两种数据库存的内容完全相同（时间和 GeoJSON 都按原文保存），不需要 PostGIS。从 SQLite 迁移到 PostgreSQL 目前没有现成命令，可用「下载整组数据」导出工程包再在新服务器上建组导入。备份改用 `pg_dump`，`admin backup` 只用于 SQLite。
+首次启动自动建表；多个进程同时启动时用咨询锁保证只迁移一次。附件仍放在 `-data` 目录的 `files/` 下，多台机器时需要共享这个目录（NFS 等）。两种数据库存的内容完全相同（时间和 GeoJSON 都按原文保存），不需要 PostGIS。已有的 SQLite 数据可以原样搬过去（成员令牌、邀请码、记录序号、讨论和修改历史都保留，组员手机不用重新加入）：先停掉服务，建好空库，再运行
+
+```bash
+geocrew-server -data /var/lib/geocrew admin copy "postgres://geocrew:密码@localhost/geocrew"
+```
+
+然后加上 `-database` 启动。目标库里已有工作组时会拒绝复制；复制在一个事务里完成，失败不会留下半套数据。反方向也可以：`admin copy /path/new.db` 把 PostgreSQL 的数据复制成一个 SQLite 文件。备份改用 `pg_dump`，`admin backup` 只用于 SQLite。
 
 ## 管理命令
 

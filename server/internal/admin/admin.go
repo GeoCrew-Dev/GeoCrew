@@ -17,6 +17,7 @@ import (
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/export"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqldb"
 )
 
 // Usage is printed for "admin help" and for unknown commands.
@@ -28,6 +29,8 @@ const Usage = `用法：geocrew-server [参数] admin <命令>
   role <工作组> <成员> <角色>        修改角色：leader / member / readonly
   revoke <工作组> <成员>            移出成员，令牌立即失效
   backup <目标文件>                 在线备份数据库（附件目录另行复制）
+  copy <目标数据库>                  把全部数据复制到另一个空库：postgres://… 或 .db 文件，
+                                   用于从 SQLite 换到 PostgreSQL（或反过来）；附件目录不变
   export <工作组> <目标文件>         导出当前全部记录：.geojson 结尾为 GeoJSON（可直接用 QGIS 打开），
                                    .zip 结尾为工程包（含照片和记录表单，安卓端可导入为新工程），
                                    .csv 结尾为样品清单（每件样品一行，时间按本机时区），
@@ -45,6 +48,9 @@ const Usage = `用法：geocrew-server [参数] admin <命令>
 type Options struct {
 	// Files holds attachments; without it packages are exported without photos.
 	Files *blob.Disk
+	// OpenDatabase opens a copy target named on the command line (a
+	// PostgreSQL URL or an SQLite file); nil disables "copy".
+	OpenDatabase func(target string) (*sqldb.DB, error)
 }
 
 // Run executes one admin command against st.
@@ -124,6 +130,11 @@ func RunWith(ctx context.Context, st store.Store, opt Options, args []string, ou
 		}
 		fmt.Fprintf(out, "已将 %s 移出「%s」。已连接的实时通道会在下次重连时断开。\n", m.Nickname, ws.Name)
 		return nil
+	case "copy":
+		if err := need(1); err != nil {
+			return err
+		}
+		return copyDatabase(ctx, st, opt, rest[0], out)
 	case "backup":
 		if err := need(1); err != nil {
 			return err
@@ -393,4 +404,32 @@ func size(n int64) string {
 	default:
 		return fmt.Sprintf("%d B", n)
 	}
+}
+
+func copyDatabase(ctx context.Context, st store.Store, opt Options, target string, out io.Writer) error {
+	src, ok := st.(*sqldb.DB)
+	if !ok || opt.OpenDatabase == nil {
+		return errors.New("当前存储不支持复制")
+	}
+	dst, err := opt.OpenDatabase(target)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+	if src.Dialect() == dst.Dialect() && src.Dialect() == "sqlite" {
+		fmt.Fprintln(out, "提示：SQLite 之间的复制可以直接用 backup。")
+	}
+	counts, err := src.CopyTo(ctx, dst)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "已复制到 %s：工作组 %d，成员 %d，记录 %d（历史版本 %d），讨论 %d，附件登记 %d。\n",
+		dst.Dialect(), counts["workspaces"], counts["members"], counts["features"], counts["feature_history"],
+		counts["comments"], counts["files"])
+	if dst.Dialect() == "sqlite" {
+		fmt.Fprintln(out, "把这个文件改名为 geocrew.db 放进数据目录，去掉 -database 启动即可；附件仍在数据目录的 files/ 下。")
+	} else {
+		fmt.Fprintln(out, "附件仍在数据目录的 files/ 下：新服务端用同一个 -data 目录（或把它复制过去），加上 -database 启动即可。")
+	}
+	return nil
 }

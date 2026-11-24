@@ -58,7 +58,7 @@ func run() error {
 	log.Info("database", "engine", db.Dialect())
 	files := &blob.Disk{Root: filepath.Join(cfg.DataDir, "files"), MaxSize: cfg.MaxUploadMB << 20}
 	if len(cfg.Args) > 0 {
-		return admin.RunWith(context.Background(), db, admin.Options{Files: files}, cfg.Args[1:], os.Stdout)
+		return admin.RunWith(context.Background(), db, admin.Options{Files: files, OpenDatabase: openTarget}, cfg.Args[1:], os.Stdout)
 	}
 
 	var sender *push.Sender
@@ -132,4 +132,16 @@ func openStore(cfg config.Config) (*sqldb.DB, error) {
 		return postgres.Open(cfg.Database)
 	}
 	return sqlite.Open(filepath.Join(cfg.DataDir, "geocrew.db"))
+}
+
+// openTarget opens the database named by "admin copy": a PostgreSQL URL or
+// a new SQLite file.
+func openTarget(target string) (*sqldb.DB, error) {
+	if strings.HasPrefix(target, "postgres://") || strings.HasPrefix(target, "postgresql://") {
+		return postgres.Open(target)
+	}
+	if _, err := os.Stat(target); err == nil {
+		return nil, fmt.Errorf("%s 已存在，请换一个新文件名", target)
+	}
+	return sqlite.Open(target)
 }

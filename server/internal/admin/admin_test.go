@@ -14,6 +14,7 @@ import (
 
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqldb"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
 )
 
@@ -214,5 +215,26 @@ func TestFilesAndPrune(t *testing.T) {
 	}
 	if !kept[current] || !kept[historic] || !kept[fresh] || kept[stale] {
 		t.Fatalf("kept %v", kept)
+	}
+}
+
+func TestCopy(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	db.CreateWorkspace(ctx, "W", "L")
+	dest := filepath.Join(t.TempDir(), "moved.db")
+	opt := Options{OpenDatabase: func(target string) (*sqldb.DB, error) { return sqlite.Open(target) }}
+	var out bytes.Buffer
+	if err := RunWith(ctx, db, opt, []string{"copy", dest}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "工作组 1，成员 1") {
+		t.Fatalf("summary: %s", out.String())
+	}
+	if err := RunWith(ctx, db, opt, []string{"copy", dest}, &out); err == nil {
+		t.Fatal("copied twice into the same database")
+	}
+	if _, err := run(t, db, "copy", dest); err == nil {
+		t.Fatal("copy without a way to open the target")
 	}
 }
