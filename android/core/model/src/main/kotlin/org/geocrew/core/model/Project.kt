@@ -39,6 +39,10 @@ data class ProjectConfig(
     val description: String = "",
     /** Attribute fields offered on every record of this project, in order. */
     val fields: List<FieldTemplate> = emptyList(),
+    /** Version of the workspace settings [fields] were last in step with (protocol v0 §2.2). */
+    val teamFormVersion: Long = 0,
+    /** True when a leader changed [fields] locally and the workspace has not received them yet. */
+    val teamFormPending: Boolean = false,
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 }

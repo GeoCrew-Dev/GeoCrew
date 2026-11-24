@@ -92,7 +92,10 @@ class ProjectRepository @Inject constructor(
 
     suspend fun linkTeam(id: String, team: TeamLink?) {
         val p = dao.get(id)?.toModel() ?: return
-        dao.upsert(p.copy(team = team).toEntity())
+        val sameWorkspace = p.team?.serverUrl == team?.serverUrl && p.team?.workspaceId == team?.workspaceId
+        // Form versions belong to one workspace; a new link starts in step with nothing.
+        val config = if (sameWorkspace) p.config else p.config.copy(teamFormVersion = 0, teamFormPending = false)
+        dao.upsert(p.copy(team = team, config = config).toEntity())
     }
 
     suspend fun setLastSeq(id: String, seq: Long) = dao.setLastSeq(id, seq)

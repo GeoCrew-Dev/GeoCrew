@@ -77,6 +77,17 @@ class GeoCrewApi(
 
     suspend fun resetInvite(ws: String): String = send(wsUrl(ws, "invite"), "POST", "{}".toRequestBody(JSON), InviteResp.serializer()).inviteCode
 
+    suspend fun settings(ws: String): WorkspaceSettings = get(wsUrl(ws, "settings"), WorkspaceSettings.serializer())
+
+    /**
+     * Replaces the shared settings (leaders only). With [baseVersion] the
+     * server refuses with 409 `stale` if someone changed them meanwhile.
+     */
+    suspend fun putSettings(ws: String, settings: JsonObject, baseVersion: Long?): WorkspaceSettings {
+        val body = json.encodeToString(PutSettingsReq.serializer(), PutSettingsReq(settings, baseVersion)).toRequestBody(JSON)
+        return send(wsUrl(ws, "settings"), "PUT", body, WorkspaceSettings.serializer())
+    }
+
     suspend fun setRole(ws: String, member: String, role: String) {
         exec(wsUrl(ws, "members", member), "PATCH", encode(mapOf("role" to role)))
     }

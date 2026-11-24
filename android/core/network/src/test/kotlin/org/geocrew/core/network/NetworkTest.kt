@@ -32,6 +32,7 @@ class ParseTest {
         assertTrue(hello is RealtimeEvent.Hello && hello.positions.single().nickname == "甲")
         assertEquals(RealtimeEvent.FeatureChanged(7), RealtimeClient.parse("""{"type":"feature_changed","seq":7}"""))
         assertEquals(RealtimeEvent.MembersChanged, RealtimeClient.parse("""{"type":"members_changed"}"""))
+        assertEquals(RealtimeEvent.SettingsChanged(4), RealtimeClient.parse("""{"type":"settings_changed","version":4}"""))
         assertEquals(null, RealtimeClient.parse("""{"type":"from_the_future"}"""))
         assertEquals(null, RealtimeClient.parse("not json"))
     }
@@ -100,6 +101,14 @@ class ServerIntegrationTest {
         val member = anon.withToken(memberJoin.token)
         val ws = leaderJoin.workspaceId
         assertEquals(2, leader.members(ws).size)
+
+        // Shared settings: everyone reads, leaders write, stale writes are refused.
+        val form = kotlinx.serialization.json.buildJsonObject { put("form", kotlinx.serialization.json.JsonArray(emptyList())) }
+        assertEquals(0L, member.settings(ws).version)
+        assertEquals(1L, leader.putSettings(ws, form, 0).version)
+        assertEquals(1L, member.workspace(ws).settingsVersion)
+        assertEquals(409, runCatching { leader.putSettings(ws, form, 0) }.exceptionOrNull().let { (it as ApiException).status })
+        assertEquals(403, runCatching { member.putSettings(ws, form, null) }.exceptionOrNull().let { (it as ApiException).status })
 
         // Leader records a point with a photo.
         val a = MemoryStore()

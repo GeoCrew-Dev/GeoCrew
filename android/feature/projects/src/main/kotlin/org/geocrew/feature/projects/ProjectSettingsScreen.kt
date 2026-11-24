@@ -45,11 +45,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.geocrew.core.data.repo.ProjectRepository
+import org.geocrew.core.data.team.TeamForms
+import org.geocrew.core.data.team.TeamRepository
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.FieldType
@@ -61,47 +66,84 @@ import javax.inject.Inject
 /** Route argument holding the project id. */
 const val PROJECT_ID_ARG = "projectId"
 
+/** Who may change a project's form. */
+enum class FormAccess {
+    /** Local project: the form is the user's own. */
+    LOCAL,
+    /** Linked project, and the user leads the workspace: edits go to every member. */
+    TEAM_LEADER,
+    /** Linked project led by someone else: the form is read-only here. */
+    TEAM_MEMBER,
+}
+
 @HiltViewModel
 class ProjectSettingsViewModel @Inject constructor(
     savedState: SavedStateHandle,
     private val projects: ProjectRepository,
+    private val team: TeamRepository,
+    private val forms: TeamForms,
 ) : ViewModel() {
     private val id: String = checkNotNull(savedState[PROJECT_ID_ARG])
 
     val project: StateFlow<Project?> = projects.observe(id).stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    val access: StateFlow<FormAccess> = project.map { p ->
+        when {
+            p?.team == null -> FormAccess.LOCAL
+            p.team?.role == TeamRepository.ROLE_LEADER -> FormAccess.TEAM_LEADER
+            else -> FormAccess.TEAM_MEMBER
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, FormAccess.LOCAL)
+
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+    fun consumeMessage() { _message.value = null }
+
     fun rename(name: String) = viewModelScope.launch {
         if (name.isNotBlank() && name.trim() != project.value?.name) projects.rename(id, name)
     }
 
-    fun describe(text: String) = edit { it.copy(description = text.trim()) }
+    fun describe(text: String) = viewModelScope.launch { projects.updateConfig(id) { it.copy(description = text.trim()) } }
 
     /** Adds or replaces the field with [old]'s key; returns the problem instead when there is one. */
     fun putField(old: FieldTemplate?, field: FieldTemplate): String? {
         val fields = project.value?.config?.fields ?: return "工程不存在"
         val others = fields.filter { it.key != old?.key }
         FieldTemplate.problem(field, others)?.let { return it }
-        edit { cfg ->
-            val i = cfg.fields.indexOfFirst { it.key == old?.key }
-            cfg.copy(fields = if (i < 0) cfg.fields + field else cfg.fields.toMutableList().also { it[i] = field })
-        }
+        val i = fields.indexOfFirst { it.key == old?.key }
+        saveFields(if (i < 0) fields + field else fields.toMutableList().also { it[i] = field })
         return null
     }
 
-    fun removeField(field: FieldTemplate) = edit { it.copy(fields = it.fields - field) }
+    fun removeField(field: FieldTemplate) = change { it - field }
 
-    fun moveUp(field: FieldTemplate) = edit { cfg ->
-        val i = cfg.fields.indexOf(field)
-        if (i <= 0) cfg else cfg.copy(fields = cfg.fields.toMutableList().also { it.add(i - 1, it.removeAt(i)) })
+    fun moveUp(field: FieldTemplate) = change { list ->
+        val i = list.indexOf(field)
+        if (i <= 0) list else list.toMutableList().also { it.add(i - 1, it.removeAt(i)) }
     }
 
     /** Adds the preset's fields that the project does not have yet. */
-    fun addPreset() = edit { cfg ->
-        cfg.copy(fields = cfg.fields + FieldTemplate.geologyPreset.filter { p -> cfg.fields.none { it.key == p.key } })
+    fun addPreset() = change { list -> list + FieldTemplate.geologyPreset.filter { p -> list.none { it.key == p.key } } }
+
+    private fun change(edit: (List<FieldTemplate>) -> List<FieldTemplate>) {
+        project.value?.config?.fields?.let { saveFields(edit(it)) }
     }
 
-    private fun edit(change: (org.geocrew.core.model.ProjectConfig) -> org.geocrew.core.model.ProjectConfig) {
-        viewModelScope.launch { projects.updateConfig(id, change) }
+    private fun saveFields(fields: List<FieldTemplate>) {
+        if (access.value == FormAccess.TEAM_MEMBER) return
+        viewModelScope.launch {
+            val h = if (access.value == FormAccess.TEAM_LEADER) team.handle(id) else null
+            if (h == null) {
+                projects.updateConfig(id) { it.copy(fields = fields) }
+                return@launch
+            }
+            _message.value = try {
+                forms.publish(h, fields)
+            } catch (e: java.io.IOException) {
+                // Saved locally with the pending flag; the next connection publishes it.
+                "已保存在本机，联网后会同步给组员"
+            }
+        }
     }
 }
 
@@ -114,6 +156,9 @@ class ProjectSettingsViewModel @Inject constructor(
 @Composable
 fun ProjectSettingsScreen(onBack: () -> Unit, viewModel: ProjectSettingsViewModel = hiltViewModel()) {
     val project by viewModel.project.collectAsStateWithLifecycle()
+    val access by viewModel.access.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val readOnly = access == FormAccess.TEAM_MEMBER
     var editing by remember { mutableStateOf<Pair<FieldTemplate?, FieldTemplate>?>(null) }
 
     Scaffold(
@@ -142,7 +187,11 @@ fun ProjectSettingsScreen(onBack: () -> Unit, viewModel: ProjectSettingsViewMode
 
             SectionHeader("记录表单")
             Text(
-                "这里的属性会出现在本工程每条记录的详情里，并随工程包一起导出。",
+                when (access) {
+                    FormAccess.LOCAL -> "这里的属性会出现在本工程每条记录的详情里，并随工程包一起导出。"
+                    FormAccess.TEAM_LEADER -> "这里的属性会出现在本工程每条记录的详情里。你是组长，修改后会同步给工作组的所有成员。"
+                    FormAccess.TEAM_MEMBER -> "表单由组长统一维护，组内所有人按同一套属性填写。"
+                },
                 Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -151,16 +200,16 @@ fun ProjectSettingsScreen(onBack: () -> Unit, viewModel: ProjectSettingsViewMode
                 ListItem(
                     headlineContent = { Text(field.label) },
                     supportingContent = { Text(describe(field)) },
-                    trailingContent = {
+                    trailingContent = if (readOnly) null else ({
                         Row {
                             if (i > 0) IconButton(onClick = { viewModel.moveUp(field) }) { Icon(Icons.Default.ArrowUpward, "上移") }
                             IconButton(onClick = { viewModel.removeField(field) }) { Icon(Icons.Default.Delete, "删除 ${field.label}") }
                         }
-                    },
-                    modifier = Modifier.clickable { editing = field to field },
+                    }),
+                    modifier = if (readOnly) Modifier else Modifier.clickable { editing = field to field },
                 )
             }
-            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!readOnly) Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { editing = null to FieldTemplate("", "") }) { Text("添加属性") }
                 if (FieldTemplate.geologyPreset.any { pre -> p.config.fields.none { it.key == pre.key } }) {
                     OutlinedButton(onClick = viewModel::addPreset) { Text("套用地质填图模板") }
@@ -168,6 +217,14 @@ fun ProjectSettingsScreen(onBack: () -> Unit, viewModel: ProjectSettingsViewMode
             }
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    message?.let { msg ->
+        AlertDialog(
+            onDismissRequest = viewModel::consumeMessage,
+            text = { Text(msg) },
+            confirmButton = { TextButton(onClick = viewModel::consumeMessage) { Text("好") } },
+        )
     }
 
     editing?.let { (old, start) ->

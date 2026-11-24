@@ -43,8 +43,17 @@ data class WorkspaceInfo(
     @SerialName("last_seq") val lastSeq: Long = 0,
     val me: Member,
     @SerialName("invite_code") val inviteCode: String? = null,
+    /** 0 until a leader first sets the shared settings; servers without the capability omit it. */
+    @SerialName("settings_version") val settingsVersion: Long = 0,
     val online: List<String> = emptyList(),
 )
+
+/** A workspace's shared settings (protocol v0 §2.2); the server does not interpret them. */
+@Serializable
+data class WorkspaceSettings(val version: Long = 0, val settings: JsonObject = JsonObject(emptyMap()))
+
+@Serializable
+internal data class PutSettingsReq(val settings: JsonObject, @SerialName("base_version") val baseVersion: Long? = null)
 
 @Serializable
 internal data class InviteResp(@SerialName("invite_code") val inviteCode: String)

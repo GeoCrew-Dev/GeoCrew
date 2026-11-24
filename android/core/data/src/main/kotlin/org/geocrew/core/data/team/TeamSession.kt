@@ -67,6 +67,7 @@ class TeamSession @Inject constructor(
     private val settings: SettingsRepository,
     private val store: RoomSyncStore,
     private val attachments: PhotoAttachments,
+    private val forms: TeamForms,
     private val client: OkHttpClient,
     private val clock: Clock,
     @ApplicationScope private val scope: CoroutineScope,
@@ -169,6 +170,8 @@ class TeamSession @Inject constructor(
             syncLock.withLock { syncOnce(handle) }
             // Refresh cached workspace name and role; failures are not fatal.
             runCatching { team.workspace(handle) }
+            // Servers without the "settings" capability answer 404; the local form then stays as is.
+            syncForm(handle)
             awaitCancellation()
         } finally {
             realtime.stop()
@@ -193,7 +196,21 @@ class TeamSession @Inject constructor(
                 if (e.seq > known) syncLock.withLock { syncOnce(handle) }
             }
             RealtimeEvent.MembersChanged -> runCatching { team.workspace(handle) }
+            is RealtimeEvent.SettingsChanged -> {
+                val known = projects.get(handle.project.id)?.config?.teamFormVersion ?: 0L
+                if (e.version != known) syncForm(handle)
+            }
             is RealtimeEvent.Error -> _status.update { it.copy(error = e.message.ifBlank { e.code }) }
+        }
+    }
+
+    private suspend fun syncForm(handle: TeamHandle) {
+        try {
+            forms.sync(handle)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Not fatal: records still sync, and the next connection retries.
         }
     }
 
