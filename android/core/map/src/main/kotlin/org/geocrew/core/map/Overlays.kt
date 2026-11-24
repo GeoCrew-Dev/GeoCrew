@@ -73,7 +73,7 @@ internal object OverlayGeoJson {
                 }
                 simpleStyle(f.properties)
                 // A record that brings its own colour (analysis output, an imported file) keeps it.
-                if (COLOR_KEYS.none(::has)) legend.colorOf(f)?.let { c ->
+                if (COLOR_KEYS.none(::has)) legend.colorOf(f)?.takeIf { HEX_COLOR.matches(it) }?.let { c ->
                     for (k in COLOR_KEYS) this[k] = c
                     if ((g is Geometry.Polygon || g is Geometry.MultiPolygon) && !has("fill-opacity")) this["fill-opacity"] = 0.45
                 }
