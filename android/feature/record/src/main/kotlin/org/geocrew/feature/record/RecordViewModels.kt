@@ -4,16 +4,21 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.PhotoStore
 import org.geocrew.core.data.repo.ProjectRepository
@@ -27,12 +32,17 @@ import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.GeoFeature
+import org.geocrew.core.model.PhotoInfo
+import org.geocrew.core.model.photoInfo
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.TaskInfo
 import org.geocrew.core.model.TaskStatus
 import org.geocrew.core.model.task
 import org.geocrew.core.model.string
+import org.geocrew.core.sensors.LocationSource
+import org.geocrew.core.sensors.OrientationSource
 import java.io.File
+import java.time.Instant
 import javax.inject.Inject
 
 data class Revision(val feature: GeoFeature, val author: String)
@@ -104,7 +114,9 @@ class FeatureDetailViewModel @Inject constructor(
     savedState: SavedStateHandle,
     private val features: FeatureRepository,
     val photos: PhotoStore,
-    settings: SettingsRepository,
+    private val settings: SettingsRepository,
+    private val orientation: OrientationSource,
+    private val location: LocationSource,
     private val projects: ProjectRepository,
     private val team: TeamRepository,
     private val teamComments: TeamComments,
@@ -211,24 +223,75 @@ class FeatureDetailViewModel @Inject constructor(
 
     fun newCaptureTarget() = photos.newCaptureTarget()
 
+    /** Direction and position at the moment the camera is opened, for the photo's [PhotoInfo]. */
+    private var aim: PhotoInfo? = null
+
+    /**
+     * Notes which way the back camera looks and where we are, just before
+     * the camera app takes over (sensors stop reporting to apps in the
+     * background). Returns within about a second either way.
+     */
+    suspend fun takeAim() {
+        aim = null
+        val look = if (orientation.available) {
+            withTimeoutOrNull(800) { orientation.orientation().drop(2).first() }
+        } else null
+        val fix = if (location.hasPermission()) {
+            withTimeoutOrNull(500) { location.fixes().first() }
+                ?.takeIf { java.time.Duration.between(it.time, Instant.now()).abs().seconds < 120 }
+        } else null
+        val decl = settings.settings.first().declination?.toDouble()
+            ?: fix?.let { orientation.declinationAt(it.position) } ?: 0.0
+        aim = PhotoInfo(azimuth = look?.lookTrue(decl), position = fix?.position, takenAt = Instant.now())
+    }
+
     fun addCaptured(file: File) = viewModelScope.launch {
-        photos.commit(file)?.let(::addPhoto)
+        // The camera's own EXIF (GPS, time, sometimes direction) wins over our aim.
+        val exif = withContext(Dispatchers.IO) { PhotoExif.read(file) }
+        val info = exif.orElse(aim)
+        aim = null
+        photos.commit(file)?.let { addPhoto(it, info) }
     }
 
     fun addPicked(uri: android.net.Uri) = viewModelScope.launch {
-        photos.import(uri)?.let(::addPhoto)
+        val sha = photos.import(uri) ?: return@launch
+        val exif = withContext(Dispatchers.IO) { PhotoExif.read(photos.file(sha)) }
+        addPhoto(sha, exif)
     }
 
-    private fun addPhoto(sha: String) = viewModelScope.launch {
+    private fun addPhoto(sha: String, info: PhotoInfo?) = viewModelScope.launch {
         val cur = feature.value ?: return@launch
         if (sha in cur.photos) return@launch
-        features.edit(id) { strings(Props.PHOTOS, cur.photos + sha) }
+        features.edit(id) {
+            strings(Props.PHOTOS, cur.photos + sha)
+            if (info != null && !info.isEmpty) photoInfo(sha, info)
+        }
     }
 
     fun removePhoto(sha: String) = viewModelScope.launch {
         val cur = feature.value ?: return@launch
-        features.edit(id) { strings(Props.PHOTOS, cur.photos - sha) }
+        features.edit(id) {
+            strings(Props.PHOTOS, cur.photos - sha)
+            photoInfo(sha, null)
+        }
     }
+
+    /** Saves a copy of photo [sha] with its record, position, direction and time stamped on it. */
+    fun saveStamped(context: android.content.Context, sha: String) = viewModelScope.launch {
+        val f = feature.value ?: return@launch
+        val info = f.photoInfo[sha] ?: PhotoInfo()
+        val project = projects.get(f.projectId)?.name
+        val format = coordinateFormat.value
+        val lines = info.stamp(f.title, project, java.time.ZoneId.systemDefault(), format) + "同勘 GeoCrew"
+        val ok = withContext(Dispatchers.IO) {
+            runCatching { PhotoStamp.save(context, photos.file(sha), lines, "GeoCrew_${f.title?.takeIf { it.isNotBlank() } ?: "photo"}_${sha.take(8)}") }.getOrDefault(false)
+        }
+        _photoMessage.value = if (ok) "已保存到相册的 Pictures/GeoCrew" else "保存失败"
+    }
+
+    private val _photoMessage = MutableStateFlow<String?>(null)
+    val photoMessage: StateFlow<String?> = _photoMessage.asStateFlow()
+    fun consumePhotoMessage() { _photoMessage.value = null }
 
     fun delete() = viewModelScope.launch { features.delete(id) }
 

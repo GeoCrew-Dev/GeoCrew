@@ -24,11 +24,18 @@ data class Orientation(
     val plane: Attitude,
     /** SensorManager accuracy constant of the magnetometer. */
     val accuracy: Int,
+    /**
+     * Horizontal direction the back camera looks along, from magnetic
+     * north; null while the phone lies nearly flat (the camera then looks
+     * at the ground and has no useful direction).
+     */
+    val lookMagnetic: Double? = null,
 ) {
     val isUnreliable get() = accuracy <= SensorManager.SENSOR_STATUS_ACCURACY_LOW
 
     fun azimuthTrue(declination: Double) = Geodesy.normalizeDegrees(azimuthMagnetic + declination)
     fun planeTrue(declination: Double) = Attitude.of(plane.dipDirection + declination, plane.dip)
+    fun lookTrue(declination: Double) = lookMagnetic?.let { Geodesy.normalizeDegrees(it + declination) }
 }
 
 @Singleton
@@ -54,7 +61,11 @@ class OrientationSource @Inject constructor(@ApplicationContext context: Context
             val az = Geodesy.normalizeDegrees(Math.toDegrees(angles[0].toDouble()))
             // Third column of R: device z axis in (east, north, up).
             val plane = Attitude.fromDeviceNormal(rotation[2].toDouble(), rotation[5].toDouble(), rotation[8].toDouble())
-            trySend(Orientation(az, plane, magAccuracy))
+            // The back camera looks along the device's -z axis.
+            val east = -rotation[2].toDouble()
+            val north = -rotation[5].toDouble()
+            val look = if (Math.hypot(east, north) < 0.35) null else Geodesy.normalizeDegrees(Math.toDegrees(Math.atan2(east, north)))
+            trySend(Orientation(az, plane, magAccuracy, look))
         }
 
         val listener = object : SensorEventListener {

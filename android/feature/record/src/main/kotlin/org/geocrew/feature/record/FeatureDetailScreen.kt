@@ -1,6 +1,9 @@
 package org.geocrew.feature.record
 
 import android.content.Intent
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,6 +54,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +76,8 @@ import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.Props
+import org.geocrew.core.model.photoInfo
+import kotlinx.coroutines.launch
 import org.geocrew.core.model.ElevationProfile
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
@@ -291,8 +298,14 @@ private fun AttitudeEditor(current: Attitude?, onSave: (Attitude?) -> Unit, onMe
 @Composable
 private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<File?>(null) }
     var removing by remember { mutableStateOf<String?>(null) }
+    var viewing by remember { mutableStateOf<String?>(null) }
+    val photoMessage by vm.photoMessage.collectAsStateWithLifecycle()
+    LaunchedEffect(photoMessage) {
+        photoMessage?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show(); vm.consumePhotoMessage() }
+    }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val file = pending
         pending = null
@@ -301,12 +314,17 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.addPicked(uri)
     }
+    val info = f.photoInfo
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
                 val (file, uri) = vm.newCaptureTarget()
                 pending = file
-                camera.launch(uri)
+                // Note the camera's direction before the camera app takes over.
+                scope.launch {
+                    vm.takeAim()
+                    camera.launch(uri)
+                }
             }) {
                 Icon(Icons.Default.PhotoCamera, null)
                 Text(" 拍照")
@@ -321,24 +339,57 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
         if (f.photos.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(f.photos) { sha ->
-                    PhotoThumb(
-                        vm.photos.file(sha),
-                        Modifier.size(96.dp).clip(RoundedCornerShape(8.dp)).combinedClickable(
-                            onClick = {
-                                if (vm.photos.exists(sha)) {
-                                    val intent = Intent(Intent.ACTION_VIEW)
-                                        .setDataAndType(vm.photos.uri(sha), "image/jpeg")
-                                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    runCatching { context.startActivity(intent) }
-                                }
-                            },
-                            onLongClick = { removing = sha },
-                        ),
-                    )
+                    Box {
+                        PhotoThumb(
+                            vm.photos.file(sha),
+                            Modifier.size(96.dp).clip(RoundedCornerShape(8.dp)).combinedClickable(
+                                onClick = { viewing = sha },
+                                onLongClick = { removing = sha },
+                            ),
+                        )
+                        info[sha]?.azimuth?.let { az ->
+                            Text(
+                                "%.0f°".format(java.util.Locale.ROOT, az),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = androidx.compose.ui.graphics.Color.White,
+                                modifier = Modifier.align(Alignment.BottomStart)
+                                    .padding(4.dp)
+                                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp),
+                            )
+                        }
+                    }
                 }
             }
-            Text("长按照片可移除", style = MaterialTheme.typography.bodySmall)
+            Text("点照片看拍摄信息，长按移除；照片右下角是拍摄方向", style = MaterialTheme.typography.bodySmall)
         }
+    }
+    viewing?.let { sha ->
+        val p = info[sha]
+        AlertDialog(
+            onDismissRequest = { viewing = null },
+            title = { Text("照片") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PhotoThumb(vm.photos.file(sha), Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(8.dp)), targetPx = 1080)
+                    val lines = p?.stamp(null, null, java.time.ZoneId.systemDefault(), vm.coordinateFormat.value).orEmpty()
+                    if (lines.isEmpty()) Text("这张照片没有记下拍摄方向和位置", style = MaterialTheme.typography.bodySmall)
+                    lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    TextButton(onClick = {
+                        if (vm.photos.exists(sha)) {
+                            val intent = Intent(Intent.ACTION_VIEW)
+                                .setDataAndType(vm.photos.uri(sha), "image/jpeg")
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            runCatching { context.startActivity(intent) }
+                        }
+                    }) { Text("用其他应用查看原图") }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.saveStamped(context.applicationContext, sha); viewing = null }) { Text("另存带标注的照片") }
+            },
+            dismissButton = { TextButton(onClick = { viewing = null }) { Text("关闭") } },
+        )
     }
     removing?.let { sha ->
         AlertDialog(

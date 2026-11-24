@@ -84,6 +84,7 @@ object Props {
     const val TITLE = "title"
     const val NOTE = "note"
     const val PHOTOS = "photos"
+    const val PHOTO_INFO = "photo_info"
     const val LITHOLOGY = "lithology"
     const val STRIKE = "strike"
     const val DIP_DIRECTION = "dip_direction"
@@ -100,7 +101,7 @@ object Props {
 
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
-        KIND, TITLE, NOTE, PHOTOS, LITHOLOGY, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
+        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, LITHOLOGY, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
         STARTED_AT, ENDED_AT, ACCURACY_M, LENGTH_M, AREA_M2,
         ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS,
     )
