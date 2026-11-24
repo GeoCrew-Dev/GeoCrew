@@ -27,6 +27,7 @@ include(":core:data")
 include(":core:ui")
 include(":core:map")
 include(":core:sensors")
+include(":core:network")
 
 // One module per screen or flow.
 include(":feature:map")
