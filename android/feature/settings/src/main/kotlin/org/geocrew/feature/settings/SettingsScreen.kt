@@ -146,7 +146,7 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
             item { SectionHeader("离线底图") }
             item {
                 Text(
-                    "没有信号的测区，可以提前用桌面软件（如 QGIS、MOBAC）把底图导出成 MBTiles 栅格瓦片包，再在这里导入。导入后存在手机里，地图的底图切换里会多出这一项。",
+                    "没有信号的测区，可以提前用桌面软件（如 QGIS、MOBAC）把底图导出成 MBTiles 栅格瓦片包，再在这里导入。导入后存在手机里，地图的底图切换里会多出这一项。也可以在地图的「图层 · 下载当前范围」里直接把屏幕上的天地图或自定义底图存下来（OpenStreetMap 官方瓦片不允许批量下载）。",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )

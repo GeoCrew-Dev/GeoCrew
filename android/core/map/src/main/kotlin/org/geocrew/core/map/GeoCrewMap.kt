@@ -93,6 +93,11 @@ class MapCameraState(center: LngLat = LngLat(105.0, 35.0), zoom: Double = 3.5) {
         }
     }
 
+    /** The area on screen, or null before the map is ready. */
+    fun visibleBounds(): org.geocrew.core.model.Bounds? = map?.projection?.visibleRegion?.latLngBounds?.let { b ->
+        org.geocrew.core.model.Bounds(b.southWest.longitude, b.southWest.latitude, b.northEast.longitude, b.northEast.latitude)
+    }
+
     fun resetNorth() = whenReady { m ->
         m.animateCamera(CameraUpdateFactory.bearingTo(0.0), 300)
     }

@@ -182,6 +182,8 @@ internal fun LayerSheet(
     onDisplay: ((org.geocrew.core.model.MapDisplay) -> org.geocrew.core.model.MapDisplay) -> Unit,
     onChoose: (String) -> Unit,
     onManage: () -> Unit,
+    /** Keep the area on screen of the current base map offline. */
+    onDownload: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -227,8 +229,9 @@ internal fun LayerSheet(
                 )
             }
             item {
-                TextButton(onClick = onManage, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text("管理 Key 和自定义图源")
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    TextButton(onClick = onDownload) { Text("下载当前范围") }
+                    TextButton(onClick = onManage) { Text("管理 Key 和图源") }
                 }
             }
         }

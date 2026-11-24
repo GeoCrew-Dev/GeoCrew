@@ -92,7 +92,21 @@ class MapViewModel @Inject constructor(
     private val teamSession: TeamSession,
     private val teamComments: org.geocrew.core.data.team.TeamComments,
     @ApplicationScope private val appScope: CoroutineScope,
+    private val downloads: org.geocrew.core.data.repo.BasemapDownloads,
 ) : ViewModel() {
+
+    /** Downloading an area of the base map for offline use; survives leaving the screen. */
+    val download: StateFlow<org.geocrew.core.data.repo.BasemapDownload?> = downloads.current
+
+    /** Starts downloading [plan] of the base map on screen; returns a Chinese reason when it can't. */
+    fun startDownload(plan: org.geocrew.core.model.tiles.TilePlan, name: String): String? {
+        val b = baseMap.value ?: return "地图还没准备好"
+        return downloads.start(b.source, b.source.keyId?.let { b.keys[it] }, plan, name)
+    }
+
+    fun cancelDownload() = downloads.cancel()
+    fun dismissDownload() = downloads.dismiss()
+
 
     val team: StateFlow<TeamStatus> = teamSession.status
 

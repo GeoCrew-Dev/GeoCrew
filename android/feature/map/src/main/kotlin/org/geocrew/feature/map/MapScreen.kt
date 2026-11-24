@@ -94,10 +94,12 @@ fun MapScreen(
     val alert by viewModel.alert.collectAsStateWithLifecycle()
     val averaging by viewModel.averaging.collectAsStateWithLifecycle()
     val mapNotice by viewModel.notice.collectAsStateWithLifecycle()
+    val download by viewModel.download.collectAsStateWithLifecycle()
     val format = settings?.coordinateFormat ?: CoordinateFormat.DECIMAL
     val camera = rememberMapCameraState()
 
     var showLayers by rememberSaveable { mutableStateOf(false) }
+    var downloadArea by remember { mutableStateOf<org.geocrew.core.model.Bounds?>(null) }
     var showGoTo by rememberSaveable { mutableStateOf(false) }
     /** A position reached through "前往坐标", marked until the next one. */
     var goneTo by remember { mutableStateOf<LngLat?>(null) }
@@ -231,6 +233,9 @@ fun MapScreen(
                 val t = tracking as org.geocrew.core.sensors.TrackingState.Recording
                 Notice("正在记录轨迹：${t.points} 个点，${CoordinateFormatter.distance(t.lengthMeters)}", null, null)
             }
+            download?.let { d ->
+                DownloadCard(d, onCancel = viewModel::cancelDownload, onUse = { viewModel.chooseSource(it.id) }, onDismiss = viewModel::dismissDownload)
+            }
             if (display.filtering) {
                 Notice(if (display.onlyMyTasks) "地图上只显示我的待办任务" else "地图上隐藏了部分记录", "调整") { showLayers = true }
             }
@@ -362,8 +367,12 @@ fun MapScreen(
                     }
                 },
                 onManage = { showLayers = false; onOpenSettings() },
+                onDownload = { showLayers = false; downloadArea = camera.visibleBounds() },
                 onDismiss = { showLayers = false },
             )
+        }
+        downloadArea?.let { area ->
+            OfflineDownloadDialog(bm.source, area, camera.zoom, onStart = viewModel::startDownload, onDismiss = { downloadArea = null })
         }
     }
 }
