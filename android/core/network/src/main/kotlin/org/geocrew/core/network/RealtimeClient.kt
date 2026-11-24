@@ -64,6 +64,7 @@ sealed interface RealtimeEvent {
     data class FeatureChanged(val seq: Long) : RealtimeEvent
     data object MembersChanged : RealtimeEvent
     data class SettingsChanged(val version: Long) : RealtimeEvent
+    data class CommentsChanged(val seq: Long) : RealtimeEvent
     data class Error(val code: String, val message: String) : RealtimeEvent
 }
 
@@ -176,6 +177,7 @@ class RealtimeClient(
                     "presence" -> json.decodeFromJsonElement(PresenceWire.serializer(), o).let { RealtimeEvent.Presence(it.memberId, it.online) }
                     "position" -> RealtimeEvent.Position(json.decodeFromJsonElement(TeamPosition.serializer(), o))
                     "feature_changed" -> RealtimeEvent.FeatureChanged(json.decodeFromJsonElement(SeqWire.serializer(), o).seq)
+                    "comments_changed" -> RealtimeEvent.CommentsChanged(json.decodeFromJsonElement(SeqWire.serializer(), o).seq)
                     "members_changed" -> RealtimeEvent.MembersChanged
                     "settings_changed" -> RealtimeEvent.SettingsChanged(json.decodeFromJsonElement(VersionWire.serializer(), o).version)
                     "error" -> json.decodeFromJsonElement(ErrorWire.serializer(), o).let { RealtimeEvent.Error(it.error, it.message) }

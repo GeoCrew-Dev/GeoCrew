@@ -68,3 +68,26 @@ data class TrackPointEntity(
     val speed: Float?,
     val bearing: Float?,
 )
+
+/**
+ * A comment on a record, or a team message when [featureId] is null
+ * (protocol v0 §8). [seq] is 0 until the server has stored it.
+ */
+@Entity(
+    tableName = "comments",
+    primaryKeys = ["projectId", "id"],
+    foreignKeys = [ForeignKey(ProjectEntity::class, ["id"], ["projectId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("projectId", "featureId")],
+)
+data class CommentEntity(
+    val projectId: String,
+    val id: String,
+    val featureId: String?,
+    val body: String,
+    val atLng: Double?,
+    val atLat: Double?,
+    val authorId: String,
+    val nickname: String,
+    val createdAt: Long,
+    val seq: Long,
+)

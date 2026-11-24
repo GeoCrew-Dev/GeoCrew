@@ -105,5 +105,40 @@ interface TrackPointDao {
     suspend fun clear(trackId: String)
 }
 
+@Dao
+interface CommentDao {
+    /** Comments on one record, in the order the server stored them; unsent ones last. */
+    @Query("SELECT * FROM comments WHERE projectId = :projectId AND featureId = :featureId ORDER BY seq = 0, seq, createdAt")
+    fun observeFor(projectId: String, featureId: String): Flow<List<CommentEntity>>
+
+    /** Everything said in the project's team, newest last. */
+    @Query("SELECT * FROM (SELECT * FROM comments WHERE projectId = :projectId ORDER BY seq = 0 DESC, seq DESC, createdAt DESC LIMIT :limit) ORDER BY seq = 0, seq, createdAt")
+    fun observeRecent(projectId: String, limit: Int): Flow<List<CommentEntity>>
+
+    @Query("SELECT featureId, COUNT(*) AS count FROM comments WHERE projectId = :projectId AND featureId IS NOT NULL GROUP BY featureId")
+    fun observeCounts(projectId: String): Flow<List<CommentCount>>
+
+    @Query("SELECT * FROM comments WHERE projectId = :projectId AND seq = 0 ORDER BY createdAt")
+    suspend fun pending(projectId: String): List<CommentEntity>
+
+    @Query("SELECT COUNT(*) FROM comments WHERE projectId = :projectId AND seq = 0")
+    fun observePendingCount(projectId: String): Flow<Int>
+
+    @Query("SELECT * FROM comments WHERE projectId = :projectId AND id = :id")
+    suspend fun get(projectId: String, id: String): CommentEntity?
+
+    @Upsert
+    suspend fun upsert(c: CommentEntity)
+
+    @Query("DELETE FROM comments WHERE projectId = :projectId AND id = :id")
+    suspend fun delete(projectId: String, id: String)
+
+    @Query("DELETE FROM comments WHERE projectId = :projectId")
+    suspend fun clear(projectId: String)
+}
+
+/** Number of comments on one record. */
+data class CommentCount(val featureId: String, val count: Int)
+
 /** Number of live features in a project. */
 data class ProjectCount(val projectId: String, val count: Int)

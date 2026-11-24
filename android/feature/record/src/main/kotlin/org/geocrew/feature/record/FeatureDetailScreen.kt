@@ -73,6 +73,9 @@ import org.geocrew.core.model.Props
 import org.geocrew.core.model.areaSquareMeters
 import org.geocrew.core.model.lengthMeters
 import org.geocrew.core.model.string
+import org.geocrew.core.data.team.CommentItem
+import org.geocrew.core.ui.CommentBubble
+import org.geocrew.core.ui.CommentComposer
 import org.geocrew.core.ui.InfoRow
 import org.geocrew.core.ui.KindUi
 import org.geocrew.core.ui.SectionHeader
@@ -96,6 +99,9 @@ fun FeatureDetailScreen(
     val history by viewModel.history.collectAsStateWithLifecycle()
     val form by viewModel.form.collectAsStateWithLifecycle()
     val fieldError by viewModel.fieldError.collectAsStateWithLifecycle()
+    val commentAccess by viewModel.commentAccess.collectAsStateWithLifecycle()
+    val comments by viewModel.comments.collectAsStateWithLifecycle()
+    val commentError by viewModel.commentError.collectAsStateWithLifecycle()
     val f = feature
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -135,12 +141,24 @@ fun FeatureDetailScreen(
             Photos(f, viewModel)
             SectionHeader("信息")
             Info(f, format)
+            commentAccess?.let { access ->
+                SectionHeader(if (comments.isEmpty()) "讨论" else "讨论（${comments.size}）")
+                Discussion(comments, access, viewModel::postComment, viewModel::deleteComment)
+            }
             if (shared) {
                 SectionHeader("修改历史")
                 History(history, viewModel::loadHistory, viewModel::restore)
             }
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    commentError?.let { msg ->
+        AlertDialog(
+            onDismissRequest = viewModel::consumeCommentError,
+            text = { Text(msg) },
+            confirmButton = { TextButton(onClick = viewModel::consumeCommentError) { Text("好") } },
+        )
     }
 
     fieldError?.let { msg ->
@@ -446,6 +464,47 @@ private fun History(state: HistoryState, onLoad: () -> Unit, onRestore: (Revisio
             title = { Text("恢复到第 ${r.feature.sync.version} 版？") },
             text = { Text("会用这一版的位置和属性生成一个新版本，之前的版本仍保留在历史里。") },
             confirmButton = { TextButton(onClick = { onRestore(r); confirm = null }) { Text("恢复") } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("取消") } },
+        )
+    }
+}
+
+/** Comments on this record; everyone in the workspace sees them when they open it. */
+@Composable
+private fun Discussion(
+    comments: List<CommentItem>,
+    access: FeatureDetailViewModel.CommentAccess,
+    onPost: (String) -> Unit,
+    onDelete: (CommentItem) -> Unit,
+) {
+    var confirm by remember { mutableStateOf<CommentItem?>(null) }
+    Column {
+        if (comments.isEmpty()) {
+            Text(
+                "还没有人讨论这条记录。" + if (access.canPost) "写下的内容会同步给全组。" else "",
+                Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        comments.forEach { c ->
+            CommentBubble(
+                nickname = c.nickname, body = c.body, time = c.createdAt, mine = c.mine, pending = c.pending,
+                onLongPress = if (c.mine || access.isLeader) ({ confirm = c }) else null,
+            )
+        }
+        if (access.canPost) {
+            CommentComposer(onPost, placeholder = "讨论这条记录…")
+        } else {
+            Text("只读成员不能发言", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    confirm?.let { c ->
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text("删除这条发言？") },
+            text = { Text(if (c.pending) "还没有发出，删除后不会再发送。" else "全组都会看不到这条发言。") },
+            confirmButton = { TextButton(onClick = { onDelete(c); confirm = null }) { Text("删除") } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("取消") } },
         )
     }

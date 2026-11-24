@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
@@ -70,8 +71,11 @@ fun MapScreen(
     onOpenTools: () -> Unit = {},
     onOpenTeam: () -> Unit = {},
     onOpenProjects: () -> Unit = {},
+    onOpenChat: () -> Unit = {},
     /** A feature another screen asked to show; consumed once. */
     focusFeatureId: String? = null,
+    /** A position another screen asked to show (e.g. a team message's); consumed once. */
+    focusPosition: LngLat? = null,
     onFocusHandled: () -> Unit = {},
     viewModel: MapViewModel = hiltViewModel(),
 ) {
@@ -93,6 +97,7 @@ fun MapScreen(
     var showGoTo by rememberSaveable { mutableStateOf(false) }
     /** A position reached through "前往坐标", marked until the next one. */
     var goneTo by remember { mutableStateOf<LngLat?>(null) }
+    var goneLabel by remember { mutableStateOf(GONE_TO_LABEL) }
     var followOnFirstFix by remember { mutableStateOf(true) }
     val project by viewModel.project.collectAsStateWithLifecycle()
 
@@ -145,6 +150,14 @@ fun MapScreen(
         followOnFirstFix = false
         onFocusHandled()
     }
+    LaunchedEffect(focusPosition) {
+        val p = focusPosition ?: return@LaunchedEffect
+        goneTo = p
+        goneLabel = "◎ 消息位置"
+        camera.animateTo(p, maxOf(camera.zoom, 15.0))
+        followOnFirstFix = false
+        onFocusHandled()
+    }
 
     val bm = baseMap ?: return
     Box(Modifier.fillMaxSize()) {
@@ -157,7 +170,7 @@ fun MapScreen(
             onClick = viewModel::onMapClick,
             onLongClick = { if (mode == MapMode.Browse) viewModel.addPoint(it) },
             labels = overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) } +
-                listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, "◎ 目标坐标") }),
+                listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, goneLabel) }),
         )
 
         if (mode is MapMode.Draw) Crosshair(Modifier.align(Alignment.Center))
@@ -204,6 +217,9 @@ fun MapScreen(
             }) { Icon(Icons.Default.MyLocation, "定位") }
             SmallFloatingActionButton(onClick = onOpenRecords) { Icon(Icons.AutoMirrored.Filled.List, "记录") }
             SmallFloatingActionButton(onClick = onOpenTools) { Icon(Icons.Default.Build, "工具") }
+            if (team.linked) {
+                SmallFloatingActionButton(onClick = onOpenChat) { Icon(Icons.AutoMirrored.Filled.Chat, "组内消息") }
+            }
             SmallFloatingActionButton(onClick = onOpenTeam) {
                 androidx.compose.material3.BadgedBox(
                     badge = {
@@ -274,6 +290,7 @@ fun MapScreen(
                 onGo = { p, add ->
                     showGoTo = false
                     goneTo = if (add) null else p
+                    goneLabel = GONE_TO_LABEL
                     camera.animateTo(p, maxOf(camera.zoom, 15.0))
                     if (add) viewModel.addPoint(p)
                 },
@@ -386,3 +403,5 @@ private fun TileProblemCard(isTianditu: Boolean, host: String, code: Int, onSwit
         }
     }
 }
+
+private const val GONE_TO_LABEL = "◎ 目标坐标"

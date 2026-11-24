@@ -33,6 +33,7 @@ class ParseTest {
         assertEquals(RealtimeEvent.FeatureChanged(7), RealtimeClient.parse("""{"type":"feature_changed","seq":7}"""))
         assertEquals(RealtimeEvent.MembersChanged, RealtimeClient.parse("""{"type":"members_changed"}"""))
         assertEquals(RealtimeEvent.SettingsChanged(4), RealtimeClient.parse("""{"type":"settings_changed","version":4}"""))
+        assertEquals(RealtimeEvent.CommentsChanged(9), RealtimeClient.parse("""{"type":"comments_changed","seq":9}"""))
         assertEquals(null, RealtimeClient.parse("""{"type":"from_the_future"}"""))
         assertEquals(null, RealtimeClient.parse("not json"))
     }
@@ -110,6 +111,21 @@ class ServerIntegrationTest {
         assertEquals(409, runCatching { leader.putSettings(ws, form, 0) }.exceptionOrNull().let { (it as ApiException).status })
         assertEquals(403, runCatching { member.putSettings(ws, form, null) }.exceptionOrNull().let { (it as ApiException).status })
 
+        // Comments: posted offline, synced, retried safely, deleted by the leader.
+        val ca = MemoryComments()
+        ca.items["c1"] = Comment("c1", featureId = "f1", body = "接触关系再看一下")
+        assertEquals(1, CommentSync(member, ca, ws, "p").run().posted)
+        assertEquals(1L, ca.items["c1"]!!.seq)
+        assertEquals("组员", ca.items["c1"]!!.nickname)
+        assertEquals(1L, member.addComment(ws, "c1", "接触关系再看一下", "f1").seq)
+        val cb = MemoryComments()
+        assertEquals(1, CommentSync(leader, cb, ws, "p").run().received)
+        leader.deleteComment(ws, "c1")
+        assertEquals(1, CommentSync(member, ca, ws, "p").run().removed)
+        assertTrue(ca.items.isEmpty())
+        leader.addComment(ws, "c2", "集合点", at = listOf(116.4, 39.9))
+        assertEquals(403, runCatching { member.deleteComment(ws, "c2") }.exceptionOrNull().let { (it as ApiException).status })
+
         // Leader records a point with a photo.
         val a = MemoryStore()
         val bytes = "jpeg".toByteArray()
@@ -164,4 +180,14 @@ class ServerIntegrationTest {
         }
         Unit
     }
+}
+
+private class MemoryComments : CommentStore {
+    val items = linkedMapOf<String, Comment>()
+    var seq = 0L
+    override suspend fun pending(projectId: String) = items.values.filter { it.seq == 0L }
+    override suspend fun save(projectId: String, c: Comment) { items[c.id] = c }
+    override suspend fun remove(projectId: String, id: String) { items.remove(id) }
+    override suspend fun commentSeq(projectId: String) = seq
+    override suspend fun setCommentSeq(projectId: String, seq: Long) { this.seq = seq }
 }

@@ -128,6 +128,26 @@ class GeoCrewApi(
         return list.map { GeoJson.decodeFeature(it, ctx) }
     }
 
+    /** Comments with seq > [since] (protocol v0 §8), including deleted ones. */
+    suspend fun comments(ws: String, since: Long, limit: Int = 500): CommentPage {
+        val u = wsUrl(ws, "comments").newBuilder()
+            .addQueryParameter("since", since.toString())
+            .addQueryParameter("limit", limit.toString())
+            .build()
+        return get(u, CommentPage.serializer())
+    }
+
+    /** Posts a comment. Retrying with the same [id] returns the stored one. */
+    suspend fun addComment(ws: String, id: String, body: String, featureId: String? = null, at: List<Double>? = null): Comment {
+        val req = json.encodeToString(AddCommentReq.serializer(), AddCommentReq(id, featureId, body, at)).toRequestBody(JSON)
+        return send(wsUrl(ws, "comments"), "POST", req, Comment.serializer())
+    }
+
+    /** Deletes a comment (its author or a leader). */
+    suspend fun deleteComment(ws: String, id: String) {
+        exec(wsUrl(ws, "comments", id), "DELETE", null)
+    }
+
     /** True if the server already has the attachment. */
     suspend fun hasFile(ws: String, sha256: String): Boolean = call(request(wsUrl(ws, "files", sha256)).head().build()) { r ->
         when (r.code) {

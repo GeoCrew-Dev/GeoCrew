@@ -55,6 +55,34 @@ data class WorkspaceSettings(val version: Long = 0, val settings: JsonObject = J
 @Serializable
 internal data class PutSettingsReq(val settings: JsonObject, @SerialName("base_version") val baseVersion: Long? = null)
 
+/**
+ * A comment on a record or, without [featureId], a message to the whole team
+ * (protocol v0 §8). [at] is an optional `[lng, lat]` for team messages.
+ */
+@Serializable
+data class Comment(
+    val id: String,
+    @SerialName("feature_id") val featureId: String? = null,
+    val body: String = "",
+    val at: List<Double>? = null,
+    @SerialName("author_id") val authorId: String = "",
+    val nickname: String = "",
+    @SerialName("created_at") val createdAt: String = "",
+    val seq: Long = 0,
+    val deleted: Boolean = false,
+)
+
+@Serializable
+data class CommentPage(val comments: List<Comment> = emptyList(), val seq: Long, val more: Boolean = false)
+
+@Serializable
+internal data class AddCommentReq(
+    val id: String,
+    @SerialName("feature_id") val featureId: String? = null,
+    val body: String,
+    val at: List<Double>? = null,
+)
+
 @Serializable
 internal data class InviteResp(@SerialName("invite_code") val inviteCode: String)
 

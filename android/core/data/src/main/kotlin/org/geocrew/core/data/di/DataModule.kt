@@ -24,6 +24,7 @@ object DataModule {
     @Provides fun projectDao(db: GeoCrewDatabase) = db.projects()
     @Provides fun featureDao(db: GeoCrewDatabase) = db.features()
     @Provides fun trackPointDao(db: GeoCrewDatabase) = db.trackPoints()
+    @Provides fun commentDao(db: GeoCrewDatabase) = db.comments()
 
     @Provides
     @Singleton

@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.MoreVert
@@ -79,7 +80,7 @@ import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TeamScreen(onBack: () -> Unit, viewModel: TeamViewModel = hiltViewModel()) {
+fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamViewModel = hiltViewModel()) {
     val project by viewModel.project.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -104,6 +105,7 @@ fun TeamScreen(onBack: () -> Unit, viewModel: TeamViewModel = hiltViewModel()) {
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
                     if (project?.team != null) {
+                        IconButton(onClick = onOpenChat) { Icon(Icons.AutoMirrored.Filled.Chat, "组内消息") }
                         IconButton(onClick = viewModel::refresh, enabled = !busy) { Icon(Icons.Default.Refresh, "刷新成员") }
                     }
                 },

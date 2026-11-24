@@ -25,6 +25,7 @@ import org.geocrew.feature.projects.ProjectsScreen
 import org.geocrew.feature.settings.SettingsScreen
 import org.geocrew.feature.team.INVITE_CODE_ARG
 import org.geocrew.feature.team.INVITE_SERVER_ARG
+import org.geocrew.feature.team.TeamChatScreen
 import org.geocrew.feature.team.TeamScreen
 import org.geocrew.feature.transfer.TransferScreen
 
@@ -41,6 +42,7 @@ object Routes {
     /** Optional arguments come from an invite link; plain navigation uses "team". */
     const val TEAM = "team?$INVITE_SERVER_ARG={$INVITE_SERVER_ARG}&$INVITE_CODE_ARG={$INVITE_CODE_ARG}"
     const val TEAM_PLAIN = "team"
+    const val TEAM_CHAT = "team/chat"
     const val ANALYSIS = "analysis"
     const val PROJECTS = "projects"
     const val PROJECT_SETTINGS = "project/{$PROJECT_ID_ARG}/settings"
@@ -51,6 +53,8 @@ object Routes {
 
     /** Saved-state key the map reads to focus a feature. */
     const val FOCUS = "focus"
+    /** Saved-state key the map reads to show a position, as doubles [lng, lat]. */
+    const val FOCUS_AT = "focus_at"
 }
 
 /** Back to the project list, which is always at the bottom of the stack. */
@@ -64,6 +68,12 @@ private fun NavHostController.showOnMap(featureId: String) {
     popBackStack(Routes.MAP, inclusive = false)
 }
 
+/** Returns to the map and asks it to show a position. */
+private fun NavHostController.showOnMap(at: org.geocrew.core.model.LngLat) {
+    getBackStackEntry(Routes.MAP).savedStateHandle[Routes.FOCUS_AT] = doubleArrayOf(at.lng, at.lat)
+    popBackStack(Routes.MAP, inclusive = false)
+}
+
 @Composable
 fun GeoCrewNavHost() {
     val nav = rememberNavController()
@@ -72,6 +82,8 @@ fun GeoCrewNavHost() {
         composable(Routes.MAP) { entry ->
             val focus by entry.savedStateHandle.getStateFlow<String?>(Routes.FOCUS, null)
                 .collectAsStateWithLifecycle()
+            val focusAt by entry.savedStateHandle.getStateFlow<DoubleArray?>(Routes.FOCUS_AT, null)
+                .collectAsStateWithLifecycle()
             MapScreen(
                 onOpenSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
                 onOpenFeature = { nav.navigate(Routes.feature(it)) },
@@ -79,8 +91,13 @@ fun GeoCrewNavHost() {
                 onOpenTools = { nav.navigate(Routes.TOOLS) { launchSingleTop = true } },
                 onOpenTeam = { nav.navigate(Routes.TEAM_PLAIN) { launchSingleTop = true } },
                 onOpenProjects = { nav.toProjects() },
+                onOpenChat = { nav.navigate(Routes.TEAM_CHAT) { launchSingleTop = true } },
                 focusFeatureId = focus,
-                onFocusHandled = { entry.savedStateHandle[Routes.FOCUS] = null },
+                focusPosition = focusAt?.takeIf { it.size == 2 }?.let { runCatching { org.geocrew.core.model.LngLat(it[0], it[1]) }.getOrNull() },
+                onFocusHandled = {
+                    entry.savedStateHandle[Routes.FOCUS] = null
+                    entry.savedStateHandle[Routes.FOCUS_AT] = null
+                },
             )
         }
         composable(Routes.PROJECTS) {
@@ -111,7 +128,14 @@ fun GeoCrewNavHost() {
                 },
             ),
         ) {
-            TeamScreen(onBack = { nav.popBackStack() })
+            TeamScreen(onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.TEAM_CHAT) { launchSingleTop = true } })
+        }
+        composable(Routes.TEAM_CHAT) {
+            TeamChatScreen(
+                onBack = { nav.popBackStack() },
+                onOpenFeature = { nav.navigate(Routes.feature(it)) },
+                onShowPosition = { nav.showOnMap(it) },
+            )
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(onBack = { nav.popBackStack() })

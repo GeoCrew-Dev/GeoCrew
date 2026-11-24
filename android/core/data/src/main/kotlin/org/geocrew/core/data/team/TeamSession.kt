@@ -26,6 +26,7 @@ import org.geocrew.core.data.repo.SettingsRepository
 import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.network.ApiException
+import org.geocrew.core.network.CommentSync
 import org.geocrew.core.network.RealtimeClient
 import org.geocrew.core.network.RealtimeEvent
 import org.geocrew.core.network.RealtimeState
@@ -68,6 +69,7 @@ class TeamSession @Inject constructor(
     private val store: RoomSyncStore,
     private val attachments: PhotoAttachments,
     private val forms: TeamForms,
+    private val comments: TeamComments,
     private val client: OkHttpClient,
     private val clock: Clock,
     @ApplicationScope private val scope: CoroutineScope,
@@ -80,6 +82,7 @@ class TeamSession @Inject constructor(
     val positions: StateFlow<Map<String, TeamPosition>> = _positions.asStateFlow()
 
     private val syncLock = Mutex()
+    private val commentLock = Mutex()
     @Volatile private var active: Active? = null
     @Volatile private var started = false
 
@@ -166,8 +169,16 @@ class TeamSession @Inject constructor(
                     .filter { it > 0 }
                     .collect { syncLock.withLock { syncOnce(handle) } }
             }
+            // Send comments written while offline soon after they are written.
+            launch {
+                comments.pendingCount(projectId)
+                    .debounce(COMMENT_DEBOUNCE_MS)
+                    .filter { it > 0 }
+                    .collect { syncComments(handle) }
+            }
             realtime.start()
             syncLock.withLock { syncOnce(handle) }
+            syncComments(handle)
             // Refresh cached workspace name and role; failures are not fatal.
             runCatching { team.workspace(handle) }
             // Servers without the "settings" capability answer 404; the local form then stays as is.
@@ -182,6 +193,8 @@ class TeamSession @Inject constructor(
     private suspend fun onEvent(handle: TeamHandle, e: RealtimeEvent) {
         when (e) {
             is RealtimeEvent.Hello -> {
+                // A (re)connection may follow a gap in which comments were missed.
+                scope.launch { syncComments(handle) }
                 _status.update { it.copy(online = e.online.toSet()) }
                 _positions.value = e.positions.filter { it.memberId != handle.link.memberId }.associateBy { it.memberId }
             }
@@ -200,6 +213,9 @@ class TeamSession @Inject constructor(
                 val known = projects.get(handle.project.id)?.config?.teamFormVersion ?: 0L
                 if (e.version != known) syncForm(handle)
             }
+            is RealtimeEvent.CommentsChanged -> {
+                if (e.seq > comments.commentSeq(handle.project.id)) syncComments(handle)
+            }
             is RealtimeEvent.Error -> _status.update { it.copy(error = e.message.ifBlank { e.code }) }
         }
     }
@@ -212,6 +228,26 @@ class TeamSession @Inject constructor(
         } catch (e: Exception) {
             // Not fatal: records still sync, and the next connection retries.
         }
+    }
+
+    /** Comments sync quietly; a failure is retried on the next event or connection. */
+    private suspend fun syncComments(handle: TeamHandle) {
+        commentLock.withLock {
+            try {
+                CommentSync(handle.api, comments, handle.link.workspaceId, handle.project.id).run()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Older servers without comments answer 404; offline is retried later.
+            }
+        }
+    }
+
+    /** Asks the server to delete a sent comment (its author or a leader). */
+    suspend fun deleteComment(commentId: String) {
+        val a = active ?: throw java.io.IOException("未连接工作组")
+        a.handle.api.deleteComment(a.handle.link.workspaceId, commentId)
+        syncComments(a.handle)
     }
 
     private suspend fun syncOnce(handle: TeamHandle): SyncReport? {
@@ -253,5 +289,6 @@ class TeamSession @Inject constructor(
 
     private companion object {
         const val DIRTY_DEBOUNCE_MS = 3_000L
+        const val COMMENT_DEBOUNCE_MS = 300L
     }
 }

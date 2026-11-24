@@ -18,7 +18,10 @@ import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.PhotoStore
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.SettingsRepository
+import org.geocrew.core.data.team.CommentItem
+import org.geocrew.core.data.team.TeamComments
 import org.geocrew.core.data.team.TeamRepository
+import org.geocrew.core.data.team.TeamSession
 import org.geocrew.core.model.Attitude
 import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.FeatureKind
@@ -77,6 +80,8 @@ class FeatureDetailViewModel @Inject constructor(
     settings: SettingsRepository,
     private val projects: ProjectRepository,
     private val team: TeamRepository,
+    private val teamComments: TeamComments,
+    private val session: TeamSession,
 ) : ViewModel() {
     private val id: String = checkNotNull(savedState[FEATURE_ID_ARG])
 
@@ -199,6 +204,44 @@ class FeatureDetailViewModel @Inject constructor(
     }
 
     fun delete() = viewModelScope.launch { features.delete(id) }
+
+    // --- discussion (protocol v0 §8) ------------------------------------------
+
+    /** Who may do what in the discussion; null when the project has no team. */
+    data class CommentAccess(val memberId: String, val canPost: Boolean, val isLeader: Boolean)
+
+    val commentAccess: StateFlow<CommentAccess?> = projects.current.map { p ->
+        p.team?.let { CommentAccess(it.memberId, it.role != TeamRepository.ROLE_READONLY, it.role == TeamRepository.ROLE_LEADER) }
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val comments: StateFlow<List<CommentItem>> = projects.current
+        .map { it.id to it.team?.memberId }
+        .distinctUntilChanged()
+        .flatMapLatest { (pid, me) -> teamComments.forFeature(pid, id, me) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _commentError = MutableStateFlow<String?>(null)
+    val commentError: StateFlow<String?> = _commentError.asStateFlow()
+    fun consumeCommentError() { _commentError.value = null }
+
+    fun postComment(text: String) = viewModelScope.launch {
+        val pid = feature.value?.projectId ?: return@launch
+        teamComments.post(pid, text, featureId = id)
+    }
+
+    /** Unsent comments are simply dropped; sent ones need the server. */
+    fun deleteComment(c: CommentItem) = viewModelScope.launch {
+        val pid = feature.value?.projectId ?: return@launch
+        if (c.pending) {
+            teamComments.discard(pid, c.id)
+            return@launch
+        }
+        try {
+            session.deleteComment(c.id)
+        } catch (e: java.io.IOException) {
+            _commentError.value = if (e is org.geocrew.core.network.ApiException && e.isForbidden) "只能删除自己的发言" else "删除需要联网：${e.message}"
+        }
+    }
 }
 
 /** Properties with their own editors or managed by the app; free attributes never overwrite them. */

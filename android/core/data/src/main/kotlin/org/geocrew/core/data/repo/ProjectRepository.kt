@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.geocrew.core.data.db.CommentDao
 import org.geocrew.core.data.db.ProjectConfigJson
 import org.geocrew.core.data.db.ProjectDao
 import org.geocrew.core.data.db.toEntity
@@ -21,6 +24,7 @@ import javax.inject.Singleton
 @Singleton
 class ProjectRepository @Inject constructor(
     private val dao: ProjectDao,
+    private val comments: CommentDao,
     private val settings: SettingsRepository,
     private val clock: Clock,
 ) {
@@ -66,9 +70,12 @@ class ProjectRepository @Inject constructor(
         settings.setCurrentProject(id)
     }
 
+    /** Serialises read-modify-write of the config, which several syncs touch. */
+    private val configLock = Mutex()
+
     /** Changes a project's own settings (map, description...). */
-    suspend fun updateConfig(id: String, change: (ProjectConfig) -> ProjectConfig) {
-        val p = dao.get(id)?.toModel() ?: return
+    suspend fun updateConfig(id: String, change: (ProjectConfig) -> ProjectConfig) = configLock.withLock {
+        val p = dao.get(id)?.toModel() ?: return@withLock
         val next = change(p.config)
         if (next != p.config) dao.setConfig(id, ProjectConfigJson.encode(next))
     }
@@ -93,8 +100,10 @@ class ProjectRepository @Inject constructor(
     suspend fun linkTeam(id: String, team: TeamLink?) {
         val p = dao.get(id)?.toModel() ?: return
         val sameWorkspace = p.team?.serverUrl == team?.serverUrl && p.team?.workspaceId == team?.workspaceId
-        // Form versions belong to one workspace; a new link starts in step with nothing.
-        val config = if (sameWorkspace) p.config else p.config.copy(teamFormVersion = 0, teamFormPending = false)
+        // Form versions and the comment cursor belong to one workspace; a new
+        // link starts in step with nothing, and the old team's discussion goes.
+        val config = if (sameWorkspace) p.config else p.config.copy(teamFormVersion = 0, teamFormPending = false, teamCommentSeq = 0)
+        if (!sameWorkspace) comments.clear(id)
         dao.upsert(p.copy(team = team, config = config).toEntity())
     }
 

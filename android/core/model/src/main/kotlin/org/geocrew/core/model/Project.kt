@@ -43,6 +43,8 @@ data class ProjectConfig(
     val teamFormVersion: Long = 0,
     /** True when a leader changed [fields] locally and the workspace has not received them yet. */
     val teamFormPending: Boolean = false,
+    /** Cursor of the workspace's comments already on this device (protocol v0 §8). */
+    val teamCommentSeq: Long = 0,
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 }
