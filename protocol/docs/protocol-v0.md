@@ -400,13 +400,14 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 组长可以给任何记录加 `review`，表示看过了：
 
 ```json
-"review": { "state": "approved", "by": "<member_id>", "at": "2026-11-24T18:30:00Z", "note": "" }
+"review": { "state": "approved", "by": "<member_id>", "by_name": "王组长", "at": "2026-11-24T18:30:00Z", "note": "" }
 ```
 
 | 字段 | 说明 |
 | --- | --- |
 | `state` | `approved` 通过；`redo` 退回，要记录人补充或改正 |
 | `by` | 审核的组长的成员 id |
+| `by_name` | 当时的昵称，离线也能显示是谁审的（可选） |
 | `at` | 审核时间 |
 | `note` | 给记录人的话，退回时写要改什么 |
 
