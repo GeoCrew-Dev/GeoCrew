@@ -56,6 +56,8 @@ object MapColors {
     const val SKETCH = "#FF1744"
     /** Ring around open tasks handed to this device's member. */
     const val MY_TASK = "#FF6F00"
+    /** Ring around a meeting point (protocol §6.8). */
+    const val MEET = "#6A1B9A"
     /** Strike-and-dip symbols. */
     const val ATTITUDE = "#212121"
 }

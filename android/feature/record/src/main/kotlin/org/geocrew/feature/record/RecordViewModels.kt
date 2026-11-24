@@ -263,6 +263,10 @@ class FeatureDetailViewModel @Inject constructor(
         }
     }
 
+    fun setMeetAt(at: java.time.Instant?) = viewModelScope.launch {
+        features.edit(id) { this[Props.MEET_AT] = at?.toString() }
+    }
+
     fun setLineStyle(ls: org.geocrew.core.model.LineStyle?) = viewModelScope.launch {
         features.edit(id) { this[Props.LINE_STYLE] = ls?.id }
     }

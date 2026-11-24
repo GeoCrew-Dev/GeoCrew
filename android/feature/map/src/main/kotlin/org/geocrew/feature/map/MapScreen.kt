@@ -94,6 +94,7 @@ fun MapScreen(
     val unread by viewModel.unreadMessages.collectAsStateWithLifecycle()
     val alert by viewModel.alert.collectAsStateWithLifecycle()
     val rollCall by viewModel.rollCall.collectAsStateWithLifecycle()
+    val meeting by viewModel.meeting.collectAsStateWithLifecycle()
     val answering by viewModel.answering.collectAsStateWithLifecycle()
     val averaging by viewModel.averaging.collectAsStateWithLifecycle()
     val mapNotice by viewModel.notice.collectAsStateWithLifecycle()
@@ -289,6 +290,17 @@ fun MapScreen(
                     },
                     onOpenChat = onOpenChat,
                     onDismiss = { viewModel.dismissAlert(a.id) },
+                )
+            }
+            meeting?.let { (m, now) ->
+                MeetingCard(
+                    m, now, fix?.position,
+                    onShow = {
+                        camera.animateTo(m.position, maxOf(camera.zoom, 15.0))
+                        followOnFirstFix = false
+                    },
+                    onOpen = { onOpenFeature(m.feature.id) },
+                    onDismiss = { viewModel.dismissMeeting(m) },
                 )
             }
             rollCall?.let { c ->
@@ -571,6 +583,47 @@ private fun AlertCard(text: String, time: java.time.Instant, onShow: (() -> Unit
                 if (onShow != null) TextButton(onClick = onShow) { Text("看位置") }
                 TextButton(onClick = onOpenChat) { Text("回复") }
                 TextButton(onClick = onDismiss) { Text("知道了") }
+            }
+        }
+    }
+}
+
+/** The next meeting point: when, how long until then, and how far and which way from here. */
+@Composable
+private fun MeetingCard(
+    m: org.geocrew.core.model.Rendezvous.Next,
+    now: java.time.Instant,
+    here: LngLat?,
+    onShow: () -> Unit,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val clock = java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(java.time.ZoneId.systemDefault())
+    val today = java.time.LocalDate.ofInstant(now, java.time.ZoneId.systemDefault())
+    val day = java.time.LocalDate.ofInstant(m.at, java.time.ZoneId.systemDefault())
+    val whenText = (if (day == today) "" else if (day == today.plusDays(1)) "明天 " else "${day.monthValue}月${day.dayOfMonth}日 ") + clock.format(m.at)
+    val where = here?.let { p ->
+        val d = org.geocrew.core.model.Geodesy.distance(p, m.position)
+        val b = org.geocrew.core.model.Geodesy.bearing(p, m.position)
+        "距你 ${CoordinateFormatter.distance(d)}，在${org.geocrew.core.model.SeekGuide.direction(b)}方 ${b.toInt()}°"
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp)) {
+            Text(
+                "集合 · $whenText · ${org.geocrew.core.model.Rendezvous.countdown(m.at, now)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Text(
+                listOfNotNull(m.feature.title?.takeIf { it.isNotBlank() } ?: "集合点", where).joinToString("，"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                maxLines = 2,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onShow) { Text("看位置") }
+                TextButton(onClick = onOpen) { Text("详情") }
+                TextButton(onClick = onDismiss) { Text("收起") }
             }
         }
     }

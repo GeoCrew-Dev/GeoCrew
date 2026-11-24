@@ -53,6 +53,13 @@ class MapLogicTest {
     assertTrue(listOf(2, 3).all { i -> listOf("dash", "fault", "contact").none { flag(i, it) } })
     assertEquals(LineStyle.INFERRED_CONTACT, LineStyle.of("inferred_contact"))
   }
+  @Test fun meetingPointsAreFlagged() {
+    fun pt(id: String, at: String?) = GeoFeature(id, "p", FeatureKind.POINT, Geometry.Point(LngLat(116.0, 40.0)),
+      buildProperties { this[Props.MEET_AT] = at }, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))
+    val props = Json.parseToJsonElement(OverlayGeoJson.features(listOf(pt("a", "2026-11-24T09:30:00Z"), pt("b", null), pt("c", "下午")), null))
+      .jsonObject["features"]!!.jsonArray.map { it.jsonObject["properties"]!!.jsonObject["meet"]?.jsonPrimitive?.boolean == true }
+    assertEquals(listOf(true, false, false), props)
+  }
   @Test fun simpleStyleIsCopiedOnlyWhenValid() {
     val props = buildJsonObject { put("fill", "#22A884"); put("stroke", "red; drop"); put("fill-opacity", 0.5); put("stroke-width", 99) }
     val f = GeoFeature("b","p",FeatureKind.POLYGON, Geometry.Polygon.of(listOf(LngLat(1.0,1.0),LngLat(2.0,1.0),LngLat(2.0,2.0))), props, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))

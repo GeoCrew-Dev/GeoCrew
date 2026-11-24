@@ -46,6 +46,7 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.ui.focus.onFocusChanged
 import org.geocrew.core.model.LineStyle
 import org.geocrew.core.model.lineStyle
+import org.geocrew.core.model.meetAt
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.FieldType
 import androidx.compose.material3.FilledTonalButton
@@ -169,6 +170,7 @@ fun FeatureDetailScreen(
             TextFields(f, viewModel)
             if (f.geometry is Geometry.Point) KindSwitch(f.kind, viewModel::setKind)
             if (f.kind == FeatureKind.LINE) LineStyleSwitch(f.lineStyle, viewModel::setLineStyle)
+            if (f.geometry is Geometry.Point) MeetingEditor(f.meetAt, viewModel::setMeetAt)
             commentAccess?.let { access ->
                 SectionHeader("任务")
                 TaskSection(
@@ -288,6 +290,29 @@ private fun KindSwitch(kind: FeatureKind, onChange: (FeatureKind) -> Unit) {
         listOf(FeatureKind.POINT, FeatureKind.GEO_POINT, FeatureKind.PHOTO).forEach { k ->
             FilterChip(selected = kind == k, onClick = { onChange(k) }, label = { Text(KindUi.label(k)) })
         }
+    }
+}
+
+/** Makes the point the group's meeting point at a time typed as "17:30" (today, or tomorrow if that has passed). */
+@Composable
+private fun MeetingEditor(at: java.time.Instant?, onSet: (java.time.Instant?) -> Unit) {
+    val zone = java.time.ZoneId.systemDefault()
+    val shown = at?.let { java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(zone).format(it) }.orEmpty()
+    var text by rememberSaveable(at) { mutableStateOf(shown) }
+    val parsed = org.geocrew.core.model.Rendezvous.timeToday(text, java.time.Instant.now(), zone)
+    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            label = { Text("集合时间") },
+            placeholder = { Text("如 17:30") },
+            singleLine = true,
+            isError = text.isNotBlank() && parsed == null,
+            supportingText = { Text(if (at != null) "组员地图上会提示这个集合点" else "填上时间就成了集合点，组员地图上会提示") },
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { onSet(parsed) }, enabled = parsed != null && parsed != at) { Text("设定") }
+        if (at != null) TextButton(onClick = { onSet(null) }) { Text("取消") }
     }
 }
 

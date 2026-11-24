@@ -72,6 +72,7 @@ internal object MapLayers {
     private val selected = eq(get("selected"), literal(true))
     private val hasAttitude = Expression.has("dipdir")
     private val myTask = eq(get("mytask"), literal(true))
+    private val meet = eq(get("meet"), literal(true))
     private val dashed = eq(get("dash"), literal(true))
     private val fault = eq(get("fault"), literal(true))
     private val contact = eq(get("contact"), literal(true))
@@ -141,6 +142,17 @@ internal object MapLayers {
                 circleOpacity(0.25f),
                 circleStrokeColor(MapColors.MY_TASK),
                 circleStrokeWidth(2f),
+            ),
+        )
+
+        // Meeting points: a wide double ring every member can pick out at a glance.
+        style.addLayer(
+            CircleLayer("gc-meet", SRC_FEATURES).withFilter(Expression.all(meet, isPoint)).withProperties(
+                circleRadius(18f),
+                circleColor(MapColors.MEET),
+                circleOpacity(0.18f),
+                circleStrokeColor(MapColors.MEET),
+                circleStrokeWidth(3f),
             ),
         )
 

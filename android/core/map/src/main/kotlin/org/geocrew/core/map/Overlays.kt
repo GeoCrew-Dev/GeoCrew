@@ -14,6 +14,7 @@ import org.geocrew.core.model.Legend
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.TaskStatus
 import org.geocrew.core.model.lineStyle
+import org.geocrew.core.model.meetAt
 import org.geocrew.core.model.task
 
 /** The user's own position as drawn on the map. */
@@ -84,6 +85,7 @@ internal object OverlayGeoJson {
                 if (memberId != null) f.task?.let { t ->
                     if (t.assignee == memberId && t.status != TaskStatus.DONE) this["mytask"] = true
                 }
+                if (f.meetAt != null) this["meet"] = true
                 if (g is Geometry.Point) f.attitude?.let { a ->
                     this["dipdir"] = a.dipDirection
                     this["dip"] = Math.round(a.dip).toDouble()

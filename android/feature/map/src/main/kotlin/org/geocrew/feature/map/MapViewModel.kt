@@ -281,6 +281,26 @@ class MapViewModel @Inject constructor(
     private val _fix = MutableStateFlow<Fix?>(null)
     val fix: StateFlow<Fix?> = _fix.asStateFlow()
 
+    /** Ticks twice a minute so countdowns and the next meeting move on without new data. */
+    private val clock = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(java.time.Instant.now())
+            kotlinx.coroutines.delay(30_000)
+        }
+    }
+
+    private val dismissedMeetings = MutableStateFlow<Set<String>>(emptySet())
+
+    /** The group's next meeting point, until put away here (a new time brings it back). */
+    val meeting: StateFlow<Pair<org.geocrew.core.model.Rendezvous.Next, java.time.Instant>?> =
+        combine(featureList, clock, dismissedMeetings) { list, now, gone ->
+            org.geocrew.core.model.Rendezvous.next(list, now)?.takeIf { meetingKey(it) !in gone }?.let { it to now }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun dismissMeeting(next: org.geocrew.core.model.Rendezvous.Next) = dismissedMeetings.update { it + meetingKey(next) }
+
+    private fun meetingKey(n: org.geocrew.core.model.Rendezvous.Next) = n.feature.id + "@" + n.at
+
     private val _mode = MutableStateFlow<MapMode>(MapMode.Browse)
     val mode: StateFlow<MapMode> = _mode.asStateFlow()
 
