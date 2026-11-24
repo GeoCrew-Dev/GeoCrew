@@ -122,7 +122,7 @@ internal object ShapefileReader {
     // --- geometry -----------------------------------------------------------
 
     /** A shape's parts in file coordinates (x, y, z); a point is one part of one position. */
-    private class Xyz(val x: Double, val y: Double, val z: Double?)
+    internal class Xyz(val x: Double, val y: Double, val z: Double?)
 
     private enum class Type { POINT, LINE, POLYGON, MULTIPOINT }
 
@@ -214,7 +214,7 @@ internal object ShapefileReader {
 
     // --- coordinate systems -------------------------------------------------
 
-    private class Crs(val note: String?, private val tm: TransverseMercator?) {
+    internal class Crs(val note: String?, private val tm: TransverseMercator?) {
         fun toLngLat(x: Double, y: Double, z: Double?): LngLat =
             if (tm == null) LngLat(x, y, z) else tm.inverse(x, y).let { LngLat(it.lng, it.lat, z) }
 

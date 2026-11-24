@@ -5,4 +5,6 @@ plugins {
 
 dependencies {
     api(project(":core:model"))
+    // GeoPackage tests run against real SQLite files.
+    testImplementation(libs.sqlite.jdbc)
 }

@@ -68,7 +68,22 @@ interface FeatureFormat {
 }
 
 object FeatureFormats {
-    val all: List<FeatureFormat> = listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat, DxfFormat, CsvFormat, SampleListFormat, SectionTableFormat, RouteTableFormat)
+    private val builtIn: List<FeatureFormat> =
+        listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat, DxfFormat, CsvFormat, SampleListFormat, SectionTableFormat, RouteTableFormat)
+
+    @Volatile private var extra: List<FeatureFormat> = emptyList()
+
+    /** Built-in formats, then those [register]ed by the app (e.g. ones that need the platform's SQLite). */
+    val all: List<FeatureFormat> get() = builtIn + extra
+
+    /**
+     * Adds a format that can't be built here, such as GeoPackage, which needs
+     * a SQLite engine. A later format with the same id replaces the earlier.
+     */
+    @Synchronized
+    fun register(format: FeatureFormat) {
+        extra = extra.filterNot { it.id == format.id } + format
+    }
 
     fun byId(id: String) = all.firstOrNull { it.id == id }
 

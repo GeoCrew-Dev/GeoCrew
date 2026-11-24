@@ -41,7 +41,7 @@
 | --- | --- |
 | `app` | 应用入口、导航、依赖注入装配 |
 | `core:model` | 纯 Kotlin 领域模型：几何、测地计算、要素、产状、图源定义 |
-| `core:formats` | GeoJSON / GPX / KML / Shapefile / CSV 属性表读写、DXF 导出（可注册新格式）、工程包 |
+| `core:formats` | GeoJSON / GPX / KML / Shapefile / GeoPackage / CSV 属性表读写、DXF 导出（可注册新格式，GeoPackage 由应用注入 SQLite 后注册）、工程包 |
 | `core:network` | 纯 Kotlin 协议客户端：REST、实时通道、同步引擎 |
 | `core:gis` | 纯 Kotlin 空间分析工具与插件接口（`GisTool`） |
 | `core:data` | Room 数据库、设置（DataStore）、要素/轨迹/照片仓库、工作组会话 |
@@ -53,7 +53,7 @@
 | `feature:settings` | 设置：Key、自定义图源、离线底图、地图缓存、坐标格式、磁偏角、轨迹参数 |
 | `feature:record` | 记录列表与详情：名称、岩性、产状、自定义属性、照片、野外素描（空白纸或画在照片上，多色多粗细、撤销）、任务、讨论；轨迹和线的海拔剖面（累计爬升、下降）；「待核对」筛出编号重复、样品编号重复、没有位置、定位精度差、位置离群和路线缺点的记录 |
 | `feature:compass` | 罗盘与产状测量、地层厚度计算、地质路线、实测剖面、坐标换算、寻点、日出日落 |
-| `feature:transfer` | GeoJSON / KML / GPX / Shapefile 导入导出，DXF 导出，照片批量落点 |
+| `feature:transfer` | GeoJSON / KML / GPX / Shapefile / GeoPackage 导入导出（GeoPackage 导出按点线面分表、表单字段成列，QGIS 和 ArcGIS 直接打开；导入认经纬度和高斯-克吕格坐标），DXF 导出，照片批量落点 |
 | `feature:team` | 工作组：新建、加入、成员与邀请码管理、位置共享开关 |
 | `feature:analysis` | 空间分析：反距离加权插值、普通克里金（结果网格自动画等值线，自动拟合变异函数、估计标准差、逐点更新的补点计划与补点路线）、剖面投影与视倾角、三点法求产状、统计、面内统计（每个面里的点数、密度、岩性等分类计数和数值范围）、核密度（点在哪里扎堆，可按属性加权）、凸包范围、点缓冲区；赤平投影（施密特网、Fisher 统计、极点等密图）、走向玫瑰图 |
 
