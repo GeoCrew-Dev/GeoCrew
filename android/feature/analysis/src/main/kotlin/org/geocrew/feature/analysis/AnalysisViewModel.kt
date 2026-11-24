@@ -1,5 +1,6 @@
 package org.geocrew.feature.analysis
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +25,7 @@ import org.geocrew.core.gis.GisTool
 import org.geocrew.core.gis.ToolCancelled
 import org.geocrew.core.gis.ToolInput
 import org.geocrew.core.gis.ToolOutput
+import org.geocrew.core.gis.ToolParam
 import org.geocrew.core.gis.ToolRegistry
 import org.geocrew.core.gis.numericFields
 import org.geocrew.core.model.GeoFeature
@@ -41,8 +43,13 @@ data class RunState(
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
+/** Optional navigation arguments: a tool id to open, and a record id for its first record parameter. */
+const val ANALYSIS_TOOL_ARG = "tool"
+const val ANALYSIS_FEATURE_ARG = "feature"
+
 @HiltViewModel
 class AnalysisViewModel @Inject constructor(
+    savedState: SavedStateHandle,
     tools: Set<@JvmSuppressWildcards GisTool>,
     private val projects: ProjectRepository,
     private val features: FeatureRepository,
@@ -77,6 +84,17 @@ class AnalysisViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private var job: Job? = null
+
+    init {
+        // Opened from a record ("use as section line"): preselect the tool and the record.
+        val preset = savedState.get<String>(ANALYSIS_TOOL_ARG)?.let { registry.find(it) }
+        if (preset != null) {
+            choose(preset)
+            savedState.get<String>(ANALYSIS_FEATURE_ARG)?.let { fid ->
+                preset.params.filterIsInstance<ToolParam.Feature>().firstOrNull()?.let { set(it.key, fid) }
+            }
+        }
+    }
 
     fun choose(t: GisTool?) {
         cancel()

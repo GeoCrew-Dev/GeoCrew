@@ -99,6 +99,8 @@ fun FeatureDetailScreen(
     onBack: () -> Unit,
     onShowOnMap: (String) -> Unit,
     onMeasureAttitude: ((String) -> Unit)? = null,
+    /** Opens the cross-section analysis with this line as the section. */
+    onSection: ((String) -> Unit)? = null,
     viewModel: FeatureDetailViewModel = hiltViewModel(),
 ) {
     val feature by viewModel.feature.collectAsStateWithLifecycle()
@@ -162,6 +164,9 @@ fun FeatureDetailScreen(
             Photos(f, viewModel)
             SectionHeader("信息")
             Info(f, format)
+            if (onSection != null && (f.geometry is Geometry.LineString || f.geometry is Geometry.MultiLineString) && f.kind != FeatureKind.TRACK) {
+                OutlinedButton(onClick = { onSection(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("作为剖面线，投影产状算视倾角") }
+            }
             commentAccess?.let { access ->
                 SectionHeader(if (comments.isEmpty()) "讨论" else "讨论（${comments.size}）")
                 Discussion(comments, access, viewModel::postComment, viewModel::deleteComment)

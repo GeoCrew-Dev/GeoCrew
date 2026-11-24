@@ -11,7 +11,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import org.geocrew.core.network.Invite
+import org.geocrew.feature.analysis.ANALYSIS_FEATURE_ARG
+import org.geocrew.feature.analysis.ANALYSIS_TOOL_ARG
 import org.geocrew.feature.analysis.AnalysisScreen
+import org.geocrew.core.gis.SectionTool
 import org.geocrew.feature.analysis.StereonetScreen
 import org.geocrew.feature.compass.CompassScreen
 import org.geocrew.feature.compass.TARGET_FEATURE_ARG
@@ -44,6 +47,10 @@ object Routes {
     const val TEAM_PLAIN = "team"
     const val TEAM_CHAT = "team/chat"
     const val ANALYSIS = "analysis"
+    const val ANALYSIS_WITH = "analysis?$ANALYSIS_TOOL_ARG={$ANALYSIS_TOOL_ARG}&$ANALYSIS_FEATURE_ARG={$ANALYSIS_FEATURE_ARG}"
+    /** Opens [toolId] with [featureId] filled into its first matching record parameter. */
+    fun analysis(toolId: String, featureId: String) =
+        "analysis?$ANALYSIS_TOOL_ARG=${android.net.Uri.encode(toolId)}&$ANALYSIS_FEATURE_ARG=${android.net.Uri.encode(featureId)}"
     const val PROJECTS = "projects"
     const val PROJECT_SETTINGS = "project/{$PROJECT_ID_ARG}/settings"
     fun projectSettings(id: String) = "project/${android.net.Uri.encode(id)}/settings"
@@ -113,7 +120,12 @@ fun GeoCrewNavHost() {
         composable(Routes.STEREONET) {
             StereonetScreen(onBack = { nav.popBackStack() })
         }
-        composable(Routes.ANALYSIS) {
+        composable(
+            Routes.ANALYSIS_WITH,
+            arguments = listOf(ANALYSIS_TOOL_ARG, ANALYSIS_FEATURE_ARG).map { name ->
+                navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null }
+            },
+        ) {
             AnalysisScreen(onBack = { nav.popBackStack() }, onShowOnMap = { nav.popBackStack(Routes.MAP, inclusive = false) })
         }
         composable(
@@ -153,6 +165,7 @@ fun GeoCrewNavHost() {
                 onBack = { nav.popBackStack() },
                 onShowOnMap = { nav.showOnMap(it) },
                 onMeasureAttitude = { nav.navigate(Routes.compassFor(it)) },
+                onSection = { nav.navigate(Routes.analysis(SectionTool().id, it)) },
             )
         }
         composable(Routes.TOOLS) {

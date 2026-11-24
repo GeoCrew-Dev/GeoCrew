@@ -42,6 +42,7 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
     implementation(project(":core:map"))
+    implementation(project(":core:gis"))
     implementation(project(":core:sensors"))
     implementation(project(":feature:map"))
     implementation(project(":feature:settings"))
