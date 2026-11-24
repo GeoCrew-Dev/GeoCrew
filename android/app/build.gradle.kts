@@ -1,54 +1,54 @@
 import java.util.Properties
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.geocrew.android.application)
+    alias(libs.plugins.geocrew.android.compose)
+    alias(libs.plugins.geocrew.android.hilt)
 }
 
-// 天地图 Key 不进仓库：本地放在 local.properties 的 tianditu.key，CI 用环境变量 TIANDITU_KEY。
+// 开发用天地图 Key（可选）：只从本机 local.properties 的 tianditu.key 读取，只进 debug 包。
+// 正式包不带任何 Key，每位用户在设置里填写自己的 Key。
 val localProps = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
-val tiandituKey: String = localProps.getProperty("tianditu.key") ?: System.getenv("TIANDITU_KEY") ?: ""
+val devTiandituKey: String = localProps.getProperty("tianditu.key").orEmpty()
 
 android {
     namespace = "org.geocrew.android"
-    compileSdk = 35
 
     defaultConfig {
         applicationId = "org.geocrew.android"
-        minSdk = 29
-        targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        buildConfigField("String", "TIANDITU_KEY", "\"$tiandituKey\"")
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            buildConfigField("String", "DEV_TIANDITU_KEY", "\"$devTiandituKey\"")
+        }
         release {
             isMinifyEnabled = false
+            buildConfigField("String", "DEV_TIANDITU_KEY", "\"\"")
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
-        compose = true
         buildConfig = true
     }
 }
 
 dependencies {
+    implementation(project(":core:model"))
+    implementation(project(":core:ui"))
+    implementation(project(":core:data"))
+    implementation(project(":core:map"))
+    implementation(project(":core:sensors"))
+    implementation(project(":feature:map"))
+    implementation(project(":feature:settings"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.maplibre.android)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
 }

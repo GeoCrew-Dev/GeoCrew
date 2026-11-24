@@ -1,0 +1,124 @@
+package org.geocrew.core.model
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import java.time.Instant
+
+/**
+ * What a feature represents. Open-ended on purpose: plugins and teams can
+ * define their own kinds; the app falls back to generic handling for them.
+ */
+@JvmInline
+value class FeatureKind(val id: String) {
+    companion object {
+        val POINT = FeatureKind("point")
+        val GEO_POINT = FeatureKind("geo_point")
+        val LINE = FeatureKind("line")
+        val POLYGON = FeatureKind("polygon")
+        val TRACK = FeatureKind("track")
+        val PHOTO = FeatureKind("photo")
+
+        val builtIn = listOf(POINT, GEO_POINT, LINE, POLYGON, TRACK, PHOTO)
+    }
+}
+
+/** Sync bookkeeping, mirroring protocol v0 §4.1. */
+data class SyncInfo(
+    val version: Long = 1,
+    val updatedAt: Instant,
+    val updatedBy: String? = null,
+    val deleted: Boolean = false,
+    /** Server seq of the revision we last saw; null if never synced. */
+    val seq: Long? = null,
+    /** True while the local revision has not been accepted by the server. */
+    val dirty: Boolean = true,
+) {
+    /** The next local revision after an edit at [at]. */
+    fun bumped(at: Instant) = copy(version = version + 1, updatedAt = at, dirty = true)
+
+    /** v0 conflict rule: higher version, then later time, then larger author id. */
+    fun isNewerThan(o: SyncInfo): Boolean = when {
+        version != o.version -> version > o.version
+        updatedAt != o.updatedAt -> updatedAt > o.updatedAt
+        else -> (updatedBy ?: "") > (o.updatedBy ?: "")
+    }
+}
+
+/**
+ * One map object: a GeoJSON feature inside a project. [properties] keeps
+ * every field, including ones this app version does not understand, so
+ * round-trips through the server or files never lose data.
+ */
+data class GeoFeature(
+    val id: String,
+    val projectId: String,
+    val kind: FeatureKind,
+    val geometry: Geometry?,
+    val properties: JsonObject = JsonObject(emptyMap()),
+    val createdAt: Instant,
+    val sync: SyncInfo,
+) {
+    val deleted get() = sync.deleted
+
+    val title: String? get() = properties.string(Props.TITLE)
+    val note: String? get() = properties.string(Props.NOTE)
+    val photos: List<String> get() = (properties[Props.PHOTOS] as? JsonArray)?.mapNotNull { it.stringOrNull() }.orEmpty()
+    val attitude: Attitude? get() = Attitude.fromProperties(properties)
+
+    /** Returns a copy with [edit] applied to the properties and the sync revision bumped. */
+    fun edited(at: Instant, geometry: Geometry? = this.geometry, edit: PropertiesBuilder.() -> Unit = {}): GeoFeature =
+        copy(geometry = geometry, properties = properties.edit(edit), sync = sync.bumped(at))
+
+    fun markDeleted(at: Instant) = copy(sync = sync.bumped(at).copy(deleted = true))
+}
+
+/** Property keys used by the official client (protocol v0 §6). */
+object Props {
+    const val KIND = "kind"
+    const val TITLE = "title"
+    const val NOTE = "note"
+    const val PHOTOS = "photos"
+    const val LITHOLOGY = "lithology"
+    const val STRIKE = "strike"
+    const val DIP_DIRECTION = "dip_direction"
+    const val DIP = "dip"
+    const val AZIMUTH = "azimuth"
+    const val LENGTH_M = "length_m"
+    const val AREA_M2 = "area_m2"
+    const val STARTED_AT = "started_at"
+    const val ENDED_AT = "ended_at"
+    const val ACCURACY_M = "accuracy_m"
+}
+
+fun JsonElement.stringOrNull(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+fun JsonObject.string(key: String): String? = this[key]?.let { if (it is JsonNull) null else it.jsonPrimitive.contentOrNull }
+
+fun JsonObject.double(key: String): Double? = (this[key] as? JsonPrimitive)?.doubleOrNull
+
+/** Mutable view used to edit a [JsonObject] without losing unknown keys. */
+class PropertiesBuilder internal constructor(initial: Map<String, JsonElement>) {
+    internal val map = LinkedHashMap(initial)
+
+    operator fun set(key: String, value: String?) = put(key, value?.let(::JsonPrimitive))
+    operator fun set(key: String, value: Number?) = put(key, value?.let(::JsonPrimitive))
+    operator fun set(key: String, value: Boolean?) = put(key, value?.let(::JsonPrimitive))
+    fun strings(key: String, values: List<String>) = put(key, JsonArray(values.map(::JsonPrimitive)))
+
+    fun put(key: String, value: JsonElement?) {
+        if (value == null) map.remove(key) else map[key] = value
+    }
+
+    fun remove(key: String) = map.remove(key)
+}
+
+fun JsonObject.edit(block: PropertiesBuilder.() -> Unit): JsonObject =
+    JsonObject(PropertiesBuilder(this).apply(block).map)
+
+fun buildProperties(block: PropertiesBuilder.() -> Unit): JsonObject = JsonObject(emptyMap()).edit(block)
