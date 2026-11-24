@@ -55,6 +55,7 @@
       <input id="q" type="search" placeholder="按名称、岩性、备注筛选">
       <button id="fit" type="button">全部</button>
       <button id="geojson" type="button">下载 GeoJSON</button>
+      <button id="kml" type="button">下载 KML</button>
       <button id="package" type="button">下载工程包</button>
       <button id="samples" type="button">下载样品清单</button>
       <button id="sections" type="button">下载剖面分层表</button>
@@ -444,6 +445,7 @@
     $("q").oninput = renderList;
     $("fit").onclick = fitAll;
     $("geojson").onclick = () => download("/export.geojson", "geocrew-" + WS + ".geojson");
+    $("kml").onclick = () => download("/export.kml", "geocrew-" + WS + ".kml");
     $("package").onclick = () => download("/export.geocrew.zip", "geocrew-" + WS + ".geocrew.zip");
     // Sampling times in this computer's zone.
     $("samples").onclick = () => download("/export.samples.csv?tz_offset=" + (-new Date().getTimezoneOffset()), "geocrew-" + WS + "-samples.csv");

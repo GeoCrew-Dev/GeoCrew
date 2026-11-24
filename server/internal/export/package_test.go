@@ -26,7 +26,7 @@ func TestPackageMatchesTheAppFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.PutSettings(ctx, ws.ID, json.RawMessage(`{"form":[{"key":"layer","label":"地层"}],"other":1}`), 0); err != nil {
+	if _, err := db.PutSettings(ctx, ws.ID, json.RawMessage(`{"form":[{"key":"layer","label":"地层"}],"legend":{"key":"layer","entries":[{"value":"砂岩","color":"#FFEE58"}]},"other":1}`), 0); err != nil {
 		t.Fatal(err)
 	}
 	have := strings.Repeat("a", 64)
@@ -82,12 +82,15 @@ func TestPackageMatchesTheAppFormat(t *testing.T) {
 			Fields []struct {
 				Key string `json:"key"`
 			} `json:"fields"`
+			Legend struct {
+				Key string `json:"key"`
+			} `json:"legend"`
 		} `json:"config"`
 	}
 	if err := json.Unmarshal([]byte(files["project.json"]), &man); err != nil {
 		t.Fatal(err)
 	}
-	if man.Format != PackageFormat || man.Version != 1 || man.Name != "北山组" || len(man.Config.Fields) != 1 || man.Config.Fields[0].Key != "layer" {
+	if man.Format != PackageFormat || man.Version != 1 || man.Name != "北山组" || len(man.Config.Fields) != 1 || man.Config.Fields[0].Key != "layer" || man.Config.Legend.Key != "layer" {
 		t.Fatalf("manifest %+v", man)
 	}
 	var fc struct {

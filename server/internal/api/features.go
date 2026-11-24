@@ -268,6 +268,21 @@ func (s *Server) exportSamples(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// exportKML downloads the workspace's records as KML, coloured by the shared legend.
+func (s *Server) exportKML(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.google-earth.kml+xml")
+	w.Header().Set("Content-Disposition", `attachment; filename="geocrew-export.kml"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := export.KML(r.Context(), s.Store, ws, w); err != nil {
+		s.logger().Error("export kml", "workspace", ws, "err", err)
+	}
+}
+
 // exportSections downloads the measured-section layer table (protocol v0 §6.5) as CSV.
 func (s *Server) exportSections(w http.ResponseWriter, r *http.Request) {
 	ws := r.PathValue("ws")

@@ -23,6 +23,7 @@ const (
 type packageConfig struct {
 	Description string          `json:"description,omitempty"`
 	Fields      json.RawMessage `json:"fields,omitempty"`
+	Legend      json.RawMessage `json:"legend,omitempty"`
 }
 
 type manifest struct {
@@ -50,7 +51,7 @@ type OpenFile func(sha string) (io.ReadCloser, error)
 
 // Package writes the workspace as a project package (a zip):
 //
-//	project.json          name, dates and the shared record form
+//	project.json          name, dates, the shared record form and map legend
 //	features.geojson      every live record
 //	photos/<sha256>.jpg   attachments the records refer to under "photos"
 //	audio/<sha256>.m4a    voice notes the records refer to under "audio"
@@ -74,11 +75,17 @@ func Package(ctx context.Context, st store.Store, workspaceID string, open OpenF
 	}
 	if raw, _, err := st.Settings(ctx, workspaceID); err == nil {
 		var s struct {
-			Form json.RawMessage `json:"form"`
+			Form   json.RawMessage `json:"form"`
+			Legend json.RawMessage `json:"legend"`
 		}
-		// A malformed or missing form just leaves the project without one.
-		if json.Unmarshal(raw, &s) == nil && len(s.Form) > 0 && s.Form[0] == '[' {
-			m.Config.Fields = s.Form
+		// A malformed or missing form or legend just leaves the project without one.
+		if json.Unmarshal(raw, &s) == nil {
+			if len(s.Form) > 0 && s.Form[0] == '[' {
+				m.Config.Fields = s.Form
+			}
+			if len(s.Legend) > 0 && s.Legend[0] == '{' {
+				m.Config.Legend = s.Legend
+			}
 		}
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return sum, err
