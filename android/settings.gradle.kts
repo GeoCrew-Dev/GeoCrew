@@ -39,3 +39,5 @@ include(":feature:transfer")
 include(":feature:team")
 include(":feature:projects")
 include(":feature:analysis")
+// Example of an analysis plugin in a separate app (docs/plugins.md in geocrew-protocol).
+include(":samples:plugin")

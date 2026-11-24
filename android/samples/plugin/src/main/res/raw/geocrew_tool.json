@@ -1,0 +1,15 @@
+{
+  "api": 1,
+  "id": "outline",
+  "name": "中心点与外接框（示例插件）",
+  "description": "为每条线和面求中心点或外接矩形。这是插件接口的示例，代码在 geocrew-android 的 samples/plugin。",
+  "accepts": ["line", "polygon"],
+  "params": [
+    {
+      "type": "choice", "key": "what", "label": "生成",
+      "options": [{"value": "centroid", "label": "中心点"}, {"value": "bbox", "label": "外接矩形"}],
+      "default": "centroid"
+    },
+    {"type": "number", "key": "margin", "label": "外扩", "default": 0, "min": 0, "max": 10000, "unit": "m", "help": "外接矩形向外扩多少米"}
+  ]
+}
