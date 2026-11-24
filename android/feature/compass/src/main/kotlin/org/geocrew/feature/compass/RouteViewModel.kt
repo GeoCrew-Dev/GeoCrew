@@ -149,7 +149,7 @@ class RouteViewModel @Inject constructor(
                     put(Props.ROUTE, route.toJson())
                 }
             } else {
-                features.edit(d.id, geometry) {
+                features.replace(d.id, geometry) {
                     this[Props.TITLE] = title
                     put(Props.ROUTE, route.toJson())
                 }

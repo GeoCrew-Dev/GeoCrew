@@ -61,6 +61,14 @@ class FeatureRepository @Inject constructor(
         return next
     }
 
+    /** Like [edit], but sets the geometry exactly, so null clears it (a derived line whose points are gone). */
+    suspend fun replace(id: String, geometry: Geometry?, block: PropertiesBuilder.() -> Unit = {}): GeoFeature? {
+        val cur = get(id) ?: return null
+        val next = cur.edited(clock.instant(), geometry, block)
+        dao.upsert(next.toEntity())
+        return next
+    }
+
     /** Re-classifies a feature, e.g. a plain point that turned out to be a geological point. */
     suspend fun changeKind(id: String, kind: FeatureKind): GeoFeature? {
         val cur = get(id) ?: return null

@@ -14,6 +14,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -84,8 +85,10 @@ class BasemapDownloads @Inject constructor(
         _current.value = BasemapDownload(title, plan.requests)
         job = scope.launch(Dispatchers.IO) {
             val id = "offline-" + UUID.randomUUID().toString().take(8)
-            val dir = File(File(context.filesDir, "basemaps"), id)
+            val root = File(context.filesDir, "basemaps")
+            val dir = File(root, id)
             try {
+                pruneOrphans(root)
                 val made = fetchAll(source, key, plan, dir)
                 val result = offlineSource(id, title, source, plan, made, Uri.fromFile(dir).toString())
                 settings.saveCustomSource(result)
@@ -102,6 +105,17 @@ class BasemapDownloads @Inject constructor(
     }
 
     fun cancel() { job?.cancel() }
+
+    /**
+     * Removes folders left by a download the system cut short (the app was
+     * closed mid-way): offline folders that no saved source points to.
+     */
+    private suspend fun pruneOrphans(root: File) {
+        val known = settings.settings.first().customSources.filter { it.offline }.map { it.id }.toSet()
+        // An hour's margin keeps an MBTiles import that is unpacking right now safe.
+        val before = System.currentTimeMillis() - 3_600_000
+        root.listFiles()?.filter { it.isDirectory && it.name.startsWith("offline-") && it.name !in known && it.lastModified() < before }?.forEach { it.deleteRecursively() }
+    }
 
     /** Forget a finished download so its notice goes away. */
     fun dismiss() { if (_current.value?.finished == true) _current.value = null }
