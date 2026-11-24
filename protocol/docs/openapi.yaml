@@ -131,6 +131,47 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/settings:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [workspaces]
+      operationId: getSettings
+      summary: Shared settings every member reads, such as the record form
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "401": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [workspaces]
+      operationId: putSettings
+      summary: Replace the shared settings (leader only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [settings]
+              properties:
+                settings: { type: object, description: "Up to 64 KiB; stored as sent" }
+                base_version:
+                  type: integer
+                  description: When present, the update only applies if the current version still equals it (409 stale otherwise)
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/members:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
@@ -345,7 +386,7 @@ components:
         error:
           type: string
           description: Stable machine-readable code
-          examples: [unauthorized, forbidden, not_found, bad_invite, invalid, invalid_feature, last_leader, too_large]
+          examples: [unauthorized, forbidden, not_found, bad_invite, invalid, invalid_feature, last_leader, stale, too_large]
         message: { type: string }
 
     Info:
@@ -357,7 +398,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
@@ -394,11 +435,36 @@ components:
         name: { type: string }
         created_at: { type: string, format: date-time }
         last_seq: { type: integer }
+        settings_version: { type: integer, description: Version of the shared settings; 0 until first set }
         me: { $ref: "#/components/schemas/Member" }
         invite_code: { type: string, description: Leaders only }
         online:
           type: array
           items: { type: string }
+
+    Settings:
+      type: object
+      required: [version, settings]
+      properties:
+        version: { type: integer }
+        settings:
+          type: object
+          description: Opaque to the server; see section 2.2 of the protocol for the keys clients use
+          properties:
+            form:
+              type: array
+              items: { $ref: "#/components/schemas/FormField" }
+
+    FormField:
+      type: object
+      required: [key]
+      properties:
+        key: { type: string, description: Property name the value is stored under }
+        label: { type: string, description: Shown to people; defaults to key }
+        type: { type: string, enum: [TEXT, NUMBER, CHOICE], default: TEXT }
+        options: { type: array, items: { type: string }, description: Allowed values for CHOICE }
+        unit: { type: string }
+        kinds: { type: array, items: { type: string }, description: Feature kinds it applies to; empty means all }
 
     Sync:
       type: object
@@ -501,6 +567,11 @@ components:
           properties:
             type: { type: string, const: feature_changed }
             seq: { type: integer }
+        - type: object
+          required: [type, version]
+          properties:
+            type: { type: string, const: settings_changed }
+            version: { type: integer }
         - type: object
           required: [type]
           properties:

@@ -29,7 +29,7 @@
 | 401 | 令牌缺失、错误或已被吊销（`unauthorized`） |
 | 403 | 角色不允许此操作（`forbidden`） |
 | 404 | 资源不存在（`not_found`）或邀请码无效（`bad_invite`） |
-| 409 | 冲突，例如移除最后一位组长（`last_leader`） |
+| 409 | 冲突，例如移除最后一位组长（`last_leader`）、基于旧版本修改设置（`stale`） |
 | 413 | 请求过大（`batch_too_large`、`too_large`） |
 
 ## 2. 工作区、成员与鉴权
@@ -55,6 +55,21 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 
 工作区至少保留一位未被吊销的组长。
 
+### 2.2 共享设置
+
+每个工作区有一份所有成员都能读取、只有组长能修改的设置，是一个 JSON 对象（不超过 64 KiB）。服务端原样保存，不解释内容；工作区信息里的 `settings_version` 每次修改加 1，修改后通过实时通道广播 `settings_changed`。
+
+- `GET …/settings` 返回 `{version, settings}`。
+- `PUT …/settings` 提交 `{settings, base_version?}`。带 `base_version` 时，只有当前版本仍等于它才会写入，否则返回 `409 stale`，客户端应重新读取后再决定是否覆盖。
+
+目前客户端约定的键：
+
+| 键 | 内容 |
+| --- | --- |
+| `form` | 记录表单：属性数组，每项 `{key, label?, type?, options?, unit?, kinds?}`。`type` 为 `TEXT`（默认）、`NUMBER` 或 `CHOICE`；`kinds` 为适用的要素种类，空表示全部。值写在要素 `properties[key]` 里，文字始终是字符串，数字是 JSON 数字。 |
+
+不认识的键必须原样保留：客户端修改设置时先读取、只改自己负责的键、再整体提交。
+
 ## 3. 接口一览
 
 | 方法 | 路径 | 角色 | 说明 |
@@ -65,6 +80,8 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | POST | `/api/v0/workspaces/join` | 无 | 加入 `{invite_code, nickname}` |
 | GET | `/api/v0/workspaces/{id}` | 任意 | 工作区信息、我的身份、在线成员；组长额外看到邀请码 |
 | GET | `/api/v0/workspaces/{id}/members` | 任意 | 成员列表（含已吊销，带 `revoked: true`） |
+| GET | `/api/v0/workspaces/{id}/settings` | 任意 | 共享设置（见 2.2） |
+| PUT | `/api/v0/workspaces/{id}/settings` | 组长 | 修改共享设置 |
 | PATCH | `/api/v0/workspaces/{id}/members/{member_id}` | 组长 | 修改角色 `{role}` |
 | DELETE | `/api/v0/workspaces/{id}/members/{member_id}` | 组长 | 吊销成员 |
 | POST | `/api/v0/workspaces/{id}/invite` | 组长 | 重置邀请码 |
@@ -82,7 +99,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history", "create"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
@@ -228,6 +245,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `presence` | 服务端→客户端 | `{member_id, online}`，成员上线 / 下线 |
 | `feature_changed` | 服务端→客户端 | `{seq}`，有新变更，客户端随后增量拉取 |
 | `members_changed` | 服务端→客户端 | 成员或角色有变化，客户端重新获取成员列表 |
+| `settings_changed` | 服务端→客户端 | `{version}`，共享设置有变化，客户端重新读取 |
 | `ping` / `pong` | 双向 | 保活 |
 | `error` | 服务端→客户端 | `{error}`，例如 `bad_json` |
 | `comment` | 双向 | 挂在要素上的讨论（第三阶段，尚未实现） |
