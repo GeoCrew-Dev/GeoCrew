@@ -46,6 +46,7 @@ internal object MapLayers {
     const val SRC_ME = "gc-me"
     const val SRC_TEAM = "gc-team"
     const val SRC_SKETCH = "gc-sketch"
+    const val SRC_GRID = "gc-grid"
 
     const val L_FILL = "gc-fill"
     const val L_LINE = "gc-line"
@@ -81,7 +82,16 @@ internal object MapLayers {
     )
 
     fun install(style: Style) {
-        listOf(SRC_FEATURES, SRC_ME, SRC_TEAM, SRC_SKETCH).forEach { style.addSource(GeoJsonSource(it, EMPTY)) }
+        listOf(SRC_GRID, SRC_FEATURES, SRC_ME, SRC_TEAM, SRC_SKETCH).forEach { style.addSource(GeoJsonSource(it, EMPTY)) }
+
+        // Kilometre grid: thin and below everything else, like the grid on a printed topographic map.
+        style.addLayer(
+            LineLayer("gc-grid", SRC_GRID).withProperties(
+                lineColor(MapColors.GRID),
+                lineWidth(0.8f),
+                lineOpacity(0.7f),
+            ),
+        )
 
         // Open tasks handed to me: a soft halo under the feature itself.
         style.addLayer(
@@ -217,6 +227,7 @@ internal object MapLayers {
             AttitudeSymbols.ensureDipLabels(style, o.features.mapNotNull { f -> f.attitude?.dip?.let { Math.round(it).toInt() } }.toSet())
             set(SRC_FEATURES, OverlayGeoJson.features(o.features, o.selectedId, o.memberId, o.legend))
         }
+        if (previous == null || previous.grid !== o.grid) set(SRC_GRID, OverlayGeoJson.grid(o.grid))
         if (previous == null || previous.me != o.me) set(SRC_ME, OverlayGeoJson.me(o.me))
         if (previous == null || previous.team != o.team) set(SRC_TEAM, OverlayGeoJson.team(o.team))
         if (previous == null || previous.sketch != o.sketch || previous.sketchClosed != o.sketchClosed) {

@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -173,17 +174,40 @@ fun MapScreen(
         }
     }
 
+    // Kilometre grid for the view, recomputed shortly after the camera settles.
+    var grid by remember { mutableStateOf<org.geocrew.core.model.PlaneGrid.Grid?>(null) }
+    LaunchedEffect(display.grid) {
+        val width = display.grid
+        if (width == 0) {
+            grid = null
+            return@LaunchedEffect
+        }
+        androidx.compose.runtime.snapshotFlow { camera.center to camera.zoom }.collectLatest {
+            kotlinx.coroutines.delay(150)
+            var view = camera.visibleBounds()
+            while (view == null) {
+                kotlinx.coroutines.delay(300)
+                view = camera.visibleBounds()
+            }
+            grid = org.geocrew.core.model.PlaneGrid.of(view, width)
+        }
+    }
+    val drawn = remember(overlays, grid) { grid?.let { overlays.copy(grid = it.lines) } ?: overlays }
+    val gridLabels = remember(grid) {
+        grid?.lines?.mapNotNull { l -> l.anchor?.let { org.geocrew.core.map.MapLabel(it, l.label) } }.orEmpty()
+    }
+
     val bm = baseMap ?: return
     Box(Modifier.fillMaxSize()) {
         GeoCrewMap(
             source = bm.source,
             keys = bm.keys,
-            overlays = overlays,
+            overlays = drawn,
             camera = camera,
             modifier = Modifier.fillMaxSize(),
             onClick = viewModel::onMapClick,
             onLongClick = { if (mode == MapMode.Browse) viewModel.addPoint(it) },
-            labels = overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) } +
+            labels = gridLabels + overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) } +
                 listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, goneLabel) }) +
                 nameLabels,
         )

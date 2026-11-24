@@ -18,6 +18,8 @@ data class MapDisplay(
     val team: Boolean = true,
     /** Only records assigned to me and not done (team projects). */
     val onlyMyTasks: Boolean = false,
+    /** Kilometre grid of the 3° or 6° Gauss-Krüger zone; 0 draws none. See [PlaneGrid]. */
+    val grid: Int = 0,
 ) {
     fun shows(kind: FeatureKind) = kind.id !in hiddenKinds
 

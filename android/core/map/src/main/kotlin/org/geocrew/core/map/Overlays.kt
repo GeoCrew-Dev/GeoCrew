@@ -42,6 +42,8 @@ data class MapOverlays(
     val memberId: String? = null,
     /** Colours records by an attribute where they have no colour of their own. */
     val legend: Legend = Legend(),
+    /** Kilometre grid lines over the current view; see [org.geocrew.core.model.PlaneGrid]. */
+    val grid: List<org.geocrew.core.model.PlaneGrid.Line> = emptyList(),
 )
 
 /** Converts overlays into GeoJSON strings for MapLibre sources. */
@@ -134,6 +136,10 @@ internal object OverlayGeoJson {
             }
             points.forEach { add(feature(Geometry.Point(it)) { this["vertex"] = true }) }
         },
+    )
+
+    fun grid(lines: List<org.geocrew.core.model.PlaneGrid.Line>): String = collection(
+        lines.map { l -> feature(Geometry.LineString(l.positions)) { this["northing"] = l.northing } },
     )
 
     /** Accuracy circle as a 48-gon. */

@@ -204,6 +204,21 @@ internal fun LayerSheet(
                 }
             }
             item { DisplaySwitch("记录名称", "放大到一定比例后显示", display.names) { v -> onDisplay { it.copy(names = v) } } }
+            item {
+                ListItem(
+                    headlineContent = { Text("公里网") },
+                    supportingContent = {
+                        Column {
+                            Text("高斯-克吕格坐标网（CGCS2000），标注单位为千米，横坐标前是带号")
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(0 to "不显示", 3 to "3° 带", 6 to "6° 带").forEach { (w, label) ->
+                                    FilterChip(selected = display.grid == w, onClick = { onDisplay { it.copy(grid = w) } }, label = { Text(label) })
+                                }
+                            }
+                        }
+                    },
+                )
+            }
             if (inTeam) {
                 item { DisplaySwitch("组员位置", null, display.team) { v -> onDisplay { it.copy(team = v) } } }
                 item { DisplaySwitch("只看我的任务", "只显示指派给我、还没完成的记录", display.onlyMyTasks) { v -> onDisplay { it.copy(onlyMyTasks = v) } } }
