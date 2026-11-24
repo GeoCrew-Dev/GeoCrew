@@ -1,5 +1,7 @@
 package org.geocrew.feature.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,11 +27,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,15 +48,30 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.geocrew.core.model.CoordinateFormat
+import org.geocrew.core.model.tiles.TileSource
 import org.geocrew.core.ui.SectionHeader
 
 private const val TIANDITU_SITE = "https://www.tianditu.gov.cn/"
+
+private fun displayName(resolver: android.content.ContentResolver, uri: android.net.Uri): String? =
+    runCatching {
+        resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull()
+
+private fun formatBytes(b: Long): String = when {
+    b >= 1L shl 30 -> "%.1f GB".format(b / (1L shl 30).toDouble())
+    b >= 1L shl 20 -> "%.0f MB".format(b / (1L shl 20).toDouble())
+    else -> "%.0f KB".format(b / 1024.0)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +80,22 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
     val check by viewModel.check.collectAsStateWithLifecycle()
     val checking by viewModel.checking.collectAsStateWithLifecycle()
     val s = settings
+    val importing by viewModel.importing.collectAsStateWithLifecycle()
+    val sizes by viewModel.sizes.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
     var adding by rememberSaveable { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<TileSource?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val resolver = LocalContext.current.contentResolver
+    val pickMbTiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importBasemap(uri, displayName(resolver, uri) ?: "离线底图")
+    }
+    LaunchedEffect(message) {
+        message?.let {
+            snackbar.showSnackbar(it)
+            viewModel.consumeMessage()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -69,6 +104,7 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (s == null) return@Scaffold
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
@@ -92,7 +128,7 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
-            items(s.customSources, key = { it.id }) { src ->
+            items(s.customSources.filterNot { it.offline }, key = { it.id }) { src ->
                 ListItem(
                     headlineContent = { Text(src.name) },
                     supportingContent = { Text(src.layers.firstOrNull()?.url.orEmpty(), maxLines = 1, style = MaterialTheme.typography.bodySmall) },
@@ -104,6 +140,49 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
                     Icon(Icons.Default.Add, null)
                     Spacer(Modifier.width(4.dp))
                     Text("添加图源")
+                }
+            }
+
+            item { SectionHeader("离线底图") }
+            item {
+                Text(
+                    "没有信号的测区，可以提前用桌面软件（如 QGIS、MOBAC）把底图导出成 MBTiles 栅格瓦片包，再在这里导入。导入后存在手机里，地图的底图切换里会多出这一项。",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+            items(s.customSources.filter { it.offline }, key = { it.id }) { src ->
+                val l = src.layers.firstOrNull()
+                ListItem(
+                    headlineContent = { Text(src.name) },
+                    supportingContent = {
+                        Text(
+                            listOfNotNull(l?.let { "${it.minZoom}–${it.maxZoom} 级" }, sizes[src.id]?.let(::formatBytes)).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    },
+                    trailingContent = { IconButton(onClick = { deleting = src }) { Icon(Icons.Default.Delete, "删除") } },
+                )
+            }
+            item {
+                val p = importing
+                if (p == null) {
+                    TextButton(onClick = { pickMbTiles.launch(arrayOf("*/*")) }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                        Icon(Icons.Default.Add, null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("导入 MBTiles")
+                    }
+                } else {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(
+                            if (p.total == 0) "正在读取文件…" else "正在解包瓦片 ${p.done} / ${p.total}，请停留在本页",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        if (p.total == 0) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        else LinearProgressIndicator(progress = { p.done.toFloat() / p.total }, modifier = Modifier.fillMaxWidth())
+                        TextButton(onClick = viewModel::cancelImport) { Text("取消") }
+                    }
                 }
             }
 
@@ -141,6 +220,20 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
         }
     }
 
+    deleting?.let { src ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("删除离线底图") },
+            text = { Text("删除「${src.name}」和手机里的瓦片文件？用到它的工程会改回默认底图。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteBasemap(src)
+                    deleting = null
+                }) { Text("删除") }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } },
+        )
+    }
     if (adding) {
         AddSourceDialog(onDismiss = { adding = false }, onAdd = { viewModel.addSource(it); adding = false })
     }

@@ -31,6 +31,7 @@ object StyleBuilder {
                         put("minzoom", l.minZoom)
                         put("maxzoom", l.maxZoom)
                         if (l.tms) put("scheme", "tms")
+                        source.bounds?.takeIf { it.size == 4 }?.let { b -> put("bounds", JsonArray(b.map(::JsonPrimitive))) }
                         put("tiles", JsonArray(l.urls.map(::JsonPrimitive)))
                         if (i == 0 && source.attribution.isNotBlank()) put("attribution", source.attribution)
                     }

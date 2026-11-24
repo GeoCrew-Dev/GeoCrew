@@ -8,9 +8,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.geocrew.core.data.repo.AppSettings
 import org.geocrew.core.data.repo.BuildDefaults
+import org.geocrew.core.data.repo.OfflineBasemaps
 import org.geocrew.core.data.repo.SettingsRepository
 import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.tiles.TileLayer
@@ -53,12 +57,63 @@ data class CustomSourceForm(
     )
 }
 
+/** Progress of an MBTiles import; [done] and [total] are tile counts (0 while copying the file). */
+data class BasemapProgress(val done: Int, val total: Int)
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val repo: SettingsRepository,
     private val defaults: BuildDefaults,
+    private val offline: OfflineBasemaps,
 ) : ViewModel() {
     val settings: StateFlow<AppSettings?> = repo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _importing = MutableStateFlow<BasemapProgress?>(null)
+    val importing: StateFlow<BasemapProgress?> = _importing.asStateFlow()
+
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+
+    /** Disk use of each offline base map, by source id. */
+    private val _sizes = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val sizes: StateFlow<Map<String, Long>> = _sizes.asStateFlow()
+
+    private var importJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            repo.settings.map { s -> s.customSources.filter { it.offline } }.distinctUntilChanged().collect { list ->
+                _sizes.value = list.associate { it.id to offline.size(it) }
+            }
+        }
+    }
+
+    fun consumeMessage() { _message.value = null }
+
+    /** Unpacks an MBTiles file picked by the user into a new offline base map. */
+    fun importBasemap(uri: android.net.Uri, fileName: String) {
+        if (importJob?.isActive == true) return
+        importJob = viewModelScope.launch {
+            _importing.value = BasemapProgress(0, 0)
+            try {
+                val r = offline.import(uri, fileName.substringBeforeLast('.').ifBlank { "离线底图" }) { done, total ->
+                    _importing.value = BasemapProgress(done, total)
+                }
+                _message.value = "已导入「${r.source.name}」，${r.source.layers.first().minZoom}–${r.source.layers.first().maxZoom} 级共 ${r.tiles} 张瓦片，可在地图的底图切换里选用" +
+                    (if (r.skipped > 0) "（${r.skipped} 张无效已跳过）" else "")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _message.value = "导入失败：" + (e.message ?: "无法读取文件")
+            } finally {
+                _importing.value = null
+            }
+        }
+    }
+
+    fun cancelImport() { importJob?.cancel() }
+
+    fun deleteBasemap(source: TileSource) = viewModelScope.launch { offline.delete(source) }
 
     /** Whether this build ships a developer key (debug builds only). */
     val hasBuildKey: Boolean get() = defaults.tiandituKey.isNotBlank()

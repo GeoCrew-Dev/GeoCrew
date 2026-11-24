@@ -181,7 +181,7 @@ internal fun LayerSheet(base: BaseMapUi, onChoose: (String) -> Unit, onManage: (
                     supportingContent = {
                         val note = listOfNotNull(
                             s.group.ifBlank { null },
-                            if (s.custom) "自定义" else null,
+                            if (s.custom && !s.offline) "自定义" else null,
                             if (locked) "需要先在设置里填写 Key" else null,
                         ).joinToString(" · ")
                         if (note.isNotEmpty()) Text(note)

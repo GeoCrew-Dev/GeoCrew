@@ -26,6 +26,10 @@ data class TileSource(
     val custom: Boolean = false,
     /** Grouping shown in the layer switcher. */
     val group: String = "",
+    /** Tiles live on this device (an imported MBTiles package); its files are deleted with it. */
+    val offline: Boolean = false,
+    /** Area covered, as [west, south, east, north] in degrees; null for worldwide sources. */
+    val bounds: List<Double>? = null,
 ) {
     val needsKey: Boolean get() = keyId != null
 }

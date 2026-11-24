@@ -308,7 +308,15 @@ fun MapScreen(
         if (showLayers) {
             LayerSheet(
                 base = bm,
-                onChoose = { viewModel.chooseSource(it); showLayers = false },
+                onChoose = { id ->
+                    viewModel.chooseSource(id)
+                    showLayers = false
+                    // An offline map only covers its area: go there if the view is elsewhere.
+                    bm.sources.firstOrNull { it.id == id }?.bounds?.takeIf { it.size == 4 }?.let { (w, s, e, n) ->
+                        val c = camera.center
+                        if (c.lng !in w..e || c.lat !in s..n) camera.fit(org.geocrew.core.model.Bounds(w, s, e, n))
+                    }
+                },
                 onManage = { showLayers = false; onOpenSettings() },
                 onDismiss = { showLayers = false },
             )
