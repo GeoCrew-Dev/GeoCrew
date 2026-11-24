@@ -55,13 +55,14 @@ import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.gis.FisherStats
 import org.geocrew.core.gis.Lineation
 import org.geocrew.core.gis.NetPoint
+import org.geocrew.core.gis.Rose
 import org.geocrew.core.gis.Stereonet
 import org.geocrew.core.model.Attitude
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.string
 import javax.inject.Inject
 
-enum class NetDisplay(val label: String) { POLES("极点"), PLANES("大圆"), BOTH("两者") }
+enum class NetDisplay(val label: String) { POLES("极点"), PLANES("大圆"), BOTH("两者"), ROSE("走向玫瑰") }
 
 data class StereonetUi(
     val attitudes: List<Attitude> = emptyList(),
@@ -139,8 +140,13 @@ fun StereonetScreen(onBack: () -> Unit, viewModel: StereonetViewModel = hiltView
                     }
                 }
             }
-            Net(ui, Modifier.fillMaxWidth().aspectRatio(1f))
-            Summary(ui)
+            if (ui.display == NetDisplay.ROSE) {
+                RoseDiagram(ui, Modifier.fillMaxWidth().aspectRatio(1f))
+                RoseSummary(ui)
+            } else {
+                Net(ui, Modifier.fillMaxWidth().aspectRatio(1f))
+                Summary(ui)
+            }
         }
     }
 }
@@ -224,4 +230,74 @@ private fun DrawScope.meanMarker(o: Offset, color: Color) {
     val d = 7.dp.toPx()
     drawLine(color, Offset(o.x - d, o.y - d), Offset(o.x + d, o.y + d), 2.5.dp.toPx())
     drawLine(color, Offset(o.x - d, o.y + d), Offset(o.x + d, o.y - d), 2.5.dp.toPx())
+}
+
+/** 10° sectors give a readable rose for the tens to hundreds of readings a field day yields. */
+private const val ROSE_BIN = 10
+
+@Composable
+private fun RoseSummary(ui: StereonetUi) {
+    val m = remember(ui.attitudes) { Rose.axialMean(ui.attitudes.map { it.strike }) }
+    if (m == null) {
+        Text("当前工程还没有产状记录。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("共 ${m.count} 条走向 · ${ROSE_BIN}° 分组 · 花瓣面积与条数成正比", style = MaterialTheme.typography.bodyMedium)
+        Text("优势走向 %03.0f°–%03.0f°".format(m.direction, m.direction + 180), style = MaterialTheme.typography.titleMedium)
+        Text(
+            "集中程度 R̄ %.2f".format(m.resultant) + when {
+                m.resultant > 0.7 -> "（走向集中）"
+                m.resultant < 0.3 -> "（走向分散或存在多组，均值意义不大）"
+                else -> ""
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Strike rose: each sector is drawn twice, 180° apart, with radius ∝ √count (equal area). */
+@Composable
+private fun RoseDiagram(ui: StereonetUi, modifier: Modifier) {
+    val outline = MaterialTheme.colorScheme.onSurface
+    val grid = MaterialTheme.colorScheme.outlineVariant
+    val petal = MaterialTheme.colorScheme.primary
+    val mean = MaterialTheme.colorScheme.error
+    val measurer = rememberTextMeasurer()
+    val label = MaterialTheme.typography.labelMedium.copy(color = outline)
+    val bins = remember(ui.attitudes) { Rose.axialBins(ui.attitudes.map { it.strike }, ROSE_BIN) }
+    val avg = remember(ui.attitudes) { Rose.axialMean(ui.attitudes.map { it.strike }) }
+    val max = bins.maxOrNull()?.takeIf { it > 0 } ?: 1
+
+    Canvas(modifier.padding(16.dp)) {
+        val r = size.minDimension / 2
+        val c = Offset(size.width / 2, size.height / 2)
+        for (k in 1..4) drawCircle(grid, r * kotlin.math.sqrt(k / 4f), c, style = Stroke(1f))
+        for (a in 0 until 360 step 30) {
+            val t = Math.toRadians(a.toDouble())
+            drawLine(grid, c, Offset(c.x + r * kotlin.math.sin(t).toFloat(), c.y - r * kotlin.math.cos(t).toFloat()), 1f)
+        }
+        drawCircle(outline, r, c, style = Stroke(2.dp.toPx()))
+        bins.forEachIndexed { i, n ->
+            if (n == 0) return@forEachIndexed
+            val rr = r * kotlin.math.sqrt(n.toFloat() / max)
+            for (offset in listOf(0, 180)) {
+                // Compose angles start at three o'clock; azimuths start at north.
+                val start = (i * ROSE_BIN + offset - 90).toFloat()
+                drawArc(petal.copy(alpha = 0.55f), start, ROSE_BIN.toFloat(), useCenter = true, topLeft = Offset(c.x - rr, c.y - rr), size = androidx.compose.ui.geometry.Size(2 * rr, 2 * rr))
+                drawArc(petal, start, ROSE_BIN.toFloat(), useCenter = true, topLeft = Offset(c.x - rr, c.y - rr), size = androidx.compose.ui.geometry.Size(2 * rr, 2 * rr), style = Stroke(1.dp.toPx()))
+            }
+        }
+        avg?.let { m ->
+            val t = Math.toRadians(m.direction)
+            val dx = (r * kotlin.math.sin(t)).toFloat()
+            val dy = (r * kotlin.math.cos(t)).toFloat()
+            drawLine(mean, Offset(c.x - dx, c.y + dy), Offset(c.x + dx, c.y - dy), 2.dp.toPx())
+        }
+        val n = measurer.measure("N", label)
+        drawText(n, topLeft = Offset(c.x - n.size.width / 2f, c.y - r - n.size.height - 2.dp.toPx()))
+        val top = measurer.measure("$max", label.copy(color = grid.copy(alpha = 1f)))
+        drawText(top, topLeft = Offset(c.x + 4.dp.toPx(), c.y - r + 2.dp.toPx()))
+    }
 }
