@@ -1,46 +1,103 @@
 # 同勘 GeoCrew 协同协议 v0（草案）
 
-> 状态：草案，接口可能变动。所有路径以服务端根地址为前缀，例如 `https://geo.example.org`。
+> 状态：草案，接口可能变动，但会尽量只做向后兼容的增量修改。机器可读描述见 [`openapi.yaml`](openapi.yaml)。所有路径以服务端根地址为前缀，例如 `https://geo.example.org`。
 
 ## 1. 基本约定
 
 - 传输：HTTPS + JSON（UTF-8）；实时通道为 WebSocket（`wss://`）。
-- 时间：RFC 3339 UTC 字符串。
-- 标识：客户端生成 UUID v4 作为要素 id，离线也能创建。
-- 几何：GeoJSON（RFC 7946），坐标 `[经度, 纬度, 高程?]`。
-- 版本：`GET /api/v0/info` 返回服务端支持的协议版本。
+- 时间：RFC 3339 UTC 字符串，例如 `2026-11-24T15:00:00Z`，可带小数秒。
+- 标识：客户端生成 UUID v4 作为要素 id（1–64 个字符），离线也能创建。工作区和成员 id 由服务端生成。
+- 几何：GeoJSON（RFC 7946），坐标 `[经度, 纬度, 高程?]`，CGCS2000 / WGS84。
+- 兼容性：
+  - 客户端和服务端都必须忽略不认识的 JSON 字段和不认识的实时消息类型。
+  - 要素的 `properties` 由客户端自由定义，服务端原样保存、原样返回，不做解释。
+  - 服务端在 `GET /api/v0/info` 的 `capabilities` 里声明自己支持的能力，客户端按能力开关功能。
 
-## 2. 鉴权
+### 1.1 错误格式
+
+所有错误响应都是：
+
+```json
+{ "error": "bad_invite", "message": "invalid invite code" }
+```
+
+`error` 是稳定的机器码，`message` 只供人读。常见状态码：
+
+| 状态码 | 含义 |
+| --- | --- |
+| 400 | 请求格式错误（`bad_json`、`invalid`、`invalid_feature`、`bad_hash`、`hash_mismatch`） |
+| 401 | 令牌缺失、错误或已被吊销（`unauthorized`） |
+| 403 | 角色不允许此操作（`forbidden`） |
+| 404 | 资源不存在（`not_found`）或邀请码无效（`bad_invite`） |
+| 409 | 冲突，例如移除最后一位组长（`last_leader`） |
+| 413 | 请求过大（`batch_too_large`、`too_large`） |
+
+## 2. 工作区、成员与鉴权
 
 1. 组长调用 `POST /api/v0/workspaces` 创建工作区，返回 `workspace_id`、`invite_code` 和组长的 `token`。
-2. 组员调用 `POST /api/v0/workspaces/join`，提交 `invite_code` 与昵称，返回该成员的 `token`。
-3. 之后的请求在头部携带 `Authorization: Bearer <token>`。
-4. 邀请码可由组长重置；令牌可由组长吊销。
+2. 组员调用 `POST /api/v0/workspaces/join`，提交 `invite_code` 与昵称，返回该成员的 `token`。邀请码为 8 位，不区分大小写，不含易混淆字符（0/O、1/I）。
+3. 之后的请求在头部携带 `Authorization: Bearer <token>`。令牌只在创建 / 加入时返回一次，服务端只保存其哈希。
+4. 组长可重置邀请码（旧码立即失效）、修改成员角色、吊销成员。被吊销成员的令牌立即失效，其实时连接会被断开。
 
-二维码内容为 `geocrew://join?server=<根地址>&code=<invite_code>`。
+二维码内容为：
 
-## 3. 接口
+```
+geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
+```
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/v0/info` | 服务端名称、协议版本 |
-| POST | `/api/v0/workspaces` | 创建工作区 `{name, nickname}` |
-| POST | `/api/v0/workspaces/join` | 加入 `{invite_code, nickname}` |
-| GET | `/api/v0/workspaces/{id}/members` | 成员列表 |
-| GET | `/api/v0/workspaces/{id}/features?since=<seq>` | 拉取 `seq` 之后的变更 |
-| POST | `/api/v0/workspaces/{id}/features` | 批量提交变更（见第 4 节） |
-| PUT | `/api/v0/workspaces/{id}/files/{sha256}` | 上传照片等附件，按内容哈希去重 |
-| GET | `/api/v0/workspaces/{id}/files/{sha256}` | 下载附件 |
-| GET | `/api/v0/workspaces/{id}/ws` | 升级为 WebSocket 实时通道 |
+### 2.1 角色
+
+| 角色 | 读取要素与附件 | 提交要素、上传附件 | 共享实时位置 | 管理成员与邀请码 |
+| --- | --- | --- | --- | --- |
+| `leader` 组长 | ✓ | ✓ | ✓ | ✓ |
+| `member` 成员 | ✓ | ✓ | ✓ | |
+| `readonly` 只读 | ✓ | | ✓ | |
+
+工作区至少保留一位未被吊销的组长。
+
+## 3. 接口一览
+
+| 方法 | 路径 | 角色 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/healthz` | 无 | 健康检查，返回 `ok` |
+| GET | `/api/v0/info` | 无 | 名称、协议版本、能力、上传上限 |
+| POST | `/api/v0/workspaces` | 无 | 创建工作区 `{name, nickname}` |
+| POST | `/api/v0/workspaces/join` | 无 | 加入 `{invite_code, nickname}` |
+| GET | `/api/v0/workspaces/{id}` | 任意 | 工作区信息、我的身份、在线成员；组长额外看到邀请码 |
+| GET | `/api/v0/workspaces/{id}/members` | 任意 | 成员列表（含已吊销，带 `revoked: true`） |
+| PATCH | `/api/v0/workspaces/{id}/members/{member_id}` | 组长 | 修改角色 `{role}` |
+| DELETE | `/api/v0/workspaces/{id}/members/{member_id}` | 组长 | 吊销成员 |
+| POST | `/api/v0/workspaces/{id}/invite` | 组长 | 重置邀请码 |
+| GET | `/api/v0/workspaces/{id}/features?since=&limit=` | 任意 | 增量拉取 |
+| POST | `/api/v0/workspaces/{id}/features` | 组长、成员 | 批量提交 |
+| GET | `/api/v0/workspaces/{id}/features/{fid}/history` | 任意 | 被覆盖的历史版本 |
+| PUT | `/api/v0/workspaces/{id}/files/{sha256}` | 组长、成员 | 上传附件 |
+| GET / HEAD | `/api/v0/workspaces/{id}/files/{sha256}` | 任意 | 下载附件 / 查询是否存在 |
+| GET | `/api/v0/workspaces/{id}/ws` | 任意 | 升级为 WebSocket 实时通道 |
+
+`info` 示例：
+
+```json
+{
+  "name": "GeoCrew Server",
+  "protocol": "0",
+  "version": "1a2b3c",
+  "capabilities": ["sync", "files", "realtime", "roles", "history"],
+  "max_upload_bytes": 33554432,
+  "max_push_batch": 500
+}
+```
 
 ## 4. 要素同步
 
-要素即一个 GeoJSON Feature，附加同步字段：
+### 4.1 要素格式
+
+要素即一个 GeoJSON Feature，附加 `sync` 成员：
 
 ```json
 {
   "type": "Feature",
-  "id": "8d3c…",
+  "id": "8d3c6f0e-0c1a-4d7e-9a43-3f1d9b0f4e21",
   "geometry": { "type": "Point", "coordinates": [116.39, 39.91, 52.3] },
   "properties": {
     "kind": "geo_point",
@@ -53,25 +110,132 @@
     "version": 3,
     "updated_at": "2026-11-24T15:00:00Z",
     "updated_by": "<member_id>",
-    "deleted": false
+    "deleted": false,
+    "seq": 17
   }
 }
 ```
 
-- 客户端离线时把修改放入本地队列，联网后批量 `POST`。
-- 服务端为每次接受的修改分配单调递增的 `seq`；客户端记住最后的 `seq`，用 `since` 增量拉取。
-- 冲突处理（v0）：同一要素以 `version` 较大者为准，版本相同时比较 `updated_at`，再相同时比较 `updated_by`。被覆盖的旧版本保留在服务端历史中，可人工恢复。
-- 删除为软删除（`deleted: true`）。
+| 字段 | 谁写 | 说明 |
+| --- | --- | --- |
+| `sync.version` | 客户端 | 从 1 开始，每次本地修改加 1 |
+| `sync.updated_at` | 客户端 | 本地修改时间（离线修改保留真实时间） |
+| `sync.updated_by` | 服务端 | 服务端用提交者的成员 id 覆盖客户端的值 |
+| `sync.deleted` | 客户端 | 软删除标记；删除也是一次修改，`version` 加 1 |
+| `sync.seq` | 服务端 | 服务端接受该修改时分配的序号，提交时忽略 |
 
-## 5. 实时通道
+`geometry` 可以为 `null`（例如纯文字记录）。常用的 `properties.kind` 约定见第 6 节。
 
-WebSocket 消息均为 JSON，带 `type` 字段：
+### 4.2 提交
+
+```
+POST /api/v0/workspaces/{id}/features
+{ "features": [ <Feature>, ... ] }
+```
+
+单次最多 `max_push_batch` 个要素，同一请求内 id 不可重复。服务端在一个事务里逐个处理，响应与请求一一对应：
+
+```json
+{
+  "results": [
+    { "id": "8d3c…", "status": "applied", "seq": 18 },
+    { "id": "77ab…", "status": "duplicate", "seq": 12 },
+    { "id": "5e10…", "status": "stale", "seq": 15, "current": { <服务端当前版本的 Feature> } }
+  ],
+  "seq": 18
+}
+```
+
+| status | 含义 | 客户端处理 |
+| --- | --- | --- |
+| `applied` | 已保存并分配新 `seq` | 标记为已同步 |
+| `duplicate` | 服务端已有完全相同的版本（重试） | 标记为已同步 |
+| `stale` | 服务端已有更新的版本 | 用 `current` 覆盖本地；如需保留本地修改，以 `current.sync.version + 1` 重新提交 |
+
+### 4.3 冲突规则（v0）
+
+同一要素的两个版本按以下顺序比较，较大者胜出：
+
+1. `version`
+2. `updated_at`
+3. `updated_by`（字符串比较，保证结果确定）
+
+三者都相同视为同一版本（`duplicate`）。被覆盖的旧版本保存在服务端历史中，可通过 `GET …/features/{fid}/history` 查看并人工恢复（恢复即以更高版本重新提交旧内容）。
+
+### 4.4 拉取
+
+```
+GET /api/v0/workspaces/{id}/features?since=17&limit=500
+```
+
+返回 `seq > since` 的要素当前版本，按 `seq` 升序：
+
+```json
+{ "features": [ … ], "seq": 25, "more": false }
+```
+
+- `seq` 是下次请求应传的 `since`（没有新数据时等于请求的 `since`）。
+- `more` 为 `true` 时应立即继续拉取。
+- 一个要素多次修改只返回最新版本；已删除要素也会返回（`deleted: true`），客户端据此删除本地副本。
+
+### 4.5 推荐的客户端同步流程
+
+1. 本地每次修改：`version + 1`、更新 `updated_at`，标记为"待上传"。
+2. 先上传要素引用的附件（见第 5 节），再分批提交待上传要素。
+3. 从上次保存的 `seq` 开始拉取直到 `more` 为 `false`，合并到本地：远端版本按第 4.3 节规则更新时覆盖本地，本地仍有待上传修改时保留本地。
+4. 保存最新 `seq`。
+5. 收到实时通道的 `feature_changed` 时重复第 3–4 步。
+
+## 5. 附件
+
+照片、草图、录音等按内容的 SHA-256（小写十六进制）存储，同一工作区内自动去重。
+
+- `PUT …/files/{sha256}`：请求体为文件原始字节，`Content-Type` 为文件类型。成功返回 `201`；已存在返回 `204`（不读取请求体，客户端可放心重试）；哈希不符返回 `400 hash_mismatch`；超过上限返回 `413`。
+- `HEAD …/files/{sha256}`：存在返回 `200`，否则 `404`，用于上传前检查。
+- `GET …/files/{sha256}`：返回文件，支持 `Range` 断点续传，带 `ETag` 和长期缓存头。
+
+要素通过 `properties.photos`（或其他字段）引用附件的哈希。
+
+## 6. 要素种类约定（properties.kind）
+
+`kind` 由客户端定义，服务端不校验。官方客户端目前使用：
+
+| kind | 几何 | 主要属性 |
+| --- | --- | --- |
+| `point` | Point | `title`、`note`、`photos` |
+| `geo_point` | Point | 地质点：`title`、`lithology`、`strike`、`dip_direction`、`dip`、`note`、`photos` |
+| `line` | LineString | `title`、`note`、`length_m` |
+| `polygon` | Polygon | `title`、`note`、`area_m2` |
+| `track` | LineString | 轨迹：`title`、`started_at`、`ended_at`、`length_m`；坐标可带高程 |
+| `photo` | Point | 独立照片点：`photos`、`azimuth`（拍摄方位角） |
+
+角度单位为度：走向、倾向为 0–360（正北为 0，顺时针），倾角 0–90。自定义属性请加命名空间前缀，例如 `myteam:sample_no`，避免与将来的官方字段冲突。
+
+## 7. 实时通道
+
+连接：`GET /api/v0/workspaces/{id}/ws`，携带 `Authorization: Bearer <token>`；无法设置请求头的客户端（如浏览器）可改用查询参数 `?access_token=<token>`。
+
+消息均为 JSON 文本帧，带 `type` 字段。服务端每 30 秒发送 WebSocket ping 帧；应用层 `ping` / `pong` 供不便处理协议帧的客户端使用。
 
 | type | 方向 | 内容 |
 | --- | --- | --- |
-| `position` | 双向 | 成员实时位置 `{member_id, lon, lat, accuracy, at}` |
-| `feature_changed` | 服务端→客户端 | 有新变更，附 `seq`，客户端随后增量拉取 |
-| `comment` | 双向 | 挂在要素上的讨论 `{feature_id, text, at}`（第三阶段） |
+| `hello` | 服务端→客户端 | 连接后第一条：`{member_id, online: [member_id…], positions: [position…]}`，`positions` 为最近 15 分钟内的最后位置 |
+| `position` | 双向 | 客户端发送 `{lon, lat, alt?, accuracy?, heading?, speed?, at?}`；服务端补上 `member_id`、`nickname` 后转发给其他成员 |
+| `presence` | 服务端→客户端 | `{member_id, online}`，成员上线 / 下线 |
+| `feature_changed` | 服务端→客户端 | `{seq}`，有新变更，客户端随后增量拉取 |
+| `members_changed` | 服务端→客户端 | 成员或角色有变化，客户端重新获取成员列表 |
 | `ping` / `pong` | 双向 | 保活 |
+| `error` | 服务端→客户端 | `{error}`，例如 `bad_json` |
+| `comment` | 双向 | 挂在要素上的讨论（第三阶段，尚未实现） |
 
-位置只做转发与短期保留，不写入要素历史。
+位置规则：
+
+- 服务端对每位成员的位置更新限流为每秒最多一次，多余的直接丢弃。
+- 坐标超出范围的位置会被丢弃。
+- 位置只在内存中短期保留，不写入要素历史；服务端重启后清空。
+- 客户端可以把轨迹作为 `track` 要素提交，用于长期保存。
+
+## 8. 版本演进
+
+- 同一主版本（v0）内只增加字段、接口和消息类型，不删除、不改变含义。
+- 不兼容的修改会使用新的路径前缀（`/api/v1/`），服务端可同时提供多个版本。
