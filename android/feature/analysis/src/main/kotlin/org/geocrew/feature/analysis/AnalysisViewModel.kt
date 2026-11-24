@@ -78,6 +78,10 @@ class AnalysisViewModel @Inject constructor(
     val fields: StateFlow<List<String>> = input.map { numericFields(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** Text properties usable as categories, for non-numeric field parameters. */
+    val categories: StateFlow<List<String>> = input.map { org.geocrew.core.gis.categoryFields(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     /** Why the tool cannot run with the current values, or null. */
     val problem: StateFlow<String?> = combine(input, _tool, _values) { list, t, v ->
         t?.check(ToolInput(list, v))

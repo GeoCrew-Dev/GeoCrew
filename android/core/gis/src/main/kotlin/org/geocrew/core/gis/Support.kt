@@ -2,6 +2,7 @@ package org.geocrew.core.gis
 
 import kotlinx.serialization.json.JsonPrimitive
 import org.geocrew.core.model.GeoFeature
+import org.geocrew.core.model.Props
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.PropertiesBuilder
 import org.geocrew.core.model.double
@@ -23,6 +24,27 @@ fun numericFields(features: List<GeoFeature>): List<String> =
     features.flatMap { f -> f.properties.entries.filter { (_, v) -> (v as? JsonPrimitive)?.let { !it.isString && it.content.toDoubleOrNull() != null } == true }.map { it.key } }
         .groupingBy { it }.eachCount()
         .entries.sortedByDescending { it.value }.map { it.key }
+
+/**
+ * Text properties that work as categories (lithology, formation, rock type):
+ * a limited set of values, not names, notes, people or times. Most common first.
+ */
+fun categoryFields(features: List<GeoFeature>, maxValues: Int = 40): List<String> {
+    val values = mutableMapOf<String, MutableSet<String>>()
+    val counts = mutableMapOf<String, Int>()
+    for (f in features) for ((k, v) in f.properties) {
+        if (k in NOT_CATEGORIES) continue
+        val text = (v as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()?.ifEmpty { null } ?: continue
+        values.getOrPut(k) { mutableSetOf() }.add(text)
+        counts[k] = (counts[k] ?: 0) + 1
+    }
+    return counts.keys.filter { (values[it]?.size ?: 0) <= maxValues }.sortedByDescending { counts[it] }
+}
+
+private val NOT_CATEGORIES = setOf(
+    Props.KIND, Props.TITLE, Props.NOTE, Props.STARTED_AT, Props.ENDED_AT, Props.ASSIGNEE, Props.ASSIGNEE_NAME,
+    OutputProps.TOOL, OutputProps.FILL, OutputProps.STROKE,
+)
 
 fun GeoFeature.number(field: String): Double? = properties.double(field)?.takeIf { it.isFinite() }
 

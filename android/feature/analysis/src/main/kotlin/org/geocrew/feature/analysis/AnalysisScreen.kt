@@ -106,6 +106,7 @@ private fun ToolForm(tool: GisTool, vm: AnalysisViewModel, onShowOnMap: () -> Un
     val values by vm.values.collectAsStateWithLifecycle()
     val input by vm.input.collectAsStateWithLifecycle()
     val fields by vm.fields.collectAsStateWithLifecycle()
+    val categories by vm.categories.collectAsStateWithLifecycle()
     val problem by vm.problem.collectAsStateWithLifecycle()
     val run by vm.run.collectAsStateWithLifecycle()
 
@@ -120,11 +121,16 @@ private fun ToolForm(tool: GisTool, vm: AnalysisViewModel, onShowOnMap: () -> Un
             when (p) {
                 is ToolParam.Field -> {
                     Text(p.label, style = MaterialTheme.typography.titleSmall)
-                    if (fields.isEmpty()) {
-                        Text("记录里没有数值属性。可在记录详情中添加，例如 grade = 3.2。", style = MaterialTheme.typography.bodySmall)
+                    p.help?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    val choices = if (p.numeric) fields else categories
+                    if (choices.isEmpty()) {
+                        Text(
+                            if (p.numeric) "记录里没有数值属性。可在记录详情中添加，例如 grade = 3.2。" else "记录里没有可分类的文字属性，例如岩性。",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     } else {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            fields.forEach { f ->
+                            choices.forEach { f ->
                                 FilterChip(
                                     selected = values[p.key] == f,
                                     onClick = { vm.set(p.key, if (values[p.key] == f) "" else f) },
