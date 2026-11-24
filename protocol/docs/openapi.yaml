@@ -357,7 +357,7 @@ paths:
     post:
       tags: [comments]
       operationId: addComment
-      summary: Post a comment on a record, or a message to the whole team (leaders and members)
+      summary: Post a comment on a record, or a message to the whole team (leaders and members; read-only members may send urgent messages only)
       requestBody:
         required: true
         content:
@@ -370,6 +370,7 @@ paths:
                 feature_id: { type: string, maxLength: 64, description: The record discussed; omit for a team message }
                 body: { type: string, maxLength: 2000, description: "Trimmed; must not be empty" }
                 at: { type: array, items: { type: number }, minItems: 2, maxItems: 2, description: "Optional [longitude, latitude] to show on the map" }
+                urgent: { type: boolean, default: false, description: "A call for help or to gather (section 8.1); team messages only; needs the alerts capability" }
       responses:
         "200":
           description: Stored (or already stored by an identical retry)
@@ -554,7 +555,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, create] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
@@ -636,6 +637,7 @@ components:
         created_at: { type: string, format: date-time }
         seq: { type: integer, description: "Comment sequence, separate from the feature seq" }
         deleted: { type: boolean, default: false }
+        urgent: { type: boolean, default: false, description: "Urgent team message (section 8.1)" }
 
     Sync:
       type: object
@@ -718,7 +720,8 @@ components:
 
     PushEvent:
       type: string
-      enum: [message, comment, task]
+      enum: [message, comment, task, alert]
+      description: "alert is always delivered, whatever a target subscribed to"
     PushTarget:
       type: object
       required: [endpoint, events, updated_at]

@@ -318,6 +318,16 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 - 发言不能修改；`feature_id` 指向的记录被删除时，讨论仍然保留。
 - 每次发言或删除后，服务端通过实时通道广播 `comments_changed`。
 
+### 8.1 紧急消息
+
+服务器能力里有 `alerts` 时可用。全组消息可以带 `"urgent": true`，表示求助或集合，一般同时带上发送者的位置 `at`。
+
+- 只能用于全组消息；带 `feature_id` 时返回 `400 invalid_comment`。
+- 只读成员不能发普通发言（`403`），但可以发紧急消息，求助不受角色限制。
+- 重试时 `urgent` 也要一致，否则按 `409 id_conflict` 处理。删除后 `urgent` 随正文一起清除。
+- 推送类型为 `alert`（第 9 节），发给除发送者外所有登记了地址的成员，**不受**各自 `events` 订阅的限制。
+- 客户端应醒目地显示紧急消息（例如置顶、红色、可以一键定位到地图），并用高优先级通知提醒。旧版本服务端会忽略这个字段，客户端发送前应检查 `alerts` 能力。
+
 ## 9. 推送通知
 
 服务器能力里有 `push` 时可用（运维人员可以关闭，此时这组接口返回 `404 push_disabled`）。实时通道只在应用打开时有效；推送让应用在后台也能知道有新动静。
@@ -330,6 +340,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `message` | 有人发了全组消息 | 除发送者外的全部成员 |
 | `comment` | 有人在记录下发言 | 除发送者外的全部成员 |
 | `task` | 记录的 `assignee` 变成某人（6.1），且不是本人自己指派、`task_status` 不是 `done` | 被指派的人 |
+| `alert` | 有人发了紧急消息（8.1）；不能通过 `events` 退订 | 除发送者外的全部成员 |
 
 服务端向地址 `POST` 一个 JSON（`Content-Type: application/json`）：
 
