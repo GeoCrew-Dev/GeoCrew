@@ -39,6 +39,13 @@ class ParseTest {
     }
 
     @Test
+    fun parsesPushNotices() {
+        val n = PushNotice.parse("""{"type":"task","workspace":"w","feature":"f","from":"m","seq":7,"later":1}""".toByteArray())
+        assertEquals(PushNotice("task", "w", "f", "m", 7), n)
+        assertEquals(null, PushNotice.parse("not json".toByteArray()))
+    }
+
+    @Test
     fun normalizesServerUrls() {
         assertEquals("https://example.org/", GeoCrewApi.normalize("example.org").toString())
         assertEquals("http://10.0.0.2:8080/geo/", GeoCrewApi.normalize("http://10.0.0.2:8080/geo").toString())
@@ -125,6 +132,15 @@ class ServerIntegrationTest {
         assertTrue(ca.items.isEmpty())
         leader.addComment(ws, "c2", "集合点", at = listOf(116.4, 39.9))
         assertEquals(403, runCatching { member.deleteComment(ws, "c2") }.exceptionOrNull().let { (it as ApiException).status })
+
+        // Push endpoints: servers with the capability accept one per member.
+        if ("push" in anon.info().capabilities) {
+            member.setPush(ws, "https://push.example.com/up/abc", PushKeys(
+                "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4", "BTBZMqHH6r4Tts7J_aSIgg",
+            ))
+            assertEquals(400, runCatching { member.setPush(ws, "ftp://x", null) }.exceptionOrNull().let { (it as ApiException).status })
+            member.deletePush(ws)
+        }
 
         // Leader records a point with a photo.
         val a = MemoryStore()

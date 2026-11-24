@@ -148,6 +148,20 @@ class GeoCrewApi(
         exec(wsUrl(ws, "comments", id), "DELETE", null)
     }
 
+    /**
+     * Registers this device's push endpoint for the workspace (servers with
+     * the "push" capability), replacing any earlier one.
+     */
+    suspend fun setPush(ws: String, endpoint: String, keys: PushKeys?, events: List<String>? = null) {
+        val req = json.encodeToString(PutPushReq.serializer(), PutPushReq(endpoint, events, keys)).toRequestBody(JSON)
+        exec(wsUrl(ws, "push"), "PUT", req)
+    }
+
+    /** Stops push notices for this member. */
+    suspend fun deletePush(ws: String) {
+        exec(wsUrl(ws, "push"), "DELETE", null)
+    }
+
     /** True if the server already has the attachment. */
     suspend fun hasFile(ws: String, sha256: String): Boolean = call(request(wsUrl(ws, "files", sha256)).head().build()) { r ->
         when (r.code) {

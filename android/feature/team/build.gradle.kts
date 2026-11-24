@@ -5,4 +5,6 @@ plugins {
 dependencies {
     // Pure-Java QR encoder for invite codes.
     implementation(libs.zxing.core)
+    // Background notices through the user's own distributor (ntfy etc.), no Google services.
+    implementation(libs.unifiedpush.connector)
 }

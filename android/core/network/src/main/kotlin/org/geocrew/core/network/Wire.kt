@@ -83,6 +83,32 @@ internal data class AddCommentReq(
     val at: List<Double>? = null,
 )
 
+/** A device's Web Push keys (base64url); the server encrypts notices with them. */
+@Serializable
+data class PushKeys(val p256dh: String, val auth: String)
+
+@Serializable
+internal data class PutPushReq(val endpoint: String, val events: List<String>? = null, val keys: PushKeys? = null)
+
+/**
+ * What a push carries (protocol v0 §9): only ids, never content. [type] is
+ * "message", "comment" or "task"; unknown types should be ignored.
+ */
+@Serializable
+data class PushNotice(
+    val type: String,
+    val workspace: String,
+    val feature: String? = null,
+    val from: String? = null,
+    val seq: Long = 0,
+) {
+    companion object {
+        /** Parses a notice, or returns null for anything else. */
+        fun parse(bytes: ByteArray): PushNotice? =
+            runCatching { GeoCrewApi.json.decodeFromString(serializer(), bytes.decodeToString()) }.getOrNull()
+    }
+}
+
 @Serializable
 internal data class InviteResp(@SerialName("invite_code") val inviteCode: String)
 

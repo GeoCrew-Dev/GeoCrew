@@ -1,5 +1,11 @@
 package org.geocrew.feature.team
 
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -91,6 +97,7 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
     val members by viewModel.members.collectAsStateWithLifecycle()
     val invite by viewModel.invite.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val pushAvailable by viewModel.pushAvailable.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val incoming by viewModel.incoming.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -153,6 +160,10 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
                     onSync = viewModel::syncNow,
                     onShare = viewModel::setShare,
                     onDownload = { uri -> viewModel.downloadPackage(appContext, uri) },
+                    pushAvailable = pushAvailable,
+                    pushOn = p.config.pushEnabled,
+                    onPushOn = viewModel::enablePush,
+                    onPushOff = viewModel::disablePush,
                     workspaceName = p.team!!.workspaceName,
                     onResetInvite = viewModel::resetInvite,
                     onSetRole = viewModel::setRole,
@@ -270,6 +281,10 @@ private fun LinkedPanel(
     onSync: () -> Unit,
     onShare: (Boolean) -> Unit,
     onDownload: (android.net.Uri) -> Unit,
+    pushAvailable: Boolean,
+    pushOn: Boolean,
+    onPushOn: (Activity) -> Unit,
+    onPushOff: () -> Unit,
     workspaceName: String,
     onResetInvite: () -> Unit,
     onSetRole: (Member, String) -> Unit,
@@ -319,6 +334,36 @@ private fun LinkedPanel(
                 supportingContent = { Text("打开地图或记录轨迹时（包括锁屏后），组员能看到你的实时位置") },
                 trailingContent = { Switch(checked = share, onCheckedChange = onShare) },
             )
+        }
+        if (pushAvailable || pushOn) {
+            item {
+                val activity = context.findActivity()
+                val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+                    // Notices still reach the server's queue without the permission,
+                    // they just would not show; go on either way.
+                    if (activity != null) onPushOn(activity)
+                }
+                ListItem(
+                    headlineContent = { Text("后台通知") },
+                    supportingContent = {
+                        Text("有新的组内消息、记录讨论或指派给你的任务时，在通知栏提醒。需要先安装 ntfy 等支持 UnifiedPush 的推送应用，不依赖谷歌服务")
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = pushOn,
+                            enabled = !busy,
+                            onCheckedChange = { on ->
+                                when {
+                                    !on -> onPushOff()
+                                    Build.VERSION.SDK_INT >= 33 &&
+                                        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED -> askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    else -> activity?.let(onPushOn)
+                                }
+                            },
+                        )
+                    },
+                )
+            }
         }
         item {
             val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -460,4 +505,10 @@ private fun InviteElsewhere(invite: Invite, projectName: String, busy: Boolean, 
             }
         }
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

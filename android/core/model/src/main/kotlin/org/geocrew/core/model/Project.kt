@@ -49,6 +49,8 @@ data class ProjectConfig(
     val chatReadSeq: Long = 0,
     /** How new records are named. Kept per device, so teammates can use different prefixes. */
     val numbering: Numbering = Numbering(),
+    /** This device asked for background notices from the workspace (UnifiedPush). */
+    val pushEnabled: Boolean = false,
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 }

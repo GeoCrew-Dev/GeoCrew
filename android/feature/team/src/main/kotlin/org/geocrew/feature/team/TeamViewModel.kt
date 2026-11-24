@@ -22,6 +22,7 @@ import org.geocrew.core.model.Project
 import org.geocrew.core.network.ApiException
 import org.geocrew.core.network.Invite
 import org.geocrew.core.network.Member
+import org.geocrew.feature.team.push.TeamPush
 import java.io.IOException
 import javax.inject.Inject
 
@@ -45,6 +46,7 @@ class TeamViewModel @Inject constructor(
     private val team: TeamRepository,
     private val session: TeamSession,
     private val settingsRepo: SettingsRepository,
+    private val push: TeamPush,
 ) : ViewModel() {
     val project: StateFlow<Project?> = projects.current.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val status: StateFlow<TeamStatus> = session.status
@@ -61,6 +63,10 @@ class TeamViewModel @Inject constructor(
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    /** Whether the linked server offers push notices (its "push" capability). */
+    private val _pushAvailable = MutableStateFlow(false)
+    val pushAvailable: StateFlow<Boolean> = _pushAvailable.asStateFlow()
 
     /** An invite that arrived through a link or QR code, waiting to be confirmed. */
     private val _incoming = MutableStateFlow(Invite.of(savedState[INVITE_SERVER_ARG], savedState[INVITE_CODE_ARG]))
@@ -114,6 +120,7 @@ class TeamViewModel @Inject constructor(
                 _invite.value = ws.inviteCode
                 _members.value = team.members(h)
             }
+            runCatching { _pushAvailable.value = "push" in h.api.info().capabilities }
         }
     }
 
@@ -130,7 +137,10 @@ class TeamViewModel @Inject constructor(
     }
 
     fun leave() = act("已退出工作组，本地数据保留") {
-        project.value?.id?.let { team.leave(it) }
+        project.value?.let { p ->
+            if (p.config.pushEnabled) push.disable(p.id)
+            team.leave(p.id)
+        }
         _members.value = emptyList()
         _invite.value = null
     }
@@ -153,6 +163,26 @@ class TeamViewModel @Inject constructor(
             if (e.status == 404) throw IllegalStateException("服务器版本较旧，不支持下载整组数据") else throw e
         }
         if (bytes == 0L) throw IOException("服务器没有返回数据")
+    }
+
+    /**
+     * Turns background notices on through the user's UnifiedPush
+     * distributor; the server learns the endpoint once the distributor
+     * hands it over (see [TeamPush.onNewEndpoint]).
+     */
+    fun enablePush(activity: android.app.Activity) {
+        val id = project.value?.id ?: return
+        if (!push.hasDistributor()) {
+            _message.value = "没有找到推送分发应用。请先安装 ntfy 等支持 UnifiedPush 的应用"
+            return
+        }
+        push.enable(activity, id) { ok ->
+            _message.value = if (ok) "正在开启后台通知" else "没有选择推送分发应用，后台通知未开启"
+        }
+    }
+
+    fun disablePush() = act("已关闭后台通知") {
+        project.value?.id?.let { push.disable(it) }
     }
 
     fun setShare(on: Boolean) {
