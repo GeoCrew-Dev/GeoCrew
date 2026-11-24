@@ -104,33 +104,39 @@ class SettingsRepository @Inject constructor(
     /** True when the user has not entered a key and the build provides none either. */
     fun needsTiandituKey(s: AppSettings): Boolean = keysOf(s)[BuiltInSources.TIANDITU_KEY_ID] == null
 
-    suspend fun setTiandituKey(key: String) = store.edit { it[K.KEY] = key.trim() }
-    suspend fun setBaseSource(id: String) = store.edit { it[K.SOURCE] = id }
-    suspend fun setKeyPromptDone() = store.edit { it[K.KEY_PROMPT] = true }
+    suspend fun setTiandituKey(key: String) { store.edit { it[K.KEY] = key.trim() } }
+    suspend fun setBaseSource(id: String) { store.edit { it[K.SOURCE] = id } }
+    suspend fun setKeyPromptDone() { store.edit { it[K.KEY_PROMPT] = true } }
 
     /** Adds or replaces (same id) a user tile source. */
-    suspend fun saveCustomSource(source: TileSource) = store.edit { p ->
-        val list = p[K.CUSTOM]?.let { runCatching { json.decodeFromString(sourcesSerializer, it) }.getOrNull() }.orEmpty()
-        val updated = list.filterNot { it.id == source.id } + source.copy(custom = true)
-        p[K.CUSTOM] = json.encodeToString(sourcesSerializer, updated)
-    }
-
-    suspend fun deleteCustomSource(id: String) = store.edit { p ->
-        val list = p[K.CUSTOM]?.let { runCatching { json.decodeFromString(sourcesSerializer, it) }.getOrNull() }.orEmpty()
-        p[K.CUSTOM] = json.encodeToString(sourcesSerializer, list.filterNot { it.id == id })
-        if (p[K.SOURCE] == id) p[K.SOURCE] = BuiltInSources.default.id
-    }
-    suspend fun setCoordinateFormat(f: CoordinateFormat) = store.edit { it[K.COORD] = f.name }
-    suspend fun setDeclination(value: Float?) = store.edit {
-        if (value == null) {
-            it[K.DECL_AUTO] = true
-        } else {
-            it[K.DECL_AUTO] = false
-            it[K.DECL] = value
+    suspend fun saveCustomSource(source: TileSource) {
+        store.edit { p ->
+            val list = p[K.CUSTOM]?.let { runCatching { json.decodeFromString(sourcesSerializer, it) }.getOrNull() }.orEmpty()
+            val updated = list.filterNot { it.id == source.id } + source.copy(custom = true)
+            p[K.CUSTOM] = json.encodeToString(sourcesSerializer, updated)
         }
     }
-    suspend fun setTrackInterval(seconds: Int) = store.edit { it[K.TRACK_S] = seconds.coerceIn(1, 600) }
-    suspend fun setTrackMinDistance(meters: Int) = store.edit { it[K.TRACK_M] = meters.coerceIn(0, 1000) }
-    suspend fun setCurrentProject(id: String) = store.edit { it[K.PROJECT] = id }
-    suspend fun setNickname(name: String) = store.edit { it[K.NICK] = name.trim() }
+
+    suspend fun deleteCustomSource(id: String) {
+        store.edit { p ->
+            val list = p[K.CUSTOM]?.let { runCatching { json.decodeFromString(sourcesSerializer, it) }.getOrNull() }.orEmpty()
+            p[K.CUSTOM] = json.encodeToString(sourcesSerializer, list.filterNot { it.id == id })
+            if (p[K.SOURCE] == id) p[K.SOURCE] = BuiltInSources.default.id
+        }
+    }
+    suspend fun setCoordinateFormat(f: CoordinateFormat) { store.edit { it[K.COORD] = f.name } }
+    suspend fun setDeclination(value: Float?) {
+        store.edit {
+            if (value == null) {
+                it[K.DECL_AUTO] = true
+            } else {
+                it[K.DECL_AUTO] = false
+                it[K.DECL] = value
+            }
+        }
+    }
+    suspend fun setTrackInterval(seconds: Int) { store.edit { it[K.TRACK_S] = seconds.coerceIn(1, 600) } }
+    suspend fun setTrackMinDistance(meters: Int) { store.edit { it[K.TRACK_M] = meters.coerceIn(0, 1000) } }
+    suspend fun setCurrentProject(id: String) { store.edit { it[K.PROJECT] = id } }
+    suspend fun setNickname(name: String) { store.edit { it[K.NICK] = name.trim() } }
 }
