@@ -150,24 +150,33 @@ type pullResp struct {
 	More bool  `json:"more"`
 }
 
-func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
+// page reads the since/limit cursor shared by the incremental list endpoints.
+func page(w http.ResponseWriter, r *http.Request, maxLimit int) (since int64, limit int, ok bool) {
 	q := r.URL.Query()
-	since, err := strconv.ParseInt(q.Get("since"), 10, 64)
-	if q.Get("since") == "" {
-		since, err = 0, nil
+	if v := q.Get("since"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 0 {
+			writeErr(w, http.StatusBadRequest, "invalid", "since must be a non-negative integer")
+			return 0, 0, false
+		}
+		since = n
 	}
-	if err != nil || since < 0 {
-		writeErr(w, http.StatusBadRequest, "invalid", "since must be a non-negative integer")
-		return
-	}
-	limit := s.MaxPullFeatures
-	if l := q.Get("limit"); l != "" {
-		n, err := strconv.Atoi(l)
+	limit = maxLimit
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
 			writeErr(w, http.StatusBadRequest, "invalid", "limit must be a positive integer")
-			return
+			return 0, 0, false
 		}
-		limit = min(n, s.MaxPullFeatures)
+		limit = min(n, maxLimit)
+	}
+	return since, limit, true
+}
+
+func (s *Server) pull(w http.ResponseWriter, r *http.Request) {
+	since, limit, ok := page(w, r, s.MaxPullFeatures)
+	if !ok {
+		return
 	}
 	fs, more, err := s.Store.PullFeatures(r.Context(), r.PathValue("ws"), since, limit)
 	if err != nil {

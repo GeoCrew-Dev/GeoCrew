@@ -19,7 +19,7 @@ import (
 const ProtocolVersion = "0"
 
 // Capabilities advertised by /info so clients can adapt to older servers.
-var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export"}
+var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments"}
 
 // Server wires the store, file storage and realtime hub into HTTP handlers.
 type Server struct {
@@ -84,6 +84,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST "+ws+"/features", s.auth(s.push, writers))
 	mux.Handle("GET "+ws+"/features/{feature}/history", s.auth(s.history, anyRole))
 	mux.Handle("GET "+ws+"/export.geojson", s.auth(s.exportGeoJSON, anyRole))
+	mux.Handle("GET "+ws+"/comments", s.auth(s.comments, anyRole))
+	mux.Handle("POST "+ws+"/comments", s.auth(s.addComment, writers))
+	mux.Handle("DELETE "+ws+"/comments/{comment}", s.auth(s.deleteComment, writers))
 	mux.Handle("PUT "+ws+"/files/{sha}", s.auth(s.putFile, writers))
 	mux.Handle("GET "+ws+"/files/{sha}", s.auth(s.getFile, anyRole))
 	mux.Handle("HEAD "+ws+"/files/{sha}", s.auth(s.getFile, anyRole))
@@ -188,6 +191,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeErr(w, http.StatusBadRequest, "invalid", "invalid request")
 	case errors.Is(err, store.ErrStale):
 		writeErr(w, http.StatusConflict, "stale", "changed by someone else; reload and try again")
+	case errors.Is(err, store.ErrForbidden):
+		writeErr(w, http.StatusForbidden, "forbidden", "your role does not allow this action")
+	case errors.Is(err, store.ErrConflict):
+		writeErr(w, http.StatusConflict, "id_conflict", "this id is already used for different content")
 	case errors.Is(err, store.ErrLastLeader):
 		writeErr(w, http.StatusConflict, "last_leader", "a workspace must keep at least one leader")
 	default:

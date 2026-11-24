@@ -109,6 +109,24 @@ type PushResult struct {
 	Current *Feature
 }
 
+// Comment is one message in a workspace's discussion. FeatureID ties it to a
+// record; an empty FeatureID is a message in the workspace's general stream.
+// At optionally pins a general message to a map position as [lng, lat].
+type Comment struct {
+	ID        string    `json:"id"`
+	FeatureID string    `json:"feature_id,omitempty"`
+	Body      string    `json:"body"`
+	At        []float64 `json:"at,omitempty"`
+	AuthorID  string    `json:"author_id"`
+	Nickname  string    `json:"nickname"`
+	CreatedAt time.Time `json:"created_at"`
+	Seq       int64     `json:"seq"`
+	Deleted   bool      `json:"deleted,omitempty"`
+}
+
+// MaxCommentRunes bounds a comment body.
+const MaxCommentRunes = 2000
+
 // FileMeta describes an attachment stored by content hash.
 type FileMeta struct {
 	SHA256      string    `json:"sha256"`
@@ -126,6 +144,10 @@ var (
 	ErrLastLeader   = errors.New("workspace must keep at least one leader")
 	// ErrStale means a conditional update was based on an outdated version.
 	ErrStale = errors.New("stale version")
+	// ErrForbidden means the caller may not act on this object.
+	ErrForbidden = errors.New("forbidden")
+	// ErrConflict means an id is already used for different content.
+	ErrConflict = errors.New("conflict")
 )
 
 // Backuper is implemented by stores that can write a consistent copy of
@@ -167,6 +189,17 @@ type Store interface {
 	// PutSettings replaces the settings and returns the new version. A
 	// baseVersion >= 0 must equal the current version, otherwise ErrStale.
 	PutSettings(ctx context.Context, workspaceID string, settings json.RawMessage, baseVersion int64) (int64, error)
+
+	// AddComment stores a comment from authorID with a new comment seq. Adding
+	// the same id again with the same author, feature and body returns the
+	// stored comment (idempotent retry); any other reuse is ErrConflict.
+	AddComment(ctx context.Context, workspaceID, authorID string, c Comment) (Comment, error)
+	// Comments returns comments with seq > since in seq order, including
+	// deleted ones (with an empty body) so clients can drop their copies.
+	Comments(ctx context.Context, workspaceID string, since int64, limit int) ([]Comment, bool, error)
+	// DeleteComment blanks a comment and gives it a new seq. Only its author
+	// or a leader (byLeader) may delete; others get ErrForbidden.
+	DeleteComment(ctx context.Context, workspaceID, commentID, memberID string, byLeader bool) (Comment, error)
 
 	PutFileMeta(ctx context.Context, workspaceID string, meta FileMeta) error
 	FileMeta(ctx context.Context, workspaceID, sha256 string) (FileMeta, error)

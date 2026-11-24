@@ -18,6 +18,7 @@ const (
 	TypeFeatureChanged  = "feature_changed"
 	TypeMembersChanged  = "members_changed"
 	TypeSettingsChanged = "settings_changed"
+	TypeCommentsChanged = "comments_changed"
 	TypePresence        = "presence"
 	TypePing            = "ping"
 	TypePong            = "pong"
@@ -221,6 +222,14 @@ func (h *Hub) SettingsChanged(ws string, version int64) {
 		Type    string `json:"type"`
 		Version int64  `json:"version"`
 	}{TypeSettingsChanged, version}))
+}
+
+// CommentsChanged tells everyone in ws that comments up to seq are available.
+func (h *Hub) CommentsChanged(ws string, seq int64) {
+	h.Broadcast(ws, marshal(struct {
+		Type string `json:"type"`
+		Seq  int64  `json:"seq"`
+	}{TypeCommentsChanged, seq}))
 }
 
 // Broadcast sends msg to every client in ws.

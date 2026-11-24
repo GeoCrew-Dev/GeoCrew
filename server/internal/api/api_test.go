@@ -18,6 +18,7 @@ import (
 
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
 )
 
@@ -372,5 +373,69 @@ func TestExportGeoJSON(t *testing.T) {
 	}
 	if c := e.call("GET", base+"/export.geojson", "", nil, nil); c != 401 {
 		t.Fatalf("export without token: %d", c)
+	}
+}
+
+func TestComments(t *testing.T) {
+	e := newEnv(t)
+	var leader, a, b joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "一组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "A"}, &a)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "B"}, &b)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+
+	post := func(token string, body map[string]any) (int, store.Comment) {
+		var c store.Comment
+		code := e.call("POST", base+"/comments", token, body, &c)
+		return code, c
+	}
+	c1 := map[string]any{"id": "c1", "feature_id": "f1", "body": "  这里的接触关系再看一下  "}
+	if code, c := post(a.Token, c1); code != 200 || c.Seq != 1 || c.Nickname != "A" || c.Body != "这里的接触关系再看一下" || c.FeatureID != "f1" {
+		t.Fatalf("add: %d %+v", code, c)
+	}
+	if code, c := post(a.Token, c1); code != 200 || c.Seq != 1 {
+		t.Fatalf("retry should be idempotent: %d %+v", code, c)
+	}
+	if code, _ := post(b.Token, c1); code != 409 {
+		t.Fatalf("id reuse by another member: %d", code)
+	}
+	if code, c := post(b.Token, map[string]any{"id": "c2", "body": "集合点在这", "at": []float64{116.4, 39.9}}); code != 200 || c.Seq != 2 || len(c.At) != 2 {
+		t.Fatalf("general message: %d %+v", code, c)
+	}
+	for _, bad := range []map[string]any{
+		{"id": "c3", "body": "   "},
+		{"id": "bad id", "body": "x"},
+		{"id": "c3", "body": "x", "at": []float64{200, 0}},
+		{"id": "c3", "body": strings.Repeat("字", store.MaxCommentRunes+1)},
+	} {
+		if code, _ := post(a.Token, bad); code != 400 {
+			t.Fatalf("invalid %v: %d", bad, code)
+		}
+	}
+
+	if code := e.call("DELETE", base+"/comments/c2", a.Token, nil, nil); code != 403 {
+		t.Fatalf("delete someone else's: %d", code)
+	}
+	if code := e.call("DELETE", base+"/comments/c2", leader.Token, nil, nil); code != 204 {
+		t.Fatalf("leader delete: %d", code)
+	}
+	if code := e.call("DELETE", base+"/comments/nope", leader.Token, nil, nil); code != 404 {
+		t.Fatalf("delete missing: %d", code)
+	}
+
+	var page commentsResp
+	if code := e.call("GET", base+"/comments?since=1", b.Token, nil, &page); code != 200 || page.Seq != 3 || len(page.Comments) != 1 {
+		t.Fatalf("pull: %d %+v", code, page)
+	}
+	if d := page.Comments[0]; d.ID != "c2" || !d.Deleted || d.Body != "" || d.At != nil {
+		t.Fatalf("tombstone: %+v", d)
+	}
+	if code := e.call("GET", base+"/comments?limit=1", b.Token, nil, &page); code != 200 || !page.More || page.Seq != 1 {
+		t.Fatalf("paging: %d %+v", code, page)
+	}
+
+	e.call("PATCH", base+"/members/"+b.MemberID, leader.Token, map[string]string{"role": "readonly"}, nil)
+	if code, _ := post(b.Token, map[string]any{"id": "c4", "body": "x"}); code != 403 {
+		t.Fatalf("readonly post: %d", code)
 	}
 }

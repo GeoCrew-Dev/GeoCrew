@@ -107,6 +107,21 @@ var migrations = []string{
 	);`,
 	`ALTER TABLE workspaces ADD COLUMN settings TEXT NOT NULL DEFAULT '{}';
 	ALTER TABLE workspaces ADD COLUMN settings_version INTEGER NOT NULL DEFAULT 0;`,
+	`ALTER TABLE workspaces ADD COLUMN comment_seq INTEGER NOT NULL DEFAULT 0;
+	CREATE TABLE comments (
+		workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+		id           TEXT NOT NULL,
+		seq          INTEGER NOT NULL,
+		feature_id   TEXT NOT NULL,
+		body         TEXT NOT NULL,
+		at_lng       REAL,
+		at_lat       REAL,
+		author_id    TEXT NOT NULL,
+		created_at   TEXT NOT NULL,
+		deleted      INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (workspace_id, id)
+	);
+	CREATE UNIQUE INDEX comments_seq ON comments(workspace_id, seq);`,
 }
 
 func (d *DB) migrate(ctx context.Context) error {
