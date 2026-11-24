@@ -49,6 +49,8 @@ go build -o geocrew-server ./cmd/geocrew-server
 | `-disable-create` | `GEOCREW_DISABLE_CREATE` | `false` | 不再接受新建工作组（自己的组建好后可打开） |
 | `-trust-proxy` | `GEOCREW_TRUST_PROXY` | `false` | 在反向代理后面时打开，按 `X-Forwarded-For` 识别客户端 |
 | `-join-per-minute` | `GEOCREW_JOIN_PER_MINUTE` | `10` | 每个客户端地址每分钟可尝试新建 / 加入的次数，防止猜测邀请码 |
+| `-push` | `GEOCREW_PUSH` | `true` | 向组员登记的推送地址发通知（UnifiedPush） |
+| `-push-allow-private` | `GEOCREW_PUSH_ALLOW_PRIVATE` | `false` | 允许推送地址在内网、本机或用 http（推送分发器和服务端在同一局域网时打开） |
 
 ## 管理命令
 
@@ -89,6 +91,12 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 
 包里有全部记录、记录引用的照片和工作组的记录表单，安卓端在工程列表右上角「导入」即可打开为一个新工程（不绑定工作组），适合季末归档或交给不在组里的人。组员同样可以请求 `GET /api/v0/workspaces/{id}/export.geocrew.zip` 下载。
 
+## 推送通知
+
+组员可以登记一个推送地址（`PUT /api/v0/workspaces/{id}/push`），之后有新的组内消息、有人在记录下留言、或者有记录被指派给自己时，服务端会向这个地址 POST 一条很短的 JSON。这和 [UnifiedPush](https://unifiedpush.org/) 的做法一致：手机上装一个分发器（如 ntfy），由它把通知唤醒到同勘，不依赖谷歌服务，分发器也可以自己部署。
+
+通知里只有类型、工作组、记录 ID、发送者 ID 和序号，不含消息正文或记录内容，因为分发器常常是第三方运营的；应用被唤醒后再通过有身份验证的接口取详情。为防止服务端被用来探测自己所在的内网，默认只向公网 https 地址投递，连接时还会检查解析出的 IP；分发器在局域网内时打开 `-push-allow-private`。分发器回复 404 / 410 时登记会被自动删除，组员被移出时登记一并删除。
+
 ## 代码结构
 
 | 目录 | 内容 |
@@ -99,6 +107,7 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 | `internal/store/sqlite` | 默认 SQLite 实现（纯 Go，无 CGO），含迁移 |
 | `internal/blob` | 附件按 SHA-256 存储在本地磁盘 |
 | `internal/realtime` | 实时消息分发（位置、在线状态、变更通知） |
+| `internal/push` | 推送通知投递（UnifiedPush 风格，内容最少、防内网探测） |
 | `internal/export` | 导出为 GeoJSON 和工程包 |
 | `internal/config` | 参数与环境变量 |
 | `internal/admin` | 运维命令（列出、恢复组长、备份、导出） |

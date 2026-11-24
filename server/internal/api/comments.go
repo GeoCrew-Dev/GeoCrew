@@ -67,6 +67,7 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Hub.CommentsChanged(ws, out.Seq)
+	s.notifyComment(ws, out)
 	writeJSON(w, http.StatusOK, out)
 }
 

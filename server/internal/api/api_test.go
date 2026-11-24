@@ -10,13 +10,16 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
 
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
@@ -27,7 +30,10 @@ type env struct {
 	srv *httptest.Server
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvWith(t, nil) }
+
+// newEnvWith lets a test adjust the server (for example attach a push sender) before it starts.
+func newEnvWith(t *testing.T, adjust func(*Server)) *env {
 	t.Helper()
 	db, err := sqlite.Open(":memory:")
 	if err != nil {
@@ -40,6 +46,9 @@ func newEnv(t *testing.T) *env {
 		Name: "test", Version: "test", Store: db, Hub: hub,
 		Files: &blob.Disk{Root: t.TempDir(), MaxSize: 1 << 20},
 		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	if adjust != nil {
+		adjust(s)
 	}
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
@@ -449,5 +458,89 @@ func TestComments(t *testing.T) {
 	e.call("PATCH", base+"/members/"+b.MemberID, leader.Token, map[string]string{"role": "readonly"}, nil)
 	if code, _ := post(b.Token, map[string]any{"id": "c4", "body": "x"}); code != 403 {
 		t.Fatalf("readonly post: %d", code)
+	}
+}
+
+func TestPushNotices(t *testing.T) {
+	var mu sync.Mutex
+	got := map[string][]push.Notice{}
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var n push.Notice
+		_ = json.NewDecoder(r.Body).Decode(&n)
+		mu.Lock()
+		got[r.URL.Path] = append(got[r.URL.Path], n)
+		mu.Unlock()
+	}))
+	defer sink.Close()
+	var sender *push.Sender
+	e := newEnvWith(t, func(s *Server) {
+		sender = push.New(s.Store, push.Options{AllowPrivate: true, Log: s.Log})
+		s.Push = sender
+	})
+
+	var info infoResp
+	e.call("GET", "/api/v0/info", "", nil, &info)
+	if !slices.Contains(info.Capabilities, "push") {
+		t.Fatalf("push capability missing: %v", info.Capabilities)
+	}
+	var leader, member joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "组员"}, &member)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+
+	if c := e.call("GET", base+"/push", member.Token, nil, nil); c != 404 {
+		t.Fatalf("no target yet: %d", c)
+	}
+	if c := e.call("PUT", base+"/push", member.Token, map[string]any{"endpoint": "ftp://x"}, nil); c != 400 {
+		t.Fatalf("bad endpoint: %d", c)
+	}
+	if c := e.call("PUT", base+"/push", member.Token, map[string]any{"endpoint": sink.URL + "/m", "events": []string{"bogus"}}, nil); c != 400 {
+		t.Fatalf("bad events: %d", c)
+	}
+	var tgt store.PushTarget
+	if c := e.call("PUT", base+"/push", member.Token, map[string]any{"endpoint": sink.URL + "/m"}, &tgt); c != 200 || len(tgt.Events) != 3 {
+		t.Fatalf("register: %d %+v", c, tgt)
+	}
+	e.call("PUT", base+"/push", leader.Token, map[string]any{"endpoint": sink.URL + "/l", "events": []string{"task"}}, nil)
+
+	// A message from the leader reaches the member only.
+	e.call("POST", base+"/comments", leader.Token, map[string]any{"id": "c1", "body": "收队"}, nil)
+	// A record assigned to the member by the leader.
+	f := feature("f1", 1, "2026-11-24T08:00:00Z")
+	f["properties"].(map[string]any)["assignee"] = member.MemberID
+	e.call("POST", base+"/features", leader.Token, map[string]any{"features": []any{f}}, nil)
+	// Editing it again without changing the assignee is not a new task.
+	f2 := feature("f1", 2, "2026-11-24T08:05:00Z")
+	f2["properties"].(map[string]any)["assignee"] = member.MemberID
+	e.call("POST", base+"/features", leader.Token, map[string]any{"features": []any{f2}}, nil)
+	// The member assigning a record to themselves notifies nobody.
+	f3 := feature("f2", 1, "2026-11-24T08:06:00Z")
+	f3["properties"].(map[string]any)["assignee"] = member.MemberID
+	e.call("POST", base+"/features", member.Token, map[string]any{"features": []any{f3}}, nil)
+	sender.Close()
+
+	if len(got["/l"]) != 0 {
+		t.Fatalf("leader got %v", got["/l"])
+	}
+	m := got["/m"]
+	if len(m) != 2 || m[0].Type != "message" || m[0].From != leader.MemberID || m[1].Type != "task" || m[1].Feature != "f1" {
+		t.Fatalf("member notices: %+v", m)
+	}
+
+	if c := e.call("DELETE", base+"/push", member.Token, nil, nil); c != 204 {
+		t.Fatalf("delete: %d", c)
+	}
+	if c := e.call("GET", base+"/push", member.Token, nil, nil); c != 404 {
+		t.Fatalf("after delete: %d", c)
+	}
+}
+
+func TestPushDisabled(t *testing.T) {
+	e := newEnv(t)
+	var leader joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "组", "nickname": "组长"}, &leader)
+	var body map[string]any
+	if c := e.call("PUT", "/api/v0/workspaces/"+leader.WorkspaceID+"/push", leader.Token, map[string]any{"endpoint": "https://ntfy.sh/x"}, &body); c != 404 || body["error"] != "push_disabled" {
+		t.Fatalf("disabled: %d %v", c, body)
 	}
 }

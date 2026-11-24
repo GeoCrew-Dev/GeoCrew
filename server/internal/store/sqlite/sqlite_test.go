@@ -207,3 +207,45 @@ func TestMigratesOlderDatabase(t *testing.T) {
 		t.Fatalf("comment after migration: %v %+v", err, c)
 	}
 }
+
+func TestPushTargets(t *testing.T) {
+	ctx := context.Background()
+	d := open(t)
+	ws, leader, _, _ := d.CreateWorkspace(ctx, "组", "组长")
+	_, m, _, _ := d.Join(ctx, ws.InviteCode, "组员")
+	if _, err := d.PushTarget(ctx, ws.ID, m.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("none yet: %v", err)
+	}
+	for _, mem := range []string{leader.ID, m.ID} {
+		if err := d.SetPushTarget(ctx, ws.ID, store.PushTarget{MemberID: mem, Endpoint: "https://a/" + mem, Events: []string{"task"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Registering again replaces the endpoint.
+	if err := d.SetPushTarget(ctx, ws.ID, store.PushTarget{MemberID: m.ID, Endpoint: "https://b/x", Events: []string{"message", "task"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.PushTarget(ctx, ws.ID, m.ID)
+	if err != nil || got.Endpoint != "https://b/x" || len(got.Events) != 2 || got.UpdatedAt.IsZero() {
+		t.Fatalf("target: %+v %v", got, err)
+	}
+	if l, _ := d.PushTargets(ctx, ws.ID); len(l) != 2 {
+		t.Fatalf("list: %+v", l)
+	}
+	// A revoked member's device stops getting notices.
+	if err := d.RevokeMember(ctx, ws.ID, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := d.PushTargets(ctx, ws.ID); len(l) != 1 || l[0].MemberID != leader.ID {
+		t.Fatalf("after revoke: %+v", l)
+	}
+	if err := d.DeletePushTarget(ctx, ws.ID, leader.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.DeletePushTarget(ctx, ws.ID, leader.ID); err != nil {
+		t.Fatalf("deleting twice: %v", err)
+	}
+	if l, _ := d.PushTargets(ctx, ws.ID); len(l) != 0 {
+		t.Fatalf("after delete: %+v", l)
+	}
+}

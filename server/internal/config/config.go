@@ -25,6 +25,10 @@ type Config struct {
 	DisableCreate bool
 	TrustProxy    bool
 	JoinPerMinute int
+	// Push enables notices to members' push endpoints (UnifiedPush).
+	Push bool
+	// PushAllowPrivate lets endpoints sit on private networks (a LAN ntfy).
+	PushAllowPrivate bool
 }
 
 func envBool(k string) bool {
@@ -62,6 +66,17 @@ func Load(args []string) (Config, error) {
 		return c, fmt.Errorf("GEOCREW_JOIN_PER_MINUTE: %w", err)
 	}
 	fs.IntVar(&c.JoinPerMinute, "join-per-minute", joinRate, "create/join attempts allowed per client address per minute")
+	pushOn := true
+	if v := os.Getenv("GEOCREW_PUSH"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return c, fmt.Errorf("GEOCREW_PUSH: %w", err)
+		}
+		pushOn = b
+	}
+	fs.BoolVar(&c.Push, "push", pushOn, "send push notices to endpoints members register (UnifiedPush)")
+	fs.BoolVar(&c.PushAllowPrivate, "push-allow-private", envBool("GEOCREW_PUSH_ALLOW_PRIVATE"),
+		"allow push endpoints on private or loopback addresses and plain http (LAN distributors)")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}

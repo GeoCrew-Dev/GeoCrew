@@ -17,6 +17,7 @@ import (
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/api"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/config"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
 )
@@ -57,6 +58,12 @@ func run() error {
 		return admin.RunWith(context.Background(), db, admin.Options{Files: files}, cfg.Args[1:], os.Stdout)
 	}
 
+	var sender *push.Sender
+	if cfg.Push {
+		sender = push.New(db, push.Options{AllowPrivate: cfg.PushAllowPrivate, Log: log})
+		// Deliver what is queued before the database closes.
+		defer sender.Close()
+	}
 	srv := &api.Server{
 		Name:    cfg.Name,
 		Version: version,
@@ -64,6 +71,7 @@ func run() error {
 		Files:   files,
 		Hub:     realtime.NewHub(),
 		Log:     log,
+		Push:    sender,
 
 		DisableCreate: cfg.DisableCreate,
 		TrustProxy:    cfg.TrustProxy,

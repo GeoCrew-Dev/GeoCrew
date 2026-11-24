@@ -107,7 +107,21 @@ type PushResult struct {
 	Status  PushStatus
 	Seq     int64
 	Current *Feature
+	// Previous is the revision an applied change replaced (nil for a new feature).
+	Previous *Feature
 }
+
+// PushTarget is where a member's device wants notifications: a UnifiedPush
+// or similar endpoint URL that accepts a POSTed message.
+type PushTarget struct {
+	MemberID  string    `json:"-"`
+	Endpoint  string    `json:"endpoint"`
+	Events    []string  `json:"events"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// MaxPushEndpoint bounds a push endpoint URL.
+const MaxPushEndpoint = 2048
 
 // Comment is one message in a workspace's discussion. FeatureID ties it to a
 // record; an empty FeatureID is a message in the workspace's general stream.
@@ -200,6 +214,15 @@ type Store interface {
 	// DeleteComment blanks a comment and gives it a new seq. Only its author
 	// or a leader (byLeader) may delete; others get ErrForbidden.
 	DeleteComment(ctx context.Context, workspaceID, commentID, memberID string, byLeader bool) (Comment, error)
+
+	// SetPushTarget stores (replacing) the member's push endpoint.
+	SetPushTarget(ctx context.Context, workspaceID string, t PushTarget) error
+	// PushTarget returns the member's endpoint, or ErrNotFound.
+	PushTarget(ctx context.Context, workspaceID, memberID string) (PushTarget, error)
+	// DeletePushTarget removes the member's endpoint; removing none is not an error.
+	DeletePushTarget(ctx context.Context, workspaceID, memberID string) error
+	// PushTargets lists the endpoints of the workspace's non-revoked members.
+	PushTargets(ctx context.Context, workspaceID string) ([]PushTarget, error)
 
 	PutFileMeta(ctx context.Context, workspaceID string, meta FileMeta) error
 	FileMeta(ctx context.Context, workspaceID, sha256 string) (FileMeta, error)

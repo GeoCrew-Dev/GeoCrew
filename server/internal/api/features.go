@@ -140,6 +140,7 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 	}
 	if applied {
 		s.Hub.FeatureChanged(ws, seq)
+		s.notifyAssignments(ws, member(r).ID, fs, results)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

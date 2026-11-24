@@ -122,6 +122,14 @@ var migrations = []string{
 		PRIMARY KEY (workspace_id, id)
 	);
 	CREATE UNIQUE INDEX comments_seq ON comments(workspace_id, seq);`,
+	`CREATE TABLE push_targets (
+		workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+		member_id    TEXT NOT NULL REFERENCES members(id),
+		endpoint     TEXT NOT NULL,
+		events       TEXT NOT NULL,
+		updated_at   TEXT NOT NULL,
+		PRIMARY KEY (workspace_id, member_id)
+	);`,
 }
 
 func (d *DB) migrate(ctx context.Context) error {
@@ -446,6 +454,10 @@ func (d *DB) RevokeMember(ctx context.Context, workspaceID, memberID string) err
 	if _, err := tx.ExecContext(ctx, `UPDATE members SET revoked = 1 WHERE id = ?`, memberID); err != nil {
 		return err
 	}
+	// A removed member's device must stop hearing about the workspace.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM push_targets WHERE workspace_id = ? AND member_id = ?`, workspaceID, memberID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -523,7 +535,12 @@ func (d *DB) PushFeatures(ctx context.Context, workspaceID, memberID string, fs 
 			rawOrNull(f.Geometry), rawOrNull(f.Properties)); err != nil {
 			return nil, 0, err
 		}
-		results = append(results, store.PushResult{ID: f.ID, Status: store.PushApplied, Seq: seq})
+		res := store.PushResult{ID: f.ID, Status: store.PushApplied, Seq: seq}
+		if exists {
+			prev := cur
+			res.Previous = &prev
+		}
+		results = append(results, res)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE workspaces SET last_seq = ? WHERE id = ?`, seq, workspaceID); err != nil {
 		return nil, 0, err

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
@@ -29,6 +30,9 @@ type Server struct {
 	Files   *blob.Disk
 	Hub     *realtime.Hub
 	Log     *slog.Logger
+	// Push delivers notices to registered device endpoints; nil disables
+	// push (the "push" capability is then not advertised).
+	Push *push.Sender
 
 	// MaxPushFeatures bounds one push request.
 	MaxPushFeatures int
@@ -92,6 +96,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET "+ws+"/files/{sha}", s.auth(s.getFile, anyRole))
 	mux.Handle("HEAD "+ws+"/files/{sha}", s.auth(s.getFile, anyRole))
 	mux.Handle("GET "+ws+"/ws", s.auth(s.realtime, anyRole))
+	mux.Handle("GET "+ws+"/push", s.auth(s.getPush, anyRole))
+	mux.Handle("PUT "+ws+"/push", s.auth(s.putPush, anyRole))
+	mux.Handle("DELETE "+ws+"/push", s.auth(s.deletePush, anyRole))
 	return s.logRequests(mux)
 }
 
@@ -227,9 +234,12 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 	if s.Files != nil {
 		maxUpload = s.Files.MaxSize
 	}
-	caps := Capabilities
+	caps := append([]string{}, Capabilities...)
 	if !s.DisableCreate {
-		caps = append(append([]string{}, Capabilities...), "create")
+		caps = append(caps, "create")
+	}
+	if s.Push != nil {
+		caps = append(caps, "push")
 	}
 	writeJSON(w, http.StatusOK, infoResp{s.Name, ProtocolVersion, s.Version, caps, maxUpload, s.MaxPushFeatures})
 }
