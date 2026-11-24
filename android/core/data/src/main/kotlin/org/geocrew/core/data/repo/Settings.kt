@@ -48,6 +48,8 @@ data class AppSettings(
     val trackMinDistanceMeters: Int = 5,
     val currentProjectId: String? = null,
     val nickname: String = "",
+    /** Send this device's position to the team while the map is open. Off until the user turns it on. */
+    val sharePosition: Boolean = false,
 )
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("settings")
@@ -73,6 +75,7 @@ class SettingsRepository @Inject constructor(
         val TRACK_M = intPreferencesKey("track_min_distance_m")
         val PROJECT = stringPreferencesKey("current_project")
         val NICK = stringPreferencesKey("nickname")
+        val SHARE = booleanPreferencesKey("share_position")
     }
 
     val settings: Flow<AppSettings> = store.data.map { p ->
@@ -89,6 +92,7 @@ class SettingsRepository @Inject constructor(
             trackMinDistanceMeters = p[K.TRACK_M] ?: 5,
             currentProjectId = p[K.PROJECT],
             nickname = p[K.NICK].orEmpty(),
+            sharePosition = p[K.SHARE] ?: false,
         )
     }
 
@@ -139,4 +143,5 @@ class SettingsRepository @Inject constructor(
     suspend fun setTrackMinDistance(meters: Int) { store.edit { it[K.TRACK_M] = meters.coerceIn(0, 1000) } }
     suspend fun setCurrentProject(id: String) { store.edit { it[K.PROJECT] = id } }
     suspend fun setNickname(name: String) { store.edit { it[K.NICK] = name.trim() } }
+    suspend fun setSharePosition(on: Boolean) { store.edit { it[K.SHARE] = on } }
 }

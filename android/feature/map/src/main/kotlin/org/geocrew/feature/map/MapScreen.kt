@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Navigation
@@ -63,6 +64,7 @@ fun MapScreen(
     onOpenFeature: (String) -> Unit,
     onOpenRecords: () -> Unit = {},
     onOpenTools: () -> Unit = {},
+    onOpenTeam: () -> Unit = {},
     /** A feature another screen asked to show; consumed once. */
     focusFeatureId: String? = null,
     onFocusHandled: () -> Unit = {},
@@ -78,6 +80,7 @@ fun MapScreen(
     val tracking by viewModel.tracking.state.collectAsStateWithLifecycle()
     val problem by viewModel.tileProblem.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val team by viewModel.team.collectAsStateWithLifecycle()
     val format = settings?.coordinateFormat ?: CoordinateFormat.DECIMAL
     val camera = rememberMapCameraState()
 
@@ -169,6 +172,24 @@ fun MapScreen(
             }) { Icon(Icons.Default.MyLocation, "定位") }
             SmallFloatingActionButton(onClick = onOpenRecords) { Icon(Icons.AutoMirrored.Filled.List, "记录") }
             SmallFloatingActionButton(onClick = onOpenTools) { Icon(Icons.Default.Build, "工具") }
+            SmallFloatingActionButton(onClick = onOpenTeam) {
+                androidx.compose.material3.BadgedBox(
+                    badge = {
+                        if (team.linked && team.online.size > 1) androidx.compose.material3.Badge { Text("${team.online.size}") }
+                    },
+                ) {
+                    Icon(
+                        Icons.Default.Groups,
+                        "工作组",
+                        tint = when {
+                            !team.linked -> androidx.compose.material3.LocalContentColor.current
+                            team.needsRejoin || team.error != null -> androidx.compose.material3.MaterialTheme.colorScheme.error
+                            team.connection == org.geocrew.core.network.RealtimeState.Connected -> androidx.compose.ui.graphics.Color(0xFF2E7D32)
+                            else -> androidx.compose.material3.MaterialTheme.colorScheme.outline
+                        },
+                    )
+                }
+            }
             SmallFloatingActionButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, "设置") }
         }
 

@@ -38,6 +38,11 @@ import org.geocrew.core.sensors.Fix
 import org.geocrew.core.sensors.LocationSource
 import org.geocrew.core.sensors.TrackingController
 import org.geocrew.core.sensors.TrackingState
+import org.geocrew.core.data.team.TeamSession
+import org.geocrew.core.data.team.TeamStatus
+import org.geocrew.core.map.TeamMarker
+import java.time.Duration
+import java.time.Instant
 import javax.inject.Inject
 
 /** What a tap on the map does right now. */
@@ -71,7 +76,25 @@ class MapViewModel @Inject constructor(
     private val features: FeatureRepository,
     private val location: LocationSource,
     val tracking: TrackingController,
+    private val teamSession: TeamSession,
 ) : ViewModel() {
+
+    val team: StateFlow<TeamStatus> = teamSession.status
+
+    /** Teammates on the map; a position older than [STALE_AFTER] is drawn faded. */
+    private val teamMarkers = combine(teamSession.positions, ticker()) { positions, now ->
+        positions.values.mapNotNull { p ->
+            // Skip anything out of range rather than trusting relayed data.
+            val at = runCatching { LngLat(p.lon, p.lat, p.alt) }.getOrNull() ?: return@mapNotNull null
+            TeamMarker(
+                memberId = p.memberId,
+                nickname = p.nickname,
+                position = at,
+                accuracy = p.accuracy?.toFloat(),
+                stale = p.time?.let { Duration.between(it, now) > STALE_AFTER } ?: true,
+            )
+        }
+    }
 
     val settings: StateFlow<AppSettings?> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -117,11 +140,12 @@ class MapViewModel @Inject constructor(
     val selected: StateFlow<GeoFeature?> = combine(featureList, _selected) { list, id -> list.firstOrNull { it.id == id } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val overlays: StateFlow<MapOverlays> = combine(featureList, _selected, _fix, _mode) { list, sel, fix, mode ->
+    val overlays: StateFlow<MapOverlays> = combine(featureList, _selected, _fix, _mode, teamMarkers) { list, sel, fix, mode, mates ->
         MapOverlays(
             features = list,
             selectedId = sel,
             me = fix?.let { MyLocation(it.position, it.accuracy, it.bearing) },
+            team = mates,
             sketch = (mode as? MapMode.Draw)?.vertices.orEmpty(),
             sketchClosed = (mode as? MapMode.Draw)?.closed == true,
         )
@@ -141,7 +165,10 @@ class MapViewModel @Inject constructor(
     fun startLocation() {
         if (locationJob?.isActive == true || !location.hasPermission()) return
         locationJob = viewModelScope.launch {
-            location.fixes(intervalMillis = 1000).collectLatest { _fix.value = it }
+            location.fixes(intervalMillis = 1000).collectLatest {
+                _fix.value = it
+                teamSession.reportPosition(it.position, it.accuracy, it.bearing, it.speed)
+            }
         }
     }
 
@@ -231,4 +258,15 @@ class MapViewModel @Inject constructor(
 
     val isRecording: StateFlow<Boolean> = tracking.state.map { it is TrackingState.Recording }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private fun ticker() = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(Instant.now())
+            kotlinx.coroutines.delay(15_000)
+        }
+    }
+
+    private companion object {
+        val STALE_AFTER: Duration = Duration.ofMinutes(2)
+    }
 }

@@ -16,6 +16,7 @@ import org.geocrew.feature.record.FEATURE_ID_ARG
 import org.geocrew.feature.record.FeatureDetailScreen
 import org.geocrew.feature.record.RecordListScreen
 import org.geocrew.feature.settings.SettingsScreen
+import org.geocrew.feature.team.TeamScreen
 import org.geocrew.feature.transfer.TransferScreen
 
 /** Top-level destinations. New features register their routes here. */
@@ -28,6 +29,7 @@ object Routes {
 
     const val TOOLS = "tools"
     const val TRANSFER = "transfer"
+    const val TEAM = "team"
     const val COMPASS = "compass?$TARGET_FEATURE_ARG={$TARGET_FEATURE_ARG}"
     fun compassFor(featureId: String) = "compass?$TARGET_FEATURE_ARG=$featureId"
 
@@ -53,9 +55,13 @@ fun GeoCrewNavHost() {
                 onOpenFeature = { nav.navigate(Routes.feature(it)) },
                 onOpenRecords = { nav.navigate(Routes.RECORDS) { launchSingleTop = true } },
                 onOpenTools = { nav.navigate(Routes.TOOLS) { launchSingleTop = true } },
+                onOpenTeam = { nav.navigate(Routes.TEAM) { launchSingleTop = true } },
                 focusFeatureId = focus,
                 onFocusHandled = { entry.savedStateHandle[Routes.FOCUS] = null },
             )
+        }
+        composable(Routes.TEAM) {
+            TeamScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(onBack = { nav.popBackStack() })
