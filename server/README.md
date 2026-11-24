@@ -75,6 +75,15 @@ geocrew-server -data /var/lib/geocrew admin backup /backups/geocrew-$(date +%F).
 
 服务运行时也能得到一致的数据库副本（目标文件已存在时不会覆盖）。附件在数据目录的 `files/` 下，按内容命名、只增不改，用 `rsync` 等工具增量复制即可。恢复时把备份文件改名为 `geocrew.db`，和 `files/` 一起放回数据目录。
 
+### 清理附件
+
+```bash
+geocrew-server -data /var/lib/geocrew admin files 3f9a          # 只统计
+geocrew-server -data /var/lib/geocrew admin files 3f9a prune    # 删除没有记录引用的附件
+```
+
+组员删掉照片或删掉记录后，原图仍留在服务器上。`files` 列出工作组附件占用的空间、被记录引用的数量、没有任何记录引用的数量，以及记录引用了但服务器上还没有的数量（通常是组员还没联网上传）。`prune` 只删除没有引用、而且上传超过 1 天的附件：记录任何一个历史版本里出现过的照片都算有引用，因为「修改历史」可以把它恢复回来；应用总是先传照片再传记录，所以新传的附件会保留。建议先备份再清理。
+
 ## 导出数据
 
 ```bash

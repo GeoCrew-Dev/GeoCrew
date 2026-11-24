@@ -3,11 +3,16 @@ package admin
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
 )
@@ -145,5 +150,69 @@ func TestExport(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(pkg); !strings.HasPrefix(string(b), "PK") {
 		t.Fatalf("package content: %q", b[:min(len(b), 16)])
+	}
+}
+
+func TestFilesAndPrune(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	ws, leader, _, err := db.CreateWorkspace(ctx, "北山填图", "老王")
+	if err != nil {
+		t.Fatal(err)
+	}
+	disk := &blob.Disk{Root: t.TempDir()}
+	put := func(body string, age time.Duration) string {
+		sum := sha256.Sum256([]byte(body))
+		sha := hex.EncodeToString(sum[:])
+		if _, err := disk.Put(ws.ID, sha, strings.NewReader(body)); err != nil {
+			t.Fatal(err)
+		}
+		old := time.Now().Add(-age)
+		os.Chtimes(filepath.Join(disk.Root, ws.ID, sha[:2], sha), old, old)
+		return sha
+	}
+	current := put("current", 48*time.Hour)
+	historic := put("historic", 48*time.Hour)
+	stale := put("stale", 48*time.Hour)
+	fresh := put("fresh", time.Minute)
+	missing := strings.Repeat("ab", 32)
+
+	feature := func(v int64, photos ...string) store.Feature {
+		props, _ := json.Marshal(map[string]any{"title": "D1", "photos": photos})
+		return store.Feature{
+			ID: "f1", Geometry: json.RawMessage(`{"type":"Point","coordinates":[1,2]}`), Properties: props,
+			Version: v, UpdatedAt: time.Now().Add(time.Duration(v) * time.Second), UpdatedBy: leader.ID,
+		}
+	}
+	for _, f := range []store.Feature{feature(1, current, historic), feature(2, current, missing)} {
+		if _, _, err := db.PushFeatures(ctx, ws.ID, leader.ID, []store.Feature{f}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	runFiles := func(args ...string) string {
+		var out bytes.Buffer
+		if err := RunWith(ctx, db, Options{Files: disk}, append([]string{"files", ws.ID}, args...), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+	out := runFiles()
+	for _, want := range []string{"4 个", "被记录引用：2 个", "没有记录引用：2 个", "服务器上没有：1 个"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("report lacks %q:\n%s", want, out)
+		}
+	}
+	out = runFiles("prune")
+	if !strings.Contains(out, "已删除 1 个") {
+		t.Fatalf("prune: %s", out)
+	}
+	left, _ := disk.List(ws.ID)
+	kept := map[string]bool{}
+	for _, f := range left {
+		kept[f.SHA] = true
+	}
+	if !kept[current] || !kept[historic] || !kept[fresh] || kept[stale] {
+		t.Fatalf("kept %v", kept)
 	}
 }

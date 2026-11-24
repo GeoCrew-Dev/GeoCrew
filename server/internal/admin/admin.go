@@ -31,6 +31,9 @@ const Usage = `用法：geocrew-server [参数] admin <命令>
   export <工作组> <目标文件>         导出当前全部记录：.geojson 结尾为 GeoJSON（可直接用 QGIS 打开），
                                    .zip 结尾为工程包（含照片和记录表单，安卓端可导入为新工程）
 
+  files <工作组> [prune]             统计附件：占用空间、被记录引用的、没有任何记录引用的、缺失的；
+                                   加 prune 删除没有引用且上传超过 1 天的附件（历史版本引用的不删）
+
 <工作组> 和 <成员> 可以写 ID 或其开头几位，只要能唯一确定。
 `
 
@@ -176,6 +179,18 @@ func RunWith(ctx context.Context, st store.Store, opt Options, args []string, ou
 		}
 		fmt.Fprintln(out, msg)
 		return nil
+	case "files":
+		if len(rest) < 1 || len(rest) > 2 || (len(rest) == 2 && rest[1] != "prune") {
+			return fmt.Errorf("用法：files <工作组> [prune]\n\n%s", Usage)
+		}
+		if opt.Files == nil {
+			return errors.New("没有配置附件目录")
+		}
+		ws, err := findWorkspace(ctx, st, rest[0])
+		if err != nil {
+			return err
+		}
+		return files(ctx, st, opt.Files, ws, len(rest) == 2, time.Now(), out)
 	default:
 		return fmt.Errorf("未知命令 %q\n\n%s", cmd, Usage)
 	}
@@ -294,4 +309,67 @@ func explain(err error) error {
 		return errors.New("工作组至少要保留一名组长，请先把别人设为组长")
 	}
 	return err
+}
+
+// pruneAfter keeps fresh uploads: the app uploads a photo before the
+// record that lists it, so a new file is briefly unreferenced.
+const pruneAfter = 24 * time.Hour
+
+func files(ctx context.Context, st store.Store, disk *blob.Disk, ws store.Workspace, prune bool, now time.Time, out io.Writer) error {
+	stored, err := disk.List(ws.ID)
+	if err != nil {
+		return err
+	}
+	refs, err := export.Referenced(ctx, st, ws.ID)
+	if err != nil {
+		return err
+	}
+	var total, orphanBytes, removedBytes int64
+	var orphans, removed int
+	onDisk := make(map[string]bool, len(stored))
+	for _, f := range stored {
+		onDisk[f.SHA] = true
+		total += f.Size
+		if refs[f.SHA] {
+			continue
+		}
+		orphans++
+		orphanBytes += f.Size
+		if prune && now.Sub(f.ModTime) > pruneAfter {
+			if err := disk.Remove(ws.ID, f.SHA); err != nil {
+				return err
+			}
+			removed++
+			removedBytes += f.Size
+		}
+	}
+	missing := 0
+	for sha := range refs {
+		if !onDisk[sha] {
+			missing++
+		}
+	}
+	fmt.Fprintf(out, "「%s」的附件：%d 个，共 %s\n", ws.Name, len(stored), size(total))
+	fmt.Fprintf(out, "  被记录引用：%d 个（含历史版本）\n", len(refs)-missing)
+	fmt.Fprintf(out, "  没有记录引用：%d 个，共 %s\n", orphans, size(orphanBytes))
+	if missing > 0 {
+		fmt.Fprintf(out, "  记录引用了但服务器上没有：%d 个（组员可能还没上传）\n", missing)
+	}
+	if prune {
+		fmt.Fprintf(out, "已删除 %d 个，释放 %s；上传不满 1 天的保留\n", removed, size(removedBytes))
+	}
+	return nil
+}
+
+func size(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }

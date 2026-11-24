@@ -7,9 +7,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 )
 
 var (
@@ -81,4 +83,51 @@ func (d *Disk) Open(workspaceID, sha string) (*os.File, error) {
 		return nil, os.ErrNotExist
 	}
 	return os.Open(d.path(workspaceID, sha))
+}
+
+// Stored describes one file on disk.
+type Stored struct {
+	SHA     string
+	Size    int64
+	ModTime time.Time
+}
+
+// List returns the workspace's stored files; leftover temporary uploads
+// and anything not named by a hash are skipped. A workspace with no files
+// yields an empty list.
+func (d *Disk) List(workspaceID string) ([]Stored, error) {
+	if !idRe.MatchString(workspaceID) {
+		return nil, ErrBadHash
+	}
+	root := filepath.Join(d.Root, workspaceID)
+	var out []Stored
+	err := filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) && path == root {
+				return filepath.SkipDir
+			}
+			return err
+		}
+		if e.IsDir() || !ValidHash(e.Name()) || filepath.Base(filepath.Dir(path)) != e.Name()[:2] {
+			return nil
+		}
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		out = append(out, Stored{SHA: e.Name(), Size: info.Size(), ModTime: info.ModTime()})
+		return nil
+	})
+	return out, err
+}
+
+// Remove deletes a stored file; a file that is already gone is not an error.
+func (d *Disk) Remove(workspaceID, sha string) error {
+	if !ValidHash(sha) || !idRe.MatchString(workspaceID) {
+		return ErrBadHash
+	}
+	if err := os.Remove(d.path(workspaceID, sha)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }

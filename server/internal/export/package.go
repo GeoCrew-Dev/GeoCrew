@@ -10,7 +10,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
 
@@ -110,15 +109,8 @@ func Package(ctx context.Context, st store.Store, workspaceID string, open OpenF
 	var photos []string
 	known := map[string]bool{}
 	sum.Features, err = writeCollection(ctx, st, workspaceID, body, func(f store.Feature) {
-		var p struct {
-			Photos []json.RawMessage `json:"photos"`
-		}
-		if json.Unmarshal(f.Properties, &p) != nil {
-			return
-		}
-		for _, raw := range p.Photos {
-			var sha string
-			if json.Unmarshal(raw, &sha) == nil && blob.ValidHash(sha) && !known[sha] {
+		for _, sha := range PhotoRefs(f.Properties) {
+			if !known[sha] {
 				known[sha] = true
 				photos = append(photos, sha)
 			}
