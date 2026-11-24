@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.DonutLarge
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +30,7 @@ data class ToolEntry(val title: String, val description: String, val icon: Image
 val builtInTools = listOf(
     ToolEntry("罗盘 · 产状", "测量方位和岩层产状，保存为地质点", Icons.Default.Explore, "compass"),
     ToolEntry("地层厚度", "按产状和导线（方位、坡角、斜距）算真厚度和铅直厚度", Icons.Default.Straighten, Routes.THICKNESS),
+    ToolEntry("坐标换算", "经纬度与高斯-克吕格 3°/6° 带平面坐标互换，导出点的平面坐标表", Icons.Default.GridOn, Routes.COORDINATES),
     ToolEntry("赤平投影", "产状的施密特网极点、大圆与平均产状", Icons.Default.DonutLarge, Routes.STEREONET),
     ToolEntry("空间分析", "插值、剖面视倾角、统计、范围、缓冲区", Icons.Default.Analytics, Routes.ANALYSIS),
     ToolEntry("导入 / 导出", "GeoJSON、KML、GPX、Shapefile", Icons.Default.ImportExport, Routes.TRANSFER),
