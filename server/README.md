@@ -106,6 +106,8 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 
 目标文件以 `.routes.csv` 结尾时导出**地质路线记录表**：每条路线一个目的行、按走过的顺序每个点一行（点号、类型、坐标、海拔、岩性、产状、点上描述、至下一点描述）和一个小结行，路线按日期和路线号排序，格式与安卓端「地质路线记录表」相同（协议第 6.6 节）。组员请求 `GET /api/v0/workspaces/{id}/export.routes.csv` 也能下载（能力名 `routes`）。
 
+**记录核对**：`GET /api/v0/workspaces/{id}/checks` 列出值得再看一眼的记录：编号重复、样品编号重复、没有位置、定位精度差（默认超过 ±30 米）、位置离群（离其他记录 50 千米以上）、路线点已删除，规则与安卓端「待核对」相同（能力名 `checks`）。网页查看页有「待核对」按钮，把这些记录和原因列出来。
+
 目标文件以 `.kml` 结尾时导出 **KML**：每条有位置的记录一个地标，名称、备注、其余属性（ExtendedData）都带上，颜色按记录自带的 simplestyle 或组长设的共享图例（协议 §2.2 `legend`），在奥维互动地图、Google Earth 里打开即是同一套配色。组员请求 `GET /api/v0/workspaces/{id}/export.kml` 也能下载（能力名 `kml`）。
 
 ## 电脑端查看

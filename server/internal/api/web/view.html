@@ -28,6 +28,8 @@
   #list li { padding: 8px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
   #list li:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   #list .sub { color: var(--muted); font-size: 12px; }
+  #list .warn { color: #b26a00; font-size: 12px; }
+  button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
   #mapwrap { flex: 1; position: relative; }
   #map { position: absolute; inset: 0; }
   #legend { position: absolute; left: 10px; bottom: 30px; z-index: 1; background: color-mix(in srgb, var(--bg) 92%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 12px; max-width: 220px; cursor: pointer; }
@@ -54,6 +56,7 @@
     <div id="tools">
       <input id="q" type="search" placeholder="按名称、岩性、备注筛选">
       <button id="fit" type="button">全部</button>
+      <button id="check" type="button" hidden>待核对</button>
       <button id="geojson" type="button">下载 GeoJSON</button>
       <button id="kml" type="button">下载 KML</button>
       <button id="package" type="button">下载工程包</button>
@@ -111,6 +114,23 @@
       if (!page.more || !(page.features || []).length) break;
     }
     render();
+    loadChecks().catch(() => {});
+  }
+
+  // Records worth a second look (duplicate numbers, no position…), from /checks.
+  let issues = new Map(), checking = false;
+  async function loadChecks() {
+    const r = await (await api("/checks")).json();
+    issues = new Map();
+    for (const i of r.issues || []) {
+      if (!issues.has(i.feature)) issues.set(i.feature, []);
+      issues.get(i.feature).push(i);
+    }
+    if (!issues.size) checking = false;
+    $("check").hidden = !issues.size;
+    $("check").textContent = "待核对 " + issues.size;
+    $("check").classList.toggle("on", checking);
+    renderList();
   }
 
   // Shared map legend (protocol §2.2 key `legend`): colours records by one attribute.
@@ -195,7 +215,11 @@
     const q = $("q").value.trim().toLowerCase();
     const ul = $("list");
     ul.replaceChildren();
-    const rows = [...features.values()]
+    // Records without a position are not on the map, but their issues still list.
+    const pool = checking
+      ? [...issues.keys()].map((id) => features.get(id) || { id, properties: { title: issues.get(id)[0].title } })
+      : [...features.values()];
+    const rows = pool
       .filter((f) => !q || ["title", "note", "lithology"].some((k) => text(f.properties, k).toLowerCase().includes(q)))
       .sort((a, b) => upd(b).localeCompare(upd(a)))
       .slice(0, 500);
@@ -207,7 +231,11 @@
       const sub = document.createElement("div"); sub.className = "sub";
       sub.textContent = [KINDS[k][0], text(p, "lithology"), members.get(by(f)) || "", upd(f).slice(0, 10)].filter(Boolean).join(" · ");
       li.append(dot, t, sub);
-      li.onclick = () => focus(f);
+      for (const i of issues.get(f.id) || []) {
+        const w = document.createElement("div"); w.className = "warn"; w.textContent = i.message;
+        li.append(w);
+      }
+      if (f.geometry) li.onclick = () => focus(f);
       ul.append(li);
     }
   }
@@ -470,6 +498,7 @@
     });
     $("q").oninput = renderList;
     $("fit").onclick = fitAll;
+    $("check").onclick = () => { checking = !checking; $("check").classList.toggle("on", checking); renderList(); };
     $("geojson").onclick = () => download("/export.geojson", "geocrew-" + WS + ".geojson");
     $("kml").onclick = () => download("/export.kml", "geocrew-" + WS + ".kml");
     $("package").onclick = () => download("/export.geocrew.zip", "geocrew-" + WS + ".geocrew.zip");

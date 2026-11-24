@@ -298,6 +298,29 @@ func (s *Server) exportRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// checks lists records worth a second look (duplicate numbers, missing
+// positions and the like). ?accuracy_m= and ?far_km= override the thresholds.
+func (s *Server) checks(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	var opt export.CheckOptions
+	if v, err := strconv.ParseFloat(r.URL.Query().Get("accuracy_m"), 64); err == nil && v > 0 {
+		opt.AccuracyLimitM = v
+	}
+	if v, err := strconv.ParseFloat(r.URL.Query().Get("far_km"), 64); err == nil && v > 0 {
+		opt.FarKm = v
+	}
+	issues, err := export.Checks(r.Context(), s.Store, ws, opt)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if issues == nil {
+		issues = []export.Issue{}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"issues": issues})
+}
+
 // exportSections downloads the measured-section layer table (protocol v0 §6.5) as CSV.
 func (s *Server) exportSections(w http.ResponseWriter, r *http.Request) {
 	ws := r.PathValue("ws")
