@@ -1,6 +1,9 @@
 package org.geocrew.core.data.team
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import org.geocrew.core.data.db.CommentDao
 import org.geocrew.core.data.db.CommentEntity
@@ -53,6 +56,19 @@ class TeamComments @Inject constructor(
         dao.observeCounts(projectId).map { list -> list.associate { it.featureId to it.count } }
 
     fun pendingCount(projectId: String): Flow<Int> = dao.observePendingCount(projectId)
+
+    /** Teammates' comments the user has not seen in the team chat yet. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun unread(projectId: String): Flow<Int> = projects.observe(projectId)
+        .map { p -> p?.team?.memberId to (p?.config?.chatReadSeq ?: 0L) }
+        .distinctUntilChanged()
+        .flatMapLatest { (me, seen) -> if (me == null) flowOf(0) else dao.observeUnread(projectId, seen, me) }
+
+    /** Marks everything received so far as seen. */
+    suspend fun markRead(projectId: String) {
+        val max = dao.maxSeq(projectId)
+        projects.updateConfig(projectId) { if (it.chatReadSeq >= max) it else it.copy(chatReadSeq = max) }
+    }
 
     /**
      * Stores a new comment for sending. Returns false when the project has no

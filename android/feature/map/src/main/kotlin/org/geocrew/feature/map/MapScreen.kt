@@ -90,6 +90,7 @@ fun MapScreen(
     val problem by viewModel.tileProblem.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val team by viewModel.team.collectAsStateWithLifecycle()
+    val unread by viewModel.unreadMessages.collectAsStateWithLifecycle()
     val format = settings?.coordinateFormat ?: CoordinateFormat.DECIMAL
     val camera = rememberMapCameraState()
 
@@ -218,7 +219,11 @@ fun MapScreen(
             SmallFloatingActionButton(onClick = onOpenRecords) { Icon(Icons.AutoMirrored.Filled.List, "记录") }
             SmallFloatingActionButton(onClick = onOpenTools) { Icon(Icons.Default.Build, "工具") }
             if (team.linked) {
-                SmallFloatingActionButton(onClick = onOpenChat) { Icon(Icons.AutoMirrored.Filled.Chat, "组内消息") }
+                SmallFloatingActionButton(onClick = onOpenChat) {
+                    androidx.compose.material3.BadgedBox(
+                        badge = { if (unread > 0) androidx.compose.material3.Badge { Text(if (unread > 99) "99+" else "$unread") } },
+                    ) { Icon(Icons.AutoMirrored.Filled.Chat, "组内消息") }
+                }
             }
             SmallFloatingActionButton(onClick = onOpenTeam) {
                 androidx.compose.material3.BadgedBox(

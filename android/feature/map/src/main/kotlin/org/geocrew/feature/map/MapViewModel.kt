@@ -80,10 +80,17 @@ class MapViewModel @Inject constructor(
     private val location: LocationSource,
     val tracking: TrackingController,
     private val teamSession: TeamSession,
+    private val teamComments: org.geocrew.core.data.team.TeamComments,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     val team: StateFlow<TeamStatus> = teamSession.status
+
+    /** Teammates' messages not yet seen in the team chat, for the button's badge. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val unreadMessages: StateFlow<Int> = projects.currentId
+        .flatMapLatest { id -> if (id == null) kotlinx.coroutines.flow.flowOf(0) else teamComments.unread(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** Teammates on the map; a position older than [STALE_AFTER] is drawn faded. */
     private val teamMarkers = combine(teamSession.positions, ticker()) { positions, now ->

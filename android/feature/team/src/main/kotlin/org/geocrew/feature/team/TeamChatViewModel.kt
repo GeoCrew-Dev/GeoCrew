@@ -77,6 +77,11 @@ class TeamChatViewModel @Inject constructor(
         viewModelScope.launch { project.collect { projectId = it.id } }
     }
 
+    /** Called while the chat is on screen, as messages arrive. */
+    fun markRead() = viewModelScope.launch {
+        projectId?.let { comments.markRead(it) }
+    }
+
     fun send(text: String, at: LngLat?) = viewModelScope.launch {
         val id = projectId ?: return@launch
         if (!comments.post(id, text, at = at)) _error.value = "当前工程没有加入工作组"

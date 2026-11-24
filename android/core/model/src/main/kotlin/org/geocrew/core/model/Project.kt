@@ -45,6 +45,8 @@ data class ProjectConfig(
     val teamFormPending: Boolean = false,
     /** Cursor of the workspace's comments already on this device (protocol v0 §8). */
     val teamCommentSeq: Long = 0,
+    /** Newest comment seq the user has seen in the team chat on this device. */
+    val chatReadSeq: Long = 0,
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 }

@@ -118,6 +118,13 @@ interface CommentDao {
     @Query("SELECT featureId, COUNT(*) AS count FROM comments WHERE projectId = :projectId AND featureId IS NOT NULL GROUP BY featureId")
     fun observeCounts(projectId: String): Flow<List<CommentCount>>
 
+    /** Teammates' comments newer than [seen]. */
+    @Query("SELECT COUNT(*) FROM comments WHERE projectId = :projectId AND seq > :seen AND authorId != :me")
+    fun observeUnread(projectId: String, seen: Long, me: String): Flow<Int>
+
+    @Query("SELECT COALESCE(MAX(seq), 0) FROM comments WHERE projectId = :projectId")
+    suspend fun maxSeq(projectId: String): Long
+
     @Query("SELECT * FROM comments WHERE projectId = :projectId AND seq = 0 ORDER BY createdAt")
     suspend fun pending(projectId: String): List<CommentEntity>
 

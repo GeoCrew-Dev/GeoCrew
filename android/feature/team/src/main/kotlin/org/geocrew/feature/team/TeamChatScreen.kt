@@ -61,6 +61,7 @@ fun TeamChatScreen(
     // Stay at the newest message as messages arrive.
     LaunchedEffect(ui.items.size) {
         if (ui.items.isNotEmpty()) list.animateScrollToItem(ui.items.lastIndex)
+        viewModel.markRead()
     }
 
     Scaffold(

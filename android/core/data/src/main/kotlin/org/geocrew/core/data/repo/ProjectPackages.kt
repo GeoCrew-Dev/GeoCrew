@@ -37,7 +37,7 @@ class ProjectPackages @Inject constructor(
             createdAt = p.createdAt.toString(),
             exportedAt = clock.instant().toString(),
             // The view travels with the project; the link to a workspace never does.
-            config = p.config.copy(teamFormVersion = 0, teamFormPending = false, teamCommentSeq = 0),
+            config = p.config.copy(teamFormVersion = 0, teamFormPending = false, teamCommentSeq = 0, chatReadSeq = 0),
             generator = defaults.userAgent,
         )
         val n = ProjectPackage.write(output, manifest, list, { points[it].orEmpty() }) { sha -> photos.file(sha) }
