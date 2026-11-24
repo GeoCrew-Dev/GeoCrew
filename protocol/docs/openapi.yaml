@@ -368,6 +368,21 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/export.routes.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportRoutes
+      summary: The geological route table as CSV, a purpose row, one row per stop and a summary row per route (capability "routes")
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 路线, 日期, 参加人员, 序号, 点号, 类型, 经度, 纬度, 海拔(m), 岩性, 产状, 点上描述, 至下一点描述, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/export.kml:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
