@@ -43,4 +43,16 @@ class GeodesyTest {
         assertEquals("1.25 km", CoordinateFormatter.distance(1250.0))
         assertTrue(CoordinateFormatter.area(25_000.0).endsWith("ha"))
     }
+
+    @Test
+    fun midpointGoesByLength() {
+        // 1 km east, then 3 km north: the middle is 1 km up the second leg.
+        val a = LngLat(117.0, 31.0)
+        val b = Geodesy.destination(a, 90.0, 1000.0)
+        val c = Geodesy.destination(b, 0.0, 3000.0)
+        val m = Geodesy.midpoint(listOf(a, b, c))!!
+        assertEquals(1000.0, Geodesy.distance(b, m), 1.0)
+        assertEquals(LngLat(1.0, 2.0), Geodesy.midpoint(listOf(LngLat(1.0, 2.0))))
+        assertEquals(null, Geodesy.midpoint(emptyList()))
+    }
 }

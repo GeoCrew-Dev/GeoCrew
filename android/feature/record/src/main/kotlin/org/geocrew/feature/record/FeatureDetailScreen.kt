@@ -183,7 +183,8 @@ fun FeatureDetailScreen(
                     onClear = viewModel::clearTask,
                 )
             }
-            if (f.kind == FeatureKind.GEO_POINT || f.attitude != null) {
+            // Points get an attitude; so do faults and contacts, for the attitude of their plane.
+            if (f.kind == FeatureKind.GEO_POINT || f.attitude != null || f.lineStyle != null) {
                 SectionHeader("产状")
                 AttitudeEditor(f.attitude, viewModel::setAttitude, onMeasure = onMeasureAttitude?.let { { it(f.id) } })
             }

@@ -53,6 +53,21 @@ class MapLogicTest {
     assertTrue(listOf(2, 3).all { i -> listOf("dash", "fault", "contact").none { flag(i, it) } })
     assertEquals(LineStyle.INFERRED_CONTACT, LineStyle.of("inferred_contact"))
   }
+  @Test fun faultAttitudeSitsHalfWayAlongTheLine() {
+    val fault = GeoFeature("f", "p", FeatureKind.LINE, Geometry.LineString(listOf(LngLat(116.0, 40.0), LngLat(116.2, 40.0))),
+      buildProperties { this[Props.LINE_STYLE] = "fault"; this[Props.DIP_DIRECTION] = 160.0; this[Props.DIP] = 65.0 }, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))
+    val list = Json.parseToJsonElement(OverlayGeoJson.features(listOf(fault), null)).jsonObject["features"]!!.jsonArray.map { it.jsonObject }
+    assertEquals(2, list.size)
+    val anchor = list[1]
+    assertEquals("Point", anchor["geometry"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+    assertEquals(116.1, anchor["geometry"]!!.jsonObject["coordinates"]!!.jsonArray[0].jsonPrimitive.double, 1e-9)
+    val p = anchor["properties"]!!.jsonObject
+    assertEquals("f", p["fid"]!!.jsonPrimitive.content)
+    assertTrue(p["anchor"]!!.jsonPrimitive.boolean)
+    assertEquals(160.0, p["dipdir"]!!.jsonPrimitive.double, 0.0)
+    // The line itself carries no attitude keys, so only the anchor draws the symbol.
+    assertNull(list[0]["properties"]!!.jsonObject["dipdir"])
+  }
   @Test fun meetingPointsAreFlagged() {
     fun pt(id: String, at: String?) = GeoFeature(id, "p", FeatureKind.POINT, Geometry.Point(LngLat(116.0, 40.0)),
       buildProperties { this[Props.MEET_AT] = at }, Instant.EPOCH, SyncInfo(updatedAt = Instant.EPOCH))

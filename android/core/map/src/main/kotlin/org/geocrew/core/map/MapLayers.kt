@@ -183,7 +183,7 @@ internal object MapLayers {
         )
         // Points with an attitude get a small dot under a strike-and-dip symbol.
         style.addLayer(
-            CircleLayer(L_POINT, SRC_FEATURES).withFilter(isPoint).withProperties(
+            CircleLayer(L_POINT, SRC_FEATURES).withFilter(Expression.all(isPoint, Expression.not(Expression.has("anchor")))).withProperties(
                 circleRadius(switchCase(selected, literal(9f), hasAttitude, literal(3.5f), literal(6f))),
                 circleColor(kindColor(MapColors.POINT, "marker-color")),
                 circleStrokeColor("#FFFFFF"),

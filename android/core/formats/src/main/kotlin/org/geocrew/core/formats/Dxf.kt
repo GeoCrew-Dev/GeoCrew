@@ -2,6 +2,7 @@ package org.geocrew.core.formats
 
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.GaussKruger
+import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
@@ -74,8 +75,10 @@ object DxfFormat : FeatureFormat {
                 text(body, NAME_LAYER, x + TEXT_HEIGHT * 0.6, y + TEXT_HEIGHT * 0.4, TEXT_HEIGHT, it)
             }
             f.attitude?.let { a ->
+                // A fault or contact shows its plane's attitude half way along the line.
+                val (ax, ay) = midLine(f.geometry)?.let(::xy) ?: (x to y)
                 layers.getOrPut(ATTITUDE_LAYER) { 1 }
-                attitude(body, x, y, a.dipDirection, a.dip)
+                attitude(body, ax, ay, a.dipDirection, a.dip)
             }
         }
 
@@ -151,6 +154,13 @@ object DxfFormat : FeatureFormat {
             is Geometry.MultiPolygon -> g.polygons.forEach { p -> p.rings.forEach { polyline(out, layer, open(it).map(xy), closed = true) } }
             is Geometry.GeometryCollection -> g.geometries.forEach { entities(it, layer, xy, out) }
         }
+    }
+
+    private fun midLine(g: Geometry?): LngLat? = when (g) {
+        is Geometry.LineString -> Geodesy.midpoint(g.positions)
+        is Geometry.MultiLineString -> g.lines.maxByOrNull { Geodesy.length(it) }?.let(Geodesy::midpoint)
+        is Geometry.Polygon -> g.rings.firstOrNull()?.let(Geodesy::midpoint)
+        else -> null
     }
 
     /** A ring without its repeated last vertex; the closed flag joins it up. */

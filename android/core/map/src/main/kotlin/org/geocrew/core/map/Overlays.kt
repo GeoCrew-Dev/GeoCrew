@@ -78,6 +78,37 @@ internal object OverlayGeoJson {
     fun features(list: List<GeoFeature>, selectedId: String?, memberId: String? = null, legend: Legend = Legend()): String = collection(
         list.mapNotNull { f ->
             val g = f.geometry ?: return@mapNotNull null
+            record(f, g, selectedId, memberId, legend)
+        } + list.mapNotNull(::attitudeAnchor),
+    )
+
+    /**
+     * A line or polygon with an attitude (a fault plane, a contact) gets its
+     * strike-and-dip symbol on an extra point half way along it, which
+     * selects the record itself when tapped.
+     */
+    private fun attitudeAnchor(f: GeoFeature): JsonObject? {
+        val g = f.geometry ?: return null
+        if (g is Geometry.Point || g is Geometry.MultiPoint) return null
+        val a = f.attitude ?: return null
+        val path = when (g) {
+            is Geometry.LineString -> g.positions
+            is Geometry.MultiLineString -> g.lines.maxByOrNull { Geodesy.length(it) }
+            is Geometry.Polygon -> g.rings.firstOrNull()
+            is Geometry.MultiPolygon -> g.polygons.firstOrNull()?.rings?.firstOrNull()
+            else -> null
+        } ?: return null
+        val at = Geodesy.midpoint(path) ?: return null
+        return feature(Geometry.Point(at)) {
+            this["fid"] = f.id
+            this["kind"] = f.kind.id
+            this["anchor"] = true
+            this["dipdir"] = a.dipDirection
+            this["dip"] = Math.round(a.dip).toDouble()
+        }
+    }
+
+    private fun record(f: GeoFeature, g: Geometry, selectedId: String?, memberId: String?, legend: Legend): JsonObject =
             feature(g) {
                 this["fid"] = f.id
                 this["kind"] = f.kind.id
@@ -101,8 +132,6 @@ internal object OverlayGeoJson {
                     if ((g is Geometry.Polygon || g is Geometry.MultiPolygon) && !has("fill-opacity")) this["fill-opacity"] = 0.45
                 }
             }
-        },
-    )
 
     /**
      * Copies GeoJSON simplestyle keys (used by analysis output and by files

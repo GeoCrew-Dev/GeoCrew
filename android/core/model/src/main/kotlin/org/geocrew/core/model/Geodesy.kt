@@ -54,6 +54,21 @@ object Geodesy {
     /** Length of a path in metres. */
     fun length(path: List<LngLat>): Double = path.zipWithNext { a, b -> distance(a, b) }.sum()
 
+    /** The point half way along a path by length (the vertex itself for a single one); null when empty. */
+    fun midpoint(path: List<LngLat>): LngLat? {
+        if (path.size < 2) return path.firstOrNull()
+        var left = length(path) / 2
+        for ((a, b) in path.zipWithNext()) {
+            val d = distance(a, b)
+            if (d >= left && d > 0) {
+                val f = left / d
+                return LngLat(a.lng + (b.lng - a.lng) * f, a.lat + (b.lat - a.lat) * f)
+            }
+            left -= d
+        }
+        return path.last()
+    }
+
     /**
      * Area of a ring in square metres on the sphere
      * (Chamberlain & Duquette, "Some algorithms for polygons on a sphere", 2007).
