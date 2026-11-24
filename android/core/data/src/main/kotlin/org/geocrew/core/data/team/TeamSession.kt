@@ -149,7 +149,7 @@ class TeamSession @Inject constructor(
         }
     }
 
-    private suspend fun follow(handle: TeamHandle) = coroutineScope {
+    private suspend fun follow(handle: TeamHandle): Nothing = coroutineScope {
         val projectId = handle.project.id
         val realtime = RealtimeClient(handle.api, handle.link.workspaceId, client, this)
         val a = Active(handle, realtime)
