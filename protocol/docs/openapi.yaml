@@ -383,6 +383,30 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/checks:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: checks
+      summary: Records worth a second look, such as duplicate numbers or missing positions (capability "checks")
+      parameters:
+        - { name: accuracy_m, in: query, required: false, schema: { type: number, minimum: 0 }, description: "Report fixes poorer than this many metres (default 30)" }
+        - { name: far_km, in: query, required: false, schema: { type: number, minimum: 0 }, description: "Report records further than this from the median position (default 50)" }
+      responses:
+        "200":
+          description: Issues ordered by record title, then by code
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [issues]
+                properties:
+                  issues:
+                    type: array
+                    items: { $ref: "#/components/schemas/Issue" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/export.kml:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
@@ -867,6 +891,14 @@ components:
         feature: { type: string, description: Record concerned (comment and task) }
         from: { type: string, description: Member who caused the notice }
         seq: { type: integer, description: "Comment seq for message and comment notices, feature seq for task notices" }
+    Issue:
+      type: object
+      required: [feature, code, message]
+      properties:
+        feature: { type: string, description: Record id }
+        title: { type: string }
+        code: { type: string, enum: [duplicate_number, duplicate_sample, no_position, poor_accuracy, far_away, missing_stop] }
+        message: { type: string, description: For display only }
     RealtimeMessage:
       description: Any message on the realtime channel
       oneOf:
