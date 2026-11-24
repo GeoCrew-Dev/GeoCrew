@@ -127,6 +127,7 @@ fun MapScreen(
             modifier = Modifier.fillMaxSize(),
             onClick = viewModel::onMapClick,
             onLongClick = { if (mode == MapMode.Browse) viewModel.addPoint(it) },
+            labels = overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) },
         )
 
         if (mode is MapMode.Draw) Crosshair(Modifier.align(Alignment.Center))

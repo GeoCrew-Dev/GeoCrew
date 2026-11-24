@@ -1,6 +1,13 @@
 package org.geocrew.core.map
 
 import android.graphics.RectF
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -11,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
@@ -78,6 +87,9 @@ class MapCameraState(center: LngLat = LngLat(105.0, 35.0), zoom: Double = 3.5) {
 @Composable
 fun rememberMapCameraState(): MapCameraState = remember { MapCameraState() }
 
+/** A short text drawn next to a map position, e.g. a teammate's nickname. */
+data class MapLabel(val position: LngLat, val text: String, val faded: Boolean = false)
+
 /**
  * The map surface. Base map comes from [source]; everything the app draws is
  * in [overlays]. Taps report the position and the id of the feature hit, if any.
@@ -91,6 +103,8 @@ fun GeoCrewMap(
     modifier: Modifier = Modifier,
     onClick: (position: LngLat, featureId: String?) -> Unit = { _, _ -> },
     onLongClick: (LngLat) -> Unit = {},
+    /** Drawn by Compose above the map, so no glyph server is needed for text. */
+    labels: List<MapLabel> = emptyList(),
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -163,7 +177,33 @@ fun GeoCrewMap(
         }
     }
 
-    AndroidView(factory = { mapView }, modifier = modifier)
+    Box(modifier) {
+        AndroidView(factory = { mapView }, modifier = Modifier.matchParentSize())
+        if (labels.isNotEmpty()) Labels(labels, camera)
+    }
+}
+
+@Composable
+private fun Labels(labels: List<MapLabel>, camera: MapCameraState) {
+    // Reading the camera state makes the labels follow every camera move.
+    camera.center; camera.zoom; camera.bearing
+    val projection = camera.map?.projection ?: return
+    val density = LocalDensity.current
+    labels.forEach { l ->
+        val pt = projection.toScreenLocation(LatLng(l.position.lat, l.position.lng))
+        val x = with(density) { pt.x.toDp() } + 10.dp
+        val y = with(density) { pt.y.toDp() } - 10.dp
+        Text(
+            l.text,
+            modifier = Modifier
+                .offset(x, y)
+                .alpha(if (l.faded) 0.6f else 1f)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 4.dp, vertical = 1.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
 }
 
 /** Glue between Compose state and the asynchronous MapLibre objects. */
