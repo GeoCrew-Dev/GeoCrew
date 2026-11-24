@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/export"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
 
@@ -192,4 +193,22 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		out[i] = toWire(f)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// exportGeoJSON downloads the workspace's current records as one GeoJSON
+// file for desktop GIS. Members can already read everything through pull,
+// so this needs no extra permission.
+func (s *Server) exportGeoJSON(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/geo+json")
+	w.Header().Set("Content-Disposition", `attachment; filename="geocrew-export.geojson"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := export.GeoJSON(r.Context(), s.Store, ws, w); err != nil {
+		// Headers are sent already; the truncated body tells the client it failed.
+		s.logger().Error("export", "workspace", ws, "err", err)
+	}
 }

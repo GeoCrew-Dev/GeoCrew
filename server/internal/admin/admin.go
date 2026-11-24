@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/export"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
 
@@ -26,6 +27,7 @@ const Usage = `用法：geocrew-server [参数] admin <命令>
   role <工作组> <成员> <角色>        修改角色：leader / member / readonly
   revoke <工作组> <成员>            移出成员，令牌立即失效
   backup <目标文件>                 在线备份数据库（附件目录另行复制）
+  export <工作组> <目标文件>         导出当前全部记录为 GeoJSON（可直接用 QGIS 打开）
 
 <工作组> 和 <成员> 可以写 ID 或其开头几位，只要能唯一确定。
 `
@@ -117,6 +119,31 @@ func Run(ctx context.Context, st store.Store, args []string, out io.Writer) erro
 			return err
 		}
 		fmt.Fprintf(out, "数据库已备份到 %s，请另行复制附件目录 files/\n", rest[0])
+		return nil
+	case "export":
+		if err := need(2); err != nil {
+			return err
+		}
+		ws, err := findWorkspace(ctx, st, rest[0])
+		if err != nil {
+			return err
+		}
+		f, err := os.OpenFile(rest[1], os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			if errors.Is(err, os.ErrExist) {
+				return fmt.Errorf("%s 已存在，不会覆盖", rest[1])
+			}
+			return err
+		}
+		n, err := export.GeoJSON(ctx, st, ws.ID, f)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			os.Remove(rest[1])
+			return err
+		}
+		fmt.Fprintf(out, "已把「%s」的 %d 条记录导出到 %s\n", ws.Name, n, rest[1])
 		return nil
 	default:
 		return fmt.Errorf("未知命令 %q\n\n%s", cmd, Usage)

@@ -356,3 +356,21 @@ func TestSettings(t *testing.T) {
 		t.Fatalf("workspace settings_version: %v", wsResp)
 	}
 }
+
+func TestExportGeoJSON(t *testing.T) {
+	e := newEnv(t)
+	var leader joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "一组", "nickname": "组长"}, &leader)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+	e.call("POST", base+"/features", leader.Token, map[string]any{"features": []any{feature("f1", 1, "2026-11-24T08:00:00Z")}}, nil)
+	var fc struct {
+		Type     string           `json:"type"`
+		Features []map[string]any `json:"features"`
+	}
+	if c := e.call("GET", base+"/export.geojson", leader.Token, nil, &fc); c != 200 || len(fc.Features) != 1 || fc.Features[0]["id"] != "f1" {
+		t.Fatalf("export: %d %+v", c, fc)
+	}
+	if c := e.call("GET", base+"/export.geojson", "", nil, nil); c != 401 {
+		t.Fatalf("export without token: %d", c)
+	}
+}

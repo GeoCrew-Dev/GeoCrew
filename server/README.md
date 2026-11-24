@@ -73,6 +73,14 @@ geocrew-server -data /var/lib/geocrew admin backup /backups/geocrew-$(date +%F).
 
 服务运行时也能得到一致的数据库副本（目标文件已存在时不会覆盖）。附件在数据目录的 `files/` 下，按内容命名、只增不改，用 `rsync` 等工具增量复制即可。恢复时把备份文件改名为 `geocrew.db`，和 `files/` 一起放回数据目录。
 
+## 导出数据
+
+```bash
+geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.geojson
+```
+
+把工作组当前的全部记录（不含已删除的）导出成一个 GeoJSON，QGIS、ArcGIS 可以直接打开，属性原样保留。组员也可以带着自己的令牌请求 `GET /api/v0/workspaces/{id}/export.geojson` 下载同样的文件。
+
 ## 代码结构
 
 | 目录 | 内容 |
@@ -83,8 +91,9 @@ geocrew-server -data /var/lib/geocrew admin backup /backups/geocrew-$(date +%F).
 | `internal/store/sqlite` | 默认 SQLite 实现（纯 Go，无 CGO），含迁移 |
 | `internal/blob` | 附件按 SHA-256 存储在本地磁盘 |
 | `internal/realtime` | 实时消息分发（位置、在线状态、变更通知） |
+| `internal/export` | 导出为 GeoJSON 等标准格式 |
 | `internal/config` | 参数与环境变量 |
-| `internal/admin` | 运维命令（列出、恢复组长、备份） |
+| `internal/admin` | 运维命令（列出、恢复组长、备份、导出） |
 
 换用 PostgreSQL/PostGIS 时只需新增一个实现 `store.Store` 接口的包。
 

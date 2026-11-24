@@ -119,3 +119,23 @@ func TestBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestExport(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	ws, _, _, err := db.CreateWorkspace(ctx, "北山填图", "老王")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "out.geojson")
+	out, err := run(t, db, "export", ws.ID[:6], dest)
+	if err != nil || !strings.Contains(out, "0 条记录") {
+		t.Fatalf("export: %q %v", out, err)
+	}
+	if _, err := run(t, db, "export", ws.ID, dest); err == nil {
+		t.Fatal("export must not overwrite")
+	}
+	if b, _ := os.ReadFile(dest); !strings.HasPrefix(string(b), `{"type":"FeatureCollection"`) {
+		t.Fatalf("content: %s", b)
+	}
+}
