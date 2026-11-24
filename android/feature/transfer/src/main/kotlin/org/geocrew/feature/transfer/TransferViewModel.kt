@@ -13,15 +13,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import org.geocrew.core.data.repo.FeatureRepository
+import org.geocrew.core.data.repo.PhotoStore
+import org.geocrew.core.data.repo.SettingsRepository
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.TrackRepository
 import org.geocrew.core.formats.ExportContext
 import org.geocrew.core.formats.FeatureFormat
 import org.geocrew.core.formats.FeatureFormats
+import org.geocrew.core.formats.FieldReport
 import org.geocrew.core.formats.ImportContext
 import org.geocrew.core.formats.ImportResult
 import org.geocrew.core.model.FeatureKind
+import org.geocrew.core.model.SeekGuide
+import org.geocrew.core.model.photoInfo
+import org.geocrew.core.ui.KindUi
+import java.time.LocalDate
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -43,6 +51,8 @@ class TransferViewModel @Inject constructor(
     private val projects: ProjectRepository,
     private val features: FeatureRepository,
     private val tracks: TrackRepository,
+    private val photoStore: PhotoStore,
+    private val settings: SettingsRepository,
 ) : ViewModel() {
     private val _preview = MutableStateFlow<ImportPreview?>(null)
     val preview: StateFlow<ImportPreview?> = _preview.asStateFlow()
@@ -109,6 +119,42 @@ class TransferViewModel @Inject constructor(
         } ?: return@work fail("无法写入所选位置。")
         val skipped = if (result.skipped > 0) "，${result.skipped} 个此格式不支持已跳过" else ""
         _message.value = TransferMessage.Info("已导出 ${result.written} 个要素$skipped。")
+    }
+
+    fun reportName(todayOnly: Boolean): String {
+        val stamp = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(ZoneId.systemDefault()).format(Instant.now())
+        return "geocrew-report-$stamp${if (todayOnly) "-today" else ""}.pdf"
+    }
+
+    /** Writes the project's records as a printable field notebook (PDF). */
+    fun exportReport(uri: Uri, todayOnly: Boolean, withPhotos: Boolean) = work {
+        val project = projects.ensureCurrent()
+        val list = features.all(project.id)
+        val zone = ZoneId.systemDefault()
+        val report = FieldReport.build(
+            projectName = project.name,
+            features = list,
+            fields = project.config.fields,
+            kindLabel = KindUi::label,
+            zone = zone,
+            coordinates = settings.settings.first().coordinateFormat,
+            days = if (todayOnly) setOf(LocalDate.now(zone)) else null,
+        )
+        if (report.entryCount == 0) {
+            return@work fail(if (todayOnly) "今天还没有记录。" else "当前工程还没有记录可以生成报告。")
+        }
+        val info = list.associate { it.id to it.photoInfo }
+        val pdf = FieldReportPdf(
+            photo = { sha, px -> if (withPhotos) photoStore.decodeUpright(sha, px) else null },
+            caption = { id, sha ->
+                info[id]?.get(sha)?.azimuth?.let { "方向 %.0f°（%s）".format(it, SeekGuide.direction(it)) }
+            },
+            photosPerEntry = if (withPhotos) 3 else 0,
+        )
+        val pages = withContext(Dispatchers.IO) {
+            context.contentResolver.openOutputStream(uri, "wt")?.use { pdf.write(report, it) }
+        } ?: return@work fail("无法写入所选位置。")
+        _message.value = TransferMessage.Info("已生成报告：${report.entryCount} 条记录，共 $pages 页。")
     }
 
     private fun fail(text: String) {

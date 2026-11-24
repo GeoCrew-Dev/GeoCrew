@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,9 +14,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -45,6 +49,8 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
     val message by viewModel.message.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     var exportFormat by remember { mutableStateOf<FeatureFormat?>(null) }
+    var todayOnly by remember { mutableStateOf(false) }
+    var withPhotos by remember { mutableStateOf(true) }
 
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.open(uri)
@@ -52,6 +58,9 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
     val createFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val f = exportFormat
         if (uri != null && f != null) viewModel.export(f, uri)
+    }
+    val createReport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null) viewModel.exportReport(uri, todayOnly, withPhotos)
     }
 
     Scaffold(
@@ -100,6 +109,30 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
                         }) { Icon(Icons.Default.FileUpload, "导出 ${f.displayName}") }
                     },
                 )
+            }
+
+            SectionHeader("野外记录报告（PDF）")
+            Text(
+                "按日期整理每条记录的位置、产状、属性、备注和照片，可直接打印或发给他人。",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !todayOnly, onClick = { todayOnly = false }, label = { Text("全部") })
+                FilterChip(selected = todayOnly, onClick = { todayOnly = true }, label = { Text("仅今天") })
+            }
+            ListItem(
+                headlineContent = { Text("包含照片") },
+                supportingContent = { Text("每条最多 3 张，文件会大一些") },
+                trailingContent = { Switch(checked = withPhotos, onCheckedChange = { withPhotos = it }) },
+            )
+            FilledTonalButton(
+                onClick = { viewModel.clearMessage(); createReport.launch(viewModel.reportName(todayOnly)) },
+                enabled = !busy,
+                modifier = Modifier.padding(16.dp),
+            ) {
+                Icon(Icons.Default.PictureAsPdf, null)
+                Text(" 生成报告")
             }
         }
     }

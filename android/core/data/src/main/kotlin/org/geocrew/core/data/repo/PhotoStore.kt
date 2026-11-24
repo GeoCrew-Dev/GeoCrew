@@ -83,6 +83,33 @@ class PhotoStore @Inject constructor(@ApplicationContext private val context: Co
 
     fun exists(sha: String) = file(sha).exists()
 
+    /**
+     * Decodes photo [sha] at roughly [maxSide] pixels on its longer side,
+     * turned upright per its EXIF orientation; null if missing or unreadable.
+     */
+    fun decodeUpright(sha: String, maxSide: Int): android.graphics.Bitmap? {
+        val f = file(sha)
+        if (!f.exists()) return null
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(f.path, bounds)
+        if (bounds.outWidth <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
+        val bmp = android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: return null
+        val turn = runCatching {
+            when (android.media.ExifInterface(f).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1)) {
+                android.media.ExifInterface.ORIENTATION_ROTATE_90, android.media.ExifInterface.ORIENTATION_TRANSPOSE -> 90f
+                android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                android.media.ExifInterface.ORIENTATION_ROTATE_270, android.media.ExifInterface.ORIENTATION_TRANSVERSE -> 270f
+                else -> 0f
+            }
+        }.getOrDefault(0f)
+        if (turn == 0f) return bmp
+        val m = android.graphics.Matrix().apply { postRotate(turn) }
+        return android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true).also { if (it !== bmp) bmp.recycle() }
+    }
+
     /** A content URI other apps (viewers, share targets) can read. */
     fun uri(sha: String): Uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file(sha))
 
