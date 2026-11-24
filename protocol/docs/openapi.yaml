@@ -448,7 +448,7 @@ paths:
     post:
       tags: [comments]
       operationId: addComment
-      summary: Post a comment on a record, or a message to the whole team (leaders and members; read-only members may send urgent messages only)
+      summary: Post a comment on a record, or a message to the whole team (leaders and members; read-only members may send urgent messages and roll call answers only; only leaders start roll calls)
       requestBody:
         required: true
         content:
@@ -462,6 +462,8 @@ paths:
                 body: { type: string, maxLength: 2000, description: "Trimmed; must not be empty" }
                 at: { type: array, items: { type: number }, minItems: 2, maxItems: 2, description: "Optional [longitude, latitude] to show on the map" }
                 urgent: { type: boolean, default: false, description: "A call for help or to gather (section 8.1); team messages only; needs the alerts capability" }
+                roll_call: { type: boolean, default: false, description: "A leader's roll call (section 8.2); team messages only; needs the rollcall capability" }
+                answer_to: { type: string, description: "Id of the roll call this team message answers (section 8.2)" }
       responses:
         "200":
           description: Stored (or already stored by an identical retry)
@@ -692,7 +694,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
@@ -775,6 +777,8 @@ components:
         seq: { type: integer, description: "Comment sequence, separate from the feature seq" }
         deleted: { type: boolean, default: false }
         urgent: { type: boolean, default: false, description: "Urgent team message (section 8.1)" }
+        roll_call: { type: boolean, default: false, description: "Roll call started by a leader (section 8.2)" }
+        answer_to: { type: string, description: "The roll call this message answers (section 8.2)" }
 
     Sync:
       type: object
@@ -857,8 +861,8 @@ components:
 
     PushEvent:
       type: string
-      enum: [message, comment, task, alert]
-      description: "alert is always delivered, whatever a target subscribed to"
+      enum: [message, comment, task, alert, rollcall]
+      description: "alert and rollcall are always delivered, whatever a target subscribed to"
     PushTarget:
       type: object
       required: [endpoint, events, updated_at]

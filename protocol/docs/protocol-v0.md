@@ -115,7 +115,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "create"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
@@ -434,6 +434,17 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 - 推送类型为 `alert`（第 9 节），发给除发送者外所有登记了地址的成员，**不受**各自 `events` 订阅的限制。
 - 客户端应醒目地显示紧急消息（例如置顶、红色、可以一键定位到地图），并用高优先级通知提醒。旧版本服务端会忽略这个字段，客户端发送前应检查 `alerts` 能力。
 
+### 8.2 点名
+
+服务器能力里有 `rollcall` 时可用。组长可以发起点名，例如收工前让大家报平安、转移前清点人数；组员一键回应，组长看到谁回了、在哪、谁还没回。
+
+- 发起：全组消息带 `"roll_call": true`，正文写要求（如"18 点前回营地报平安"）。只有组长能发起（否则 `403 forbidden`）。
+- 回应：全组消息带 `"answer_to": "<点名的 id>"`，一般同时带上自己的位置 `at`，正文由客户端填，如"平安""需要帮助"。`answer_to` 必须指向本工作区一条未删除的点名，否则 `400 invalid_comment`。只读成员也可以回应。同一个人可以回应多次，以最新一条为准。
+- 点名和回应都只能是全组消息，带 `feature_id` 时返回 `400 invalid_comment`；一条消息不能既是点名又是回应。重试时这两个字段也要一致，否则按 `409 id_conflict` 处理。
+- 删除点名后 `roll_call` 随正文一起清除，之后的回应会被拒绝；已有的回应保留。
+- 推送类型为 `rollcall`（第 9 节）：点名发给除发起人外的所有成员，每条回应只发给发起点名的组长；都**不受** `events` 订阅的限制。
+- 名单由客户端按成员列表计算：点名之后每位未吊销成员（除发起人外）最新的一条回应。客户端应把点名置顶显示到组长结束（删除）为止，回应用一个按钮完成。
+
 ## 9. 推送通知
 
 服务器能力里有 `push` 时可用（运维人员可以关闭，此时这组接口返回 `404 push_disabled`）。实时通道只在应用打开时有效；推送让应用在后台也能知道有新动静。
@@ -447,6 +458,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `comment` | 有人在记录下发言 | 除发送者外的全部成员 |
 | `task` | 记录的 `assignee` 变成某人（6.1），且不是本人自己指派、`task_status` 不是 `done` | 被指派的人 |
 | `alert` | 有人发了紧急消息（8.1）；不能通过 `events` 退订 | 除发送者外的全部成员 |
+| `rollcall` | 组长发起点名，或有人回应点名（8.2）；不能通过 `events` 退订 | 点名：除发起人外的全部成员；回应：发起点名的组长 |
 
 服务端向地址 `POST` 一个 JSON（`Content-Type: application/json`）：
 
