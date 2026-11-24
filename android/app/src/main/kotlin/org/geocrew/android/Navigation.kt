@@ -17,6 +17,7 @@ import org.geocrew.feature.analysis.AnalysisScreen
 import org.geocrew.core.gis.SectionTool
 import org.geocrew.feature.analysis.StereonetScreen
 import org.geocrew.feature.compass.CompassScreen
+import org.geocrew.feature.compass.ThicknessScreen
 import org.geocrew.feature.compass.TARGET_FEATURE_ARG
 import org.geocrew.feature.map.MapScreen
 import org.geocrew.feature.record.FEATURE_ID_ARG
@@ -55,6 +56,7 @@ object Routes {
     const val PROJECT_SETTINGS = "project/{$PROJECT_ID_ARG}/settings"
     fun projectSettings(id: String) = "project/${android.net.Uri.encode(id)}/settings"
     const val STEREONET = "stereonet"
+    const val THICKNESS = "thickness"
     const val COMPASS = "compass?$TARGET_FEATURE_ARG={$TARGET_FEATURE_ARG}"
     fun compassFor(featureId: String) = "compass?$TARGET_FEATURE_ARG=$featureId"
 
@@ -167,6 +169,9 @@ fun GeoCrewNavHost() {
                 onMeasureAttitude = { nav.navigate(Routes.compassFor(it)) },
                 onSection = { nav.navigate(Routes.analysis(SectionTool().id, it)) },
             )
+        }
+        composable(Routes.THICKNESS) {
+            ThicknessScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.TOOLS) {
             ToolsScreen(builtInTools, onBack = { nav.popBackStack() }, onOpen = { nav.navigate(it) })
