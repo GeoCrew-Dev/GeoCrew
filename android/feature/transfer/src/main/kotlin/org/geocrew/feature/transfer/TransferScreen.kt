@@ -59,6 +59,9 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
         val f = exportFormat
         if (uri != null && f != null) viewModel.export(f, uri)
     }
+    val createLabels = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null) viewModel.exportLabels(uri)
+    }
     val createReport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) viewModel.exportReport(uri, todayOnly, withPhotos)
     }
@@ -133,6 +136,21 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
             ) {
                 Icon(Icons.Default.PictureAsPdf, null)
                 Text(" 生成报告")
+            }
+
+            SectionHeader("样品标签（PDF）")
+            Text(
+                "每件样品一张标签：编号、类型、岩性、点号、日期、坐标和编号二维码。A4 纸每页 3 × 8 张，可打印到不干胶标签纸上贴样品袋。",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            FilledTonalButton(
+                onClick = { viewModel.clearMessage(); createLabels.launch(viewModel.labelsName()) },
+                enabled = !busy,
+                modifier = Modifier.padding(16.dp),
+            ) {
+                Icon(Icons.Default.PictureAsPdf, null)
+                Text(" 生成标签")
             }
         }
     }

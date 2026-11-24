@@ -22,6 +22,7 @@ import org.geocrew.core.data.repo.TrackRepository
 import org.geocrew.core.formats.ExportContext
 import org.geocrew.core.formats.FeatureFormat
 import org.geocrew.core.formats.SampleListFormat
+import org.geocrew.core.formats.SampleLabels
 import org.geocrew.core.model.samples
 import org.geocrew.core.formats.FeatureFormats
 import org.geocrew.core.formats.FieldReport
@@ -162,6 +163,22 @@ class TransferViewModel @Inject constructor(
             context.contentResolver.openOutputStream(uri, "wt")?.use { pdf.write(report, it) }
         } ?: return@work fail("无法写入所选位置。")
         _message.value = TransferMessage.Info("已生成报告：${report.entryCount} 条记录，共 $pages 页。")
+    }
+
+    fun labelsName(): String {
+        val stamp = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(ZoneId.systemDefault()).format(Instant.now())
+        return "geocrew-labels-$stamp.pdf"
+    }
+
+    /** Prints every sample of the project as labels on A4 sheets (3 × 8). */
+    fun exportLabels(uri: Uri) = work {
+        val project = projects.ensureCurrent()
+        val labels = SampleLabels.build(project.name, features.all(project.id), settings.settings.first().coordinateFormat)
+        if (labels.isEmpty()) return@work fail("当前工程还没有登记样品。在记录详情的「样品」里添加。")
+        val pages = withContext(Dispatchers.IO) {
+            context.contentResolver.openOutputStream(uri, "wt")?.use { SampleLabelPdf().write(labels, it) }
+        } ?: return@work fail("无法写入所选位置。")
+        _message.value = TransferMessage.Info("已生成 ${labels.size} 张样品标签，共 $pages 页（A4，每页 3 × 8）。")
     }
 
     private fun fail(text: String) {
