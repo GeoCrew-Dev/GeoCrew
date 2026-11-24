@@ -252,6 +252,25 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 
 取消指派时三个键一起删除。改派给另一位组员时，`task_status` 回到 `todo`。只读成员不能修改记录，也就不能指派或改状态。
 
+### 6.2 照片信息
+
+一条记录可以有多张照片，每张的拍摄方向、位置、时间放在 `photo_info` 对象里，键是附件哈希（与 `photos` 中的一致）：
+
+```json
+"photos": ["<sha256-a>", "<sha256-b>"],
+"photo_info": {
+  "<sha256-a>": { "azimuth": 235.0, "lon": 116.391, "lat": 39.907, "alt": 52.3, "taken_at": "2026-11-24T10:40:00Z" }
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `azimuth` | 拍摄方向，真北起算 0–360° |
+| `lon`、`lat`、`alt` | 拍摄者所在位置（不一定是记录本身的位置），`alt` 可省略 |
+| `taken_at` | 拍摄时间，RFC 3339 |
+
+各字段都可省略；照片从 `photos` 移除时，对应条目也应删除。服务端不解析这个对象。旧版独立照片点的 `azimuth` 属性仍然有效。
+
 ## 7. 实时通道
 
 连接：`GET /api/v0/workspaces/{id}/ws`，携带 `Authorization: Bearer <token>`；无法设置请求头的客户端（如浏览器）可改用查询参数 `?access_token=<token>`。
