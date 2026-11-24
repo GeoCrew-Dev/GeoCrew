@@ -194,7 +194,19 @@ class KrigingTool : GisTool {
         listOf(ToolParam.Choice.Option("value", "估计值"), ToolParam.Choice.Option("sd", "估计标准差（不确定性）")),
     )
     private val suggest = ToolParam.Number("suggest", "建议补点数", default = 3.0, min = 0.0, max = 20.0, help = "在最不确定的位置给出补充采样点，0 表示不需要")
-    override val params = listOf(field, model, range, cell, show, suggest)
+    private val plan = ToolParam.Choice(
+        "plan", "补点方式",
+        listOf(
+            ToolParam.Choice.Option("uncertainty", "只看不确定性"),
+            ToolParam.Choice.Option("travel", "兼顾路程"),
+        ),
+        help = "每选一个点都把它当作已采样重新计算，后面的点不会扎堆；兼顾路程时离上一个点近的位置优先",
+    )
+    private val start = ToolParam.Feature(
+        "start", "补点路线起点", setOf(GeometryType.POINT),
+        help = "可选，如驻地或现在所在的记录点；路线按最短顺序连起各补点",
+    )
+    override val params = listOf(field, model, range, cell, show, suggest, plan, start)
 
     override fun check(input: ToolInput): String? {
         val key = input.text(field.key) ?: return "请选择插值属性"
@@ -263,16 +275,43 @@ class KrigingTool : GisTool {
         }
 
         val wanted = input.number(suggest)?.toInt() ?: 0
-        val picks = suggestions(est, minX, minY, size, wanted, max(w, h) / 6)
-        picks.forEachIndexed { i, (px, py, sd) ->
+        val from = input.feature(start)?.let { f -> (f.geometry as Geometry.Point).position.let { plane.x(it) to plane.y(it) } }
+        val centres = ArrayList<Pair<Double, Double>>(rows * cols)
+        val variances = ArrayList<Double>(rows * cols)
+        for (row in 0 until rows) for (col in 0 until cols) {
+            centres += (minX + (col + 0.5) * size) to (minY + (row + 0.5) * size)
+            variances += est[row][col]!!.variance
+        }
+        val picks = SamplingPlan.pick(
+            xs, ys, vg, centres, wanted, variances.toDoubleArray(),
+            start = from, travel = if (input.choice(plan) == "travel") 2.0 else 0.0, scale = max(w, h),
+            cancelled = input.cancelled,
+        )
+        val order = SamplingPlan.route(picks.map { it.x to it.y }, from)
+        val visits = order.map { picks[it] }
+        visits.forEachIndexed { i, p ->
             out += OutputFeature(
                 FeatureKind.POINT,
-                Geometry.Point(plane.toLngLat(px, py)),
+                Geometry.Point(plane.toLngLat(p.x, p.y)),
                 buildProperties {
                     this[OutputProps.TOOL] = id
-                    this[SD] = sd
+                    this[SD] = p.sd
                     this[Props.TITLE] = "建议补点 ${i + 1}"
-                    this[Props.NOTE] = "克里金估计标准差 ${fmt(sd)}，在此采样能最多地减少「$key」的不确定性"
+                    this[Props.NOTE] = "采到这里之前的克里金估计标准差 ${fmt(p.sd)}，在此采样能明显减少「$key」的不确定性"
+                },
+            )
+        }
+        val stops = listOfNotNull(from) + visits.map { it.x to it.y }
+        val walk = SamplingPlan.length(stops)
+        if (stops.size >= 2) {
+            out += OutputFeature(
+                FeatureKind.LINE,
+                Geometry.LineString(stops.map { (x, y) -> plane.toLngLat(x, y) }),
+                buildProperties {
+                    this[OutputProps.TOOL] = id
+                    this[Props.TITLE] = "补点路线"
+                    this[Props.NOTE] = "依次经过 ${visits.size} 个建议补点，直线距离约 ${fmt(walk, 0)} m"
+                    style(stroke = "#d81b60", strokeWidth = 3.0)
                 },
             )
         }
@@ -286,29 +325,11 @@ class KrigingTool : GisTool {
                 append("由 ${merged.size} 个点得到 ${cols}×${rows} 网格（格距 ${fmt(size, 1)} m）。")
                 append(fitText).append("。")
                 append(if (showSd) "颜色为估计标准差 ${fmt(lo)} – ${fmt(hi)}。" else "「$key」估计范围 ${fmt(lo)} – ${fmt(hi)}。")
-                if (picks.isNotEmpty()) append("已标出 ${picks.size} 个建议补点。")
+                if (visits.isNotEmpty()) append("已标出 ${visits.size} 个建议补点" + if (stops.size >= 2) "和补点路线（直线约 ${fmt(walk, 0)} m）。" else "。")
                 append(note)
             },
             ramp.legend { fmt(it) },
         )
-    }
-
-    /** Greedy picks of the most uncertain cell centres at least [spacing] apart. */
-    private fun suggestions(
-        est: Array<Array<OrdinaryKriging.Estimate?>>, minX: Double, minY: Double, size: Double, wanted: Int, spacing: Double,
-    ): List<Triple<Double, Double, Double>> {
-        if (wanted <= 0) return emptyList()
-        val cells = est.flatMapIndexed { row, r ->
-            r.mapIndexedNotNull { col, e ->
-                e?.variance?.takeIf { it.isFinite() }?.let { Triple(minX + (col + 0.5) * size, minY + (row + 0.5) * size, sqrt(it)) }
-            }
-        }.sortedByDescending { it.third }
-        val picks = mutableListOf<Triple<Double, Double, Double>>()
-        for (c in cells) {
-            if (picks.size >= wanted) break
-            if (picks.all { hypot(it.first - c.first, it.second - c.second) >= spacing }) picks += c
-        }
-        return picks
     }
 
     companion object {
