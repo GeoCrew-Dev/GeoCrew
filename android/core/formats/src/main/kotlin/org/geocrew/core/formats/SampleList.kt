@@ -5,6 +5,7 @@ import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.positions
+import org.geocrew.core.model.results
 import org.geocrew.core.model.samples
 import org.geocrew.core.model.string
 import java.io.OutputStream
@@ -40,9 +41,11 @@ object SampleListFormat : FeatureFormat {
         val rows = features.filterNot { it.deleted }
             .flatMap { f -> f.samples.map { f to it } }
             .sortedWith(compareBy(NaturalOrder) { it.second.no })
+        // Lab results (§6.4), one column per analysed item, after the fixed columns.
+        val extra = rows.flatMap { it.second.results.keys }.distinct().sortedWith(NaturalOrder)
         val w = output.bufferedWriter(Charsets.UTF_8)
-        w.write('﻿'.code)
-        w.write(HEADER.joinToString(",") { CsvFormat.quote(it) })
+        w.write('\uFEFF'.code)
+        w.write((HEADER + extra).joinToString(",") { CsvFormat.quote(it) })
         w.write("\r\n")
         for ((f, s) in rows) {
             val at = position(f.geometry)
@@ -52,7 +55,7 @@ object SampleListFormat : FeatureFormat {
                 f.properties.string(Props.LITHOLOGY).orEmpty(),
                 s.takenAt?.atZone(zone)?.format(TIME).orEmpty(),
                 s.note.orEmpty(), f.id,
-            )
+            ) + s.results.let { res -> extra.map { res[it]?.text.orEmpty() } }
             w.write(cells.joinToString(",") { CsvFormat.quote(defuse(it)) })
             w.write("\r\n")
         }
