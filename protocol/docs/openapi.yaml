@@ -368,6 +368,21 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/export.boreholes.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportBoreholes
+      summary: The borehole layer table as CSV, one row per layer (capability "boreholes", section 6.11)
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 孔号, 孔口经度, 孔口纬度, 孔口高程(m), 终孔深度(m), 水位埋深(m), 层号, 层顶深度(m), 层底深度(m), 厚度(m), 岩性, 描述, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/export.routes.csv:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
@@ -711,7 +726,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing, boreholes] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
