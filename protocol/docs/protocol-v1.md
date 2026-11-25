@@ -588,7 +588,7 @@ GET /api/v1/workspaces/{ws}/ws
 
 ## 10. 工作区、成员与身份的接口
 
-第 6 节的规则落到接口上。下面的路径都省略前缀 `/api/v1/workspaces/{ws}`。每个接口要的权限写在后面；不满足时返回 `403 forbidden`（7.2）。
+第 6 节的规则落到接口上。下面以 `/api/` 开头的是完整路径，其余的都省略了前缀 `/api/v1/workspaces/{ws}`。每个接口要的权限写在后面；不满足时返回 `403 forbidden`（7.2）。
 
 ### 10.1 工作区
 
@@ -612,7 +612,7 @@ GET /api/v1/workspaces/{ws}/ws
 
 - `GET /members/{id}/devices`：`[{id, device, created_at, last_seen_at}]`。本人和能管理他的人可以读。
 - `DELETE /devices/{id}`：吊销一台设备的令牌，本人和能管理设备主人的人可以操作。那台设备的实时连接立即以 `4401` 断开。
-- `POST /members/{id}/transfer-code`：生成一次性的转移码，返回 `{code, expires_at}`。本人可以给自己生成，能管理他的人也可以给他生成。转移码 10 分钟内有效，只能用一次。
+- `POST /members/{id}/transfer-code`：生成一次性的转移码，返回 `{code, expires_at}`。只有本人和组长能生成：本人换手机时在旧手机上生成；手机丢了，由组长代为生成。别人不能生成，否则就能冒充这个成员。转移码 10 分钟内有效，只能用一次；生成和使用都记进操作日志，并通知这个成员的其他设备。
 - 新手机拿转移码调用 `POST /api/v1/join` `{transfer_code, device}`，得到同一个成员的新令牌，身份和自己建的行都不变（7.4）。
 
 ### 10.4 身份
@@ -626,12 +626,12 @@ GET /api/v1/workspaces/{ws}/ws
 ### 10.5 图层覆盖
 
 - `GET /layers/{layer}/overrides`：`{<身份 ID>: {view_layer?, edit_rows?, delete_rows?}}`，所有能看到这个图层的成员都能读。
-- `PUT /layers/{layer}/overrides/{role}` `{view_layer?, edit_rows?, delete_rows?}`：整体替换这个身份在这个图层上的覆盖，空对象表示去掉覆盖。要能管理这个身份；每一项的值都不能高于自己在全局的那一档（和给身份授权一样，6.5）。
+- `PUT /layers/{layer}/overrides/{role}` `{view_layer?, edit_rows?, delete_rows?}`：整体替换这个身份在这个图层上的覆盖，空对象表示去掉覆盖。要能管理这个身份；每一项的值都不能高于自己在全局的那一档（和给身份授权一样，6.5）。基础身份 `member` 上的覆盖对所有人生效，包括排在设置人上面的人（6.4），所以只有组长能设。
 
 ### 10.6 共享图层
 
 - `POST /layers` `{id, name, geometry_type, crs, fields, style?, form?, order?}`：新建共享图层，要 `manage_layers`。`id` 是客户端生成的 UUID；同一个 `id` 已经建过、结构也相同时返回原来的图层（重试安全），结构不同时返回 `409 stale`。新图层的 `schema_version` 是 1（4.1）。
-- `DELETE /layers/{id}`：删除共享图层，要 `manage_layers`。图层行记为已删除（墓碑），它的行和附件行都留着，`POST /layers/{id}/restore` 可以恢复。删除后它的行不再出现在拉取结果里，提交到它上面的修改返回 `unknown_layer`。
+- `DELETE /layers/{id}`：删除共享图层，要 `manage_layers`。图层行记为已删除（墓碑），它的行和附件行都留着，`POST /layers/{id}/restore` 可以恢复。删除和恢复都会让图层行出现在拉取结果里（5.2），带上 `deleted`；客户端看到 `deleted: true` 就在本地隐藏这个图层和它的行，其中待上传的修改按 6.6 标为"未能提交"。删除后它的行不再出现在拉取结果里，提交到它上面的修改返回 `unknown_layer`。
 - **本地工程加入工作区**：客户端先按上面的接口把本地的每个图层建到服务端（`id` 不变），再把行当作新行，按 5.1 分批提交，附件按第 8 节上传。中途断了，按同样的 `id` 重来即可。
 
 ### 10.7 变化的通知与日志
