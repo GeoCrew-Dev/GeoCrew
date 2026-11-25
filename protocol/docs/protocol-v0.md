@@ -689,6 +689,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `search_records` | `query`（空格分隔、都要出现，在名称、岩性、描述、样品号里找，不分大小写）、`kind`、`member`（最近修改者昵称）、`since`（日期或 RFC 3339 时间）、`limit`（默认 20，最多 100） | `matched` 总数和按修改时间从新到旧的记录摘要（id、kind、名称、岩性、描述前 160 字、样品号、首个坐标、修改时间与修改人） |
 | `get_record` | `id` | 完整要素（与拉取接口同格式）、最近修改人昵称、历史里较早版本的个数 |
 | `review_issues` | 无 | 与 `GET …/checks` 相同的待核对清单 |
+| `workload` | `from`、`to`（日期，含两端）、`tz_offset_minutes`（默认 480，即北京时间） | 与工作量统计表相同的列，每天每人一行；不限日期时带每人的合计行 |
 | `recent_messages` | `limit`（默认 30，最多 100） | 最近的组内消息和记录讨论（发言人、内容、时间、所属记录、是否紧急或点名），旧的在前 |
 
 接入时把 `https://服务器/api/v0/workspaces/{id}/mcp` 和令牌填进 AI 工具的 MCP 设置（远程服务器、自定义请求头）。拿到令牌的工具在有效期内能读全组数据，只填进自己信任的工具，用完撤销。
