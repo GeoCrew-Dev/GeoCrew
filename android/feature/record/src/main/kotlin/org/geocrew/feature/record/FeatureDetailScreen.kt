@@ -3,6 +3,7 @@ package org.geocrew.feature.record
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -268,7 +269,10 @@ fun FeatureDetailScreen(
 @Composable
 private fun TextFields(f: GeoFeature, vm: FeatureDetailViewModel) {
     var title by rememberSaveable(f.id) { mutableStateOf(f.title.orEmpty()) }
-    var note by rememberSaveable(f.id) { mutableStateOf(f.note.orEmpty()) }
+    var noteValue by rememberSaveable(f.id, stateSaver = androidx.compose.ui.text.input.TextFieldValue.Saver) {
+        mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(f.note.orEmpty()))
+    }
+    val note = noteValue.text
     var lithology by rememberSaveable(f.id) { mutableStateOf(f.properties.string(Props.LITHOLOGY).orEmpty()) }
     val latest by rememberUpdatedState(Triple(title, note, lithology))
     DisposableEffect(f.id) {
@@ -288,9 +292,25 @@ private fun TextFields(f: GeoFeature, vm: FeatureDetailViewModel) {
                 }
             }
         }
-        OutlinedTextField(note, { note = it }, label = { Text("描述 / 备注") }, minLines = 3, modifier = Modifier.fillMaxWidth())
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        OutlinedTextField(noteValue, { noteValue = it }, label = { Text("描述 / 备注") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+        var showWords by rememberSaveable { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { showWords = !showWords }) { Text(if (showWords) "收起常用词" else "常用词") }
             TextButton(onClick = { vm.saveText(title, note, lithology) }) { Text("保存") }
+        }
+        if (showWords) {
+            val words by vm.phrases.collectAsStateWithLifecycle()
+            val wordNote by vm.phraseNote.collectAsStateWithLifecycle()
+            PhrasePanel(
+                ui = words,
+                note = wordNote,
+                onPick = { w ->
+                    val (text, at) = org.geocrew.core.model.FieldTerms.insert(noteValue.text, noteValue.selection.min, w)
+                    noteValue = androidx.compose.ui.text.input.TextFieldValue(text, androidx.compose.ui.text.TextRange(at))
+                },
+                onAdd = vm::addPhrase,
+                onRemove = vm::removePhrase,
+            )
         }
     }
 }
@@ -1082,5 +1102,74 @@ private fun Discussion(
             confirmButton = { TextButton(onClick = { onDelete(c); confirm = null }) { Text("删除") } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("取消") } },
         )
+    }
+}
+
+/**
+ * One-tap description words by group (颜色, 结构, 构造…), the project's own
+ * groups first. Whoever may edit the project's words can add one, or
+ * long-press one of the project's own to remove it.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun PhrasePanel(
+    ui: PhraseUi,
+    note: String?,
+    onPick: (String) -> Unit,
+    onAdd: (group: String, word: String) -> Unit,
+    onRemove: (group: String, word: String) -> Unit,
+) {
+    var group by rememberSaveable { mutableStateOf<String?>(null) }
+    // An empty "本工程" group to add the first words of the project to.
+    val groups = if (ui.canEdit && ui.groups.none { it.name == org.geocrew.core.model.FieldTerms.PROJECT_GROUP }) {
+        listOf(org.geocrew.core.model.PhraseGroup(org.geocrew.core.model.FieldTerms.PROJECT_GROUP, emptyList())) + ui.groups
+    } else {
+        ui.groups
+    }
+    val current = groups.firstOrNull { it.name == group } ?: groups.firstOrNull { it.items.isNotEmpty() } ?: groups.firstOrNull() ?: return
+    val own = ui.own.firstOrNull { it.name == current.name }?.items.orEmpty().toSet()
+    var adding by rememberSaveable { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(groups, key = { it.name }) { g ->
+                FilterChip(selected = g.name == current.name, onClick = { group = g.name }, label = { Text(g.name) })
+            }
+        }
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            current.items.forEach { w ->
+                Text(
+                    w,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (w in own) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .padding(vertical = 3.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
+                        .combinedClickable(
+                            onClick = { onPick(w) },
+                            onLongClick = if (ui.canEdit && w in own) ({ onRemove(current.name, w) }) else null,
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
+        }
+        if (ui.canEdit) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    adding,
+                    { adding = it },
+                    label = { Text("加一个词到「${current.name}」") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { onAdd(current.name, adding); adding = "" }, enabled = adding.isNotBlank()) { Text("添加") }
+            }
+            Text(
+                "本工程加的词显示为彩色，长按可删除；地层名、常用短语可以加到「本工程」",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            Text("常用词由组长统一维护", style = MaterialTheme.typography.bodySmall)
+        }
+        note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
     }
 }

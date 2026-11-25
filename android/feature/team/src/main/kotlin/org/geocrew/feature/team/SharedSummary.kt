@@ -11,6 +11,7 @@ internal fun sharedSummary(c: ProjectConfig): List<Pair<String, String>> = build
     if (c.fields.isNotEmpty()) add("记录表单" to c.fields.joinToString("、") { it.label }.let(::short) + "（${c.fields.size} 项）")
     if (c.legend.active) add("地图图例" to "按「${c.legend.key}」着色，${c.legend.entries.size} 种")
     c.localGrid?.let { add("本地坐标系" to it.name) }
+    if (c.phrases.isNotEmpty()) add("常用词" to c.phrases.joinToString("、") { "${it.name} ${it.items.size} 个" }.let(::short))
     val overlays = c.overlays.filter { it.shared }
     if (overlays.isNotEmpty()) add("叠加图" to overlays.joinToString("、") { it.name }.let(::short))
     if (c.teamBasemaps.isNotEmpty()) add("底图" to c.teamBasemaps.joinToString("、") { it.name }.let(::short))

@@ -61,6 +61,8 @@ data class ProjectConfig(
     val localGrid: LocalGrid? = null,
     /** Base maps the workspace shares (protocol v0 §2.2, key `basemaps`), in the leaders' order. */
     val teamBasemaps: List<org.geocrew.core.model.tiles.SharedBasemap> = emptyList(),
+    /** The project's own description words ([FieldTerms]); shared like [fields] in a team project (key `phrases`). */
+    val phrases: List<PhraseGroup> = emptyList(),
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 

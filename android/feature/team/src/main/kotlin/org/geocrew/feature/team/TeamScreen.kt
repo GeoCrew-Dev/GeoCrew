@@ -355,7 +355,7 @@ private fun LinkedPanel(
                 supportingContent = {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         if (shared.isEmpty()) {
-                            Text(if (isLeader) "还没有。你设的记录表单、图例、本地坐标系，以及共享的叠加图和底图会同步给全组" else "组长还没有设置统一的记录表单、图例、坐标系、叠加图或底图")
+                            Text(if (isLeader) "还没有。你设的记录表单、图例、本地坐标系、常用词，以及共享的叠加图和底图会同步给全组" else "组长还没有设置统一的记录表单、图例、坐标系、叠加图或底图")
                         } else {
                             shared.forEach { (k, v) -> Text("$k：$v") }
                             Text(

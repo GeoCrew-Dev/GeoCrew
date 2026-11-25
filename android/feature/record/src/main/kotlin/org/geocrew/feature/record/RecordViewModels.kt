@@ -157,8 +157,47 @@ class FeatureDetailViewModel @Inject constructor(
     private val teamComments: TeamComments,
     private val session: TeamSession,
     private val terrain: org.geocrew.core.data.repo.TerrainTiles,
+    private val teamForms: org.geocrew.core.data.team.TeamForms,
 ) : ViewModel() {
     private val id: String = checkNotNull(savedState[FEATURE_ID_ARG])
+
+    /** Words offered while writing a description: the project's own first, then the built-in ones. */
+    val phrases: StateFlow<PhraseUi> = projects.current.map { p ->
+        PhraseUi(
+            groups = org.geocrew.core.model.FieldTerms.all(p.config.phrases),
+            own = org.geocrew.core.model.FieldTerms.clean(p.config.phrases),
+            canEdit = p.team == null || p.team?.role == TeamRepository.ROLE_LEADER,
+        )
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, PhraseUi())
+
+    private val _phraseNote = MutableStateFlow<String?>(null)
+    /** What happened to the last change of the project's words, when worth saying. */
+    val phraseNote: StateFlow<String?> = _phraseNote.asStateFlow()
+
+    fun addPhrase(group: String, word: String) = editPhrases { org.geocrew.core.model.FieldTerms.add(it, group, word) }
+
+    fun removePhrase(group: String, word: String) = editPhrases { org.geocrew.core.model.FieldTerms.remove(it, group, word) }
+
+    /** Changes the project's own words; a leader's change goes to the whole workspace (key `phrases`). */
+    private fun editPhrases(edit: (List<org.geocrew.core.model.PhraseGroup>) -> List<org.geocrew.core.model.PhraseGroup>) = viewModelScope.launch {
+        val p = projects.current.first()
+        if (p.team != null && p.team?.role != TeamRepository.ROLE_LEADER) {
+            _phraseNote.value = "常用词由组长统一维护"
+            return@launch
+        }
+        val next = edit(p.config.phrases)
+        val h = if (p.team != null) team.handle(p.id) else null
+        if (h == null) {
+            projects.updateConfig(p.id) { it.copy(phrases = next, teamFormPending = it.teamFormPending || p.team != null) }
+            _phraseNote.value = null
+            return@launch
+        }
+        _phraseNote.value = try {
+            teamForms.publishPhrases(h, next) ?: "已同步给组员"
+        } catch (e: java.io.IOException) {
+            "已保存在本机，联网后会同步给组员"
+        }
+    }
 
     private val _dem = MutableStateFlow<DemState>(DemState.Idle)
     /** Ground height under a point from the public DEM, looked up on request. */
@@ -686,3 +725,10 @@ sealed interface DemState {
     data class Value(val metres: Double) : DemState
     data class Failed(val message: String) : DemState
 }
+
+/** The description words for the record screen; [own] are the project's, which [canEdit] allows changing. */
+data class PhraseUi(
+    val groups: List<org.geocrew.core.model.PhraseGroup> = org.geocrew.core.model.FieldTerms.builtIn,
+    val own: List<org.geocrew.core.model.PhraseGroup> = emptyList(),
+    val canEdit: Boolean = true,
+)

@@ -9,6 +9,8 @@ import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.Legend
 import org.geocrew.core.model.LocalGrid
+import org.geocrew.core.model.PhraseGroup
+import org.geocrew.core.model.FieldTerms
 import org.geocrew.core.model.SharedOverlay
 import org.geocrew.core.model.tiles.SharedBasemap
 import org.geocrew.core.network.ApiException
@@ -18,9 +20,10 @@ import javax.inject.Singleton
 
 /**
  * Keeps a linked project's shared setup, its record form, its map legend,
- * its local grid, the overlays and the base maps its leaders share, in step
- * with its workspace's shared settings (protocol v0 §2.2, keys `form`,
- * `legend`, `local_grid`, `overlays` and `basemaps`). The workspace copy wins; leaders publish their
+ * its local grid, its description words, the overlays and the base maps its
+ * leaders share, in step with its workspace's shared settings (protocol v0
+ * §2.2, keys `form`, `legend`, `local_grid`, `phrases`, `overlays` and
+ * `basemaps`). The workspace copy wins; leaders publish their
  * local edits, and an edit based on an outdated copy is refused rather than
  * silently overwriting another leader's change. All keys move under the one
  * settings version, so they are always published and applied together.
@@ -38,10 +41,11 @@ class TeamForms @Inject constructor(
         val localGrid: LocalGrid? = null,
         val overlays: List<SharedOverlay> = emptyList(),
         val basemaps: List<SharedBasemap> = emptyList(),
+        val phrases: List<PhraseGroup> = emptyList(),
     )
 
     private fun shared(cfg: org.geocrew.core.model.ProjectConfig) =
-        Shared(cfg.fields, cfg.legend, cfg.localGrid, SharedOverlay.published(cfg.overlays), cfg.teamBasemaps)
+        Shared(cfg.fields, cfg.legend, cfg.localGrid, SharedOverlay.published(cfg.overlays), cfg.teamBasemaps, cfg.phrases)
 
     /** Fetches the workspace copy and applies it when it is newer; publishes pending local edits first. */
     suspend fun sync(h: TeamHandle) {
@@ -49,7 +53,7 @@ class TeamForms @Inject constructor(
         val remote = h.api.settings(h.link.workspaceId)
         val leader = h.link.role == TeamRepository.ROLE_LEADER
         // A workspace that never had shared settings adopts the leader's existing ones.
-        val adopt = remote.version == 0L && (cfg.fields.isNotEmpty() || cfg.legend.active || cfg.localGrid != null || cfg.overlays.any { it.shared } || cfg.teamBasemaps.isNotEmpty())
+        val adopt = remote.version == 0L && (cfg.fields.isNotEmpty() || cfg.legend.active || cfg.localGrid != null || cfg.overlays.any { it.shared } || cfg.teamBasemaps.isNotEmpty() || cfg.phrases.isNotEmpty())
         if (leader && (cfg.teamFormPending || adopt) && remote.version == cfg.teamFormVersion) {
             put(h, remote.settings, shared(cfg), remote.version)
         } else if (remote.version != cfg.teamFormVersion || cfg.teamFormPending) {
@@ -96,11 +100,15 @@ class TeamForms @Inject constructor(
     suspend fun publishBasemaps(h: TeamHandle, list: List<SharedBasemap>): String? =
         publish(h, "共享底图") { it.copy(basemaps = list.filter(SharedBasemap::valid).distinctBy { b -> b.id }) }
 
+    /** Saves the project's description words like [publish] saves the form. */
+    suspend fun publishPhrases(h: TeamHandle, phrases: List<PhraseGroup>): String? =
+        publish(h, "常用词") { it.copy(phrases = FieldTerms.clean(phrases)) }
+
     private suspend fun publish(h: TeamHandle, what: String, edit: (Shared) -> Shared): String? {
         val cfg = projects.get(h.project.id)?.config ?: return null
         val base = cfg.teamFormVersion
         val next = edit(shared(cfg))
-        projects.updateConfig(h.project.id) { it.copy(fields = next.fields, legend = next.legend, localGrid = next.localGrid, teamBasemaps = next.basemaps, teamFormPending = true) }
+        projects.updateConfig(h.project.id) { it.copy(fields = next.fields, legend = next.legend, localGrid = next.localGrid, teamBasemaps = next.basemaps, phrases = next.phrases, teamFormPending = true) }
         val moved = "组内${what}刚被其他组长修改过，已换成最新版本，请在此基础上再改"
         val remote = h.api.settings(h.link.workspaceId)
         if (remote.version != base) {
@@ -123,6 +131,7 @@ class TeamForms @Inject constructor(
         val gridShared = GRID_KEY in remote.settings
         val overlaysShared = OVERLAYS_KEY in remote.settings
         val basemapsShared = BASEMAPS_KEY in remote.settings
+        val phrasesShared = PHRASES_KEY in remote.settings
         projects.updateConfig(h.project.id) {
             it.copy(
                 fields = shared.fields,
@@ -130,6 +139,7 @@ class TeamForms @Inject constructor(
                 localGrid = if (gridShared) shared.localGrid else it.localGrid,
                 overlays = if (overlaysShared) SharedOverlay.merge(it.overlays, shared.overlays) else it.overlays,
                 teamBasemaps = if (basemapsShared) shared.basemaps else it.teamBasemaps,
+                phrases = if (phrasesShared) shared.phrases else it.phrases,
                 teamFormVersion = remote.version,
                 teamFormPending = false,
             )
@@ -137,7 +147,7 @@ class TeamForms @Inject constructor(
     }
 
     private suspend fun put(h: TeamHandle, current: JsonObject, shared: Shared, base: Long) {
-        // Keep keys other clients put there; only `form`, `legend`, `local_grid`, `overlays` and `basemaps` are ours.
+        // Keep keys other clients put there; only `form`, `legend`, `local_grid`, `phrases`, `overlays` and `basemaps` are ours.
         // An explicit null tells members the leader stopped using a grid; no key at all means it was never shared.
         val grid = shared.localGrid?.let { encodeGrid(it) } ?: JsonNull
         val keep = shared.localGrid != null || GRID_KEY in current
@@ -147,13 +157,14 @@ class TeamForms @Inject constructor(
             if (keep) put(GRID_KEY, grid)
             if (shared.overlays.isNotEmpty() || OVERLAYS_KEY in current) put(OVERLAYS_KEY, encodeOverlays(shared.overlays))
             if (shared.basemaps.isNotEmpty() || BASEMAPS_KEY in current) put(BASEMAPS_KEY, encodeBasemaps(shared.basemaps))
+            if (shared.phrases.isNotEmpty() || PHRASES_KEY in current) put(PHRASES_KEY, encodePhrases(shared.phrases))
         }
         // Pictures go up first, so a member never sees an overlay whose file is not there yet.
         for (o in shared.overlays) {
             val file = overlayImages.file(o.file + if (o.type == SharedOverlay.PNG) ".png" else ".jpg")?.takeIf { it.isFile } ?: continue
             if (!h.api.hasFile(h.link.workspaceId, o.file)) h.api.uploadFile(h.link.workspaceId, o.file, file, o.type)
         }
-        val next = JsonObject(current - GRID_KEY - OVERLAYS_KEY - BASEMAPS_KEY + ours)
+        val next = JsonObject(current - GRID_KEY - OVERLAYS_KEY - BASEMAPS_KEY - PHRASES_KEY + ours)
         val stored = h.api.putSettings(h.link.workspaceId, next, base)
         projects.updateConfig(h.project.id) { it.copy(teamFormVersion = stored.version, teamFormPending = false) }
     }
@@ -164,6 +175,7 @@ class TeamForms @Inject constructor(
         const val GRID_KEY = "local_grid"
         const val OVERLAYS_KEY = "overlays"
         const val BASEMAPS_KEY = "basemaps"
+        const val PHRASES_KEY = "phrases"
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
         fun encode(fields: List<FieldTemplate>): JsonArray =
@@ -180,7 +192,16 @@ class TeamForms @Inject constructor(
             JsonArray(list.map { json.encodeToJsonElement(SharedBasemap.serializer(), it) })
 
         fun decodeShared(settings: JsonObject) =
-            Shared(decode(settings), decodeLegend(settings), decodeGrid(settings), decodeOverlays(settings), decodeBasemaps(settings))
+            Shared(decode(settings), decodeLegend(settings), decodeGrid(settings), decodeOverlays(settings), decodeBasemaps(settings), decodePhrases(settings))
+
+        fun encodePhrases(list: List<PhraseGroup>): JsonArray =
+            JsonArray(FieldTerms.clean(list).map { json.encodeToJsonElement(PhraseGroup.serializer(), it) })
+
+        /** Reads the `phrases` key: groups of words, cleaned of blanks, repeats and over-long entries. */
+        fun decodePhrases(settings: JsonObject): List<PhraseGroup> {
+            val arr = settings[PHRASES_KEY] as? JsonArray ?: return emptyList()
+            return FieldTerms.clean(arr.mapNotNull { e -> runCatching { json.decodeFromJsonElement(PhraseGroup.serializer(), e) }.getOrNull() })
+        }
 
         /** Reads the `basemaps` key, skipping entries that need a key or cannot be drawn. */
         fun decodeBasemaps(settings: JsonObject): List<SharedBasemap> {

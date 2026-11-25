@@ -77,4 +77,12 @@ class TeamFormsCodecTest {
         assertEquals(listOf("o1"), list.map { it.id })
         assertEquals(3, list[0].controlPoints)
     }
+
+    @Test
+    fun phrasesAreCleanedOnTheWayIn() {
+        val s = settings(
+            """{"phrases": [{"name": "地层", "items": ["蓟县系", " 蓟县系 ", ""]}, {"name": "", "items": ["x"]}, {"name": "空", "items": []}, 3]}""",
+        )
+        assertEquals(listOf(org.geocrew.core.model.PhraseGroup("地层", listOf("蓟县系"))), TeamForms.decodePhrases(s))
+    }
 }
