@@ -57,6 +57,7 @@
 | `outing` | 外出报备 | 8.3 |
 | `push` | 推送通知（运维配置后才有） | 第 9 节 |
 | `view` | 只读查看链接 | 第 10 节 |
+| `mcp` | 供 AI 工具读取的 MCP 接口 | 第 11 节 |
 
 不认识的能力名直接忽略。
 
@@ -165,6 +166,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | GET | `/api/v0/workspaces/{id}/ws` | 任意 | 升级为 WebSocket 实时通道 |
 | GET / PUT / DELETE | `/api/v0/workspaces/{id}/push` | 任意 | 查看、登记、取消我的推送地址（见第 9 节） |
 | POST / DELETE | `/api/v0/workspaces/{id}/view-links` | 任意（不含查看链接本身） | 生成一个只读查看链接 / 撤销我生成的全部查看链接（见第 10 节） |
+| POST | `/api/v0/workspaces/{id}/mcp` | 任意（不含查看链接） | 供 AI 工具读取工作组的 MCP 接口（JSON-RPC 2.0，见第 11 节）。能力名 `mcp` |
 | GET | `/view/` | 无 | 浏览器查看页（令牌在网址 `#` 后面，见第 10 节） |
 
 `info` 示例：
@@ -672,7 +674,26 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 
 查看页是服务端自带的一张静态网页，不需要另外部署；它只用上面的公开接口，第三方也可以用查看链接做自己的看板。
 
-## 11. 版本演进
+## 11. AI 工具接口（MCP）
+
+服务器能力里有 `mcp` 时可用。`POST …/mcp` 是一个 [Model Context Protocol](https://modelcontextprotocol.io) 服务端（Streamable HTTP 传输），让桌面上的 AI 工具（例如支持 MCP 的聊天客户端、编辑器）用组员自己的令牌读取工作组，回答「今天谁采了哪些样」「D012 附近的花岗岩点有哪些」「还有哪些记录要补」这类问题。
+
+- 鉴权：`Authorization: Bearer` 放组员令牌；查看链接（`v_…`）不能用，返回 `403`，免得一个分享出去的网页链接被接进 AI 工具。
+- 传输：每个 JSON-RPC 2.0 消息一次 `POST`，响应为 `application/json`；服务端无状态，不发 `Mcp-Session-Id`，不提供 `GET` 推送流（返回 `405`）。通知（没有 `id` 的消息）返回 `202` 空响应。不支持批量（数组），返回 `400`。
+- 方法：`initialize`（协议版本取客户端请求的，若不认识则回最新的 `2025-06-18`）、`ping`、`tools/list`、`tools/call`；其余返回 `-32601`。
+- 工具全部只读（`readOnlyHint`），改动仍在应用里做，那里有动作的风险分级和确认（见 [actions.md](actions.md)）。结果同时放在 `structuredContent` 和一段 JSON 文本里；参数错误、记录不存在以 `isError: true` 的工具结果返回，内部错误只说「稍后再试」，细节只进服务端日志。
+
+| 工具 | 参数 | 返回 |
+| --- | --- | --- |
+| `workspace_summary` | 无 | 名称、是否归档、成员（昵称、角色、最近活动）、记录总数和按 `kind` 计数、样品数、最近修改时间 |
+| `search_records` | `query`（空格分隔、都要出现，在名称、岩性、描述、样品号里找，不分大小写）、`kind`、`member`（最近修改者昵称）、`since`（日期或 RFC 3339 时间）、`limit`（默认 20，最多 100） | `matched` 总数和按修改时间从新到旧的记录摘要（id、kind、名称、岩性、描述前 160 字、样品号、首个坐标、修改时间与修改人） |
+| `get_record` | `id` | 完整要素（与拉取接口同格式）、最近修改人昵称、历史里较早版本的个数 |
+| `review_issues` | 无 | 与 `GET …/checks` 相同的待核对清单 |
+| `recent_messages` | `limit`（默认 30，最多 100） | 最近的组内消息和记录讨论（发言人、内容、时间、所属记录、是否紧急或点名），旧的在前 |
+
+接入时把 `https://服务器/api/v0/workspaces/{id}/mcp` 和组员令牌填进 AI 工具的 MCP 设置（远程服务器、自定义请求头）。令牌和在手机上一样能读写整个工作组，只填进自己信任的工具；不用时在应用里退出或让组长吊销。
+
+## 12. 版本演进
 
 - 同一主版本（v0）内只增加字段、接口和消息类型，不删除、不改变含义。
 - 不兼容的修改会使用新的路径前缀（`/api/v1/`），服务端可同时提供多个版本。

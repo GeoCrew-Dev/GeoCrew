@@ -24,6 +24,7 @@ tags:
   - name: realtime
   - name: push
   - name: view
+  - name: mcp
 
 paths:
   /healthz:
@@ -758,6 +759,43 @@ paths:
                   revoked: { type: integer }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/mcp:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    post:
+      tags: [mcp]
+      operationId: mcp
+      summary: Read-only Model Context Protocol tools for AI clients (capability "mcp")
+      description: |
+        One JSON-RPC 2.0 message per POST (MCP streamable HTTP, stateless,
+        answered as application/json). Methods: initialize, ping,
+        tools/list, tools/call. Tools: workspace_summary, search_records,
+        get_record, review_issues, recent_messages; all read only. Members'
+        tokens only: view links get 403. Notifications get 202, batches 400.
+        See protocol section 11.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jsonrpc, method]
+              properties:
+                jsonrpc: { type: string, enum: ["2.0"] }
+                id: { oneOf: [{ type: string }, { type: integer }] }
+                method: { type: string }
+                params: { type: object }
+      responses:
+        "200":
+          description: JSON-RPC response (result or error)
+          content:
+            application/json:
+              schema: { type: object }
+        "202": { description: Notification accepted, no body }
+        "400": { description: Not JSON-RPC, or a batch }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearer:
