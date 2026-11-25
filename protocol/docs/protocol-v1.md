@@ -13,7 +13,7 @@
 | 章节 | 状态 |
 |---|---|
 | 基本约定：格式、错误、能力一览、加入与鉴权（第 7 节） | 已写 |
-| 工作区、成员与权限：权限规则（第 6 节） | 已写；接口待写 |
+| 工作区、成员与权限：规则（第 6 节）、接口（第 10 节） | 已写 |
 | 图层与结构变更（第 4 节） | 已写 |
 | 行与合并（第 3 节） | 已写 |
 | 提交、拉取与冲突处理（第 5 节） | 已写 |
@@ -118,7 +118,7 @@
 | `fields` | 字段定义的列表，见 4.2 |
 | `schema_version` | 结构版本，从 1 开始，每次结构变更加 1 |
 
-共享工作区里的图层要在线创建：创建请求带上初始结构，`schema_version` 为 1。离线时只能在本地工程里建图层，本地工程加入工作区时再上传（工作区一节待写）。
+共享工作区里的图层要在线创建：创建请求带上初始结构，`schema_version` 为 1。离线时只能在本地工程里建图层，本地工程加入工作区时再上传，接口见 10.6。
 
 ### 4.2 字段
 
@@ -269,7 +269,7 @@ POST /api/v1/workspaces/{ws}/conflicts/{id}/resolve
 
 ## 6. 工作区、成员与权限
 
-本节先写权限的规则（[ADR 0009](../../docs/adr/0009-roles-and-permissions.md)），成员和身份的管理接口待写。
+本节写权限的规则（[ADR 0009](../../docs/adr/0009-roles-and-permissions.md)），接口见第 10 节。
 
 ### 6.1 身份
 
@@ -585,3 +585,56 @@ GET /api/v1/workspaces/{ws}/ws
 2. 删掉本地已经看不到的图层上的行和附件行；其中还有待上传的修改，按 6.6 标为"未能提交"，不删。
 3. 对新看到的图层，带上 `layers` 参数从 `since=0` 补拉（5.2），直到 `more` 为 `false`；平时的增量拉取照旧用原来的 `since`。
 4. 都做完后，保存新的 `access_version`。中途断了，下次连上还会再做一遍。
+
+## 10. 工作区、成员与身份的接口
+
+第 6 节的规则落到接口上。下面的路径都省略前缀 `/api/v1/workspaces/{ws}`。每个接口要的权限写在后面；不满足时返回 `403 forbidden`（7.2）。
+
+### 10.1 工作区
+
+- `GET /api/v1/workspaces/{ws}`：工作区信息 `{id, name, archived_at?, leader, fingerprint, invite_code?, access_version}`。
+  - `fingerprint` 是服务端证书的公钥指纹（7.4），组长核对用。
+  - `invite_code` 只返回给有 `manage_members` 的人。
+  - `access_version` 是请求人自己的权限版本（9.2）。
+- `PATCH /api/v1/workspaces/{ws}` `{name?, archived?}`：改名、归档或重新打开，要 `manage_workspace`。归档期间不能修改的范围和 v0 相同：提交、上传、改设置、发言都返回 `409 archived`；读取、拉取、实时通道和成员管理照常。
+- `POST /invite/reset`：重置邀请码，返回 `{invite_code}`，要 `manage_members`。
+
+### 10.2 成员
+
+- `GET /members`：`[{id, nickname, roles, joined_at}]`，所有成员都能读。`roles` 不含基础身份 `member`。
+- `PATCH /members/{id}` `{nickname?, roles?}`：
+  - `nickname` 只能改自己的。
+  - `roles` 是新的完整列表。按 6.5，要能管理这个成员（`CanManageMember`），而且加上和去掉的每个身份，都要排在自己下面。
+- `DELETE /members/{id}`：移出成员，要能管理他。成员也可以这样移出自己，即退出工作组，这是安全权利，任何设置都关不掉；只有组长不能退出，要先转让，否则返回 `409 leader_must_transfer`。
+- `POST /leader` `{member}`：组长把组长转给另一个成员，只有组长能调。原组长变成普通成员，保留原来的其他身份。组长丢了手机时，由服务端管理员用命令行转让。
+
+### 10.3 设备
+
+- `GET /members/{id}/devices`：`[{id, device, created_at, last_seen_at}]`。本人和能管理他的人可以读。
+- `DELETE /devices/{id}`：吊销一台设备的令牌，本人和能管理设备主人的人可以操作。那台设备的实时连接立即以 `4401` 断开。
+- `POST /members/{id}/transfer-code`：生成一次性的转移码，返回 `{code, expires_at}`。本人可以给自己生成，能管理他的人也可以给他生成。转移码 10 分钟内有效，只能用一次。
+- 新手机拿转移码调用 `POST /api/v1/join` `{transfer_code, device}`，得到同一个成员的新令牌，身份和自己建的行都不变（7.4）。
+
+### 10.4 身份
+
+- `GET /roles`：`[{id, name, position, permissions, version}]`，所有成员都能读。基础身份的 `id` 固定是 `member`，位置固定是 0。
+- `POST /roles` `{name, position, permissions}`：新建身份，返回新身份，要 `manage_roles`。`position` 必须低于自己的级别，大于 0；`permissions` 里的每一项都要自己能授出（6.5）。
+- `PATCH /roles/{id}` `{name?, position?, permissions?, base_version}`：修改身份，要能管理这个身份（`CanManageRole`），新的 `position` 也要低于自己的级别；改到的权限要能授出。基础身份只能改 `permissions`。`base_version` 和当前的 `version` 不同时，返回 `409 stale`，带上当前的身份。
+- `DELETE /roles/{id}`：删除身份，要能管理它。基础身份不能删（`400 invalid`）。删掉后，成员身上的这个身份一并去掉，图层覆盖里的也一并删除。
+- `permissions` 里的值按 6.2：`edit_rows`、`delete_rows` 取 `"none"`、`"own"`、`"all"`，其余取 `true` / `false`；不认识的权限名返回 `400 invalid`。
+
+### 10.5 图层覆盖
+
+- `GET /layers/{layer}/overrides`：`{<身份 ID>: {view_layer?, edit_rows?, delete_rows?}}`，所有能看到这个图层的成员都能读。
+- `PUT /layers/{layer}/overrides/{role}` `{view_layer?, edit_rows?, delete_rows?}`：整体替换这个身份在这个图层上的覆盖，空对象表示去掉覆盖。要能管理这个身份；每一项的值都不能高于自己在全局的那一档（和给身份授权一样，6.5）。
+
+### 10.6 共享图层
+
+- `POST /layers` `{id, name, geometry_type, crs, fields, style?, form?, order?}`：新建共享图层，要 `manage_layers`。`id` 是客户端生成的 UUID；同一个 `id` 已经建过、结构也相同时返回原来的图层（重试安全），结构不同时返回 `409 stale`。新图层的 `schema_version` 是 1（4.1）。
+- `DELETE /layers/{id}`：删除共享图层，要 `manage_layers`。图层行记为已删除（墓碑），它的行和附件行都留着，`POST /layers/{id}/restore` 可以恢复。删除后它的行不再出现在拉取结果里，提交到它上面的修改返回 `unknown_layer`。
+- **本地工程加入工作区**：客户端先按上面的接口把本地的每个图层建到服务端（`id` 不变），再把行当作新行，按 5.1 分批提交，附件按第 8 节上传。中途断了，按同样的 `id` 重来即可。
+
+### 10.7 变化的通知与日志
+
+- 每次修改成员、身份或覆盖后，服务端在实时通道发 `members_changed`；实际权限因此变了的成员，`access_version` 加 1，并收到 `access_changed`（9.2）。
+- 改权限、分配身份、移出成员、吊销设备、转让组长，都记进操作日志：`GET /audit?before=<id>&limit=100` 按时间倒序返回 `[{id, at, by, action, target, detail}]`，只有组长能读。日志不能修改，也不能删除。
