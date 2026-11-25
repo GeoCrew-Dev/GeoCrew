@@ -223,6 +223,19 @@ class RecordListViewModel @Inject constructor(
         return null
     }
 
+    /** Other projects the picked records can be copied or moved to: (id, name). */
+    val otherProjects: StateFlow<List<Pair<String, String>>> = combine(projects.projects, projects.current.map { it.id }) { all, cur ->
+        all.filter { it.id != cur }.map { it.id to it.name }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Copies the picked records into project [to]; with [move] the originals are deleted here. */
+    fun copySelected(to: Pair<String, String>, move: Boolean) = viewModelScope.launch {
+        if (!canEdit.value) return@launch
+        val n = features.copyTo(picked(), to.first, move)
+        clearSelection()
+        _batchNote.value = if (move) "已把 $n 条记录移到「${to.second}」，原记录在这里的「最近删除」里" else "已复制 $n 条记录到「${to.second}」"
+    }
+
     /** The record a scanned label stands for (sample number, title or id), in the open project. */
     fun findScanned(text: String): GeoFeature? = org.geocrew.core.model.ScanMatch.find(all.value, text)
 

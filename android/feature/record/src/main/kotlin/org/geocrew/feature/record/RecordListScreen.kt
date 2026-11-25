@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -127,6 +128,8 @@ fun RecordListScreen(
         )
     }
     if (batchEditing) BatchEditDialog(viewModel, selected.size, onDismiss = { batchEditing = false })
+    var copying by remember { mutableStateOf(false) }
+    if (copying) CopyToProjectDialog(viewModel, selected.size, onDismiss = { copying = false })
 
     Scaffold(
         topBar = {
@@ -136,6 +139,7 @@ fun RecordListScreen(
                 actions = {
                     IconButton(onClick = { viewModel.selectAll(items.map { it.id }) }) { Icon(Icons.Default.SelectAll, "全选当前列表") }
                     IconButton(onClick = { batchEditing = true }) { Icon(Icons.Default.Edit, "批量改属性") }
+                    IconButton(onClick = { copying = true }) { Icon(Icons.Default.ContentCopy, "复制或移到其他工程") }
                     IconButton(onClick = { confirmBatchDelete = true }) { Icon(Icons.Default.Delete, "删除所选") }
                 },
             ) else TopAppBar(

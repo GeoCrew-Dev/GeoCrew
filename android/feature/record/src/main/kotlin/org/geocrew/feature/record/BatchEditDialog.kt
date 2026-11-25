@@ -91,3 +91,41 @@ internal fun BatchEditDialog(viewModel: RecordListViewModel, count: Int, onDismi
         },
     )
 }
+
+/** 复制或移到其他工程: pick the project, then copy or move the selected records there. */
+@Composable
+internal fun CopyToProjectDialog(viewModel: RecordListViewModel, count: Int, onDismiss: () -> Unit) {
+    val others by viewModel.otherProjects.collectAsStateWithLifecycle()
+    var to by androidx.compose.runtime.remember { mutableStateOf<Pair<String, String>?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(to?.let { "把 $count 条记录放到「${it.second}」" } ?: "放到哪个工程") },
+        text = {
+            val pick = to
+            if (pick == null) {
+                if (others.isEmpty()) Text("还没有别的工程，先在工程列表里新建一个。")
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    items(others, key = { it.first }) { p ->
+                        ListItem(headlineContent = { Text(p.second) }, modifier = Modifier.clickable { to = p })
+                    }
+                }
+            } else {
+                Text(
+                    "复制：两个工程各留一份，副本是新记录，从头记修改历史。\n" +
+                        "移动：复制后删掉这里的原记录（工作组里组员那边也会删掉，原记录可在「最近删除」恢复）。\n" +
+                        "照片、样品、表单答案都带过去；路线和剖面引用的点一起选上时会指向新工程里的副本；组长审核和任务指派不带。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = {
+            to?.let { p ->
+                Column {
+                    TextButton(onClick = { viewModel.copySelected(p, move = true); onDismiss() }) { Text("移动") }
+                    TextButton(onClick = { viewModel.copySelected(p, move = false); onDismiss() }) { Text("复制") }
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = { if (to != null) to = null else onDismiss() }) { Text(if (to != null) "换个工程" else "取消") } },
+    )
+}

@@ -107,6 +107,19 @@ class FeatureRepository @Inject constructor(
         dao.upsert(cur.markDeleted(clock.instant()).toEntity())
     }
 
+    /**
+     * Copies records into another project ([org.geocrew.core.model.RecordCopy]),
+     * and with [move] deletes the originals, which then sit in the old
+     * project's recycle bin. Returns how many were copied.
+     */
+    suspend fun copyTo(records: List<GeoFeature>, projectId: String, move: Boolean): Int {
+        val copies = org.geocrew.core.model.RecordCopy.copies(records, projectId, clock.instant()) { UUID.randomUUID().toString() }
+        if (copies.isEmpty()) return 0
+        dao.upsertAll(copies.map { it.toEntity() })
+        if (move) records.filter { !it.deleted && it.projectId != projectId }.forEach { delete(it.id) }
+        return copies.size
+    }
+
     /** Imports features (e.g. from a file) into a project as new local data. */
     suspend fun importAll(features: List<GeoFeature>) {
         val now = clock.instant()
