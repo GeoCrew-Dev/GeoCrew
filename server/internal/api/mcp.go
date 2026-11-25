@@ -81,6 +81,14 @@ func (s *Server) mcpTools(ws string) []mcp.Tool {
 			},
 		},
 		{
+			Name: "reference_at", Title: "参考图层查询",
+			Description: "What the leader's shared reference layers (earlier geological maps, licence areas) say at a place or a record: the areas containing it, e.g. the map unit, and lines such as faults within reach_m, nearest first.",
+			InputSchema: schema(`"record":{"type":"string","description":"id of a record; its first position is used"},` +
+				`"lon":{"type":"number","minimum":-180,"maximum":180},"lat":{"type":"number","minimum":-90,"maximum":90},` +
+				`"reach_m":{"type":"number","exclusiveMinimum":0,"maximum":5000,"default":200}`),
+			Call: func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpReferenceAt(ctx, ws, args) },
+		},
+		{
 			Name: "workload", Title: "工作量",
 			Description: "Field work per day and member: records created (geological points among them), edits, samples, photos and track kilometres, with a total row per member. Days are in the given time zone (default UTC+8).",
 			InputSchema: schema(`"from":{"type":"string","description":"first day, e.g. 2026-11-20"},` +
@@ -414,4 +422,75 @@ func (s *Server) mcpWorkload(ctx context.Context, ws string, raw json.RawMessage
 		out = append(out, m)
 	}
 	return map[string]any{"columns": head, "rows": out}, nil
+}
+
+func (s *Server) mcpReferenceAt(ctx context.Context, ws string, raw json.RawMessage) (any, error) {
+	a, err := args[struct {
+		Record string   `json:"record"`
+		Lon    *float64 `json:"lon"`
+		Lat    *float64 `json:"lat"`
+		Reach  float64  `json:"reach_m"`
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	if a.Record != "" {
+		rec, err := export.LiveRecord(ctx, s.Store, ws, a.Record)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, mcp.BadArgs("no record %q here", a.Record)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if rec.Lon == nil {
+			return nil, mcp.BadArgs("record %q has no position", a.Record)
+		}
+		a.Lon, a.Lat = rec.Lon, rec.Lat
+	}
+	if a.Lon == nil || a.Lat == nil {
+		return nil, mcp.BadArgs("give record, or both lon and lat")
+	}
+	reach := a.Reach
+	if reach <= 0 {
+		reach = 200
+	}
+	if reach > 5000 {
+		return nil, mcp.BadArgs("reach_m is at most 5000")
+	}
+	settings, _, err := s.Store.Settings(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	layers := export.ReferenceLayers(settings)
+	areas, lines := []export.ReferenceHit{}, []export.ReferenceHit{}
+	var unread []string
+	for _, l := range layers {
+		if s.Files == nil {
+			unread = append(unread, l.Name)
+			continue
+		}
+		f, err := s.Files.Open(ws, l.File)
+		if err != nil {
+			unread = append(unread, l.Name)
+			continue
+		}
+		as, ls, err := export.ReferenceAt(l, f, *a.Lon, *a.Lat, reach)
+		f.Close()
+		if err != nil {
+			s.logger().Warn("mcp reference layer", "layer", l.ID, "err", err)
+			unread = append(unread, l.Name)
+			continue
+		}
+		areas = append(areas, as...)
+		lines = append(lines, ls...)
+	}
+	sort.SliceStable(lines, func(i, j int) bool { return *lines[i].DistanceM < *lines[j].DistanceM })
+	out := map[string]any{"lon": *a.Lon, "lat": *a.Lat, "layers": len(layers), "areas": areas, "lines": lines}
+	if len(layers) == 0 {
+		out["note"] = "the workspace shares no reference layers; a leader shares them from the app's layer list"
+	}
+	if len(unread) > 0 {
+		out["unreadable_layers"] = unread
+	}
+	return out, nil
 }

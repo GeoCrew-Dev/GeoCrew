@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -69,7 +71,7 @@ func TestMCP(t *testing.T) {
 	if _, r := rpc(a.Token, 2, "resources/list", nil); r.Error == nil || r.Error.Code != -32601 {
 		t.Fatalf("unknown method: %+v", r)
 	}
-	if _, r := rpc(a.Token, 3, "tools/list", nil); len(r.Result.Tools) != 6 {
+	if _, r := rpc(a.Token, 3, "tools/list", nil); len(r.Result.Tools) != 7 {
 		t.Fatalf("tools/list: %d tools", len(r.Result.Tools))
 	}
 
@@ -102,6 +104,27 @@ func TestMCP(t *testing.T) {
 	if _, r := tool("search_records", map[string]any{"near_lon": 116.39}); !r.Result.IsError {
 		t.Fatal("near_lon alone must be refused")
 	}
+	if ref, _ := tool("reference_at", map[string]any{"record": "f1"}); ref["layers"] != 0.0 || ref["note"] == nil {
+		t.Fatalf("reference_at without layers: %v", ref)
+	}
+	gj := []byte(`{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"unit":"K1b"},"geometry":{"type":"Polygon","coordinates":[[[116,39],[117,39],[117,40],[116,40],[116,39]]]}}]}`)
+	sum256 := sha256.Sum256(gj)
+	sha := hex.EncodeToString(sum256[:])
+	if c := e.call("PUT", base+"/files/"+sha, a.Token, gj, nil); c != 201 && c != 200 {
+		t.Fatalf("upload layer: %d", c)
+	}
+	var cur struct {
+		Version int64 `json:"version"`
+	}
+	e.call("GET", base+"/settings", a.Token, nil, &cur)
+	if c := e.call("PUT", base+"/settings", a.Token, map[string]any{"base_version": cur.Version, "settings": map[string]any{
+		"reference_layers": []any{map[string]any{"id": "r1", "name": "1:5万地质图", "file": sha, "color_by": "unit"}},
+	}}, nil); c != 200 {
+		t.Fatalf("settings: %d", c)
+	}
+	if ref, _ := tool("reference_at", map[string]any{"lon": 116.39, "lat": 39.91}); !strings.Contains(string(mustJSON(ref)), `"value":"K1b"`) {
+		t.Fatalf("reference_at: %v", ref)
+	}
 	rec, _ := tool("get_record", map[string]any{"id": "f1"})
 	if !strings.Contains(string(mustJSON(rec)), "灰白色中粒") || rec["updated_by"] != "组长" {
 		t.Fatalf("get_record: %v", rec)
@@ -129,7 +152,7 @@ func TestMCP(t *testing.T) {
 	// A view link is the read-only credential to give an AI tool.
 	var link viewLinkResp
 	e.call("POST", base+"/view-links", a.Token, nil, &link)
-	if c, r := rpc(link.Token, 5, "tools/list", nil); c != 200 || len(r.Result.Tools) != 6 {
+	if c, r := rpc(link.Token, 5, "tools/list", nil); c != 200 || len(r.Result.Tools) != 7 {
 		t.Fatalf("view link: %d", c)
 	}
 	e.call("DELETE", base+"/view-links", a.Token, nil, nil)
