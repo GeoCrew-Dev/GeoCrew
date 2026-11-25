@@ -16,7 +16,7 @@
 ## 做法
 
 - **版本**：vcpkg 清单模式，`builtin-baseline` 固定为 116475f（2026-11-25）。这个基线下是 GDAL 3.12.4、PROJ 9.9.0、GEOS 3.15.1、SQLite 3.54.1。
-- **GDAL 的特性**：关掉默认特性，只开 `expat geos iconv jpeg png sqlite3 webp zstd`。PROJ 只开 `tiff`（不开联网）。SQLite 加开 `math`（SQL 表达式要用数学函数）和 `rtree`（GeoPackage 空间索引）。没有任何 GPL 依赖。
+- **GDAL 的特性**：关掉默认特性，只开 `expat geos iconv jpeg png sqlite3 webp zstd`。PROJ 只开 `tiff`（不开联网）。libtiff 加开 `webp`、`zstd`（GeoTIFF 的压缩方式）。SQLite 加开 `math`（SQL 表达式要用数学函数）和 `rtree`（GeoPackage 空间索引）。没有任何 GPL 依赖。
 - **三元组**（`triplets/`，覆盖 vcpkg 自带的）：
   - API 31（安卓 12），与应用的最低版本一致；
   - 只编 Release；
