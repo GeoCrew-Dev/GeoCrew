@@ -103,8 +103,8 @@ class RecordListViewModel @Inject constructor(
         .distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     /** Text attributes in use, for tidying their values ([org.geocrew.core.model.AttributeValues]). */
-    val attributeKeys: StateFlow<List<org.geocrew.core.model.AttributeValues.Key>> = combine(all, config) { list, c ->
-        org.geocrew.core.model.AttributeValues.keys(list, c.fields)
+    val attributeKeys: StateFlow<List<org.geocrew.core.model.AttributeValues.Key>> = combine(all, projects.current.map { it.config.fields }.distinctUntilChanged()) { list, fields ->
+        org.geocrew.core.model.AttributeValues.keys(list, fields)
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** The attribute being tidied; null when none is open. */
