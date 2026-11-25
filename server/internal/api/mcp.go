@@ -64,8 +64,8 @@ func (s *Server) mcpTools(ws string) []mcp.Tool {
 		},
 		{
 			Name: "get_record", Title: "查看记录",
-			Description: "One record in full: geometry, all properties and sync metadata, plus who changed it last and how many earlier versions its history keeps.",
-			InputSchema: schema(`"id":{"type":"string"}`, "id"),
+			Description: "One record in full: geometry, all properties and sync metadata, who changed it last, how many earlier versions its history keeps and the team's comments on it (up to the last 50). Takes the record's id or its name (e.g. D012) when only one record has that name.",
+			InputSchema: schema(`"id":{"type":"string","description":"record id, or a record name such as D012"}`, "id"),
 			Call:        func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpRecord(ctx, ws, args) },
 		},
 		{
@@ -312,16 +312,62 @@ func (s *Server) mcpRecord(ctx context.Context, ws string, raw json.RawMessage) 
 	}
 	rec, err := export.LiveRecord(ctx, s.Store, ws, a.ID)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, mcp.BadArgs("no record %q here; search_records lists the ids", a.ID)
+		// People and models say "D012"; take a unique title as well.
+		var hits []export.Record
+		err = export.EachRecord(ctx, s.Store, ws, func(r export.Record) error {
+			if r.Title != "" && strings.EqualFold(r.Title, strings.TrimSpace(a.ID)) {
+				hits = append(hits, r)
+			}
+			return nil
+		})
+		switch {
+		case err != nil:
+			return nil, err
+		case len(hits) == 1:
+			rec = hits[0]
+		case len(hits) > 1:
+			return nil, mcp.BadArgs("%d records are named %q; use search_records and pass an id", len(hits), a.ID)
+		default:
+			return nil, mcp.BadArgs("no record %q here; search_records lists the ids", a.ID)
+		}
+	} else if err != nil {
+		return nil, err
 	}
+	hist, err := s.Store.FeatureHistory(ctx, ws, rec.ID)
 	if err != nil {
 		return nil, err
 	}
-	hist, err := s.Store.FeatureHistory(ctx, ws, a.ID)
+	comments, err := s.mcpComments(ctx, ws, rec.ID)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"feature": toWire(rec.Feature), "updated_by": rec.UpdatedBy, "earlier_versions": len(hist)}, nil
+	if len(comments) > 50 {
+		comments = comments[len(comments)-50:]
+	}
+	return map[string]any{"feature": toWire(rec.Feature), "updated_by": rec.UpdatedBy, "earlier_versions": len(hist), "comments": comments}, nil
+}
+
+// mcpComments lists the live comments of ws, oldest first; with feature
+// set, only those about that record.
+func (s *Server) mcpComments(ctx context.Context, ws, feature string) ([]mcpMessage, error) {
+	all := []mcpMessage{}
+	var since int64
+	for {
+		cs, more, err := s.Store.Comments(ctx, ws, since, 500)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range cs {
+			since = c.Seq
+			if c.Deleted || (feature != "" && c.FeatureID != feature) {
+				continue
+			}
+			all = append(all, mcpMessage{c.Nickname, c.Body, c.CreatedAt, c.FeatureID, c.Urgent, c.RollCall})
+		}
+		if !more || len(cs) == 0 {
+			return all, nil
+		}
+	}
 }
 
 type mcpMessage struct {
@@ -341,23 +387,9 @@ func (s *Server) mcpMessages(ctx context.Context, ws string, raw json.RawMessage
 		return nil, err
 	}
 	limit := clampLimit(a.Limit, 30, 100)
-	var all []mcpMessage
-	var since int64
-	for {
-		cs, more, err := s.Store.Comments(ctx, ws, since, 500)
-		if err != nil {
-			return nil, err
-		}
-		for _, c := range cs {
-			since = c.Seq
-			if c.Deleted {
-				continue
-			}
-			all = append(all, mcpMessage{c.Nickname, c.Body, c.CreatedAt, c.FeatureID, c.Urgent, c.RollCall})
-		}
-		if !more || len(cs) == 0 {
-			break
-		}
+	all, err := s.mcpComments(ctx, ws, "")
+	if err != nil {
+		return nil, err
 	}
 	if len(all) > limit {
 		all = all[len(all)-limit:]

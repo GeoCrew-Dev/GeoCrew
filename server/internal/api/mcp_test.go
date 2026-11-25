@@ -38,6 +38,7 @@ func TestMCP(t *testing.T) {
 	f2["properties"] = map[string]any{"kind": "geo_point", "title": "D002", "lithology": "片麻岩"}
 	e.call("POST", base+"/features", a.Token, map[string]any{"features": []any{f1, f2}}, nil)
 	e.call("POST", base+"/comments", a.Token, map[string]any{"id": "c1", "body": "下午三点集合"}, nil)
+	e.call("POST", base+"/comments", a.Token, map[string]any{"id": "c2", "feature_id": "f1", "body": "接触关系再看一下"}, nil)
 
 	rpc := func(token string, id int, method string, params any) (int, rpcResp) {
 		t.Helper()
@@ -151,6 +152,12 @@ func TestMCP(t *testing.T) {
 	rec, _ := tool("get_record", map[string]any{"id": "f1"})
 	if !strings.Contains(string(mustJSON(rec)), "灰白色中粒") || rec["updated_by"] != "组长" {
 		t.Fatalf("get_record: %v", rec)
+	}
+	if cs := rec["comments"].([]any); len(cs) != 1 || cs[0].(map[string]any)["body"] != "接触关系再看一下" {
+		t.Fatalf("get_record comments: %v", rec["comments"])
+	}
+	if byName, _ := tool("get_record", map[string]any{"id": "d002"}); byName["feature"].(map[string]any)["id"] != "f2" {
+		t.Fatalf("get_record by name: %v", byName)
 	}
 	if _, r := tool("get_record", map[string]any{"id": "nope"}); !r.Result.IsError {
 		t.Fatalf("missing record: %+v", r.Result)
