@@ -7,7 +7,11 @@ set -euo pipefail
 tag=$1
 dir=$2
 prefix="${tag%%v[0-9]*}v" # server-v0.3.0 -> server-v
-prev=$(git describe --tags --abbrev=0 --match "${prefix}*" "${tag}^" 2>/dev/null || true)
+if [[ "${tag#"$prefix"}" == *-* ]]; then
+  prev=$(git describe --tags --abbrev=0 --match "${prefix}*" "${tag}^" 2>/dev/null || true)
+else # a final release counts from the previous final release, not its rc
+  prev=$(git describe --tags --abbrev=0 --match "${prefix}*" --exclude "${prefix}*-*" "${tag}^" 2>/dev/null || true)
+fi
 range=${prev:+$prev..}$tag
 section() {
   local title=$1 pattern=$2 lines
