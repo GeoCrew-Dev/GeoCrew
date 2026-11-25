@@ -30,6 +30,7 @@ include(":core:sensors")
 include(":core:network")
 include(":core:gis")
 include(":core:scan")
+include(":core:speech")
 
 // One module per screen or flow.
 include(":feature:map")

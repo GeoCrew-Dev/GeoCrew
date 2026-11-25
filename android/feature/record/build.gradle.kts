@@ -6,4 +6,6 @@ dependencies {
     implementation(project(":core:sensors"))
     // Scanning sample labels to open their record.
     implementation(project(":core:scan"))
+    // Offline dictation and transcribing voice notes.
+    implementation(project(":core:speech"))
 }

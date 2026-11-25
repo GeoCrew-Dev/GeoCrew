@@ -336,18 +336,40 @@ private fun TextFields(f: GeoFeature, vm: FeatureDetailViewModel) {
         val context = LocalContext.current
         val speech = remember { android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH) }
         val canDictate = remember { speech.resolveActivity(context.packageManager) != null }
+        val insertSaid = { said: String ->
+            val (text, at) = org.geocrew.core.model.FieldTerms.insert(noteValue.text, noteValue.selection.min, said)
+            noteValue = androidx.compose.ui.text.input.TextFieldValue(text, androidx.compose.ui.text.TextRange(at))
+        }
         val dictate = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
             val said = r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
-            if (!said.isNullOrEmpty()) {
-                val (text, at) = org.geocrew.core.model.FieldTerms.insert(noteValue.text, noteValue.selection.min, said)
+            if (!said.isNullOrEmpty()) insertSaid(vm.fixSpeech(said))
+        }
+        // A transcribed voice note the user chose to add goes at the end of the description.
+        LaunchedEffect(f.id) {
+            vm.noteInsert.collect { t ->
+                val (text, at) = org.geocrew.core.model.FieldTerms.insert(noteValue.text, noteValue.text.length, t)
                 noteValue = androidx.compose.ui.text.input.TextFieldValue(text, androidx.compose.ui.text.TextRange(at))
+                vm.saveText(title, text, lithology)
             }
         }
+        val offlineReady by vm.offlineSpeech.collectAsStateWithLifecycle()
+        var listening by remember { mutableStateOf(false) }
+        val micForDictation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) listening = true
+        }
+        if (listening) OfflineDictationDialog(vm, onInsert = { insertSaid(it); listening = false }, onDismiss = { listening = false })
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Row {
                 TextButton(onClick = { showWords = !showWords }) { Text(if (showWords) "收起常用词" else "常用词") }
                 // Dictation suits cold hands and gloves; the phone's recognizer may work offline.
-                if (canDictate) {
+                // The downloaded model works with no signal at all, so it goes first.
+                if (offlineReady) {
+                    TextButton(onClick = {
+                        val has = context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+                            android.content.pm.PackageManager.PERMISSION_GRANTED
+                        if (has) listening = true else micForDictation.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }) { Text("口述") }
+                } else if (canDictate) {
                     TextButton(onClick = {
                         runCatching {
                             dictate.launch(
@@ -769,6 +791,8 @@ private fun VoiceNotes(f: GeoFeature, vm: FeatureDetailViewModel) {
         if (granted) vm.startRecording() else denied = true
     }
     val info = f.audioInfo
+    val transcribing by vm.transcribing.collectAsStateWithLifecycle()
+    val offlineReady by vm.offlineSpeech.collectAsStateWithLifecycle()
     val zone = java.time.ZoneId.systemDefault()
     val time = remember { java.time.format.DateTimeFormatter.ofPattern("M月d日 HH:mm") }
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -804,8 +828,24 @@ private fun VoiceNotes(f: GeoFeature, vm: FeatureDetailViewModel) {
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                         )
                     }
+                    a?.transcript?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
+            // Transcribing keeps the recording; the text only joins the description when asked.
+            val said = a?.transcript
+            Row(Modifier.padding(start = 32.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                when {
+                    sha in transcribing -> Text("正在转写…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 8.dp))
+                    said == null -> if (offlineReady) TextButton(onClick = { vm.transcribe(sha) }) { Text("转写") }
+                    else -> {
+                        TextButton(onClick = { vm.addToNote(said) }) { Text("加到描述") }
+                        if (offlineReady) TextButton(onClick = { vm.transcribe(sha) }) { Text("重新转写") }
+                    }
+                }
+            }
+        }
+        if (f.audio.isNotEmpty() && !offlineReady && f.audio.none { info[it]?.transcript != null }) {
+            Text("在设置里下载离线语音识别模型后，可以把录音转成文字", style = MaterialTheme.typography.bodySmall)
         }
         if (f.audio.isNotEmpty()) Text("点一下播放，长按移除", style = MaterialTheme.typography.bodySmall)
     }
@@ -1340,4 +1380,42 @@ private fun PhrasePanel(
         }
         note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
     }
+}
+
+/** Live dictation with the downloaded offline model: shows what it hears, inserts at the cursor. */
+@Composable
+private fun OfflineDictationDialog(vm: FeatureDetailViewModel, onInsert: (String) -> Unit, onDismiss: () -> Unit) {
+    var done by remember { mutableStateOf("") }
+    var partial by remember { mutableStateOf("") }
+    var failed by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        try {
+            vm.listenOffline().collect { h ->
+                when (h) {
+                    is org.geocrew.core.speech.OfflineSpeech.Heard.Partial -> partial = h.text
+                    is org.geocrew.core.speech.OfflineSpeech.Heard.Final -> { if (h.text.isNotBlank()) done += h.text; partial = "" }
+                }
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            failed = e.message ?: "无法开始识别"
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Mic, null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("离线口述") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                failed?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Text(
+                    (done + partial).ifEmpty { "请说话…" },
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text("不用联网。常用词和本工程的岩性名会自动校正，插入后还可以再改。", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onInsert(vm.fixSpeech(done + partial)) }, enabled = (done + partial).isNotBlank()) { Text("插入") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }

@@ -304,8 +304,55 @@ class FeatureDetailViewModel @Inject constructor(
     private val terrain: org.geocrew.core.data.repo.TerrainTiles,
     private val teamForms: org.geocrew.core.data.team.TeamForms,
     private val tracks: org.geocrew.core.data.repo.TrackRepository,
+    private val offline: org.geocrew.core.speech.OfflineSpeech,
 ) : ViewModel() {
     private val id: String = checkNotNull(savedState[FEATURE_ID_ARG])
+
+    // --- speech -------------------------------------------------------------
+
+    /** True once the offline Chinese model is downloaded (settings → 离线语音识别). */
+    val offlineSpeech: StateFlow<Boolean> = offline.state.map { it is org.geocrew.core.speech.OfflineSpeech.ModelState.Ready }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, offline.ready)
+
+    /** Tidies recognised text and pulls same-sounding words to this project's terms and rock names. */
+    fun fixSpeech(raw: String): String {
+        val vocab = org.geocrew.core.model.SpeechText.vocabulary(phrases.value.own, usedLithologies.value)
+        return org.geocrew.core.model.SpeechText.fix(org.geocrew.core.model.SpeechText.clean(raw), vocab, org.geocrew.core.speech.Pinyin::of).text
+    }
+
+    /** Live offline dictation: partial and final text, already corrected. */
+    fun listenOffline(): kotlinx.coroutines.flow.Flow<org.geocrew.core.speech.OfflineSpeech.Heard> = offline.listen().map { h ->
+        when (h) {
+            is org.geocrew.core.speech.OfflineSpeech.Heard.Partial -> org.geocrew.core.speech.OfflineSpeech.Heard.Partial(org.geocrew.core.model.SpeechText.clean(h.text))
+            is org.geocrew.core.speech.OfflineSpeech.Heard.Final -> org.geocrew.core.speech.OfflineSpeech.Heard.Final(fixSpeech(h.text))
+        }
+    }
+
+    private val _noteInsert = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 4)
+    /** Text to add to the description being edited (from a transcribed voice note). */
+    val noteInsert: kotlinx.coroutines.flow.SharedFlow<String> = _noteInsert
+    fun addToNote(text: String) { if (text.isNotBlank()) _noteInsert.tryEmit(text.trim()) }
+
+    private val _transcribing = MutableStateFlow<Set<String>>(emptySet())
+    /** Voice notes being transcribed now, by hash. */
+    val transcribing: StateFlow<Set<String>> = _transcribing.asStateFlow()
+
+    /** Writes down what voice note [sha] says (offline), keeping it in the clip's info; the description is left alone. */
+    fun transcribe(sha: String) = viewModelScope.launch {
+        if (sha in _transcribing.value) return@launch
+        _transcribing.value += sha
+        try {
+            val text = fixSpeech(offline.transcribe(photos.file(sha, org.geocrew.core.model.AttachmentKind.AUDIO)))
+            val info = feature.value?.audioInfo?.get(sha) ?: org.geocrew.core.model.AudioInfo()
+            features.edit(id) { audioInfo(sha, info.copy(transcript = text.ifBlank { org.geocrew.core.speech.VoiceNoteTranscriber.NOTHING_HEARD })) }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            _photoMessage.value = "转写失败：" + (e.message ?: "未知错误")
+        } finally {
+            _transcribing.value -= sha
+        }
+    }
+
 
     /** Words offered while writing a description: the project's own first, then the built-in ones. */
     val phrases: StateFlow<PhraseUi> = projects.current.map { p ->

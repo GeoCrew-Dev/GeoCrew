@@ -262,6 +262,9 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
             item { SectionHeader("工作组") }
             item { NicknameRow(s.nickname, viewModel::setNickname) }
 
+            item { SectionHeader("离线语音识别") }
+            item { SpeechSection() }
+
             item { SectionHeader("版本更新") }
             item { UpdateSection() }
             item { Spacer(Modifier.height(32.dp)) }

@@ -4,4 +4,5 @@ plugins {
 
 dependencies {
     implementation(project(":core:map"))
+    implementation(project(":core:speech"))
 }

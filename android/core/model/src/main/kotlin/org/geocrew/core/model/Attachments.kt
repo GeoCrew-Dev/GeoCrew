@@ -44,8 +44,10 @@ data class AudioInfo(
     val durationSeconds: Double? = null,
     val recordedAt: Instant? = null,
     val position: LngLat? = null,
+    /** What was said, as written down by speech recognition or by hand. */
+    val transcript: String? = null,
 ) {
-    val isEmpty: Boolean get() = durationSeconds == null && recordedAt == null && position == null
+    val isEmpty: Boolean get() = durationSeconds == null && recordedAt == null && position == null && transcript.isNullOrBlank()
 
     fun toJson(): JsonObject = buildJsonObject {
         durationSeconds?.let { put("duration_s", Math.round(it * 10) / 10.0) }
@@ -55,6 +57,7 @@ data class AudioInfo(
             put("lat", Math.round(p.lat * 1e8) / 1e8)
             p.alt?.let { put("alt", Math.round(it * 100) / 100.0) }
         }
+        transcript?.trim()?.takeIf { it.isNotEmpty() }?.let { put("transcript", it) }
     }
 
     companion object {
@@ -65,6 +68,7 @@ data class AudioInfo(
                 durationSeconds = o.double("duration_s")?.takeIf { it.isFinite() && it >= 0 },
                 recordedAt = o.string("recorded_at")?.let { runCatching { Instant.parse(it) }.getOrNull() },
                 position = if (lon != null && lat != null && lat in -90.0..90.0 && lon in -180.0..180.0) LngLat(lon, lat, o.double("alt")) else null,
+                transcript = o.string("transcript")?.trim()?.takeIf { it.isNotEmpty() },
             )
         }
 
