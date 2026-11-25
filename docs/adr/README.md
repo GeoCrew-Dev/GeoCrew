@@ -16,7 +16,7 @@
 | [0010](0010-action-registry.md) | 动作注册表 | 已采纳 |
 | [0011](0011-ai.md) | AI 助手 | 已采纳 |
 | [0012](0012-plugins.md) | 插件 | 草案 |
-| [0013](0013-server-gdal-helper.md) | 服务端的 GDAL 辅助程序 | 草案 |
+| [0013](0013-server-gdal-helper.md) | 服务端的 GDAL 辅助程序 | 已采纳 |
 | [0014](0014-certificates.md) | 服务端证书 | 已采纳 |
 | [0015](0015-map-sources.md) | 地图图源 | 已采纳 |
 
