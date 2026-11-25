@@ -1,6 +1,6 @@
 # 同勘 GeoCrew 项目规划
 
-> 状态：草案 v0.1（2026-11-24）。随开发推进持续更新。
+> 状态：重写前的旧规划（2026-11-24），已不再更新，留作参考。现行规划见主仓库的 [`docs/charter.md`](../../docs/charter.md)、[`docs/adr/`](../../docs/adr/) 和 [`docs/backlog.md`](../../docs/backlog.md)。
 
 ## 1. 定位
 
@@ -90,11 +90,13 @@
 
 ## 6. 仓库
 
-| 仓库 | 内容 |
+2026-11-25 起，三个仓库合并为主仓库 `GeoCrew-Dev/GeoCrew`：
+
+| 目录 | 内容 |
 | --- | --- |
-| geocrew-protocol | 本规划与协议文档 |
-| geocrew-android | Android 客户端 |
-| geocrew-server | 服务端参考实现 |
+| `protocol/` | 本规划与协议文档 |
+| `android/` | Android 客户端 |
+| `server/` | 服务端参考实现 |
 
 ## 7. 进展（2026-11）
 
