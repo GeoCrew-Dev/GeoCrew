@@ -73,7 +73,7 @@ class MyTool : GisTool {
 
 ## 5. 加一个内置底图源
 
-在 `core:model` 的 `BuiltInSources` 里加一个 `TileSource` 并放进 `all`。需要密钥的源设 `keyId`，密钥由用户在设置里填写，**不要把任何密钥写进仓库**。地址里可用 `{z}`、`{x}`、`{y}`、`{-y}`、`{s}`、`{key}` 占位符（`TileTemplates.validate` 会检查）。用户也可以在设置里随时加自定义 XYZ 源，所以只有大多数人都会用到的源才值得内置。
+在 `core:model` 的 `BuiltInSources` 里加一个 `TileSource` 并放进 `all`。需要密钥的源设 `keyId`，密钥由用户在设置里填写，**不要把任何密钥写进仓库**。地址里可用 `{z}`、`{x}`、`{y}`、`{-y}`、`{s}`、`{key}` 占位符，WMS 地址用 `{bbox-epsg-3857}`（`TileTemplates.validate` 会检查，`TileTemplates.fill` 负责离线下载时填值）。用户也可以在设置里随时加自定义 XYZ / WMTS / WMS 源，组长还能把不需要 Key 的源共享给全组，所以只有大多数人都会用到的源才值得内置。
 
 ## 6. 加一个功能页面
 
@@ -83,7 +83,19 @@ class MyTool : GisTool {
 
 ViewModel 只通过 `core:data` 的仓库读写数据，不直接碰数据库；计算放进纯逻辑层，方便测试。
 
-## 7. 测试与持续集成
+## 7. 加一种组内共享设置
+
+组长统一、全组跟随的设置（记录表单、图例、本地坐标系、叠加图、底图）都放在工作区的共享设置里（协议 §2.2），由 `core:data` 的 `TeamForms` 负责读写。新加一种时：
+
+1. 先在协议 §2.2 的表里定键名和格式，在 `openapi.yaml` 的 `Settings` 里补上结构。键名用小写下划线，值里不放任何个人密钥。
+2. 在 `core:model` 里写可序列化的数据类和一个 `valid` / `problem` 检查；收到不合规的值时忽略，而不是报错，这样旧版本应用读到新内容也不会坏。
+3. 在 `ProjectConfig` 里加一个带默认值的字段存这台手机上的副本。
+4. 在 `TeamForms` 里：给 `Shared` 加一项，`shared(cfg)` 里取值，`put` 里写键，`apply` 里读回，写一个 `publishXxx`，并在 `companion` 里加 `encodeXxx` / `decodeXxx`。约定是**没有这个键时保留各手机自己的值**，组长清空时写空数组或 `null`，让组员知道是停用了而不是从没设过。
+5. 在 `TeamFormsCodecTest` 里补上读写测试，在工作组页的 `sharedSummary` 里加一行，让组员看得到这项由组长统一。
+
+所有键共用一个版本号，写入时带上读到的版本，别的组长刚改过就会得到 `409`，`TeamForms` 会换成最新版本并提示重改，不会互相覆盖。
+
+## 8. 测试与持续集成
 
 - 纯逻辑层的改动都配单元测试（`src/test`），在电脑上几秒就能跑完。
 - CI 运行 `./gradlew assembleDebug test --continue`，每次推送都会编译全部模块、跑全部单元测试，并产出调试版 APK。
