@@ -822,7 +822,7 @@ components:
                 dx: { type: number }
                 dy: { type: number }
                 dz: { type: number }
-                rx: { type: number, description: Arc seconds, coordinate frame convention }
+                rx: { type: number, description: "Arc seconds, coordinate frame convention" }
                 ry: { type: number }
                 rz: { type: number }
                 ppm: { type: number, minimum: -1000, maximum: 1000 }
@@ -833,7 +833,7 @@ components:
       properties:
         id: { type: string, minLength: 1, maxLength: 64 }
         name: { type: string }
-        file: { type: string, pattern: "^[0-9a-f]{64}$", description: SHA-256 of the picture, uploaded as an attachment first }
+        file: { type: string, pattern: "^[0-9a-f]{64}$", description: "SHA-256 of the picture, uploaded as an attachment first" }
         type: { type: string, enum: [image/jpeg, image/png] }
         width: { type: integer, minimum: 1, description: Pixels }
         height: { type: integer, minimum: 1 }
