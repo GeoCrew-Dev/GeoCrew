@@ -29,7 +29,7 @@
 | 401 | 令牌缺失、错误或已被吊销（`unauthorized`） |
 | 403 | 角色不允许此操作（`forbidden`） |
 | 404 | 资源不存在（`not_found`）或邀请码无效（`bad_invite`） |
-| 409 | 冲突，例如移除最后一位组长（`last_leader`）、基于旧版本修改设置（`stale`） |
+| 409 | 冲突，例如移除最后一位组长（`last_leader`）、基于旧版本修改设置（`stale`）、修改已归档的工作区（`archived`，见 2.3） |
 | 413 | 请求过大（`batch_too_large`、`too_large`） |
 
 ## 2. 工作区、成员与鉴权
@@ -78,6 +78,23 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 
 不认识的键必须原样保留：客户端修改设置时先读取、只改自己负责的键、再整体提交。
 
+### 2.3 改名与归档
+
+组长用 `PATCH /api/v0/workspaces/{id}` 提交 `{name?, archived?}`，两个键至少带一个，返回与 `GET` 相同的工作区信息。
+
+- `name`：新名称，去掉首尾空白后 1–64 字。
+- `archived: true`：归档。野外工作结束、数据还要留着看时使用。工作区信息里出现 `archived_at`（RFC 3339，归档的时间；已归档时再次归档保留原来的时间）。
+- `archived: false`：重新打开，`archived_at` 消失。
+
+归档期间：
+
+- 提交要素、修改共享设置、发言和删除发言、上传附件都返回 `409 archived`；客户端应停止重试这些请求，把工作区显示为只读，等重新打开后再提交本地的修改。
+- 邀请码不能再加入（`409 archived`）。
+- 读取、导出、实时通道、查看链接、推送登记、成员管理（改角色、吊销、重置邀请码）照常可用。
+- 改名或归档后服务端在实时通道发 `workspace_changed`（第 7 节）。
+
+能力名 `archive`。
+
 ## 3. 接口一览
 
 | 方法 | 路径 | 角色 | 说明 |
@@ -87,6 +104,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | POST | `/api/v0/workspaces` | 无 | 创建工作区 `{name, nickname}` |
 | POST | `/api/v0/workspaces/join` | 无 | 加入 `{invite_code, nickname}` |
 | GET | `/api/v0/workspaces/{id}` | 任意 | 工作区信息、我的身份、在线成员；组长额外看到邀请码 |
+| PATCH | `/api/v0/workspaces/{id}` | 组长 | 改名、归档或重新打开 `{name?, archived?}`（见 2.3） |
 | GET | `/api/v0/workspaces/{id}/members` | 任意 | 成员列表（含已吊销，带 `revoked: true`）；`last_seen` 为该成员最近一次带令牌请求的时间（精确到分钟，从未请求过则没有这个键） |
 | GET | `/api/v0/workspaces/{id}/settings` | 任意 | 共享设置（见 2.2） |
 | PUT | `/api/v0/workspaces/{id}/settings` | 组长 | 修改共享设置 |
@@ -505,6 +523,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `members_changed` | 服务端→客户端 | 成员或角色有变化，客户端重新获取成员列表 |
 | `settings_changed` | 服务端→客户端 | `{version}`，共享设置有变化，客户端重新读取 |
 | `comments_changed` | 服务端→客户端 | `{seq}`，有新的讨论或删除，客户端随后增量拉取（第 8 节） |
+| `workspace_changed` | 服务端→客户端 | `{name, archived_at?}`，工作区改名、归档或重新打开（2.3） |
 | `ping` / `pong` | 双向 | 保活 |
 | `error` | 服务端→客户端 | `{error}`，例如 `bad_json` |
 

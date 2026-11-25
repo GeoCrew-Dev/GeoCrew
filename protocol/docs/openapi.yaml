@@ -114,6 +114,30 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/WorkspaceView" }
         "401": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [workspaces]
+      operationId: updateWorkspace
+      summary: Rename, archive or reopen the workspace (leader only)
+      description: "While archived, pushes, settings, comments, uploads and joins get 409 archived; reads go on. See section 2.3."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                name: { type: string, minLength: 1, maxLength: 64 }
+                archived: { type: boolean }
+      responses:
+        "200":
+          description: Updated workspace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceView" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
 
   /api/v0/workspaces/{ws}/invite:
     parameters: [{ $ref: "#/components/parameters/ws" }]
@@ -814,6 +838,7 @@ components:
         created_at: { type: string, format: date-time }
         last_seq: { type: integer }
         settings_version: { type: integer, description: Version of the shared settings; 0 until first set }
+        archived_at: { type: string, format: date-time, description: Present while the workspace is archived }
         me: { $ref: "#/components/schemas/Member" }
         invite_code: { type: string, description: Leaders only }
         online:
@@ -1126,6 +1151,12 @@ components:
           required: [type]
           properties:
             type: { type: string, enum: [members_changed, ping, pong] }
+        - type: object
+          required: [type, name]
+          properties:
+            type: { type: string, const: workspace_changed }
+            name: { type: string }
+            archived_at: { type: string, format: date-time }
         - type: object
           required: [type, error]
           properties:

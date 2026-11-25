@@ -557,6 +557,7 @@ func (s *suite) checks() []check {
 	}
 	checks := append(core, s.messageChecks()...)
 	checks = append(checks, s.exportChecks()...)
+	checks = append(checks, s.archiveChecks()...)
 	return append(checks, tail...)
 }
 
