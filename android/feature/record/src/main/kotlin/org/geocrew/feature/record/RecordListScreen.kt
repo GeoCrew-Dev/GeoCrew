@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -65,6 +66,8 @@ fun RecordListScreen(
     viewModel: RecordListViewModel = hiltViewModel(),
 ) {
     var scanning by remember { mutableStateOf(false) }
+    var tidying by remember { mutableStateOf(false) }
+    if (tidying) AttributeTidyDialog(viewModel, onDismiss = { tidying = false })
     val context = androidx.compose.ui.platform.LocalContext.current
     if (scanning) {
         org.geocrew.core.scan.QrScannerDialog(
@@ -101,6 +104,7 @@ fun RecordListScreen(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
                     IconButton(onClick = { scanning = true }) { Icon(Icons.Default.QrCodeScanner, "扫码") }
+                    IconButton(onClick = { tidying = true }) { Icon(Icons.Default.AutoFixHigh, "整理属性值") }
                     IconButton(onClick = onProjects) { Icon(Icons.Default.Folder, "切换工程") }
                     IconButton(onClick = onImportExport) { Icon(Icons.Default.ImportExport, "导入导出") }
                 },

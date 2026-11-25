@@ -73,7 +73,7 @@ sealed interface HistoryState {
 @HiltViewModel
 class RecordListViewModel @Inject constructor(
     projects: ProjectRepository,
-    features: FeatureRepository,
+    private val features: FeatureRepository,
 ) : ViewModel() {
     val kindFilter = MutableStateFlow<FeatureKind?>(null)
     val query = MutableStateFlow("")
@@ -97,6 +97,50 @@ class RecordListViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val projectName: StateFlow<String> = projects.current.map { it.name }.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
+    /** Whether this device may change records: not as a read-only member. */
+    val canEdit: StateFlow<Boolean> = projects.current.map { it.team?.role != TeamRepository.ROLE_READONLY }
+        .distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /** Text attributes in use, for tidying their values ([org.geocrew.core.model.AttributeValues]). */
+    val attributeKeys: StateFlow<List<org.geocrew.core.model.AttributeValues.Key>> = combine(all, config) { list, c ->
+        org.geocrew.core.model.AttributeValues.keys(list, c.fields)
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** The attribute being tidied; null when none is open. */
+    val tidyKey = MutableStateFlow<String?>(null)
+
+    /** The values [tidyKey] takes, most used first. */
+    val tidyValues: StateFlow<List<org.geocrew.core.model.AttributeValues.Value>> = combine(all, tidyKey) { list, k ->
+        if (k == null) emptyList() else org.geocrew.core.model.AttributeValues.values(list, k)
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _tidyNote = MutableStateFlow<String?>(null)
+    /** The outcome of the last rename, shown once. */
+    val tidyNote: StateFlow<String?> = _tidyNote.asStateFlow()
+    fun consumeTidyNote() { _tidyNote.value = null }
+
+    /** Changes [key] from any of [from] to [to] (blank removes it) on every live record; each change syncs like a hand edit. */
+    fun renameValue(key: String, from: Set<String>, to: String) {
+        if (!canEdit.value) {
+            _tidyNote.value = "只读成员不能修改记录"
+            return
+        }
+        viewModelScope.launch {
+            var n = 0
+            for (f in all.value) {
+                if (f.deleted || org.geocrew.core.model.AttributeValues.rename(f.properties, key, from, to) == null) continue
+                val next = to.trim()
+                features.edit(f.id) { if (next.isEmpty()) remove(key) else this[key] = next }
+                n++
+            }
+            _tidyNote.value = when {
+                n == 0 -> "没有需要修改的记录"
+                to.isBlank() -> "已从 $n 条记录里去掉这个值"
+                else -> "已把 $n 条记录改成「${to.trim()}」"
+            }
+        }
+    }
 
     /** The record a scanned label stands for (sample number, title or id), in the open project. */
     fun findScanned(text: String): GeoFeature? = org.geocrew.core.model.ScanMatch.find(all.value, text)
