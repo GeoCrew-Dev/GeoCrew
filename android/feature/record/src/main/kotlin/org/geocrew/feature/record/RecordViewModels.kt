@@ -746,6 +746,36 @@ class FeatureDetailViewModel @Inject constructor(
 
     fun delete() = viewModelScope.launch { features.delete(id) }
 
+    /** Brings this record back after it was deleted, here or by a team mate. */
+    fun undelete() = viewModelScope.launch { features.undelete(id) }
+
+    /**
+     * A share sheet with the record as text (name, place, attitude, form
+     * answers, samples, description) and up to nine of its photos, for
+     * sending a point to a chat app. Null while the record is not loaded.
+     */
+    suspend fun shareIntent(context: android.content.Context): android.content.Intent? {
+        val f = feature.value ?: return null
+        val p = projects.current.first()
+        val text = org.geocrew.core.model.RecordShare.text(f, org.geocrew.core.ui.KindUi.label(f.kind), coordinateFormat.value, p.config.fields, p.name)
+        val uris = f.photos.take(9).map { photos.file(it) }.filter { it.isFile }.map {
+            androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", it)
+        }
+        val send = if (uris.isEmpty()) {
+            android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+        } else {
+            android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE).setType("image/jpeg").apply {
+                putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, ArrayList<android.net.Uri>(uris))
+                // Grants travel with the clip data, so the receiving app may read every photo.
+                clipData = android.content.ClipData.newRawUri(null, uris.first()).apply { uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) } }
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        send.putExtra(android.content.Intent.EXTRA_TEXT, text)
+        f.title?.let { send.putExtra(android.content.Intent.EXTRA_SUBJECT, it) }
+        return android.content.Intent.createChooser(send, "分享记录")
+    }
+
     // --- discussion (protocol v0 §8) ------------------------------------------
 
     /** Who may do what in the discussion; null when the project has no team. */

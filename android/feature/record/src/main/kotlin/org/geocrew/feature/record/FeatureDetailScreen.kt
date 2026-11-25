@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -149,6 +150,10 @@ fun FeatureDetailScreen(
     val assignees by viewModel.assignees.collectAsStateWithLifecycle()
     val f = feature
     var confirmDelete by remember { mutableStateOf(false) }
+    val shareContext = androidx.compose.ui.platform.LocalContext.current
+    val shareScope = androidx.compose.runtime.rememberCoroutineScope()
+    // Read-only members see deleted records but cannot bring them back.
+    val canRestore = !shared || commentAccess?.canPost != false
 
     Scaffold(
         topBar = {
@@ -161,14 +166,24 @@ fun FeatureDetailScreen(
                         if (onSeek != null && f.geometry is Geometry.Point) {
                             IconButton(onClick = { onSeek(f.id) }) { Icon(Icons.Default.NearMe, "寻点前往") }
                         }
-                        IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "删除") }
+                        if (!f.deleted) {
+                            IconButton(onClick = {
+                                shareScope.launch { viewModel.shareIntent(shareContext)?.let { runCatching { shareContext.startActivity(it) } } }
+                            }) { Icon(Icons.Default.Share, "分享") }
+                            IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Default.Delete, "删除") }
+                        }
                     }
                 },
             )
         },
     ) { padding ->
         if (f == null || f.deleted) {
-            Text("这条记录已删除。", Modifier.padding(padding).padding(24.dp))
+            Column(Modifier.padding(padding).padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (f == null) "找不到这条记录。" else "这条记录已删除。")
+                if (f != null && canRestore) {
+                    TextButton(onClick = { viewModel.undelete() }) { Text("恢复这条记录") }
+                }
+            }
             return@Scaffold
         }
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
