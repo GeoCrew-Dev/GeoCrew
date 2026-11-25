@@ -454,8 +454,23 @@
     return out;
   }
   // Symbol images are drawn on demand: "att-h|v|i" for flat, vertical and inclined beds, "dip-<n>" for the angle.
+  const lineationOf = (p) => typeof p.trend === "number" && typeof p.plunge === "number" && p.plunge >= 0 && p.plunge <= 90 && p.trend >= 0 && p.trend <= 360 ? p : null;
+
   function drawImage(id) {
     const r = window.devicePixelRatio || 1, c = document.createElement("canvas");
+    if (id === "lin" || id.startsWith("pl-")) {
+      const w = id === "lin" ? 40 : 30, h = id === "lin" ? 40 : 16;
+      c.width = w * r; c.height = h * r;
+      const x = c.getContext("2d"); x.scale(r, r);
+      if (id === "lin") {
+        x.strokeStyle = "#1565c0"; x.lineWidth = 2.2; x.lineCap = "round";
+        x.beginPath(); x.moveTo(20, 20); x.lineTo(20, 3); x.moveTo(16.5, 8); x.lineTo(20, 3); x.lineTo(23.5, 8); x.stroke();
+      } else {
+        x.font = "bold 12px sans-serif"; x.lineWidth = 3; x.strokeStyle = "#fff"; x.fillStyle = "#1565c0"; x.textBaseline = "top";
+        x.strokeText(id.slice(3), 1, 1); x.fillText(id.slice(3), 1, 1);
+      }
+      return { width: w * r, height: h * r, data: x.getImageData(0, 0, w * r, h * r).data };
+    }
     const dip = id.startsWith("dip-");
     const w = dip ? 30 : 30, h = dip ? 16 : 30;
     c.width = w * r; c.height = h * r;
@@ -485,6 +500,8 @@
           _w: ls && ls.fault ? 4 : 3, _dash: !!(ls && ls.dash), _meet: !!meetAt(f),
           ...(f.geometry && f.geometry.type === "Point" && attitudeOf(f.properties || {})
             ? { _dipdir: f.properties.dip_direction, _dip: Math.round(f.properties.dip) } : {}),
+          ...(f.geometry && f.geometry.type === "Point" && lineationOf(f.properties || {})
+            ? { _trend: f.properties.trend, _plunge: Math.round(f.properties.plunge) } : {}),
         };
       })(colorOf(f)),
     })).concat(anchors()) };
@@ -922,7 +939,7 @@
         paint: { "circle-color": "#6a1b9a", "circle-opacity": 0.18, "circle-radius": 18, "circle-stroke-color": "#6a1b9a", "circle-stroke-width": 3 } });
       map.addLayer({ id: "point", type: "circle", source: "records", filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "_anchor"]]],
         paint: { "circle-color": ["get", "_color"], "circle-radius": ["case", ["has", "_dipdir"], 3.5, 6], "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
-      map.on("styleimagemissing", (e) => { if (/^(att-[hvi]|dip-\d{1,2})$/.test(e.id)) map.addImage(e.id, drawImage(e.id), { pixelRatio: window.devicePixelRatio || 1 }); });
+      map.on("styleimagemissing", (e) => { if (/^(att-[hvi]|dip-\d{1,2}|lin|pl-\d{1,2})$/.test(e.id)) map.addImage(e.id, drawImage(e.id), { pixelRatio: window.devicePixelRatio || 1 }); });
       map.addLayer({ id: "attitude", type: "symbol", source: "records", filter: ["has", "_dipdir"],
         layout: {
           "icon-image": ["case", ["<", ["get", "_dip"], 1], "att-h", [">=", ["get", "_dip"], 89], "att-v", "att-i"],
@@ -930,10 +947,14 @@
         } });
       map.addLayer({ id: "dip", type: "symbol", source: "records", minzoom: 13, filter: ["all", ["has", "_dipdir"], [">=", ["get", "_dip"], 1], ["<", ["get", "_dip"], 89]],
         layout: { "icon-image": ["concat", "dip-", ["to-string", ["get", "_dip"]]], "icon-anchor": "top-left", "icon-offset": [6, 4], "icon-allow-overlap": true, "icon-ignore-placement": true } });
+      map.addLayer({ id: "lineation", type: "symbol", source: "records", filter: ["has", "_trend"],
+        layout: { "icon-image": "lin", "icon-rotate": ["get", "_trend"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true } });
+      map.addLayer({ id: "plunge", type: "symbol", source: "records", minzoom: 13, filter: ["has", "_trend"],
+        layout: { "icon-image": ["concat", "pl-", ["to-string", ["get", "_plunge"]]], "icon-anchor": "top-right", "icon-offset": [-6, 4], "icon-allow-overlap": true, "icon-ignore-placement": true } });
       map.addSource("trails", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "trails", type: "line", source: "trails",
         paint: { "line-color": ["case", ["get", "old"], "#78909c", "#1565c0"], "line-width": 2, "line-opacity": 0.7 } });
-      for (const id of ["attitude", "point", "line", "line-dashed", "fill"]) {
+      for (const id of ["attitude", "lineation", "point", "line", "line-dashed", "fill"]) {
         map.on("click", id, (e) => { const f = features.get(e.features[0].properties._id); if (f) popup(f, e.lngLat); });
         map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
         map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
