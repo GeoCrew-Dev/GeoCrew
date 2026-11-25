@@ -689,6 +689,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `search_records` | `query`（空格分隔、都要出现，在名称、岩性、描述、样品号里找，不分大小写）、`kind`、`member`（最近修改者昵称）、`since`（日期或 RFC 3339 时间）、`near_record`（某条记录的 id）或 `near_lon` 与 `near_lat`、`radius_m`（默认 1000，最多 100000）、`limit`（默认 20，最多 100） | `matched` 总数和记录摘要（id、kind、名称、岩性、描述前 160 字、样品号、首个坐标、修改时间与修改人）；按修改时间从新到旧，给了位置时按首个坐标的距离从近到远并带 `distance_m`，不含作为中心的那条记录 |
 | `get_record` | `id` | 完整要素（与拉取接口同格式）、最近修改人昵称、历史里较早版本的个数 |
 | `review_issues` | 无 | 与 `GET …/checks` 相同的待核对清单 |
+| `reference_at` | `record`（记录 id，取首个坐标）或 `lon` 与 `lat`、`reach_m`（默认 200，最多 5000） | 组长共享的参考图层（§2.2 `reference_layers`）在该处的结果：包含它的面（图层名、`color_by` 属性的值、最多 12 个属性）和 `reach_m` 内的线（同上，带 `distance_m`，从近到远）；没有参考图层时 `layers` 为 0 并带说明 |
 | `workload` | `from`、`to`（日期，含两端）、`tz_offset_minutes`（默认 480，即北京时间） | 与工作量统计表相同的列，每天每人一行；不限日期时带每人的合计行 |
 | `recent_messages` | `limit`（默认 30，最多 100） | 最近的组内消息和记录讨论（发言人、内容、时间、所属记录、是否紧急或点名），旧的在前 |
 
