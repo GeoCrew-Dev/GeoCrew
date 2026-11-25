@@ -1,0 +1,1232 @@
+openapi: 3.1.0
+info:
+  title: GeoCrew Team Protocol
+  version: "0"
+  summary: Sync, attachments and realtime channel between GeoCrew clients and self-hosted servers.
+  description: |
+    Machine-readable companion of protocol-v0.md. The Markdown document is
+    authoritative for semantics (conflict rule, sync flow, realtime messages).
+  license:
+    name: CC BY 4.0
+    url: https://creativecommons.org/licenses/by/4.0/
+servers:
+  - url: https://geo.example.org
+    description: Example self-hosted server
+security:
+  - bearer: []
+tags:
+  - name: server
+  - name: workspaces
+  - name: members
+  - name: features
+  - name: comments
+  - name: files
+  - name: realtime
+  - name: push
+  - name: view
+  - name: mcp
+
+paths:
+  /healthz:
+    get:
+      tags: [server]
+      operationId: healthz
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Server is up
+          content:
+            text/plain:
+              schema: { type: string, example: "ok" }
+
+  /api/v0/info:
+    get:
+      tags: [server]
+      operationId: getInfo
+      summary: Server name, protocol version and capabilities
+      security: []
+      responses:
+        "200":
+          description: Server information
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Info" }
+
+  /api/v0/workspaces:
+    post:
+      tags: [workspaces]
+      operationId: createWorkspace
+      summary: Create a workspace; the caller becomes its leader
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, nickname]
+              properties:
+                name: { type: string, maxLength: 64 }
+                nickname: { type: string, maxLength: 32 }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JoinResult" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/join:
+    post:
+      tags: [workspaces]
+      operationId: joinWorkspace
+      summary: Join a workspace with an invite code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invite_code, nickname]
+              properties:
+                invite_code: { type: string, description: Case-insensitive 8-character code }
+                nickname: { type: string, maxLength: 32 }
+      responses:
+        "200":
+          description: Joined
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JoinResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [workspaces]
+      operationId: getWorkspace
+      summary: Workspace details, the caller's membership and who is online
+      responses:
+        "200":
+          description: Workspace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceView" }
+        "401": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [workspaces]
+      operationId: updateWorkspace
+      summary: Rename, archive or reopen the workspace (leader only)
+      description: "While archived, pushes, settings, comments, uploads and joins get 409 archived; reads go on. See section 2.3."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                name: { type: string, minLength: 1, maxLength: 64 }
+                archived: { type: boolean }
+      responses:
+        "200":
+          description: Updated workspace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceView" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/invite:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    post:
+      tags: [workspaces]
+      operationId: resetInvite
+      summary: Replace the invite code (leader only)
+      responses:
+        "200":
+          description: New code
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invite_code]
+                properties:
+                  invite_code: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/settings:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [workspaces]
+      operationId: getSettings
+      summary: Shared settings every member reads, such as the record form
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "401": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [workspaces]
+      operationId: putSettings
+      summary: Replace the shared settings (leader only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [settings]
+              properties:
+                settings: { type: object, description: "Up to 64 KiB; stored as sent" }
+                base_version:
+                  type: integer
+                  description: When present, the update only applies if the current version still equals it (409 stale otherwise)
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/members:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [members]
+      operationId: listMembers
+      summary: List members, including revoked ones
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Member" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/members/{member}:
+    parameters:
+      - { $ref: "#/components/parameters/ws" }
+      - name: member
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [members]
+      operationId: setMemberRole
+      summary: Change a member's role (leader only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: "#/components/schemas/Role" }
+      responses:
+        "204": { description: Updated }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [members]
+      operationId: revokeMember
+      summary: Revoke a member's token and disconnect them (leader only)
+      responses:
+        "204": { description: Revoked }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/features:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: pullFeatures
+      summary: Current versions of features changed after `since`, ordered by seq
+      parameters:
+        - name: since
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: A page of changes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PullResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [features]
+      operationId: pushFeatures
+      summary: Submit local changes (leader and member roles)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [features]
+              properties:
+                features:
+                  type: array
+                  items: { $ref: "#/components/schemas/Feature" }
+      responses:
+        "200":
+          description: One result per submitted feature, in order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/features/{feature}/history:
+    parameters:
+      - { $ref: "#/components/parameters/ws" }
+      - name: feature
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [features]
+      operationId: featureHistory
+      summary: Superseded revisions of a feature, newest first
+      responses:
+        "200":
+          description: Revisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Feature" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/export.geojson:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportGeoJSON
+      summary: Current records as one plain GeoJSON FeatureCollection, without sync metadata
+      responses:
+        "200":
+          description: FeatureCollection
+          content:
+            application/geo+json:
+              schema:
+                type: object
+                required: [type, features]
+                properties:
+                  type: { type: string, const: FeatureCollection }
+                  features: { type: array, items: { type: object } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/export.geocrew.zip:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportPackage
+      summary: The workspace as a project package (zip with project.json, features.geojson, photos/ and audio/)
+      responses:
+        "200":
+          description: "Zip archive; entries are deflated so streaming readers can open it"
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/export.samples.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportSamples
+      summary: The sample register as CSV, one row per sample (capability "samples")
+      parameters:
+        - name: tz_offset
+          in: query
+          description: Minutes east of UTC for the sampling times
+          schema: { type: integer, minimum: -840, maximum: 840, default: 0 }
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 样品编号, 样品类型, 所在记录, 经度, 纬度, 高程, 岩性, 采样时间, 样品备注, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/export.sections.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportSections
+      summary: The measured-section layer table as CSV, one row per layer (capability "sections")
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 剖面, 层号, 起点斜距(m), 终点斜距(m), 岩性, 倾向, 倾角, 产状来源, 真厚度(m), 备注, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/export.structures.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportStructures
+      summary: Planar attitudes and lineations as CSV, one row per measurement (capability "structures", section 6.12)
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 记录, 种类, 类型, 倾向或倾伏向(°), 倾角或倾伏角(°), 走向(°), 经度, 纬度, 高程(m), 岩性, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v0/workspaces/{ws}/export.workload.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportWorkload
+      summary: Daily work per member as CSV, with a total row per member (capability "workload")
+      parameters:
+        - name: tz_offset
+          in: query
+          description: Minutes east of UTC used to split days
+          schema: { type: integer, minimum: -840, maximum: 840, default: 0 }
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 日期, 组员, 新建记录, 其中地质点, 修改次数, 样品, 照片, 轨迹(km)"
+          content:
+            text/csv:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /api/v0/workspaces/{ws}/export.boreholes.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportBoreholes
+      summary: The borehole layer table as CSV, one row per layer (capability "boreholes", section 6.11)
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 孔号, 孔口经度, 孔口纬度, 孔口高程(m), 终孔深度(m), 水位埋深(m), 层号, 层顶深度(m), 层底深度(m), 厚度(m), 岩性, 描述, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/export.routes.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportRoutes
+      summary: The geological route table as CSV, a purpose row, one row per stop and a summary row per route (capability "routes")
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 路线, 日期, 参加人员, 序号, 点号, 类型, 经度, 纬度, 海拔(m), 岩性, 产状, 点上描述, 至下一点描述, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/checks:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: checks
+      summary: Records worth a second look, such as duplicate numbers or missing positions (capability "checks")
+      parameters:
+        - { name: accuracy_m, in: query, required: false, schema: { type: number, minimum: 0 }, description: "Report fixes poorer than this many metres (default 30)" }
+        - { name: far_km, in: query, required: false, schema: { type: number, minimum: 0 }, description: "Report records further than this from the median position (default 50)" }
+      responses:
+        "200":
+          description: Issues ordered by record title, then by code
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [issues]
+                properties:
+                  issues:
+                    type: array
+                    items: { $ref: "#/components/schemas/Issue" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/export.kml:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportKML
+      summary: Live records with geometry as KML, styled by own simplestyle colours or the shared legend (capability "kml")
+      responses:
+        "200":
+          description: KML 2.2 document
+          content:
+            application/vnd.google-earth.kml+xml:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/export.gpx:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportGPX
+      summary: Points as waypoints, tracks with per-fix times (times_s) and other lines as routes, as GPX (capability "gpx")
+      responses:
+        "200":
+          description: GPX 1.1 document
+          content:
+            application/gpx+xml:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/export.gpkg:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportGeoPackage
+      summary: Live records as a GeoPackage, one table each for points, lines and polygons (capability "gpkg")
+      responses:
+        "200":
+          description: GeoPackage 1.3 file
+          content:
+            application/geopackage+sqlite3:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/comments:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [comments]
+      operationId: pullComments
+      summary: Comments with seq greater than since, oldest first, including deleted ones
+      parameters:
+        - { name: since, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Page of comments
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [comments, seq, more]
+                properties:
+                  comments: { type: array, items: { $ref: "#/components/schemas/Comment" } }
+                  seq: { type: integer, description: Pass as `since` next time }
+                  more: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [comments]
+      operationId: addComment
+      summary: Post a comment on a record, or a message to the whole team (leaders and members; read-only members may send urgent messages and roll call answers only; only leaders start roll calls)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, body]
+              properties:
+                id: { type: string, pattern: "^[A-Za-z0-9._-]{1,64}$", description: Chosen by the client so retries are safe }
+                feature_id: { type: string, maxLength: 64, description: The record discussed; omit for a team message }
+                body: { type: string, maxLength: 2000, description: "Trimmed; must not be empty" }
+                at: { type: array, items: { type: number }, minItems: 2, maxItems: 2, description: "Optional [longitude, latitude] to show on the map" }
+                urgent: { type: boolean, default: false, description: "A call for help or to gather (section 8.1); team messages only; needs the alerts capability" }
+                roll_call: { type: boolean, default: false, description: "A leader's roll call (section 8.2); team messages only; needs the rollcall capability" }
+                answer_to: { type: string, description: "Id of the roll call this team message answers (section 8.2)" }
+                back_by: { type: string, format: date-time, description: "Check-out: when the author expects to be back, within a week of now (section 8.3); needs the outing capability" }
+                back_from: { type: string, description: "Id of the check-out this team message closes; the author or a leader (section 8.3)" }
+      responses:
+        "200":
+          description: Stored (or already stored by an identical retry)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/comments/{comment}:
+    parameters:
+      - { $ref: "#/components/parameters/ws" }
+      - { name: comment, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [comments]
+      operationId: deleteComment
+      summary: Delete a comment (its author or a leader); a tombstone is kept for sync
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/files/{sha256}:
+    parameters:
+      - { $ref: "#/components/parameters/ws" }
+      - name: sha256
+        in: path
+        required: true
+        schema: { type: string, pattern: "^[0-9a-f]{64}$" }
+    put:
+      tags: [files]
+      operationId: uploadFile
+      summary: Upload an attachment addressed by the SHA-256 of its bytes
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "201": { description: Stored }
+        "204": { description: Already stored; body not read }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+    get:
+      tags: [files]
+      operationId: downloadFile
+      summary: Download an attachment (supports Range)
+      responses:
+        "200":
+          description: File bytes
+          content:
+            "*/*":
+              schema: { type: string, format: binary }
+        "206": { description: Partial content }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    head:
+      tags: [files]
+      operationId: hasFile
+      summary: Check whether an attachment exists
+      responses:
+        "200": { description: Exists }
+        "401": { description: Unauthorized }
+        "404": { description: Missing }
+
+  /api/v0/workspaces/{ws}/ws:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [realtime]
+      operationId: realtime
+      summary: Upgrade to the WebSocket realtime channel
+      description: |
+        Messages are JSON text frames with a `type` field; see protocol-v0.md
+        section 7 and the RealtimeMessage schema. Clients that cannot set
+        headers may pass `access_token` as a query parameter instead.
+      parameters:
+        - name: access_token
+          in: query
+          schema: { type: string }
+      responses:
+        "101": { description: Switching protocols }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/push:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [push]
+      operationId: getPushTarget
+      summary: The calling member's push endpoint
+      responses:
+        "200":
+          description: Registered endpoint
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushTarget" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [push]
+      operationId: setPushTarget
+      summary: Register (or replace) the calling member's push endpoint
+      description: |
+        The server POSTs a PushNotice to the endpoint for each subscribed
+        event. Servers refuse plain http and private addresses unless their
+        operator allows them. 404 `push_disabled` means the server sends no
+        push notifications.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string, format: uri, maxLength: 2048 }
+                events:
+                  type: array
+                  description: Defaults to every event type
+                  items: { $ref: "#/components/schemas/PushEvent" }
+                keys: { $ref: "#/components/schemas/PushKeys" }
+      responses:
+        "200":
+          description: Stored endpoint
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushTarget" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [push]
+      operationId: deletePushTarget
+      summary: Stop push notifications for the calling member
+      responses:
+        "204": { description: Removed (or there was none) }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/ai-links:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    post:
+      tags: [mcp]
+      operationId: createAILink
+      summary: Make an AI link for the MCP write tools (capability "mcp_write")
+      description: |
+        The token (prefix `a_`) is accepted only by `POST .../mcp`, where it
+        acts as the calling member with their current role and adds the
+        write tools of protocol section 11.1. Read-only members, view links
+        and AI links cannot make one. `DELETE .../view-links` revokes it too.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hours: { type: integer, minimum: 1, maximum: 24, default: 8 }
+      responses:
+        "201":
+          description: New link; path is the MCP endpoint
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ViewLink" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/v0/workspaces/{ws}/view-links:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    post:
+      tags: [view]
+      operationId: createViewLink
+      summary: Make a read-only, expiring view link (capability "view")
+      description: |
+        The token (prefix `v_`) reads as the calling member with the
+        readonly role, and cannot write anything, post comments (urgent
+        ones included), register push or send positions. Its realtime
+        connection does not count as the member being online. The server
+        serves a browser viewer at `GET /view/` that reads the token from
+        the URL fragment (`#ws=<id>&t=<token>`), so it never reaches the server.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hours: { type: integer, minimum: 1, maximum: 168, default: 24 }
+      responses:
+        "201":
+          description: New link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ViewLink" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [view]
+      operationId: revokeViewLinks
+      summary: Revoke every view link the calling member made
+      responses:
+        "200":
+          description: Number of links that were still valid
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revoked]
+                properties:
+                  revoked: { type: integer }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v0/workspaces/{ws}/mcp:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    post:
+      tags: [mcp]
+      operationId: mcp
+      summary: Read-only Model Context Protocol tools for AI clients (capability "mcp")
+      description: |
+        One JSON-RPC 2.0 message per POST (MCP streamable HTTP, stateless,
+        answered as application/json). Methods: initialize, ping,
+        tools/list, tools/call. Tools: workspace_summary, search_records,
+        get_record, review_issues, reference_at, workload, recent_messages;
+        all read only. Takes a
+        view link token (the credential to give an AI tool) or a member
+        token. Notifications get 202, batches 400.
+        See protocol section 11.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jsonrpc, method]
+              properties:
+                jsonrpc: { type: string, enum: ["2.0"] }
+                id: { oneOf: [{ type: string }, { type: integer }] }
+                method: { type: string }
+                params: { type: object }
+      responses:
+        "200":
+          description: JSON-RPC response (result or error)
+          content:
+            application/json:
+              schema: { type: object }
+        "202": { description: "Notification accepted, no body" }
+        "400": { description: "Not JSON-RPC, or a batch" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+
+  parameters:
+    ws:
+      name: ws
+      in: path
+      required: true
+      description: Workspace id
+      schema: { type: string }
+
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable code
+          examples: [unauthorized, forbidden, not_found, bad_invite, invalid, invalid_feature, invalid_comment, id_conflict, last_leader, stale, too_large]
+        message: { type: string }
+
+    Info:
+      type: object
+      required: [name, protocol, capabilities]
+      properties:
+        name: { type: string }
+        protocol: { type: string, const: "0" }
+        version: { type: string }
+        capabilities:
+          type: array
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing, boreholes, structures, workload, gpx] }
+        max_upload_bytes: { type: integer }
+        max_push_batch: { type: integer }
+
+    Role:
+      type: string
+      enum: [leader, member, readonly]
+
+    JoinResult:
+      type: object
+      required: [workspace_id, workspace_name, member_id, role, token]
+      properties:
+        workspace_id: { type: string }
+        workspace_name: { type: string }
+        member_id: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        token: { type: string, description: Shown once; store it securely }
+        invite_code: { type: string, description: Only returned when creating }
+
+    Member:
+      type: object
+      required: [id, nickname, role, joined_at]
+      properties:
+        id: { type: string }
+        nickname: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        joined_at: { type: string, format: date-time }
+        last_seen: { type: string, format: date-time, description: "Last authenticated request, to the minute; absent before the first one." }
+        revoked: { type: boolean }
+
+    WorkspaceView:
+      type: object
+      required: [id, name, created_at, last_seq, me, online]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        last_seq: { type: integer }
+        settings_version: { type: integer, description: Version of the shared settings; 0 until first set }
+        archived_at: { type: string, format: date-time, description: Present while the workspace is archived }
+        me: { $ref: "#/components/schemas/Member" }
+        invite_code: { type: string, description: Leaders only }
+        online:
+          type: array
+          items: { type: string }
+
+    Settings:
+      type: object
+      required: [version, settings]
+      properties:
+        version: { type: integer }
+        settings:
+          type: object
+          description: Opaque to the server; see section 2.2 of the protocol for the keys clients use
+          properties:
+            form:
+              type: array
+              items: { $ref: "#/components/schemas/FormField" }
+            legend: { $ref: "#/components/schemas/Legend" }
+            local_grid:
+              description: "Old-style map grid shared by the leaders; null once they stopped using one (section 2.2)"
+              oneOf:
+                - { $ref: "#/components/schemas/LocalGrid" }
+                - { type: "null" }
+            phrases:
+              type: array
+              description: Description words offered besides the built-in ones
+              items:
+                type: object
+                required: [name, items]
+                properties:
+                  name: { type: string, maxLength: 20 }
+                  items: { type: array, maxItems: 100, items: { type: string, maxLength: 40 } }
+            overlays:
+              type: array
+              description: Image overlays the leaders share, drawn bottom first
+              items: { $ref: "#/components/schemas/SharedOverlay" }
+            basemaps:
+              type: array
+              description: Base maps the leaders share; never ones that need an API key
+              items: { $ref: "#/components/schemas/SharedBasemap" }
+            notice:
+              type: object
+              description: The pinned notice a leader posted; absent when there is none (section 2.2)
+              required: [text, updated_at]
+              properties:
+                text: { type: string, maxLength: 2000 }
+                updated_at: { type: string, format: date-time }
+                by: { type: string, description: "Nickname of the leader who posted it, for display only" }
+
+    Legend:
+      type: object
+      properties:
+        key: { type: string, description: Feature property whose value picks the colour; empty turns the legend off }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [value, color]
+            properties:
+              value: { type: string, description: "Matched trimmed and case-insensitively" }
+              color: { type: string, pattern: "^#[0-9A-Fa-f]{6}$" }
+
+    LocalGrid:
+      type: object
+      required: [name, ellipsoid, width, zone]
+      properties:
+        name: { type: string }
+        ellipsoid: { type: string, enum: [CGCS2000, WGS84, XIAN80, BEIJING54] }
+        width: { type: integer, enum: [3, 6], description: Zone width in degrees }
+        zone: { type: integer, minimum: 1 }
+        shift:
+          description: From GPS (CGCS2000) to the local grid; absent means only the ellipsoid changes
+          oneOf:
+            - type: object
+              required: [type, dx, dy, rotationSeconds, ppm]
+              properties:
+                type: { type: string, const: plane }
+                dx: { type: number, description: Metres north }
+                dy: { type: number, description: Metres east }
+                rotationSeconds: { type: number }
+                ppm: { type: number, minimum: -1000, maximum: 1000 }
+            - type: object
+              required: [type, dx, dy, dz, rx, ry, rz, ppm]
+              properties:
+                type: { type: string, const: bursa }
+                dx: { type: number }
+                dy: { type: number }
+                dz: { type: number }
+                rx: { type: number, description: "Arc seconds, coordinate frame convention" }
+                ry: { type: number }
+                rz: { type: number }
+                ppm: { type: number, minimum: -1000, maximum: 1000 }
+
+    SharedOverlay:
+      type: object
+      required: [id, name, file, type, width, height, corners]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 64 }
+        name: { type: string }
+        file: { type: string, pattern: "^[0-9a-f]{64}$", description: "SHA-256 of the picture, uploaded as an attachment first" }
+        type: { type: string, enum: [image/jpeg, image/png] }
+        width: { type: integer, minimum: 1, description: Pixels }
+        height: { type: integer, minimum: 1 }
+        corners:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: "[longitude, latitude] of the top left, top right, bottom right and bottom left corners"
+          items: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+        opacity: { type: number, minimum: 0.1, maximum: 1, default: 0.6 }
+        placement: { type: string, enum: [view, world_file], default: view }
+        control_points: { type: integer, minimum: 0, default: 0 }
+
+    SharedBasemap:
+      type: object
+      required: [id, name, url]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9_.-]{1,64}$" }
+        name: { type: string }
+        url:
+          type: string
+          description: "http(s) tile template with {z} {x} {y} (or {-y}) and optional {s}, or a WMS GetMap address with {bbox-epsg-3857}; never {key}"
+        subdomains: { type: array, items: { type: string } }
+        max_zoom: { type: integer, minimum: 1, maximum: 24, default: 18 }
+        tms: { type: boolean, default: false }
+        attribution: { type: string }
+
+    FormField:
+      type: object
+      required: [key]
+      properties:
+        key: { type: string, description: Property name the value is stored under }
+        label: { type: string, description: Shown to people; defaults to key }
+        type: { type: string, enum: [TEXT, NUMBER, CHOICE], default: TEXT }
+        options: { type: array, items: { type: string }, description: Allowed values for CHOICE }
+        unit: { type: string }
+        kinds: { type: array, items: { type: string }, description: Feature kinds it applies to; empty means all }
+
+    Comment:
+      type: object
+      required: [id, body, author_id, nickname, created_at, seq]
+      properties:
+        id: { type: string }
+        feature_id: { type: string, description: Absent for team messages }
+        body: { type: string, description: Empty when deleted }
+        at: { type: array, items: { type: number }, minItems: 2, maxItems: 2, description: "[longitude, latitude]" }
+        author_id: { type: string }
+        nickname: { type: string }
+        created_at: { type: string, format: date-time }
+        seq: { type: integer, description: "Comment sequence, separate from the feature seq" }
+        deleted: { type: boolean, default: false }
+        urgent: { type: boolean, default: false, description: "Urgent team message (section 8.1)" }
+        roll_call: { type: boolean, default: false, description: "Roll call started by a leader (section 8.2)" }
+        answer_to: { type: string, description: "The roll call this message answers (section 8.2)" }
+        back_by: { type: string, format: date-time, description: "Check-out with an expected return time (section 8.3)" }
+        back_from: { type: string, description: "The check-out this message closes (section 8.3)" }
+
+    Sync:
+      type: object
+      required: [version, updated_at]
+      properties:
+        version: { type: integer, minimum: 1 }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string, description: Set by the server }
+        deleted: { type: boolean, default: false }
+        seq: { type: integer, description: Set by the server; ignored on push }
+
+    Feature:
+      type: object
+      description: GeoJSON Feature (RFC 7946) with sync metadata
+      required: [type, id, geometry, properties, sync]
+      properties:
+        type: { type: string, const: Feature }
+        id: { type: string, minLength: 1, maxLength: 64 }
+        geometry:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/Geometry"
+        properties:
+          type: [object, "null"]
+          additionalProperties: true
+        sync: { $ref: "#/components/schemas/Sync" }
+
+    Geometry:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [Point, MultiPoint, LineString, MultiLineString, Polygon, MultiPolygon, GeometryCollection]
+        coordinates: {}
+        geometries:
+          type: array
+          items: { $ref: "#/components/schemas/Geometry" }
+
+    PushResult:
+      type: object
+      required: [results, seq]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [id, status, seq]
+            properties:
+              id: { type: string }
+              status: { type: string, enum: [applied, duplicate, stale] }
+              seq: { type: integer }
+              current: { $ref: "#/components/schemas/Feature" }
+        seq: { type: integer, description: Workspace's latest seq }
+
+    PullResult:
+      type: object
+      required: [features, seq, more]
+      properties:
+        features:
+          type: array
+          items: { $ref: "#/components/schemas/Feature" }
+        seq: { type: integer, description: Pass as `since` next time }
+        more: { type: boolean }
+
+    Position:
+      type: object
+      required: [type, lon, lat]
+      properties:
+        type: { type: string, const: position }
+        member_id: { type: string, description: Set by the server }
+        nickname: { type: string, description: Set by the server }
+        lon: { type: number, minimum: -180, maximum: 180 }
+        lat: { type: number, minimum: -90, maximum: 90 }
+        alt: { type: number }
+        accuracy: { type: number, minimum: 0, description: Metres }
+        heading: { type: number, description: Degrees clockwise from north }
+        speed: { type: number, description: Metres per second }
+        at: { type: string, format: date-time }
+
+    PushEvent:
+      type: string
+      enum: [message, comment, task, alert, rollcall, overdue, notice]
+      description: "alert, rollcall and overdue are always delivered, whatever a target subscribed to"
+    PushTarget:
+      type: object
+      required: [endpoint, events, updated_at]
+      properties:
+        endpoint: { type: string, format: uri }
+        events: { type: array, items: { $ref: "#/components/schemas/PushEvent" } }
+        keys: { $ref: "#/components/schemas/PushKeys" }
+        updated_at: { type: string, format: date-time }
+    ViewLink:
+      type: object
+      required: [token, expires_at, path]
+      properties:
+        token: { type: string, description: "Bearer token, prefix v_" }
+        expires_at: { type: string, format: date-time }
+        path: { type: string, description: "Viewer page on this server, token in the fragment", example: "/view/#ws=w-1c2d&t=v_abc" }
+    PushKeys:
+      type: object
+      description: "Web Push keys (base64url); when given, notices are encrypted per RFC 8291 (aes128gcm)"
+      required: [p256dh, auth]
+      properties:
+        p256dh: { type: string, description: Uncompressed P-256 public key }
+        auth: { type: string, description: 16-byte authentication secret }
+    PushNotice:
+      type: object
+      description: Body POSTed to a push endpoint. It never carries message text or record content.
+      required: [type, workspace]
+      properties:
+        type: { $ref: "#/components/schemas/PushEvent" }
+        workspace: { type: string }
+        feature: { type: string, description: Record concerned (comment and task) }
+        from: { type: string, description: Member who caused the notice }
+        seq: { type: integer, description: "Comment seq for message and comment notices, feature seq for task notices" }
+    Issue:
+      type: object
+      required: [feature, code, message]
+      properties:
+        feature: { type: string, description: Record id }
+        title: { type: string }
+        code: { type: string, enum: [duplicate_number, duplicate_sample, no_position, poor_accuracy, far_away, missing_stop, redo] }
+        message: { type: string, description: For display only }
+    RealtimeMessage:
+      description: Any message on the realtime channel
+      oneOf:
+        - $ref: "#/components/schemas/Position"
+        - type: object
+          required: [type, member_id, online, positions]
+          properties:
+            type: { type: string, const: hello }
+            member_id: { type: string }
+            online: { type: array, items: { type: string } }
+            positions: { type: array, items: { $ref: "#/components/schemas/Position" } }
+        - type: object
+          required: [type, member_id, online]
+          properties:
+            type: { type: string, const: presence }
+            member_id: { type: string }
+            online: { type: boolean }
+        - type: object
+          required: [type, seq]
+          properties:
+            type: { type: string, enum: [feature_changed, comments_changed] }
+            seq: { type: integer }
+        - type: object
+          required: [type, version]
+          properties:
+            type: { type: string, const: settings_changed }
+            version: { type: integer }
+        - type: object
+          required: [type]
+          properties:
+            type: { type: string, enum: [members_changed, ping, pong] }
+        - type: object
+          required: [type, name]
+          properties:
+            type: { type: string, const: workspace_changed }
+            name: { type: string }
+            archived_at: { type: string, format: date-time }
+        - type: object
+          required: [type, error]
+          properties:
+            type: { type: string, const: error }
+            error: { type: string }

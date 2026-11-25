@@ -1,0 +1,5 @@
+extends:
+  - recommended
+rules:
+  # Error responses share one schema; not every operation needs a 4xx list.
+  operation-4xx-response: off
