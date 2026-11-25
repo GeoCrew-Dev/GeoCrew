@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/storetest"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqlite"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/storetest"
 )
 
 // The contract runs only against a real server: set GEOCREW_TEST_POSTGRES to

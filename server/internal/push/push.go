@@ -23,7 +23,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // Event types a member can subscribe to.

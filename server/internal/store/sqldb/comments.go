@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 const commentSelect = `SELECT c.id, c.seq, c.feature_id, c.body, c.at_lng, c.at_lat, c.author_id,

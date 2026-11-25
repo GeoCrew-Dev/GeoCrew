@@ -8,7 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqldb"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqldb"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )

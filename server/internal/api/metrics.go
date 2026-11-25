@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/metrics"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/metrics"
 )
 
 // MetricsHandler serves s.Metrics at /metrics in the Prometheus text

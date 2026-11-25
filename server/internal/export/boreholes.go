@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // BoreholeHeader is the column order of the borehole layer table, the same

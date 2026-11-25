@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // Kind is where a record refers to an attachment and how a package names it.

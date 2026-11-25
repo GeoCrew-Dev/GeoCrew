@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/export"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/mcp"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/export"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/mcp"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // mcpWriteTools are offered only with an AI link (protocol v0 §11.1). They

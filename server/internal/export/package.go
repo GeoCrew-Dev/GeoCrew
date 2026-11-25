@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // Format and version of the project package, shared with the Android app's

@@ -7,8 +7,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/push"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 type putPushReq struct {

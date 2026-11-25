@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // WorkloadHeader is the column order of the daily workload table.

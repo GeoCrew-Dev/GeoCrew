@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // GPX writes the workspace as GPX 1.1 for GPS units, hiking apps and

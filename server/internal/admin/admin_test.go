@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqldb"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqldb"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqlite"
 )
 
 func open(t *testing.T) *sqlite.DB {

@@ -3,7 +3,7 @@
 从外部（只用 HTTP 和 WebSocket）检查一个服务端是否按[协议 v0](../docs/protocol-v0.md)工作。自己实现服务端、改了官方服务端，或者升级前想确认新版本没有破坏客户端，都可以跑一遍。
 
 ```
-go run github.com/GeoCrew-Dev/GeoCrew-Protocol/conformance@latest -server https://geo.example.org
+go run github.com/GeoCrew-Dev/GeoCrew/protocol/conformance@latest -server https://geo.example.org
 ```
 
 需要 Go 1.22 以上，不依赖第三方库。每项检查一行，前面标出对应的协议章节；有失败时退出码为 1，可以直接放进 CI。加 `-v` 会同时列出跳过的检查和原因。

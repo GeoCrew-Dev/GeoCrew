@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // Dialect is what one database engine needs beyond the shared SQL.

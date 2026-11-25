@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/realtime"
 )
 
 type rpcResp struct {

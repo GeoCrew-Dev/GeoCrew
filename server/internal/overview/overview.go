@@ -10,9 +10,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/backup"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/backup"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // Workspace is one row of the overview.

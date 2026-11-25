@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/backup"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/backup"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqlite"
 )
 
 func TestBuild(t *testing.T) {

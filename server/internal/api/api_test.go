@@ -18,11 +18,11 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/push"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/realtime"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqlite"
 )
 
 type env struct {
