@@ -64,6 +64,7 @@ object QuickCommand {
     private val stopTrack = Regex("^(停止|结束|关闭|暂停)(记录)?轨迹$")
     private val photo = Regex("^(拍照|拍一?张(照片)?|照相)$")
     private val undo = Regex("^(撤销|撤回|撤销上一步|撤回上一步)$")
+    private val today = Regex("^(?:今天|今日)(?:一共|总共)?(?:做了|干了|记了|完成了|采了)?(?:多少|几个|啥|什么|怎么样|进度|小结|汇总|情况)(?:了|啊|呢)?$|^(?:今日|今天的?)?(?:小结|日报|进度)$")
     private val point = Regex("^(?:在这里|这里)?(?:打|定|记|加|新建)(?:一?个)?(?:地质)?点")
     private val attitudeWords = Regex("^(?:产状|记产状|测得?产状)")
     private val noteLead = Regex("^(?:描述|备注|记录|写上|说明)(?:是|为)?")
@@ -120,6 +121,7 @@ object QuickCommand {
             stopTrack.matches(text) -> return call(ActionCatalog.STOP_TRACK)
             photo.matches(text) -> return call(ActionCatalog.TAKE_PHOTO)
             undo.matches(text) -> return call(ActionCatalog.UNDO_LAST)
+            today.matches(text) -> return call(ActionCatalog.DAY_SUMMARY)
         }
         if (tooMuch.any { text.contains(it) }) return null
 

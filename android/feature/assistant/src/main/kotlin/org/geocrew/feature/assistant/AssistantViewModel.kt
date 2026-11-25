@@ -125,6 +125,12 @@ class AssistantViewModel @Inject constructor(
         }
     }
 
+    /** Reads [text] aloud without adding a line, for results already shown. */
+    private fun speak(text: String) {
+        val s = config.values.value
+        if (s.speak) speaker.say(text, s.rate) {}
+    }
+
     private fun done(results: List<ActionResult>, requestId: String) {
         val ok = results.filter { it.ok }
         if (ok.isEmpty()) return
@@ -190,12 +196,18 @@ class AssistantViewModel @Inject constructor(
                 if (c.name == ActionCatalog.PLACE_POINT) { startGuide(c.args, ActionSource.USER, req); return }
                 results += runner.run(c, ActionSource.USER, req)
             }
-            done(results, req)
-            results.firstOrNull { !it.ok }?.let { say(it.summary) } ?: say(results.joinToString("；") { it.summary })
+            val failed = results.firstOrNull { !it.ok }
+            if (results.any { it.ok && it.touched.isNotEmpty() }) {
+                // Changes show once, as an undoable ✓ line, and are read out.
+                done(results.filter { it.touched.isNotEmpty() }, req)
+                if (failed != null) say(failed.summary) else speak(results.joinToString("；") { it.summary })
+            } else {
+                say(failed?.summary ?: results.joinToString("；") { it.summary })
+            }
             return
         }
         if (!source.available) {
-            say("这句我在手机上没听懂。可以说：定点、打点 花岗岩 120∠35、产状 120∠35、开始轨迹、停止轨迹、拍照、撤销。在右上角设置里填上自己的 AI 接口后，可以随便说。")
+            say("这句我在手机上没听懂。可以说：定点、打点 花岗岩 120∠35、产状 120∠35、岩性 花岗岩、补充 见石英脉、采样、开始轨迹、停止轨迹、拍照、撤销、今天做了多少。在右上角设置里填上自己的 AI 接口后，可以随便说。")
             return
         }
         history += OpenAiWire.user(text)
@@ -404,6 +416,6 @@ class AssistantViewModel @Inject constructor(
         const val MAX_ROUNDS = 6
         const val MAX_HISTORY = 40
         private val YES = Regex("^(好|好的|是|是的|对|拍|拍吧|拍照|打开|打开相机|可以|行|嗯|要)$")
-        const val HELLO = "可以说「定点」，我会一项项问你点号、岩性、产状和描述；也可以说「开始轨迹」「产状 120∠35」「拍照」「撤销」。"
+        const val HELLO = "可以说「定点」，我会一项项问你点号、岩性、产状和描述；也可以说「开始轨迹」「产状 120∠35」「岩性 花岗岩」「补充 见石英脉」「采样」「拍照」「撤销」「今天做了多少」。"
     }
 }

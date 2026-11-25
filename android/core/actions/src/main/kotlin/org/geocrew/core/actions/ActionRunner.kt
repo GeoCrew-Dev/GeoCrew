@@ -83,7 +83,7 @@ class ActionRunner @Inject constructor(
             if (e is kotlinx.coroutines.CancellationException) throw e
             ActionResult.fail("${spec.title}失败：${e.message ?: e.javaClass.simpleName}")
         }
-        if (result.ok && spec.name != ActionCatalog.FIND_RECORDS && spec.name != ActionCatalog.GET_RECORD) {
+        if (result.ok && spec.risk != org.geocrew.core.model.action.ActionRisk.READ) {
             log.add(
                 LogEntry(
                     id = UUID.randomUUID().toString(), requestId = requestId, action = spec.name, title = spec.title,
@@ -199,6 +199,20 @@ class ActionRunner @Inject constructor(
         val a = call.args
         return when (call.name) {
             ActionCatalog.FIND_RECORDS -> find(a)
+            ActionCatalog.DAY_SUMMARY -> {
+                val p = projects.current.first()
+                val zone = java.time.ZoneId.systemDefault()
+                val today = java.time.LocalDate.now(zone)
+                val date = a.str("date")?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } ?: today
+                val s = org.geocrew.core.model.DaySummary.of(features.all(p.id), date, zone, p.config.recordRules)
+                ActionResult(
+                    true, s.text(today = date == today),
+                    buildJsonObject {
+                        put("date", date.toString()); put("geo_points", s.points); put("other_records", s.otherRecords)
+                        put("samples", s.samples); put("photos", s.photos); put("track_m", s.trackMeters.toInt()); put("incomplete", s.incomplete)
+                    },
+                )
+            }
             ActionCatalog.GET_RECORD -> {
                 val f = resolve(a.str("id")) ?: return ActionResult.fail("找不到这条记录")
                 ActionResult(true, "读取了 ${f.title ?: "记录"}", detail(f))

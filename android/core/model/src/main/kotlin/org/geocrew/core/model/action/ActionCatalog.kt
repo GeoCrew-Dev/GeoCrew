@@ -30,6 +30,7 @@ object ActionCatalog {
     const val DELETE_RECORDS = "delete_records"
     const val SEND_TEAM_MESSAGE = "send_team_message"
     const val UNDO_LAST = "undo_last"
+    const val DAY_SUMMARY = "day_summary"
 
     /** "current" in a record id means the record open on screen, or else the newest one. */
     const val CURRENT = "current"
@@ -150,9 +151,18 @@ object ActionCatalog {
 
     val undoLast = ActionSpec(UNDO_LAST, "撤销", "撤销上一次 AI 或口令做的修改。", ActionRisk.EDIT, undoable = false)
 
+    val daySummary = ActionSpec(
+        DAY_SUMMARY, "当天小结",
+        "当天（或指定日期）在本工程记了多少：地质点、其他记录、样品、照片、轨迹里程，以及缺必填项的点数。",
+        ActionRisk.READ,
+        Schema.obj {
+            string("date", "日期 YYYY-MM-DD，省略为今天")
+        },
+    )
+
     val all: List<ActionSpec> = listOf(
         findRecords, getRecord, open, placePoint, updateRecord, addSample, setAttribute,
-        startTrack, stopTrack, takePhoto, deleteRecords, sendTeamMessage, undoLast,
+        startTrack, stopTrack, takePhoto, deleteRecords, sendTeamMessage, undoLast, daySummary,
     )
 
     /** Actions whose results carry text people wrote; reading them taints the request. */
