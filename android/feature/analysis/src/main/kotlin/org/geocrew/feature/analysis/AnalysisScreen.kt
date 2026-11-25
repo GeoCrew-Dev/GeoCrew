@@ -137,7 +137,21 @@ private fun ToolForm(tool: GisTool, vm: AnalysisViewModel, onShowOnMap: () -> Un
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(tool.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("将使用当前工程中的 ${input.size} 条记录", style = MaterialTheme.typography.labelLarge)
+        val referenceLayers by vm.referenceLayers.collectAsStateWithLifecycle()
+        val withReference by vm.withReference.collectAsStateWithLifecycle()
+        val referenceCount by vm.referenceCount.collectAsStateWithLifecycle()
+        Text(
+            "将使用当前工程中的 ${input.size - referenceCount} 条记录" + if (referenceCount > 0) "和 $referenceCount 个参考图形" else "",
+            style = MaterialTheme.typography.labelLarge,
+        )
+        if (referenceLayers.isNotEmpty()) {
+            Text("也用参考图层里的图形（例如拿前人地质图的图斑做图切剖面、面内统计）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                referenceLayers.forEach { l ->
+                    FilterChip(selected = l.id in withReference, onClick = { vm.toggleReference(l.id) }, label = { Text(l.name) })
+                }
+            }
+        }
 
         tool.params.forEach { p ->
             when (p) {

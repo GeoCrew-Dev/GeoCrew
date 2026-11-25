@@ -540,11 +540,6 @@ class MapViewModel @Inject constructor(
         }
     }
 
-    fun removeReference(layerId: String) {
-        val p = project.value ?: return
-        appScope.launch { referenceStore.remove(p.id, layerId) }
-    }
-
     /** The project's image overlays, each with whether its file is on this device. */
     val overlayItems: StateFlow<List<OverlayItem>> = project.map { p ->
         val team = when (p?.team?.role) {

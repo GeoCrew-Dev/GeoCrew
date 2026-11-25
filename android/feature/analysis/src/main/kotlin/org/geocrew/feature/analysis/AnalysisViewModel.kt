@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -58,6 +59,7 @@ class AnalysisViewModel @Inject constructor(
     private val clock: Clock,
     pluginTools: PluginTools,
     private val terrain: org.geocrew.core.data.repo.TerrainTiles,
+    private val referenceStore: org.geocrew.core.data.repo.ReferenceLayers,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     /** Starts tools from other apps; the screen launches what it asks for. */
     val plugins: PluginHost,
@@ -77,9 +79,35 @@ class AnalysisViewModel @Inject constructor(
         .flatMapLatest { features.observeProject(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** The project's reference layers, offered as extra input (an old map's units for a map section, say). */
+    val referenceLayers: StateFlow<List<org.geocrew.core.model.ReferenceLayer>> = projects.current.map { it.config.referenceLayers }
+        .distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _withReference = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Ids of the reference layers the tool reads besides the records. */
+    val withReference: StateFlow<Set<String>> = _withReference.asStateFlow()
+
+    fun toggleReference(layerId: String) {
+        _withReference.value = _withReference.value.let { if (layerId in it) it - layerId else it + layerId }
+        _run.value = _run.value.copy(output = null, error = null, saved = null, exported = null)
+    }
+
+    /** Shapes of the chosen reference layers, with ids that cannot clash with records. */
+    private val referenceShapes: StateFlow<List<GeoFeature>> = combine(projects.current.map { it.id }.distinctUntilChanged(), referenceLayers, _withReference) { pid, layers, chosen ->
+        Triple(pid, layers.filter { it.id in chosen }, chosen)
+    }.mapLatest { (pid, layers, _) ->
+        layers.flatMap { l -> referenceStore.shapes(pid, l).mapIndexed { i, f -> f.copy(id = "ref:${l.id}:$i") } }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** How many of [input] come from reference layers. */
+    val referenceCount: StateFlow<Int> = combine(referenceShapes, _tool) { list, t ->
+        if (t == null) 0 else ToolInput(list).of(t.accepts).size
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
     /** Features the chosen tool would read. */
-    val input: StateFlow<List<GeoFeature>> = combine(all, _tool) { list, t ->
-        if (t == null) emptyList() else ToolInput(list).of(t.accepts)
+    val input: StateFlow<List<GeoFeature>> = combine(all, referenceShapes, _tool) { list, extra, t ->
+        if (t == null) emptyList() else ToolInput(list + extra).of(t.accepts)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val fields: StateFlow<List<String>> = input.map { numericFields(it) }
