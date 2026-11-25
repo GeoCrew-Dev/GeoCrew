@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -107,6 +108,14 @@ fun MapScreen(
 
     var showLayers by rememberSaveable { mutableStateOf(false) }
     var downloadArea by remember { mutableStateOf<org.geocrew.core.model.Bounds?>(null) }
+    var printTitle by remember { mutableStateOf<String?>(null) }
+    var pendingPrint by remember { mutableStateOf<Pair<org.geocrew.core.map.MapCapture, MapPrintSpec>?>(null) }
+    val printTarget = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        val job = pendingPrint
+        pendingPrint = null
+        if (uri != null && job != null) viewModel.printMap(context.applicationContext, uri, job.first, job.second)
+    }
+    val printScope = androidx.compose.runtime.rememberCoroutineScope()
     var showGoTo by rememberSaveable { mutableStateOf(false) }
     /** A position reached through "前往坐标", marked until the next one. */
     var goneTo by remember { mutableStateOf<LngLat?>(null) }
@@ -510,6 +519,7 @@ fun MapScreen(
                 onManage = { showLayers = false; onOpenSettings() },
                 onShare = viewModel::toggleSharedBasemap,
                 onDownload = { showLayers = false; downloadArea = camera.visibleBounds() },
+                onPrint = { showLayers = false; printTitle = project?.name.orEmpty() },
                 overlays = overlayItems,
                 overlayActions = remember(viewModel, camera) {
                     OverlayActions(
@@ -528,7 +538,57 @@ fun MapScreen(
         downloadArea?.let { area ->
             OfflineDownloadDialog(bm.source, area, camera.zoom, onStart = viewModel::startDownload, onDismiss = { downloadArea = null })
         }
+        printTitle?.let { initial ->
+            PrintDialog(initial, onDismiss = { printTitle = null }) { title ->
+                printTitle = null
+                printScope.launch {
+                    // Ticks and the north arrow assume a north-up map.
+                    if (kotlin.math.abs(camera.bearing) > 0.1) {
+                        camera.resetNorth()
+                        kotlinx.coroutines.delay(500)
+                    }
+                    val shot = camera.capture()
+                    if (shot == null) {
+                        viewModel.say("地图还没准备好，请稍后再试")
+                        return@launch
+                    }
+                    val p = project
+                    val spec = MapPrintSpec(
+                        title = title.ifBlank { p?.name ?: "地图" },
+                        byline = "制图：" + (p?.team?.nickname ?: settings?.nickname?.ifBlank { null } ?: "—") + " · " + java.time.LocalDate.now(),
+                        source = listOf(bm.source.name, bm.source.attribution).filter { it.isNotBlank() }.distinct().joinToString(" · "),
+                        legend = overlays.legend.used(overlays.features).map { it.color to it.value },
+                        legendTitle = "图例 · " + legendTitle(overlays.legend.key, p?.config?.fields.orEmpty()),
+                        lines = lineStylesUsed(overlays.features),
+                        labels = nameLabels.map { it.position to it.text },
+                    )
+                    pendingPrint = shot to spec
+                    printTarget.launch(spec.title.replace(Regex("[\\\\/:*?\"<>|]"), "_") + ".pdf")
+                }
+            }
+        }
     }
+}
+
+/** Asks for the sheet's title before printing the view. */
+@Composable
+private fun PrintDialog(initial: String, onDismiss: () -> Unit, onPrint: (String) -> Unit) {
+    var title by rememberSaveable { mutableStateOf(initial) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("导出 PDF 地图") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(title, { title = it.take(60) }, label = { Text("图名") }, singleLine = true)
+                Text(
+                    "按当前视野出一张 A4 图：比例尺取整（如 1:2.5万），带经纬度刻度、指北针、图例和底图来源。出图前地图会转回正北。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPrint(title.trim()) }) { Text("选择保存位置") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 /** The open project's name; tapping it goes back to the project list. */

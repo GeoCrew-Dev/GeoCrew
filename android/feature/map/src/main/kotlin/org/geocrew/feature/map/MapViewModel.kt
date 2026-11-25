@@ -744,6 +744,25 @@ class MapViewModel @Inject constructor(
     val notice: StateFlow<String?> = _notice.asStateFlow()
     fun consumeNotice() { _notice.value = null }
 
+    /** Shows [text] as a one-off message on the map. */
+    fun say(text: String) { _notice.value = text }
+
+    /** Writes the captured map as a PDF sheet to [uri] (from the system file picker). */
+    internal fun printMap(context: android.content.Context, uri: android.net.Uri, capture: org.geocrew.core.map.MapCapture, spec: MapPrintSpec) {
+        viewModelScope.launch {
+            _notice.value = try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val out = context.contentResolver.openOutputStream(uri) ?: throw java.io.IOException("无法写入所选文件")
+                    out.use { MapPrintPdf().write(capture, spec, it) }
+                }
+                "已导出地图 PDF"
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                "导出地图失败：${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+    }
+
     /**
      * Adds a point at the current GPS fix, keeping its altitude and accuracy;
      * with averaging on, collects fixes for the set time first.

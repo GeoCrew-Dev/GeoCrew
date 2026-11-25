@@ -98,10 +98,36 @@ class MapCameraState(center: LngLat = LngLat(105.0, 35.0), zoom: Double = 3.5) {
         org.geocrew.core.model.Bounds(b.southWest.longitude, b.southWest.latitude, b.northEast.longitude, b.northEast.latitude)
     }
 
+    /**
+     * The map as drawn now, for printing, with the screen position of any
+     * place on it; null before the map is ready. Call on the main thread.
+     * Text the app draws above the map ([MapLabel]) is not in the picture.
+     */
+    suspend fun capture(): MapCapture? {
+        val m = map ?: return null
+        val bounds = visibleBounds() ?: return null
+        val bitmap = kotlinx.coroutines.suspendCancellableCoroutine<android.graphics.Bitmap?> { c ->
+            m.snapshot { b -> if (c.isActive) c.resumeWith(Result.success(b)) }
+        } ?: return null
+        val projection = m.projection
+        return MapCapture(bitmap, bounds, m.cameraPosition.bearing) { p ->
+            val pt = projection.toScreenLocation(LatLng(p.lat, p.lng))
+            pt.x to pt.y
+        }
+    }
+
     fun resetNorth() = whenReady { m ->
         m.animateCamera(CameraUpdateFactory.bearingTo(0.0), 300)
     }
 }
+
+/** A picture of the map and where places fall on it, in its pixels. */
+class MapCapture(
+    val bitmap: android.graphics.Bitmap,
+    val bounds: org.geocrew.core.model.Bounds,
+    val bearing: Double,
+    val toPixel: (LngLat) -> Pair<Float, Float>,
+)
 
 @Composable
 fun rememberMapCameraState(): MapCameraState = remember { MapCameraState() }

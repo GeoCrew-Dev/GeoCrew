@@ -248,6 +248,8 @@ internal fun LayerSheet(
     onShare: (String) -> Unit = {},
     /** Keep the area on screen of the current base map offline. */
     onDownload: () -> Unit,
+    /** Print the view as a PDF map sheet. */
+    onPrint: () -> Unit = {},
     overlays: List<OverlayItem>,
     overlayActions: OverlayActions,
     onDismiss: () -> Unit,
@@ -377,6 +379,7 @@ internal fun LayerSheet(
             item {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     TextButton(onClick = onDownload) { Text("下载当前范围") }
+                    TextButton(onClick = onPrint) { Text("导出 PDF") }
                     TextButton(onClick = onManage) { Text("管理 Key 和图源") }
                 }
             }
