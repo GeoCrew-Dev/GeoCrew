@@ -58,6 +58,7 @@
 | `push` | 推送通知（运维配置后才有） | 第 9 节 |
 | `view` | 只读查看链接 | 第 10 节 |
 | `mcp` | 供 AI 工具读取的 MCP 接口 | 第 11 节 |
+| `mcp_write` | AI 写入链接和 MCP 写工具 | 第 11.1 节 |
 
 不认识的能力名直接忽略。
 
@@ -166,6 +167,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | GET | `/api/v0/workspaces/{id}/ws` | 任意 | 升级为 WebSocket 实时通道 |
 | GET / PUT / DELETE | `/api/v0/workspaces/{id}/push` | 任意 | 查看、登记、取消我的推送地址（见第 9 节） |
 | POST / DELETE | `/api/v0/workspaces/{id}/view-links` | 任意（不含查看链接本身） | 生成一个只读查看链接 / 撤销我生成的全部查看链接（见第 10 节） |
+| POST | `/api/v0/workspaces/{id}/ai-links` | 组长、组员 | 生成一个 AI 写入链接，只在 MCP 地址上有效（见第 11.1 节） |
 | POST | `/api/v0/workspaces/{id}/mcp` | 任意（含查看链接） | 供 AI 工具读取工作组的 MCP 接口（JSON-RPC 2.0，见第 11 节）。能力名 `mcp` |
 | GET | `/view/` | 无 | 浏览器查看页（令牌在网址 `#` 后面，见第 10 节） |
 
@@ -697,16 +699,20 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 
 接入时把 `https://服务器/api/v0/workspaces/{id}/mcp` 和令牌填进 AI 工具的 MCP 设置（远程服务器、自定义请求头）。拿到令牌的工具在有效期内能读全组数据（包括组员此刻的位置），只填进自己信任的工具，用完撤销。
 
-### 11.1 写操作（设计稿，尚未实现）
+### 11.1 写操作（AI 写入链接）
 
-现有工具都是只读的。以后加写操作时按下面的约定，实现前可能还会调整。
+服务器能力里有 `mcp_write` 时可用。查看链接永远只读；要让 AI 工具动手，用另一种「AI 写入链接」：
 
-- 凭据：查看链接永远只读。写入用另一种「AI 写入链接」：令牌以 `a_` 开头，组员在应用里生成，最长 24 小时，可随时撤销，只读组员不能生成。写入时算生成者本人的修改（`sync.updated_by` 是他），角色限制照旧。服务器支持时在能力里声明 `mcp_write`。
-- 风险类别：每个写工具标一个 [actions.md](actions.md) 第 3 节的类别。`edit` 在 MCP 注解里是 `readOnlyHint: false`，`bulk`、`delete`、`send` 还要加 `destructiveHint: true`，让客户端知道哪些要先问用户。组长 `ai_limits.deny` 里列出的类别，服务端直接拒绝，以 `isError` 结果说明是组长禁止的。
-- 首批工具：`add_comment`（在记录上留言，`send`）、`place_point`（新建地质点，`edit`）、`update_record`（改岩性、描述、产状，追加样品，`edit`）、`set_task_status`（§6.1 任务状态，`edit`）。删除、批量修改、改设置和成员不开放。
-- 冲突：`update_record` 带上读到的 `version`，按 §4.3 判断；别人先改了就以 `isError` 返回最新内容，让模型重新读了再改，不覆盖。
-- 留痕：服务端在修改历史里记下这次修改来自 AI 工具，组长审核（§6.9）时能看出来；归档的工作组（§2.3）拒绝写入。
-- 撤销：结果里带改动后的要素和版本号；`undo_last` 只撤销这个令牌最近一次写入，做法是把上一版本的内容写成一个新版本。
+- 生成：`POST …/ai-links` 提交 `{hours?}`，`hours` 为 1 到 24，省略时为 8，越界返回 `400 bad_hours`。只读组员、查看链接和 AI 写入链接本身都不能生成（`403`）。返回 `201`：`{token, expires_at, path}`，`token` 以 `a_` 开头，只显示这一次，`path` 是 MCP 地址。
+- 范围：这个令牌只在 `POST …/mcp` 上有效，其他接口一律 `403`。写入算生成者本人的修改（`sync.updated_by` 是他），按他当前的角色判断；组员被吊销、`DELETE …/view-links`（撤销我生成的全部链接）或到期后返回 `401`。
+- 用它调 `tools/list` 时，除第 11 节的只读工具外还有写工具。每个写工具标一个 [actions.md](actions.md) 第 3 节的类别：`edit` 在 MCP 注解里是 `readOnlyHint: false`，`send`、`bulk`、`delete` 还加 `destructiveHint: true`，让客户端知道要先问用户。组长 `ai_limits.deny` 里列出的类别、只读角色和归档的工作组（§2.3）都以 `isError` 结果拒绝并说明原因。
+
+| 工具 | 类别 | 参数 | 作用 |
+| --- | --- | --- | --- |
+| `add_comment` | `send` | `body`（1–2000 字）、`record`（记录 id 或名称，省略为全组消息） | 以生成者身份发一条讨论，和应用里发的一样广播和推送 |
+| `set_task_status` | `edit` | `record`、`status`（`todo`、`doing`、`done`） | 改已指派记录的任务状态（§6.1），版本号加 1；没指派的记录拒绝；同时有人在改时以 `isError` 返回，请重读后再试 |
+
+以后还会加：`place_point`（新建地质点）、`update_record`（改岩性、描述、产状，追加样品，带读到的 `version` 按 §4.3 判断冲突）、在修改历史里标明来自 AI 工具、`undo_last`（撤销这个令牌最近一次写入）。删除、批量修改、改设置和成员不开放。
 
 ## 12. 版本演进
 

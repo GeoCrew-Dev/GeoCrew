@@ -713,6 +713,34 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/ai-links:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    post:
+      tags: [mcp]
+      operationId: createAILink
+      summary: Make an AI link for the MCP write tools (capability "mcp_write")
+      description: |
+        The token (prefix `a_`) is accepted only by `POST .../mcp`, where it
+        acts as the calling member with their current role and adds the
+        write tools of protocol section 11.1. Read-only members, view links
+        and AI links cannot make one. `DELETE .../view-links` revokes it too.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hours: { type: integer, minimum: 1, maximum: 24, default: 8 }
+      responses:
+        "201":
+          description: New link; path is the MCP endpoint
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ViewLink" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /api/v0/workspaces/{ws}/view-links:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     post:
