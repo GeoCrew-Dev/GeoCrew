@@ -370,7 +370,7 @@ class FeatureDetailViewModel @Inject constructor(
 
     /** Copies [c]'s values onto this record in one edit. */
     fun applyCarry(c: CarryUi) = viewModelScope.launch {
-        features.edit(id) { c.values.forEach { (k, v) -> this[k] = v } }
+        features.edit(id) { c.values.forEach { (k, v) -> put(k, v) } }
     }
 
     private val _fieldError = MutableStateFlow<String?>(null)
