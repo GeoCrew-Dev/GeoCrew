@@ -199,3 +199,22 @@ func (w Workspace) CanManageMember(actor, target string) bool {
 	}
 	return w.Has(actor, ManageMembers) && w.rank(target) < w.rank(actor)
 }
+
+// CanSetOverride reports whether actor may set role's overrides on a layer to
+// set (permission -> level). Like CanGrant, actor must be able to manage the
+// role and hold each level itself. Overrides on Base bind everyone, including
+// people ranked above actor, so only the leader may set them.
+func (w Workspace) CanSetOverride(actor, role string, set map[string]Level) bool {
+	if actor == w.Leader {
+		return true
+	}
+	if role == Base || !w.CanManageRole(actor, role, ManageRoles) {
+		return false
+	}
+	for perm, level := range set {
+		if w.Level(actor, perm, "") < level {
+			return false
+		}
+	}
+	return true
+}

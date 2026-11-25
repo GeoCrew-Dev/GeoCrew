@@ -30,6 +30,10 @@ func TestSharedCases(t *testing.T) {
 				Role, Perm string
 				Level      Level
 			} `json:"grant"`
+			Override *struct {
+				Role string
+				Set  map[string]Level
+			} `json:"override"`
 			ManageMember string `json:"manage_member"`
 			Expect       bool   `json:"expect"`
 		} `json:"cases"`
@@ -51,6 +55,8 @@ func TestSharedCases(t *testing.T) {
 				got = w.CanManageRole(c.Who, c.ManageRole.Role, c.ManageRole.Via)
 			case c.Grant != nil:
 				got = w.CanGrant(c.Who, c.Grant.Role, c.Grant.Perm, c.Grant.Level)
+			case c.Override != nil:
+				got = w.CanSetOverride(c.Who, c.Override.Role, c.Override.Set)
 			case c.ManageMember != "":
 				got = w.CanManageMember(c.Who, c.ManageMember)
 			case c.Layer != "":

@@ -61,6 +61,11 @@
     { "name": "not one one lacks", "who": "dep", "grant": { "role": "sampler", "perm": "manage_plugins", "level": "all" }, "expect": false },
     { "name": "granting a scoped permission at one's own level", "who": "dep", "grant": { "role": "guest", "perm": "edit_rows", "level": "all" }, "expect": true },
 
+    { "name": "an override on a role below one's own", "who": "dep", "override": { "role": "sampler", "set": { "edit_rows": "own" } }, "expect": true },
+    { "name": "not without manage_roles", "who": "smp", "override": { "role": "guest", "set": { "edit_rows": "all" } }, "expect": false },
+    { "name": "only the leader sets overrides on the base role", "who": "dep", "override": { "role": "member", "set": { "view_layer": false } }, "expect": false },
+    { "name": "the leader sets overrides on the base role", "who": "lead", "override": { "role": "member", "set": { "view_layer": false } }, "expect": true },
+
     { "name": "managing a member who ranks lower", "who": "dep", "manage_member": "smp", "expect": true },
     { "name": "nobody manages the leader", "who": "dep", "manage_member": "lead", "expect": false },
     { "name": "nobody manages themselves", "who": "dep", "manage_member": "dep", "expect": false },
