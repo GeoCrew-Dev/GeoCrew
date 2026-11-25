@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -72,6 +75,14 @@ func (s *Server) mcpTools(ws string) []mcp.Tool {
 				}
 				return map[string]any{"issues": issues}, err
 			},
+		},
+		{
+			Name: "workload", Title: "工作量",
+			Description: "Field work per day and member: records created (geological points among them), edits, samples, photos and track kilometres, with a total row per member. Days are in the given time zone (default UTC+8).",
+			InputSchema: schema(`"from":{"type":"string","description":"first day, e.g. 2026-11-20"},` +
+				`"to":{"type":"string","description":"last day, inclusive"},` +
+				`"tz_offset_minutes":{"type":"integer","minimum":-720,"maximum":840,"default":480}`),
+			Call: func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpWorkload(ctx, ws, args) },
 		},
 		{
 			Name: "recent_messages", Title: "组内消息",
@@ -292,4 +303,66 @@ func (s *Server) mcpMessages(ctx context.Context, ws string, raw json.RawMessage
 		all = []mcpMessage{}
 	}
 	return map[string]any{"messages": all}, nil
+}
+
+func (s *Server) mcpWorkload(ctx context.Context, ws string, raw json.RawMessage) (any, error) {
+	a, err := args[struct {
+		From   string `json:"from"`
+		To     string `json:"to"`
+		Offset *int   `json:"tz_offset_minutes"`
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	offset := 480
+	if a.Offset != nil {
+		offset = *a.Offset
+	}
+	if offset < -720 || offset > 840 {
+		return nil, mcp.BadArgs("tz_offset_minutes must be between -720 and 840")
+	}
+	day := func(name, v string) (string, error) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return "", nil
+		}
+		if _, err := time.Parse("2006-01-02", v); err != nil {
+			return "", mcp.BadArgs("%s must be a day like 2026-11-24", name)
+		}
+		return v, nil
+	}
+	from, err := day("from", a.From)
+	if err != nil {
+		return nil, err
+	}
+	to, err := day("to", a.To)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if _, err := export.Workload(ctx, s.Store, ws, time.FixedZone("", offset*60), &buf); err != nil {
+		return nil, err
+	}
+	rows, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(buf.String(), "\ufeff"))).ReadAll()
+	if err != nil || len(rows) == 0 {
+		return nil, fmt.Errorf("workload table: %v", err)
+	}
+	head := rows[0]
+	filtered := from != "" || to != ""
+	out := []map[string]string{}
+	for _, row := range rows[1:] {
+		if len(row) != len(head) {
+			continue
+		}
+		d := row[0]
+		if d == "合计" && filtered || d != "合计" && (from != "" && d < from || to != "" && d > to) {
+			continue
+		}
+		m := make(map[string]string, len(head))
+		for i, h := range head {
+			m[h] = row[i]
+		}
+		out = append(out, m)
+	}
+	return map[string]any{"columns": head, "rows": out}, nil
 }

@@ -69,7 +69,7 @@ func TestMCP(t *testing.T) {
 	if _, r := rpc(a.Token, 2, "resources/list", nil); r.Error == nil || r.Error.Code != -32601 {
 		t.Fatalf("unknown method: %+v", r)
 	}
-	if _, r := rpc(a.Token, 3, "tools/list", nil); len(r.Result.Tools) != 5 {
+	if _, r := rpc(a.Token, 3, "tools/list", nil); len(r.Result.Tools) != 6 {
 		t.Fatalf("tools/list: %d tools", len(r.Result.Tools))
 	}
 
@@ -99,6 +99,13 @@ func TestMCP(t *testing.T) {
 	if !strings.Contains(string(mustJSON(msgs)), "下午三点集合") {
 		t.Fatalf("messages: %v", msgs)
 	}
+	work, _ := tool("workload", map[string]any{"from": "2026-11-25", "to": "2026-11-25"})
+	if rows, _ := work["rows"].([]any); len(rows) != 1 || !strings.Contains(string(mustJSON(rows)), `"组长"`) {
+		t.Fatalf("workload: %v", work)
+	}
+	if _, r := tool("workload", map[string]any{"from": "上周"}); !r.Result.IsError {
+		t.Fatalf("bad from: %+v", r.Result)
+	}
 	if _, r := tool("review_issues", nil); r.Result.IsError {
 		t.Fatalf("review_issues: %+v", r.Result)
 	}
@@ -108,7 +115,7 @@ func TestMCP(t *testing.T) {
 	// A view link is the read-only credential to give an AI tool.
 	var link viewLinkResp
 	e.call("POST", base+"/view-links", a.Token, nil, &link)
-	if c, r := rpc(link.Token, 5, "tools/list", nil); c != 200 || len(r.Result.Tools) != 5 {
+	if c, r := rpc(link.Token, 5, "tools/list", nil); c != 200 || len(r.Result.Tools) != 6 {
 		t.Fatalf("view link: %d", c)
 	}
 	e.call("DELETE", base+"/view-links", a.Token, nil, nil)
