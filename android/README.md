@@ -75,6 +75,8 @@ base64 -w0 geocrew-release.jks   # macOS 用 base64 -i geocrew-release.jks
 
 想加功能（分析工具、文件格式、底图源、记录属性、新页面）先看 [扩展指南](docs/extending.md)：分层规则和每个扩展点要动的文件都在里面。
 
+真机测试按 [docs/device-test.md](docs/device-test.md) 的清单走一遍。
+
 | 模块 | 内容 |
 | --- | --- |
 | `app` | 应用入口、导航、依赖注入装配 |
