@@ -7,6 +7,7 @@ import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.Props
+import org.geocrew.core.model.TrackTimes
 import org.geocrew.core.model.SyncInfo
 import org.geocrew.core.model.buildProperties
 import org.geocrew.core.model.edit
@@ -117,6 +118,21 @@ class FormatsTest {
         assertEquals(listOf(FeatureKind.POINT, FeatureKind.TRACK), back.map { it.kind })
         assertEquals(sample[1].geometry, back[1].geometry)
         assertEquals(t0.toString(), back[1].properties[Props.STARTED_AT]?.let { (it as JsonPrimitive).content })
+    }
+
+    @Test
+    fun gpxTimesTravelWithTheTrack() {
+        val times = listOf(t0, t0.plusSeconds(5))
+        val (_, bytes) = write(GpxFormat, sample, ExportContext(trackTimes = { if (it == "b") times else null }))
+        val back = GpxFormat.read(bytes.inputStream(), ctx).features[1]
+        assertEquals(times, TrackTimes.of(back))
+        // A track recorded elsewhere has no local fixes; its synced times still go out.
+        val again = write(GpxFormat, listOf(back)).second.decodeToString()
+        assertTrue(again.contains("<time>${t0.plusSeconds(5)}</time>"))
+        // KML shows the span, not the list.
+        val kml = write(KmlFormat, listOf(back.copy(properties = back.properties.edit { this[Props.ENDED_AT] = times[1].toString() }))).second.decodeToString()
+        assertTrue(kml.contains("<TimeSpan><begin>$t0</begin><end>${times[1]}</end></TimeSpan>"))
+        assertTrue(Props.TIMES_S !in kml)
     }
 
     @Test

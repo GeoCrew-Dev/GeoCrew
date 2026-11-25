@@ -10,8 +10,11 @@ import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.TrackPoint
+import org.geocrew.core.model.TrackTimes
 import org.geocrew.core.model.lengthMeters
+import org.geocrew.core.model.string
 import java.time.Clock
+import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.time.ZoneId
 import javax.inject.Inject
@@ -55,8 +58,12 @@ class TrackRepository @Inject constructor(
     suspend fun commit(trackId: String, finished: Boolean) {
         val pts = points(trackId)
         val geometry = if (pts.size >= 2) Geometry.LineString(pts.map { it.position }) else null
+        val started = features.get(trackId)?.properties?.string(Props.STARTED_AT)
+            ?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: pts.firstOrNull()?.time
         features.edit(trackId, geometry) {
             geometry?.let { this[Props.LENGTH_M] = Math.round(it.lengthMeters() * 10) / 10.0 }
+            // Fix times travel with the track so teammates' copies keep them (§6.13).
+            if (geometry != null && started != null) TrackTimes.write(this, started, pts.map { it.time })
             if (finished) this[Props.ENDED_AT] = (pts.lastOrNull()?.time ?: clock.instant()).toString()
         }
         if (finished && pts.size < 2) features.delete(trackId)

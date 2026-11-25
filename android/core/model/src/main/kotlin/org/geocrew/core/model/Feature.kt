@@ -122,6 +122,8 @@ object Props {
     const val LENGTH_M = "length_m"
     const val AREA_M2 = "area_m2"
     const val STARTED_AT = "started_at"
+    /** Seconds since [STARTED_AT] for each coordinate of a track (§6.13). */
+    const val TIMES_S = "times_s"
     const val ENDED_AT = "ended_at"
     const val ACCURACY_M = "accuracy_m"
     /** Fixes averaged into a point placed by GPS. */
@@ -138,7 +140,7 @@ object Props {
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
         KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, BOREHOLE, LITHOLOGY, LINE_STYLE, MEET_AT, REVIEW, STRIKE, DIP_DIRECTION, DIP, AZIMUTH, TREND, PLUNGE, LINEATION_TYPE,
-        STARTED_AT, ENDED_AT, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
+        STARTED_AT, ENDED_AT, TIMES_S, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
         ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS, ALT_SOURCE,
     )
 }

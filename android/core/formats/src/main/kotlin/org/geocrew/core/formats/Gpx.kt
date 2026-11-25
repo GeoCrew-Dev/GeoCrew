@@ -6,7 +6,9 @@ import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.SyncInfo
+import org.geocrew.core.model.TrackTimes
 import org.geocrew.core.model.buildProperties
+import org.geocrew.core.model.edit
 import org.w3c.dom.Element
 import java.io.InputStream
 import java.io.OutputStream
@@ -52,7 +54,10 @@ object GpxFormat : FeatureFormat {
                     times.firstOrNull()?.let { put(Props.STARTED_AT, it.toString()) }
                     times.lastOrNull()?.let { put(Props.ENDED_AT, it.toString()) }
                 }
-                out += feature(FeatureKind.TRACK, Geometry.LineString(pts.map { it.first }), trk, extra)
+                var track = feature(FeatureKind.TRACK, Geometry.LineString(pts.map { it.first }), trk, extra)
+                // Every fix timed: keep the times with the track (§6.13).
+                if (times.size == pts.size) track = track.copy(properties = track.properties.edit { TrackTimes.write(this, times.first(), times) })
+                out += track
             }
         }
         for (rte in root.children("rte")) {
@@ -94,7 +99,7 @@ object GpxFormat : FeatureFormat {
                 is Geometry.Point -> continue
                 else -> { skipped++; continue }
             }
-            val times = ctx.trackTimes(f.id)
+            val times = ctx.trackTimes(f.id) ?: TrackTimes.of(f)
             sb.append("  <trk>")
             meta(sb, f)
             var idx = 0

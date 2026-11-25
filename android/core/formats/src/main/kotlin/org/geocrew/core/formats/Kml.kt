@@ -11,9 +11,11 @@ import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.Props
 import org.geocrew.core.model.SyncInfo
 import org.geocrew.core.model.buildProperties
+import org.geocrew.core.model.string
 import org.w3c.dom.Element
 import java.io.InputStream
 import java.io.OutputStream
+import java.time.Instant
 
 /**
  * KML 2.2 placemarks (Point, LineString, Polygon, MultiGeometry). Simple
@@ -125,6 +127,8 @@ object KmlFormat : FeatureFormat {
             sb.append("<Placemark>")
             f.title?.let { sb.append("<name>").append(Xml.escape(it)).append("</name>") }
             f.note?.let { sb.append("<description>").append(Xml.escape(it)).append("</description>") }
+            // KML wants the time span before the style.
+            timeSpan(sb, f)
             colors[f.id]?.let { sb.append("<styleUrl>#").append(styleId(it)).append("</styleUrl>") }
             extendedData(sb, f)
             geometryKml(sb, g)
@@ -159,8 +163,19 @@ object KmlFormat : FeatureFormat {
             .append("</Style>\n")
     }
 
+    /** A track's start and end as a KML TimeSpan, so Google Earth's time slider can show it. */
+    private fun timeSpan(sb: StringBuilder, f: GeoFeature) {
+        if (f.kind != FeatureKind.TRACK) return
+        fun at(key: String) = f.properties.string(key)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        val begin = at(Props.STARTED_AT) ?: return
+        sb.append("<TimeSpan><begin>").append(begin).append("</begin>")
+        at(Props.ENDED_AT)?.takeIf { !it.isBefore(begin) }?.let { sb.append("<end>").append(it).append("</end>") }
+        sb.append("</TimeSpan>")
+    }
+
     private fun extendedData(sb: StringBuilder, f: GeoFeature) {
-        val simple = f.properties.filter { (k, v) -> k != Props.TITLE && k != Props.NOTE && (v is JsonPrimitive || v is JsonArray) }
+        // Fix times go out as the track's time span, not as a list thousands long.
+        val simple = f.properties.filter { (k, v) -> k != Props.TITLE && k != Props.NOTE && k != Props.TIMES_S && (v is JsonPrimitive || v is JsonArray) }
         sb.append("<ExtendedData>")
         data(sb, Props.KIND, f.kind.id)
         for ((k, v) in simple) {

@@ -155,8 +155,10 @@ class TransferViewModel @Inject constructor(
         val project = projects.ensureCurrent()
         val existing = features.all(project.id)
         val known = existing.flatMap { it.photos }.toMutableSet()
+        // Fixes recorded on this phone, else the times synced with the track,
+        // so a teammate's or an imported track can place photos too.
         val trackPoints = existing.filter { it.kind == FeatureKind.TRACK }
-            .associate { t -> t.id to tracks.points(t.id) }
+            .associate { t -> t.id to tracks.points(t.id).ifEmpty { org.geocrew.core.model.TrackTimes.fixes(t).orEmpty() } }
             .filterValues { it.isNotEmpty() }
         val offset = java.time.Duration.ofMinutes(cameraAheadMinutes.toLong())
         val zone = ZoneId.systemDefault()
@@ -218,7 +220,8 @@ class TransferViewModel @Inject constructor(
         val list = features.all(project.id)
         if (list.isEmpty()) return@work fail("当前工程还没有要素可以导出。")
         format.nothingToWrite(list)?.let { return@work fail(it) }
-        // GPX keeps per-point times for tracks; collect them up front.
+        // GPX keeps per-point times for tracks; collect them up front (the
+        // writer falls back to the times synced with a track recorded elsewhere).
         val times = list.filter { it.kind == FeatureKind.TRACK }
             .associate { t -> t.id to tracks.points(t.id).map { it.time } }
         val ctx = ExportContext(title = project.name, trackTimes = { id -> times[id]?.takeIf { it.isNotEmpty() } }, fields = project.config.fields, legend = project.config.legend, localGrid = project.config.localGrid)
