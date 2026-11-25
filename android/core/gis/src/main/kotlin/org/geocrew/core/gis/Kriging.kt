@@ -204,7 +204,7 @@ class KrigingTool : GisTool {
     )
     private val start = ToolParam.Feature(
         "start", "补点路线起点", setOf(GeometryType.POINT),
-        help = "可选，如驻地或现在所在的记录点；路线按最短顺序连起各补点",
+        help = "可选，如驻地或现在所在的记录点；能取到 DEM 时按地形徒步用时排顺序，否则按最短距离",
     )
     private val contour = ToolParam.Number("contour", "等值线间距", default = null, min = 0.0, help = "按所显示的量（估计值或标准差）画，留空自动分档，填 0 不画")
     override val params = listOf(field, model, range, cell, show, contour, suggest, plan, start)
@@ -292,7 +292,24 @@ class KrigingTool : GisTool {
             start = from, travel = if (input.choice(plan) == "travel") 2.0 else 0.0, scale = max(w, h),
             cancelled = input.cancelled,
         )
-        val order = SamplingPlan.route(picks.map { it.x to it.y }, from)
+        // With a DEM, order the stops by walking time (uphill costs more), not by distance.
+        val offset = if (from != null) 1 else 0
+        val byDistance = SamplingPlan.route(picks.map { it.x to it.y }, from)
+        val nodesLL = (listOfNotNull(from) + picks.map { it.x to it.y }).map { (x, y) -> plane.toLngLat(x, y) }
+        val hours = input.elevation?.takeIf { picks.size >= 2 }?.let { dem ->
+            try {
+                SamplingPlan.walkHours(nodesLL, dem, org.geocrew.core.model.Hiking.OFF_PATH, cancelled = input.cancelled)
+            } catch (e: java.io.IOException) {
+                null
+            }
+        }
+        var saved = 0.0
+        val order = if (hours == null) byDistance else {
+            val byTime = SamplingPlan.routeBy(nodesLL.size) { a, b -> hours[a][b] }
+            val distanceNodes = (if (from != null) listOf(0) else emptyList()) + byDistance.map { it + offset }
+            saved = SamplingPlan.cost(distanceNodes) { a, b -> hours[a][b] } - SamplingPlan.cost(byTime) { a, b -> hours[a][b] }
+            byTime.drop(offset).map { it - offset }
+        }
         val visits = order.map { picks[it] }
         visits.forEachIndexed { i, p ->
             out += OutputFeature(
@@ -333,6 +350,10 @@ class KrigingTool : GisTool {
                 append(if (showSd) "颜色为估计标准差 ${fmt(lo)} – ${fmt(hi)}。" else "「$key」估计范围 ${fmt(lo)} – ${fmt(hi)}。")
                 lines?.let { (_, lv) -> append("等值线 ${lv.size} 条，${Contours.label(lv.first())} – ${Contours.label(lv.last())}。") }
                 if (visits.isNotEmpty()) append("已标出 ${visits.size} 个建议补点" + if (stops.size >= 2) "和补点路线（直线约 ${fmt(walk, 0)} m）。" else "。")
+                if (hours != null) {
+                    append("补点顺序按地形徒步用时排")
+                    append(if (saved >= 1.0 / 60) "，比按直线距离排少走约${org.geocrew.core.model.Hiking.format(saved)}。" else "。")
+                }
                 append(note)
             },
             ramp.legend { fmt(it) },

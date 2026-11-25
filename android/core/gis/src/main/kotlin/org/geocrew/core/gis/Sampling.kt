@@ -1,5 +1,9 @@
 package org.geocrew.core.gis
 
+import org.geocrew.core.model.Elevation
+import org.geocrew.core.model.Geodesy
+import org.geocrew.core.model.Hiking
+import org.geocrew.core.model.LngLat
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -15,7 +19,8 @@ import kotlin.math.sqrt
  * [travel] weight above zero each candidate's standard deviation is divided
  * by (1 + travel · distance from the previous stop / [scale]), trading some
  * information for a shorter walk. [route] then orders the picks into a short
- * open path (nearest neighbour, improved by 2-opt).
+ * open path (nearest neighbour, improved by 2-opt); with a DEM, [routeBy]
+ * orders them by walking time from [walkHours] instead.
  */
 internal object SamplingPlan {
     data class Pick(val x: Double, val y: Double, val sd: Double)
@@ -75,26 +80,44 @@ internal object SamplingPlan {
     /** Visiting order of [points] as indices, starting from [start] when given, else from the first point. */
     fun route(points: List<Pair<Double, Double>>, start: Pair<Double, Double>? = null): List<Int> {
         if (points.size <= 1) return points.indices.toList()
-        // Work on a path whose node 0 is the fixed start.
         val nodes = (start?.let { listOf(it) } ?: emptyList()) + points
         val offset = if (start != null) 1 else 0
-        fun d(a: Int, b: Int) = hypot(nodes[a].first - nodes[b].first, nodes[a].second - nodes[b].second)
-        val left = (1 until nodes.size).toMutableSet()
+        val path = routeBy(nodes.size) { a, b -> hypot(nodes[a].first - nodes[b].first, nodes[a].second - nodes[b].second) }
+        return path.drop(offset).map { it - offset }
+    }
+
+    /**
+     * Order of nodes 0 until [n] for an open walk that starts at node 0, by
+     * [cost] from one node to the next, which need not be symmetric (walking
+     * time uphill and downhill differ): nearest neighbour, then 2-opt, which
+     * for an asymmetric cost compares the whole reversed stretch.
+     */
+    fun routeBy(n: Int, cost: (Int, Int) -> Double): List<Int> {
+        if (n <= 2) return (0 until n).toList()
+        val c = Array(n) { a -> DoubleArray(n) { b -> if (a == b) 0.0 else cost(a, b) } }
+        val left = (1 until n).toMutableSet()
         val path = mutableListOf(0)
         while (left.isNotEmpty()) {
-            val next = left.minBy { d(path.last(), it) }
+            val next = left.minBy { c[path.last()][it] }
             path += next
             left -= next
         }
-        // 2-opt on an open path with a fixed first node: reverse path[i..j] when it shortens the walk.
         var improved = true
         var rounds = 0
         while (improved && rounds++ < 100) {
             improved = false
             for (i in 1 until path.size - 1) {
                 for (j in i + 1 until path.size) {
-                    val before = d(path[i - 1], path[i]) + if (j + 1 < path.size) d(path[j], path[j + 1]) else 0.0
-                    val after = d(path[i - 1], path[j]) + if (j + 1 < path.size) d(path[i], path[j + 1]) else 0.0
+                    var before = c[path[i - 1]][path[i]]
+                    var after = c[path[i - 1]][path[j]]
+                    for (k in i until j) {
+                        before += c[path[k]][path[k + 1]]
+                        after += c[path[k + 1]][path[k]]
+                    }
+                    if (j + 1 < path.size) {
+                        before += c[path[j]][path[j + 1]]
+                        after += c[path[i]][path[j + 1]]
+                    }
                     if (after < before - 1e-9) {
                         path.subList(i, j + 1).reverse()
                         improved = true
@@ -102,7 +125,43 @@ internal object SamplingPlan {
                 }
             }
         }
-        return path.drop(offset).map { it - offset }
+        return path
+    }
+
+    /** Total [cost] of visiting [path] in order. */
+    fun cost(path: List<Int>, cost: (Int, Int) -> Double): Double = path.zipWithNext().sumOf { (a, b) -> cost(a, b) }
+
+    /**
+     * Walking hours from every stop to every other along the straight line
+     * between them, over the DEM by Tobler's function times [factor]; [a][b]
+     * and [b][a] differ when the ground rises. Each leg is sampled at about
+     * [legPoints] heights at most, so a score of stops costs a few thousand
+     * lookups. Throws IOException when the heights can't be fetched; null
+     * when the DEM has no heights here at all.
+     */
+    fun walkHours(stops: List<LngLat>, dem: Elevation, factor: Double, legPoints: Int = 40, cancelled: () -> Boolean = { false }): Array<DoubleArray>? {
+        val n = stops.size
+        val legs = ArrayList<Triple<Int, Int, List<LngLat>>>()
+        for (a in 0 until n) for (b in a + 1 until n) {
+            val d = Geodesy.distance(stops[a], stops[b])
+            legs += Triple(a, b, Hiking.densify(listOf(stops[a], stops[b]), max(Hiking.STEP_M, d / legPoints)))
+        }
+        val all = legs.flatMap { it.third }
+        val heights = ArrayList<Double?>(all.size)
+        for (chunk in all.chunked(500)) {
+            if (cancelled()) throw ToolCancelled()
+            heights += dem.at(chunk)
+        }
+        if (heights.all { it == null }) return null
+        val out = Array(n) { DoubleArray(n) }
+        var at = 0
+        for ((a, b, pts) in legs) {
+            val hs = heights.subList(at, at + pts.size)
+            at += pts.size
+            out[a][b] = Hiking.estimate(pts, hs, factor).hours
+            out[b][a] = Hiking.estimate(pts.reversed(), hs.reversed(), factor).hours
+        }
+        return out
     }
 
     fun length(points: List<Pair<Double, Double>>): Double =

@@ -44,4 +44,46 @@ class SamplingTest {
         assertEquals(4, open.toSet().size)
         assertEquals(400.0, SamplingPlan.length(open.map { pts[it] }), 1e-9)
     }
+
+    @Test fun routeByFollowsAnAsymmetricCostAndKeepsTheStart() {
+        val rnd = java.util.Random(7)
+        repeat(20) {
+            val n = 7
+            val c = Array(n) { DoubleArray(n) { rnd.nextDouble() * 10 } }
+            val path = SamplingPlan.routeBy(n) { a, b -> c[a][b] }
+            assertEquals(0, path.first())
+            assertEquals((0 until n).toSet(), path.toSet())
+            // Never worse than walking to the nearest stop each time.
+            val left = (1 until n).toMutableSet()
+            val greedy = mutableListOf(0)
+            while (left.isNotEmpty()) left.minBy { c[greedy.last()][it] }.also { greedy += it; left -= it }
+            assertTrue(SamplingPlan.cost(path) { a, b -> c[a][b] } <= SamplingPlan.cost(greedy) { a, b -> c[a][b] } + 1e-9)
+        }
+    }
+
+    @Test fun routeByPrefersGoingUpOnceOverUpAndDownTwice() {
+        // A valley floor at the start, two stops up the east slope and one on the floor to the west.
+        val x = doubleArrayOf(0.0, 300.0, 600.0, -400.0)
+        val z = doubleArrayOf(0.0, 150.0, 300.0, 0.0)
+        fun hours(a: Int, b: Int): Double {
+            val run = kotlin.math.abs(x[b] - x[a])
+            return run / 1000 / org.geocrew.core.model.Hiking.speedKmh((z[b] - z[a]) / run)
+        }
+        val path = SamplingPlan.routeBy(4, ::hours)
+        // By distance the west stop would come last, after walking back down.
+        assertEquals(listOf(0, 1, 2), SamplingPlan.route(listOf(300.0 to 0.0, 600.0 to 0.0, -400.0 to 0.0), 0.0 to 0.0))
+        // West first, then up the slope: one climb and no descent back to the floor.
+        assertEquals(listOf(0, 3, 1, 2), path)
+    }
+
+    @Test fun walkHoursAreSlowerUphill() {
+        val a = org.geocrew.core.model.LngLat(110.0, 30.0)
+        val b = org.geocrew.core.model.LngLat(110.005, 30.0)
+        // Ground rising 200 m over the roughly 480 m between them.
+        val dem = org.geocrew.core.model.Elevation { pts -> pts.map { (it.lng - 110.0) / 0.005 * 200 } }
+        val h = SamplingPlan.walkHours(listOf(a, b), dem, 1.0)!!
+        assertTrue("up ${h[0][1]} down ${h[1][0]}", h[0][1] > 1.2 * h[1][0])
+        assertEquals(0.0, h[0][0], 0.0)
+        assertEquals(null, SamplingPlan.walkHours(listOf(a, b), { pts -> pts.map { null } }, 1.0))
+    }
 }
