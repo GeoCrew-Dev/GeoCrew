@@ -35,7 +35,7 @@ func TestMCP(t *testing.T) {
 	f1 := feature("f1", 1, "2026-11-24T08:00:00Z")
 	f1["properties"] = map[string]any{"kind": "geo_point", "title": "D001", "lithology": "花岗岩", "note": "灰白色中粒", "samples": []any{map[string]any{"no": "S-12"}}}
 	f2 := feature("f2", 1, "2026-11-25T08:00:00Z")
-	f2["properties"] = map[string]any{"kind": "geo_point", "title": "D002", "lithology": "片麻岩"}
+	f2["properties"] = map[string]any{"kind": "geo_point", "title": "D002", "lithology": "片麻岩", "assignee": a.MemberID, "assignee_name": "组长", "task_status": "doing"}
 	e.call("POST", base+"/features", a.Token, map[string]any{"features": []any{f1, f2}}, nil)
 	e.call("POST", base+"/comments", a.Token, map[string]any{"id": "c1", "body": "下午三点集合"}, nil)
 	e.call("POST", base+"/comments", a.Token, map[string]any{"id": "c2", "feature_id": "f1", "body": "接触关系再看一下"}, nil)
@@ -76,7 +76,7 @@ func TestMCP(t *testing.T) {
 	if _, r := rpc(a.Token, 2, "resources/list", nil); r.Error == nil || r.Error.Code != -32601 {
 		t.Fatalf("unknown method: %+v", r)
 	}
-	if _, r := rpc(a.Token, 3, "tools/list", nil); len(r.Result.Tools) != 8 {
+	if _, r := rpc(a.Token, 3, "tools/list", nil); len(r.Result.Tools) != 9 {
 		t.Fatalf("tools/list: %d tools", len(r.Result.Tools))
 	}
 
@@ -99,6 +99,9 @@ func TestMCP(t *testing.T) {
 		t.Fatalf("position after leaving: %v", pos)
 	}
 
+	if ts, _ := tool("tasks", map[string]any{"status": "doing"}); ts["matched"] != 1.0 || !strings.Contains(string(mustJSON(ts)), `"D002"`) {
+		t.Fatalf("tasks: %v", ts)
+	}
 	sum, _ := tool("workspace_summary", nil)
 	if sum["name"] != "野外一组" || sum["records"] != 2.0 || sum["samples"] != 1.0 {
 		t.Fatalf("summary: %v", sum)
@@ -182,7 +185,7 @@ func TestMCP(t *testing.T) {
 	// A view link is the read-only credential to give an AI tool.
 	var link viewLinkResp
 	e.call("POST", base+"/view-links", a.Token, nil, &link)
-	if c, r := rpc(link.Token, 5, "tools/list", nil); c != 200 || len(r.Result.Tools) != 8 {
+	if c, r := rpc(link.Token, 5, "tools/list", nil); c != 200 || len(r.Result.Tools) != 9 {
 		t.Fatalf("view link: %d", c)
 	}
 	e.call("DELETE", base+"/view-links", a.Token, nil, nil)

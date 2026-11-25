@@ -103,6 +103,14 @@ func (s *Server) mcpTools(ws string) []mcp.Tool {
 			Call:        func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpMessages(ctx, ws, args) },
 		},
 		{
+			Name: "tasks", Title: "任务指派",
+			Description: "Records the leader assigned to members (protocol §6.1), e.g. sampling points to visit: who has what, todo / doing / done, with per-member counts. Filter by member nickname and status.",
+			InputSchema: schema(`"member":{"type":"string","description":"nickname of the assignee"},` +
+				`"status":{"type":"string","enum":["todo","doing","done"]},` +
+				`"limit":{"type":"integer","minimum":1,"maximum":200,"default":50}`),
+			Call: func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpTasks(ctx, ws, args) },
+		},
+		{
 			Name: "team_positions", Title: "组员位置",
 			Description: "Where the team is: every member's last shared live position (WGS 84) from the last 15 minutes with accuracy, its age in seconds and whether the member is online, newest first; plus members online without a position. Members share positions only while they choose to in the app.",
 			InputSchema: schema(``),
@@ -577,4 +585,103 @@ func (s *Server) mcpPositions(ctx context.Context, ws string) (any, error) {
 	}
 	sort.Strings(without)
 	return map[string]any{"positions": out, "online_without_position": without}, nil
+}
+
+type mcpTask struct {
+	ID       string   `json:"id"`
+	Kind     string   `json:"kind"`
+	Title    string   `json:"title,omitempty"`
+	Assignee string   `json:"assignee"`
+	Status   string   `json:"status"`
+	Lon      *float64 `json:"lon,omitempty"`
+	Lat      *float64 `json:"lat,omitempty"`
+	// UpdatedAt is of the record's latest change, which for a finished
+	// task is usually when it was marked done.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+var taskOrder = map[string]int{"todo": 0, "doing": 1, "done": 2}
+
+func (s *Server) mcpTasks(ctx context.Context, ws string, raw json.RawMessage) (any, error) {
+	a, err := args[struct {
+		Member string `json:"member"`
+		Status string `json:"status"`
+		Limit  int    `json:"limit"`
+	}](raw)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := taskOrder[a.Status]; a.Status != "" && !ok {
+		return nil, mcp.BadArgs("status must be todo, doing or done")
+	}
+	ms, err := s.Store.Members(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]string{}
+	for _, m := range ms {
+		names[m.ID] = m.Nickname
+	}
+	type counts struct {
+		Todo  int `json:"todo"`
+		Doing int `json:"doing"`
+		Done  int `json:"done"`
+	}
+	per := map[string]*counts{}
+	rows := []mcpTask{}
+	err = export.EachRecord(ctx, s.Store, ws, func(rec export.Record) error {
+		var p struct {
+			Assignee     string `json:"assignee"`
+			AssigneeName string `json:"assignee_name"`
+			Status       string `json:"task_status"`
+		}
+		if json.Unmarshal(rec.Feature.Properties, &p) != nil || p.Assignee == "" {
+			return nil
+		}
+		who := names[p.Assignee]
+		if who == "" {
+			who = p.AssigneeName
+		}
+		if who == "" {
+			who = p.Assignee
+		}
+		if _, ok := taskOrder[p.Status]; !ok {
+			p.Status = "todo" // §6.1: unknown values show as todo
+		}
+		c := per[who]
+		if c == nil {
+			c = &counts{}
+			per[who] = c
+		}
+		switch p.Status {
+		case "todo":
+			c.Todo++
+		case "doing":
+			c.Doing++
+		default:
+			c.Done++
+		}
+		if (a.Member != "" && !strings.EqualFold(who, strings.TrimSpace(a.Member))) || (a.Status != "" && p.Status != a.Status) {
+			return nil
+		}
+		rows = append(rows, mcpTask{rec.ID, rec.Kind, rec.Title, who, p.Status, rec.Lon, rec.Lat, rec.UpdatedAt})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Status != rows[j].Status {
+			return taskOrder[rows[i].Status] < taskOrder[rows[j].Status]
+		}
+		if rows[i].Assignee != rows[j].Assignee {
+			return rows[i].Assignee < rows[j].Assignee
+		}
+		return rows[i].Title < rows[j].Title
+	})
+	matched := len(rows)
+	if limit := clampLimit(a.Limit, 50, 200); matched > limit {
+		rows = rows[:limit]
+	}
+	return map[string]any{"matched": matched, "tasks": rows, "by_member": per}, nil
 }
