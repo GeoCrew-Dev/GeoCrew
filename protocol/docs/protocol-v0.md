@@ -32,6 +32,34 @@
 | 409 | 冲突，例如移除最后一位组长（`last_leader`）、基于旧版本修改设置（`stale`）、修改已归档的工作区（`archived`，见 2.3） |
 | 413 | 请求过大（`batch_too_large`、`too_large`） |
 
+### 1.2 能力一览
+
+`GET /api/v0/info` 的 `capabilities` 列出服务端支持的能力。客户端只在服务端声明了对应能力时打开相应功能，没声明时隐藏或提示「服务器不支持」，不要靠请求失败来判断。自己实现服务端时可以只做核心部分，按需逐项加。
+
+| 能力 | 含义 | 见 |
+| --- | --- | --- |
+| `sync` | 要素增量同步与冲突规则（核心，必须有） | 第 4 节 |
+| `files` | 附件上传下载 | 第 5 节 |
+| `realtime` | 实时通道（位置、变更通知） | 第 7 节 |
+| `roles` | 组长、组员、只读三种角色与成员管理 | 2.1 |
+| `history` | 要素修改历史 | 第 3 节 |
+| `settings` | 共享设置 | 2.2 |
+| `create` | 接受新建工作组（运维可关闭） | 第 3 节 |
+| `archive` | 工作区改名与归档 | 2.3 |
+| `export` | GeoJSON 导出 | 第 3 节 |
+| `package` | 整组工程包导出 | 第 3 节 |
+| `samples` / `sections` / `boreholes` / `structures` / `routes` / `workload` | 样品清单、实测剖面分层表、钻孔分层表、产状表、地质路线记录表、工作量统计（CSV） | 第 3 节、第 6 节 |
+| `kml` / `gpx` / `gpkg` | KML、GPX、GeoPackage 导出 | 第 3 节 |
+| `checks` | 记录核对 | 第 3 节 |
+| `comments` | 记录讨论与组内消息 | 第 8 节 |
+| `alerts` | 紧急消息 | 8.1 |
+| `rollcall` | 点名 | 8.2 |
+| `outing` | 外出报备 | 8.3 |
+| `push` | 推送通知（运维配置后才有） | 第 9 节 |
+| `view` | 只读查看链接 | 第 10 节 |
+
+不认识的能力名直接忽略。
+
 ## 2. 工作区、成员与鉴权
 
 1. 组长调用 `POST /api/v0/workspaces` 创建工作区，返回 `workspace_id`、`invite_code` 和组长的 `token`。
