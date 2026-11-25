@@ -74,7 +74,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | `phrases` | 描述常用词：数组，每项 `{name, items}`，`name` 为组名（如「地层」「颜色」，最长 20 字），`items` 为词（每个最长 40 字，每组最多 100 个，最多 20 组）。客户端在内置词表之外列出这些词，同名的组合并到内置组前面。客户端应去掉空白、重复和超长的词；没有这个键时，各设备保留自己的词。 |
 | `overlays` | 组长共享的叠加图（扫描地质图、草图），数组，先画的在前：每项 `{id, name, file, type, width, height, corners, opacity?, placement?, control_points?}`。`file` 是图片的附件哈希（先按第 5 节上传，再写入设置），`type` 为 `image/jpeg` 或 `image/png`，`width`、`height` 为像素尺寸，`corners` 为左上、右上、右下、左下四角的 `[经度, 纬度]`；`opacity` 为 0.1–1（默认 0.6），`placement` 为 `view`（按视野大致铺放）或 `world_file`（按 world 文件定位），`control_points` 为最近一次对齐用的控制点对数。每台设备自己决定是否显示。客户端应忽略哈希、类型或四角不合理的项；没有这个键时，客户端保留各自本机的叠加图。服务端清理无引用附件时，把这里的 `file` 算作有引用。 |
 | `basemaps` | 组长共享的底图，数组：每项 `{id, name, url, subdomains?, max_zoom?, tms?, attribution?}`。`id` 为 1–64 位字母、数字或 `_.-`，`url` 是 http(s) 瓦片地址模板，用 `{z}` `{x}` `{y}`（或 `{-y}` 表示 TMS 行号）、`{s}`（从 `subdomains` 里轮换），WMS 地址用 `{bbox-epsg-3857}` 代替行列号，由客户端按每张瓦片的 Web 墨卡托范围（米，`最小x,最小y,最大x,最大y`）填入；`max_zoom` 为 1–24（默认 18），`tms` 为真时 `{y}` 按 TMS 行号。**不得包含 `{key}` 或任何个人密钥**：需要 Key 的图源不共享。客户端应忽略不合规的项；没有这个键时，各设备只有自己的图源。 |
-| `notice` | 组内公告：`{text, updated_at, by?}`。`text` 为公告正文（最长 2000 字，可换行），`updated_at` 为发布时间（RFC 3339），`by` 为发布人的昵称，只用于显示。组长发一条新的就整体替换旧的；撤下公告时删掉这个键。客户端在工作组页、消息页顶部和网页查看页置顶显示；正文为空时当作没有公告。 |
+| `notice` | 组内公告：`{text, updated_at, by?}`。`text` 为公告正文（最长 2000 字，可换行），`updated_at` 为发布时间（RFC 3339），`by` 为发布人的昵称，只用于显示。组长发一条新的就整体替换旧的；撤下公告时删掉这个键。新公告会给其他成员发 `notice` 推送（第 9 节）。客户端在工作组页、消息页顶部和网页查看页置顶显示；正文为空时当作没有公告。 |
 
 不认识的键必须原样保留：客户端修改设置时先读取、只改自己负责的键、再整体提交。
 
@@ -584,6 +584,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `alert` | 有人发了紧急消息（8.1）；不能通过 `events` 退订 | 除发送者外的全部成员 |
 | `rollcall` | 组长发起点名，或有人回应点名（8.2）；不能通过 `events` 退订 | 点名：除发起人外的全部成员；回应：发起点名的组长 |
 | `overdue` | 外出报备（8.3）过了预计返回时间仍未报返回，每条一次；不能通过 `events` 退订 | 全部成员（含外出的本人） |
+| `notice` | 组长在共享设置里发了新的或改过的组内公告（2.2 的 `notice`，按 `text` 和 `updated_at` 判断）；只改别的设置或撤下公告不发。`seq` 是新的设置版本 | 除发布人外的全部成员 |
 
 服务端向地址 `POST` 一个 JSON（`Content-Type: application/json`）：
 

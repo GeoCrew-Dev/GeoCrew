@@ -1053,7 +1053,7 @@ components:
 
     PushEvent:
       type: string
-      enum: [message, comment, task, alert, rollcall, overdue]
+      enum: [message, comment, task, alert, rollcall, overdue, notice]
       description: "alert, rollcall and overdue are always delivered, whatever a target subscribed to"
     PushTarget:
       type: object
