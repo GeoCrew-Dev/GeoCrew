@@ -21,6 +21,8 @@ object RecordCheck {
         POOR_ACCURACY("定位精度差"),
         FAR_AWAY("位置离群"),
         MISSING_STOP("路线缺点"),
+        /** Lacks what the project's [RecordRules] require. */
+        INCOMPLETE("缺必填项"),
     }
 
     data class Issue(val featureId: String, val code: Code, val message: String)
@@ -39,7 +41,7 @@ object RecordCheck {
      * order of [Code]. A fix poorer than [accuracyLimit] metres and a record
      * more than [farKm] from the middle of the others are reported.
      */
-    fun of(features: List<GeoFeature>, accuracyLimit: Double = 30.0, farKm: Double = 50.0): Map<String, List<Issue>> {
+    fun of(features: List<GeoFeature>, accuracyLimit: Double = 30.0, farKm: Double = 50.0, rules: RecordRules = RecordRules()): Map<String, List<Issue>> {
         val live = features.filterNot { it.deleted }
         val out = mutableListOf<Issue>()
 
@@ -88,6 +90,11 @@ object RecordCheck {
         live.filter { it.kind == FeatureKind.ROUTE }.forEach { r ->
             val gone = r.geoRoute.resolve(byId::get).count { it.feature == null }
             if (gone > 0) out += Issue(r.id, Code.MISSING_STOP, "有 $gone 个路线点已被删除")
+        }
+
+        live.forEach { f ->
+            val lack = rules.missing(f)
+            if (lack.isNotEmpty()) out += Issue(f.id, Code.INCOMPLETE, "本工程要求填：" + lack.joinToString("、"))
         }
 
         return out.sortedBy { it.code.ordinal }.groupBy { it.featureId }
