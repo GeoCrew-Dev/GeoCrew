@@ -315,7 +315,8 @@ class KrigingTool : GisTool {
                 buildProperties {
                     this[OutputProps.TOOL] = id
                     this[Props.TITLE] = "补点路线"
-                    this[Props.NOTE] = "依次经过 ${visits.size} 个建议补点，直线距离约 ${fmt(walk, 0)} m"
+                    this[Props.NOTE] = "依次经过 ${visits.size} 个建议补点，直线距离约 ${fmt(walk, 0)} m" +
+                        (walkTime(input, stops.map { (x, y) -> plane.toLngLat(x, y) })?.let { "，按地形徒步$it" } ?: "")
                     style(stroke = "#d81b60", strokeWidth = 3.0)
                 },
             )
@@ -344,4 +345,13 @@ class KrigingTool : GisTool {
         private const val AUTO_CELLS = 40.0
         private const val MAX_CELLS = 6_400.0
     }
+}
+
+/** Walking time along [path] over the DEM (Tobler, off paths), or null without heights or signal. */
+internal fun walkTime(input: ToolInput, path: List<org.geocrew.core.model.LngLat>): String? {
+    val dem = input.elevation ?: return null
+    val pts = org.geocrew.core.model.Hiking.densify(path).takeIf { it.size in 2..4000 } ?: return null
+    val hs = try { pts.chunked(500).flatMap { dem.at(it) } } catch (e: java.io.IOException) { return null }
+    if (hs.all { it == null }) return null
+    return org.geocrew.core.model.Hiking.format(org.geocrew.core.model.Hiking.estimate(pts, hs, org.geocrew.core.model.Hiking.OFF_PATH).hours) + "（无路，未计采样时间）"
 }
