@@ -166,7 +166,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | GET | `/api/v0/workspaces/{id}/ws` | 任意 | 升级为 WebSocket 实时通道 |
 | GET / PUT / DELETE | `/api/v0/workspaces/{id}/push` | 任意 | 查看、登记、取消我的推送地址（见第 9 节） |
 | POST / DELETE | `/api/v0/workspaces/{id}/view-links` | 任意（不含查看链接本身） | 生成一个只读查看链接 / 撤销我生成的全部查看链接（见第 10 节） |
-| POST | `/api/v0/workspaces/{id}/mcp` | 任意（不含查看链接） | 供 AI 工具读取工作组的 MCP 接口（JSON-RPC 2.0，见第 11 节）。能力名 `mcp` |
+| POST | `/api/v0/workspaces/{id}/mcp` | 任意（含查看链接） | 供 AI 工具读取工作组的 MCP 接口（JSON-RPC 2.0，见第 11 节）。能力名 `mcp` |
 | GET | `/view/` | 无 | 浏览器查看页（令牌在网址 `#` 后面，见第 10 节） |
 
 `info` 示例：
@@ -668,7 +668,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 
 持查看链接的请求以生成者的身份、按**只读**角色处理，并且进一步限制：
 
-- 可以读：工作区信息、成员、共享设置、要素拉取与历史、两种导出、讨论、附件下载、实时通道。
+- 可以读：工作区信息、成员、共享设置、要素拉取与历史、两种导出、讨论、附件下载、实时通道、MCP 接口（第 11 节）。
 - 不能写：提交要素、上传附件、发言（包括紧急消息）、推送登记、生成或撤销查看链接，一律返回 `403`。
 - 实时通道上可以收到全部消息，但发送 `position` 会收到 `{"type":"error","code":"read_only"}`；这个连接不算该成员在线，不触发 `presence`，也不更新 `last_seen`。
 
@@ -676,9 +676,9 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 
 ## 11. AI 工具接口（MCP）
 
-服务器能力里有 `mcp` 时可用。`POST …/mcp` 是一个 [Model Context Protocol](https://modelcontextprotocol.io) 服务端（Streamable HTTP 传输），让桌面上的 AI 工具（例如支持 MCP 的聊天客户端、编辑器）用组员自己的令牌读取工作组，回答「今天谁采了哪些样」「D012 附近的花岗岩点有哪些」「还有哪些记录要补」这类问题。
+服务器能力里有 `mcp` 时可用。`POST …/mcp` 是一个 [Model Context Protocol](https://modelcontextprotocol.io) 服务端（Streamable HTTP 传输），让桌面上的 AI 工具（例如支持 MCP 的聊天客户端、编辑器）读取工作组，回答「今天谁采了哪些样」「D012 附近的花岗岩点有哪些」「还有哪些记录要补」这类问题。
 
-- 鉴权：`Authorization: Bearer` 放组员令牌；查看链接（`v_…`）不能用，返回 `403`，免得一个分享出去的网页链接被接进 AI 工具。
+- 鉴权：`Authorization: Bearer` 放查看链接的令牌（`v_…`，第 10 节）或组员令牌。交给 AI 工具的应当是查看链接：它只能读、有时限、可撤销，客户端生成后把地址和它一起给用户，不要把组员令牌显示出来。
 - 传输：每个 JSON-RPC 2.0 消息一次 `POST`，响应为 `application/json`；服务端无状态，不发 `Mcp-Session-Id`，不提供 `GET` 推送流（返回 `405`）。通知（没有 `id` 的消息）返回 `202` 空响应。不支持批量（数组），返回 `400`。
 - 方法：`initialize`（协议版本取客户端请求的，若不认识则回最新的 `2025-06-18`）、`ping`、`tools/list`、`tools/call`；其余返回 `-32601`。
 - 工具全部只读（`readOnlyHint`），改动仍在应用里做，那里有动作的风险分级和确认（见 [actions.md](actions.md)）。结果同时放在 `structuredContent` 和一段 JSON 文本里；参数错误、记录不存在以 `isError: true` 的工具结果返回，内部错误只说「稍后再试」，细节只进服务端日志。
@@ -691,7 +691,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `review_issues` | 无 | 与 `GET …/checks` 相同的待核对清单 |
 | `recent_messages` | `limit`（默认 30，最多 100） | 最近的组内消息和记录讨论（发言人、内容、时间、所属记录、是否紧急或点名），旧的在前 |
 
-接入时把 `https://服务器/api/v0/workspaces/{id}/mcp` 和组员令牌填进 AI 工具的 MCP 设置（远程服务器、自定义请求头）。令牌和在手机上一样能读写整个工作组，只填进自己信任的工具；不用时在应用里退出或让组长吊销。
+接入时把 `https://服务器/api/v0/workspaces/{id}/mcp` 和令牌填进 AI 工具的 MCP 设置（远程服务器、自定义请求头）。拿到令牌的工具在有效期内能读全组数据，只填进自己信任的工具，用完撤销。
 
 ## 12. 版本演进
 

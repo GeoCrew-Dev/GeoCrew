@@ -770,8 +770,9 @@ paths:
         One JSON-RPC 2.0 message per POST (MCP streamable HTTP, stateless,
         answered as application/json). Methods: initialize, ping,
         tools/list, tools/call. Tools: workspace_summary, search_records,
-        get_record, review_issues, recent_messages; all read only. Members'
-        tokens only: view links get 403. Notifications get 202, batches 400.
+        get_record, review_issues, recent_messages; all read only. Takes a
+        view link token (the credential to give an AI tool) or a member
+        token. Notifications get 202, batches 400.
         See protocol section 11.
       requestBody:
         required: true
@@ -791,8 +792,8 @@ paths:
           content:
             application/json:
               schema: { type: object }
-        "202": { description: Notification accepted, no body }
-        "400": { description: Not JSON-RPC, or a batch }
+        "202": { description: "Notification accepted, no body" }
+        "400": { description: "Not JSON-RPC, or a batch" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
 

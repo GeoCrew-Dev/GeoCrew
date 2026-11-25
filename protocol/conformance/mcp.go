@@ -66,7 +66,7 @@ func (s *suite) mcpChecks() []check {
 			}
 			return nil
 		}},
-		{section: "§11", name: "MCP：查看链接不能用，返回 403", needs: "mcp", workspace: true, run: func() error {
+		{section: "§11", name: "MCP：查看链接可以用，撤销后 401", needs: "mcp", workspace: true, run: func() error {
 			r, err := s.c.do(http.MethodPost, wsPath(s.ws, "/view-links"), s.member, map[string]any{"hours": 1}, nil)
 			if err != nil {
 				return err
@@ -81,7 +81,17 @@ func (s *suite) mcpChecks() []check {
 			if err != nil {
 				return err
 			}
-			return expect(r, http.StatusForbidden, "")
+			if err := expect(r, http.StatusOK, ""); err != nil {
+				return fmt.Errorf("查看链接调用 tools/list：%v", err)
+			}
+			if r, err = s.c.do(http.MethodDelete, wsPath(s.ws, "/view-links"), s.member, nil, nil); err != nil {
+				return err
+			}
+			r, _, err = rpc(link.Token, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+			if err != nil {
+				return err
+			}
+			return expect(r, http.StatusUnauthorized, "")
 		}},
 	}
 }
