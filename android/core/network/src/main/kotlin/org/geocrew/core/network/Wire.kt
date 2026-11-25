@@ -1,0 +1,162 @@
+package org.geocrew.core.network
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+
+/** Protocol v0 payloads. Field names follow docs/protocol-v0.md. */
+
+@Serializable
+data class ServerInfo(
+    val name: String = "",
+    val protocol: String,
+    val version: String = "",
+    val capabilities: List<String> = emptyList(),
+    @SerialName("max_upload_bytes") val maxUploadBytes: Long = 0,
+    @SerialName("max_push_batch") val maxPushBatch: Int = 500,
+)
+
+@Serializable
+data class JoinResult(
+    @SerialName("workspace_id") val workspaceId: String,
+    @SerialName("workspace_name") val workspaceName: String = "",
+    @SerialName("member_id") val memberId: String,
+    val role: String,
+    val token: String,
+    @SerialName("invite_code") val inviteCode: String? = null,
+)
+
+@Serializable
+data class Member(
+    val id: String,
+    val nickname: String,
+    val role: String,
+    @SerialName("joined_at") val joinedAt: String = "",
+    val revoked: Boolean = false,
+    /** Last authenticated request, to the minute; null on older servers or before the first one. */
+    @SerialName("last_seen") val lastSeen: String? = null,
+)
+
+@Serializable
+data class WorkspaceInfo(
+    val id: String,
+    val name: String,
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("last_seq") val lastSeq: Long = 0,
+    val me: Member,
+    @SerialName("invite_code") val inviteCode: String? = null,
+    /** 0 until a leader first sets the shared settings; servers without the capability omit it. */
+    @SerialName("settings_version") val settingsVersion: Long = 0,
+    val online: List<String> = emptyList(),
+    /** Set while the workspace is archived (protocol v0 §2.3): it can be read but not changed or joined. */
+    @SerialName("archived_at") val archivedAt: String? = null,
+)
+
+/** A workspace's shared settings (protocol v0 §2.2); the server does not interpret them. */
+@Serializable
+data class WorkspaceSettings(val version: Long = 0, val settings: JsonObject = JsonObject(emptyMap()))
+
+@Serializable
+internal data class PutSettingsReq(val settings: JsonObject, @SerialName("base_version") val baseVersion: Long? = null)
+
+/**
+ * A comment on a record or, without [featureId], a message to the whole team
+ * (protocol v0 §8). [at] is an optional `[lng, lat]` for team messages.
+ */
+@Serializable
+data class Comment(
+    val id: String,
+    @SerialName("feature_id") val featureId: String? = null,
+    val body: String = "",
+    val at: List<Double>? = null,
+    @SerialName("author_id") val authorId: String = "",
+    val nickname: String = "",
+    @SerialName("created_at") val createdAt: String = "",
+    val seq: Long = 0,
+    val deleted: Boolean = false,
+    /** A call for help or to gather (protocol v0 §8.1). */
+    val urgent: Boolean = false,
+    /** A leader's roll call (protocol v0 §8.2). */
+    @SerialName("roll_call") val rollCall: Boolean = false,
+    /** The roll call this message answers (protocol v0 §8.2). */
+    @SerialName("answer_to") val answerTo: String? = null,
+    /** A check-out: when the author expects to be back, RFC 3339 (protocol v0 §8.3). */
+    @SerialName("back_by") val backBy: String? = null,
+    /** The check-out this message closes (protocol v0 §8.3). */
+    @SerialName("back_from") val backFrom: String? = null,
+)
+
+@Serializable
+data class CommentPage(val comments: List<Comment> = emptyList(), val seq: Long, val more: Boolean = false)
+
+@Serializable
+internal data class AddCommentReq(
+    val id: String,
+    @SerialName("feature_id") val featureId: String? = null,
+    val body: String,
+    val at: List<Double>? = null,
+    val urgent: Boolean = false,
+    @SerialName("roll_call") val rollCall: Boolean = false,
+    @SerialName("answer_to") val answerTo: String? = null,
+    @SerialName("back_by") val backBy: String? = null,
+    @SerialName("back_from") val backFrom: String? = null,
+)
+
+/** A device's Web Push keys (base64url); the server encrypts notices with them. */
+@Serializable
+data class PushKeys(val p256dh: String, val auth: String)
+
+@Serializable
+internal data class PutPushReq(val endpoint: String, val events: List<String>? = null, val keys: PushKeys? = null)
+
+/**
+ * What a push carries (protocol v0 §9): only ids, never content. [type] is
+ * "message", "comment" or "task"; unknown types should be ignored.
+ */
+@Serializable
+data class PushNotice(
+    val type: String,
+    val workspace: String,
+    val feature: String? = null,
+    val from: String? = null,
+    val seq: Long = 0,
+) {
+    companion object {
+        /** Parses a notice, or returns null for anything else. */
+        fun parse(bytes: ByteArray): PushNotice? =
+            runCatching { GeoCrewApi.json.decodeFromString(serializer(), bytes.decodeToString()) }.getOrNull()
+    }
+}
+
+/** A read-only, expiring link to look at the workspace in a browser (protocol §10). */
+@Serializable
+data class ViewLink(
+    val token: String,
+    @SerialName("expires_at") val expiresAt: String,
+    /** Page on the server, token in the fragment; see [GeoCrewApi.viewUrl]. */
+    val path: String,
+)
+
+@Serializable
+internal data class ViewLinkReq(val hours: Int)
+
+@Serializable
+internal data class RevokedResp(val revoked: Int = 0)
+
+@Serializable
+internal data class InviteResp(@SerialName("invite_code") val inviteCode: String)
+
+@Serializable
+internal data class PushReq(val features: List<JsonObject>)
+
+@Serializable
+internal data class PushResultWire(val id: String, val status: String, val seq: Long = 0, val current: JsonObject? = null)
+
+@Serializable
+internal data class PushRespWire(val results: List<PushResultWire>, val seq: Long)
+
+@Serializable
+internal data class PullRespWire(val features: List<JsonObject>, val seq: Long, val more: Boolean = false)
+
+@Serializable
+internal data class ErrorBody(val error: String = "", val message: String = "")

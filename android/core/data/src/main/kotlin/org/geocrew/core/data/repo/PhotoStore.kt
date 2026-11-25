@@ -1,0 +1,135 @@
+package org.geocrew.core.data.repo
+
+import android.content.Context
+import android.net.Uri
+import androidx.core.content.FileProvider
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.geocrew.core.model.AttachmentKind
+import java.io.File
+import java.io.InputStream
+import java.security.MessageDigest
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * Attachments (photos, voice notes) live in app storage named by the
+ * SHA-256 of their bytes, the same id the server uses, so syncing never
+ * renames anything. The extension only tells the kinds apart on disk.
+ */
+@Singleton
+class PhotoStore @Inject constructor(@ApplicationContext private val context: Context) {
+    private val dir: File get() = File(context.filesDir, "photos").apply { mkdirs() }
+    private val pending: File get() = File(context.cacheDir, "capture").apply { mkdirs() }
+
+    /** A fresh file + content URI for the camera app to write into. */
+    fun newCaptureTarget(): Pair<File, Uri> {
+        val f = File.createTempFile("cap_", ".jpg", pending)
+        return f to FileProvider.getUriForFile(context, "${context.packageName}.files", f)
+    }
+
+    /** A fresh file for a voice recording in progress. */
+    fun newRecordingTarget(): File = File.createTempFile("rec_", AttachmentKind.AUDIO.ext, pending)
+
+    /** Moves a captured file into the store and returns its hash, or null if empty. */
+    suspend fun commit(captured: File, kind: AttachmentKind = AttachmentKind.PHOTO): String? = withContext(Dispatchers.IO) {
+        if (!captured.exists() || captured.length() == 0L) {
+            captured.delete()
+            return@withContext null
+        }
+        val sha = sha256(captured)
+        val dst = file(sha, kind)
+        if (!dst.exists()) captured.copyTo(dst)
+        captured.delete()
+        sha
+    }
+
+    /** Copies an external image (gallery pick) into the store. */
+    suspend fun import(uri: Uri): String? = withContext(Dispatchers.IO) {
+        val tmp = File.createTempFile("imp_", ".jpg", pending)
+        context.contentResolver.openInputStream(uri)?.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+        commit(tmp)
+    }
+
+    fun file(sha: String): File = file(sha, AttachmentKind.PHOTO)
+
+    fun file(sha: String, kind: AttachmentKind): File = File(dir, sha + kind.ext)
+
+    /** Stores an attachment read from [input] (blocking; call off the main thread). Returns its hash. */
+    fun putBlocking(input: InputStream, kind: AttachmentKind = AttachmentKind.PHOTO): String? {
+        val tmp = File.createTempFile("pkg_", kind.ext, pending)
+        tmp.outputStream().use { input.copyTo(it) }
+        if (tmp.length() == 0L) {
+            tmp.delete()
+            return null
+        }
+        val sha = sha256(tmp)
+        val dst = file(sha, kind)
+        if (!dst.exists()) tmp.copyTo(dst)
+        tmp.delete()
+        return sha
+    }
+
+    /**
+     * Deletes stored photos not in [keep] and abandoned capture files. Only
+     * touches files older than [graceMillis], so a photo being attached
+     * right now is never removed. Returns the number of files deleted.
+     */
+    suspend fun sweep(keep: Set<String>, graceMillis: Long = 24 * 60 * 60 * 1000L): Int = withContext(Dispatchers.IO) {
+        val cutoff = System.currentTimeMillis() - graceMillis
+        var n = 0
+        dir.listFiles().orEmpty().forEach { f ->
+            if (f.isFile && f.lastModified() < cutoff && f.nameWithoutExtension !in keep && f.delete()) n++
+        }
+        pending.listFiles().orEmpty().forEach { f ->
+            if (f.isFile && f.lastModified() < cutoff && f.delete()) n++
+        }
+        n
+    }
+
+    fun exists(sha: String, kind: AttachmentKind = AttachmentKind.PHOTO) = file(sha, kind).exists()
+
+    /**
+     * Decodes photo [sha] at roughly [maxSide] pixels on its longer side,
+     * turned upright per its EXIF orientation; null if missing or unreadable.
+     */
+    fun decodeUpright(sha: String, maxSide: Int): android.graphics.Bitmap? {
+        val f = file(sha)
+        if (!f.exists()) return null
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(f.path, bounds)
+        if (bounds.outWidth <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
+        val bmp = android.graphics.BitmapFactory.decodeFile(f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: return null
+        val turn = runCatching {
+            when (android.media.ExifInterface(f).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1)) {
+                android.media.ExifInterface.ORIENTATION_ROTATE_90, android.media.ExifInterface.ORIENTATION_TRANSPOSE -> 90f
+                android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                android.media.ExifInterface.ORIENTATION_ROTATE_270, android.media.ExifInterface.ORIENTATION_TRANSVERSE -> 270f
+                else -> 0f
+            }
+        }.getOrDefault(0f)
+        if (turn == 0f) return bmp
+        val m = android.graphics.Matrix().apply { postRotate(turn) }
+        return android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true).also { if (it !== bmp) bmp.recycle() }
+    }
+
+    /** A content URI other apps (viewers, share targets) can read. */
+    fun uri(sha: String): Uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file(sha))
+
+    private fun sha256(f: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+}

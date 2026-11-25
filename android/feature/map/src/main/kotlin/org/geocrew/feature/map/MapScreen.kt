@@ -1,0 +1,823 @@
+package org.geocrew.feature.map
+
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import org.geocrew.core.model.LngLat
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.geocrew.core.map.GeoCrewMap
+import org.geocrew.core.map.rememberMapCameraState
+import org.geocrew.core.model.CoordinateFormat
+import org.geocrew.core.model.CoordinateFormatter
+import org.geocrew.core.model.FeatureKind
+import org.geocrew.core.model.bounds
+
+@Composable
+fun MapScreen(
+    onOpenSettings: () -> Unit,
+    onOpenFeature: (String) -> Unit,
+    onOpenRecords: () -> Unit = {},
+    onOpenTools: () -> Unit = {},
+    onOpenTeam: () -> Unit = {},
+    onOpenProjects: () -> Unit = {},
+    onOpenChat: () -> Unit = {},
+    /** Opens the assistant (voice commands, guided entry, AI). */
+    onOpenAssistant: (() -> Unit)? = null,
+    /** The record selected on the map changed (null when none), so "this record" can mean it. */
+    onSelectionChanged: (String?) -> Unit = {},
+    /** A feature another screen asked to show; consumed once. */
+    focusFeatureId: String? = null,
+    /** A position another screen asked to show (e.g. a team message's); consumed once. */
+    focusPosition: LngLat? = null,
+    onFocusHandled: () -> Unit = {},
+    viewModel: MapViewModel = hiltViewModel(),
+) {
+    val context = LocalContext.current
+    val baseMap by viewModel.baseMap.collectAsStateWithLifecycle()
+    val overlays by viewModel.overlays.collectAsStateWithLifecycle()
+    val mode by viewModel.mode.collectAsStateWithLifecycle()
+    val measureWalk by viewModel.measureWalk.collectAsStateWithLifecycle()
+    val selected by viewModel.selected.collectAsStateWithLifecycle()
+    val selectedId = selected?.id
+    LaunchedEffect(selectedId) { onSelectionChanged(selectedId) }
+    val fix by viewModel.fix.collectAsStateWithLifecycle()
+    val recording by viewModel.isRecording.collectAsStateWithLifecycle()
+    val tracking by viewModel.tracking.state.collectAsStateWithLifecycle()
+    val problem by viewModel.tileProblem.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val team by viewModel.team.collectAsStateWithLifecycle()
+    val unread by viewModel.unreadMessages.collectAsStateWithLifecycle()
+    val alert by viewModel.alert.collectAsStateWithLifecycle()
+    val rollCall by viewModel.rollCall.collectAsStateWithLifecycle()
+    val outings by viewModel.outings.collectAsStateWithLifecycle()
+    val meeting by viewModel.meeting.collectAsStateWithLifecycle()
+    val answering by viewModel.answering.collectAsStateWithLifecycle()
+    val averaging by viewModel.averaging.collectAsStateWithLifecycle()
+    val mapNotice by viewModel.notice.collectAsStateWithLifecycle()
+    val download by viewModel.download.collectAsStateWithLifecycle()
+    val pausedDownloads by viewModel.pausedDownloads.collectAsStateWithLifecycle()
+    val format = settings?.coordinateFormat ?: CoordinateFormat.DECIMAL
+    val camera = rememberMapCameraState()
+
+    var showLayers by rememberSaveable { mutableStateOf(false) }
+    var downloadArea by remember { mutableStateOf<org.geocrew.core.model.Bounds?>(null) }
+    // Set when the area is a map sheet rather than the view.
+    var downloadTitle by remember { mutableStateOf<String?>(null) }
+    var downloadZoom by remember { mutableStateOf<Double?>(null) }
+    var printTitle by remember { mutableStateOf<String?>(null) }
+    var pendingPrint by remember { mutableStateOf<Pair<org.geocrew.core.map.MapCapture, MapPrintSpec>?>(null) }
+    val printTarget = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        val job = pendingPrint
+        pendingPrint = null
+        if (uri != null && job != null) viewModel.printMap(context.applicationContext, uri, job.first, job.second)
+    }
+    val printScope = androidx.compose.runtime.rememberCoroutineScope()
+    var showGoTo by rememberSaveable { mutableStateOf(false) }
+    /** A position reached through "前往坐标", marked until the next one. */
+    var goneTo by remember { mutableStateOf<LngLat?>(null) }
+    var goneLabel by remember { mutableStateOf(GONE_TO_LABEL) }
+    var followOnFirstFix by remember { mutableStateOf(true) }
+    val project by viewModel.project.collectAsStateWithLifecycle()
+
+    // Each project opens where it was left; a new one follows the first fix instead.
+    var restoredFor by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(project?.id) {
+        val p = project ?: return@LaunchedEffect
+        if (restoredFor == p.id) return@LaunchedEffect
+        restoredFor = p.id
+        p.config.view?.let { v ->
+            camera.jumpTo(LngLat(v.lng, v.lat), v.zoom, v.bearing)
+            followOnFirstFix = false
+        }
+    }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) viewModel.saveView(camera.center, camera.zoom, camera.bearing)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        if (granted.values.any { it }) viewModel.startLocation()
+    }
+    LaunchedEffect(Unit) {
+        val wanted = buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        permissions.launch(wanted.toTypedArray())
+        viewModel.startLocation()
+    }
+    LaunchedEffect(fix) {
+        val f = fix ?: return@LaunchedEffect
+        if (followOnFirstFix) {
+            followOnFirstFix = false
+            camera.animateTo(f.position, 15.0)
+        }
+    }
+
+    val featureList by viewModel.featureList.collectAsStateWithLifecycle()
+    LaunchedEffect(focusFeatureId, featureList) {
+        val id = focusFeatureId ?: return@LaunchedEffect
+        val f = featureList.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        viewModel.select(id)
+        f.geometry?.bounds()?.let { camera.fit(it) }
+        followOnFirstFix = false
+        onFocusHandled()
+    }
+    LaunchedEffect(focusPosition) {
+        val p = focusPosition ?: return@LaunchedEffect
+        goneTo = p
+        goneLabel = "◎ 消息位置"
+        camera.animateTo(p, maxOf(camera.zoom, 15.0))
+        followOnFirstFix = false
+        onFocusHandled()
+    }
+
+    val display by viewModel.display.collectAsStateWithLifecycle()
+    val nameLabels = remember(overlays.features, display.names) {
+        if (!display.names) emptyList() else overlays.features.mapNotNull { f ->
+            val name = f.title?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            org.geocrew.core.model.MapDisplay.anchor(f.geometry)?.let { org.geocrew.core.map.MapLabel(it, name, minZoom = NAME_MIN_ZOOM) }
+        }
+    }
+
+    // Kilometre grid for the view, recomputed shortly after the camera settles.
+    var grid by remember { mutableStateOf<org.geocrew.core.model.PlaneGrid.Grid?>(null) }
+    LaunchedEffect(display.grid) {
+        val width = display.grid
+        if (width == 0) {
+            grid = null
+            return@LaunchedEffect
+        }
+        androidx.compose.runtime.snapshotFlow { camera.center to camera.zoom }.collectLatest {
+            kotlinx.coroutines.delay(150)
+            var view = camera.visibleBounds()
+            while (view == null) {
+                kotlinx.coroutines.delay(300)
+                view = camera.visibleBounds()
+            }
+            grid = org.geocrew.core.model.PlaneGrid.of(view, width)
+        }
+    }
+    // Map sheet frames for the view at the chosen scale; none when the view holds too many.
+    var sheets by remember { mutableStateOf<List<org.geocrew.core.model.MapSheet.Sheet>>(emptyList()) }
+    LaunchedEffect(display.sheetScale) {
+        val scale = display.sheetScale
+        if (scale == null) {
+            sheets = emptyList()
+            return@LaunchedEffect
+        }
+        androidx.compose.runtime.snapshotFlow { camera.center to camera.zoom }.collectLatest {
+            kotlinx.coroutines.delay(150)
+            val view = camera.visibleBounds() ?: return@collectLatest
+            sheets = org.geocrew.core.model.MapSheet.covering(view, scale, max = 200).orEmpty()
+        }
+    }
+    val sheetLabels = remember(sheets) {
+        sheets.map { s -> org.geocrew.core.map.MapLabel(org.geocrew.core.model.LngLat((s.bounds.west + s.bounds.east) / 2, (s.bounds.south + s.bounds.north) / 2), s.code, faded = true) }
+    }
+    // Control points while aligning a picture: where each pair now sits, and the half-made one.
+    val alignLabels = remember(mode) {
+        (mode as? AlignMode)?.let { m ->
+            m.pairs.mapIndexed { i, p -> org.geocrew.core.map.MapLabel(p.to, "✚${i + 1}") } +
+                listOfNotNull(m.pendingShown?.let { org.geocrew.core.map.MapLabel(it, "✚${m.pairs.size + 1}？", faded = true) })
+        }.orEmpty()
+    }
+    val overlayItems by viewModel.overlayItems.collectAsStateWithLifecycle()
+    // An image to lay over the map, optionally picked together with its world file.
+    val pickOverlay = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) {
+            showLayers = false
+            viewModel.addOverlay(uris, camera.visibleBounds()) { camera.fit(it) }
+        }
+    }
+    val images by viewModel.images.collectAsStateWithLifecycle()
+    val reference by viewModel.reference.collectAsStateWithLifecycle()
+    val referenceLayers by viewModel.referenceLayers.collectAsStateWithLifecycle()
+    val tappedReference by viewModel.tappedReference.collectAsStateWithLifecycle()
+    val referenceTeam by viewModel.referenceTeam.collectAsStateWithLifecycle()
+    val drawn = remember(overlays, grid, images, sheets, reference) {
+        overlays.copy(grid = grid?.lines.orEmpty(), images = images, sheets = sheets.map { it.bounds }, reference = reference)
+    }
+    val gridLabels = remember(grid) {
+        grid?.lines?.mapNotNull { l -> l.anchor?.let { org.geocrew.core.map.MapLabel(it, l.label) } }.orEmpty()
+    }
+
+    val bm = baseMap ?: return
+    Box(Modifier.fillMaxSize()) {
+        GeoCrewMap(
+            source = bm.source,
+            keys = bm.keys,
+            overlays = drawn,
+            camera = camera,
+            hillshade = display.hillshade,
+            modifier = Modifier.fillMaxSize(),
+            // A finger's width (about 24 dp) on the ground, to pick up a vertex.
+            onClick = { p, id -> viewModel.onMapClick(p, id, 24 * org.geocrew.core.model.MapScale.metersPerDp(p.lat, camera.zoom)) },
+            onLongClick = { if (mode == MapMode.Browse) viewModel.addPoint(it) },
+            labels = gridLabels + overlays.team.map { org.geocrew.core.map.MapLabel(it.position, it.nickname, faded = it.stale) } +
+                listOfNotNull(goneTo?.let { org.geocrew.core.map.MapLabel(it, goneLabel) }) +
+                alignLabels + sheetLabels +
+                nameLabels,
+        )
+
+        if (mode is MapMode.Draw || mode is AlignMode) Crosshair(Modifier.align(Alignment.Center))
+
+        // Top: notices about the base map.
+        Column(
+            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(12.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            project?.let { p -> ProjectChip(p.name, p.team != null, onOpenProjects) }
+            when {
+                bm.showKeyPrompt -> KeyPromptCard(
+                    onEnterKey = { viewModel.keyPromptSeen(); onOpenSettings() },
+                    onSkip = { viewModel.skipKeyPrompt() },
+                )
+                problem != null -> TileProblemCard(
+                    isTianditu = bm.source.keyId != null,
+                    host = problem!!.host,
+                    code = problem!!.httpCode,
+                    onSwitch = { showLayers = true },
+                    onCheckKey = onOpenSettings,
+                    onDismiss = viewModel::dismissTileProblem,
+                )
+                bm.usingFallback -> Notice("所选底图还没有 Key，暂时显示「${bm.source.name}」。", "填写 Key", onOpenSettings)
+            }
+            averaging?.let { a -> AveragingCard(a, onDone = viewModel::finishAveraging, onCancel = viewModel::cancelAveraging) }
+            mapNotice?.let { Notice(it, "好", viewModel::consumeNotice) }
+            project?.config?.let { cfg ->
+                val n = cfg.teamNotice
+                if (n != null && n.updatedAt != cfg.noticeSeenAt) {
+                    val text = n.text.replace('\n', ' ').let { if (it.length > 80) it.take(79) + "…" else it }
+                    Notice("公告" + (n.by?.let { "（$it）" } ?: "") + "：" + text, "知道了") { viewModel.dismissTeamNotice(n.updatedAt) }
+                }
+            }
+            alert?.let { a ->
+                AlertCard(
+                    text = "${a.nickname}：${a.body}",
+                    time = a.createdAt,
+                    onShow = a.at?.let { p ->
+                        {
+                            goneTo = p
+                            goneLabel = "⚠ " + a.nickname
+                            camera.animateTo(p, maxOf(camera.zoom, 15.0))
+                            followOnFirstFix = false
+                        }
+                    },
+                    onOpenChat = onOpenChat,
+                    onDismiss = { viewModel.dismissAlert(a.id) },
+                )
+            }
+            meeting?.let { (m, now) ->
+                MeetingCard(
+                    m, now, fix?.position,
+                    onShow = {
+                        camera.animateTo(m.position, maxOf(camera.zoom, 15.0))
+                        followOnFirstFix = false
+                    },
+                    onOpen = { onOpenFeature(m.feature.id) },
+                    onDismiss = { viewModel.dismissMeeting(m) },
+                )
+            }
+            if (outings.isNotEmpty()) {
+                val now = org.geocrew.core.ui.ticking()
+                org.geocrew.core.ui.OutingBoard(
+                    outings.filter { it.mine || it.backBy < now },
+                    onBack = viewModel::checkIn,
+                    onShow = { p ->
+                        goneTo = p
+                        goneLabel = "外出出发点"
+                        camera.animateTo(p, maxOf(camera.zoom, 15.0))
+                        followOnFirstFix = false
+                    },
+                    busy = answering,
+                    maxRows = 3,
+                )
+            }
+            rollCall?.let { c ->
+                org.geocrew.core.ui.RollCallPrompt(
+                    caller = c.nickname,
+                    question = c.body,
+                    time = c.createdAt,
+                    onOk = { viewModel.answerRollCall(true) },
+                    onHelp = { viewModel.answerRollCall(false) },
+                    busy = answering,
+                    onLater = { viewModel.dismissRollCall(c.id) },
+                )
+            }
+            if (tracking is org.geocrew.core.sensors.TrackingState.Recording) {
+                val t = tracking as org.geocrew.core.sensors.TrackingState.Recording
+                Notice("正在记录轨迹：${t.points} 个点，${CoordinateFormatter.distance(t.lengthMeters)}", null, null)
+            }
+            download?.let { d ->
+                DownloadCard(
+                    d,
+                    onPause = viewModel::pauseDownload,
+                    onCancel = viewModel::cancelDownload,
+                    onResume = viewModel::resumeDownload,
+                    onUse = { viewModel.chooseSource(it.id) },
+                    onDismiss = viewModel::dismissDownload,
+                )
+            }
+            if (download == null && pausedDownloads.isNotEmpty()) {
+                PausedDownloadsCard(pausedDownloads, onResume = viewModel::resumeDownload, onDiscard = viewModel::discardDownload)
+            }
+            if (display.filtering) {
+                val why = buildList {
+                    if (display.onlyMyTasks) add("只看我的待办")
+                    if (display.days > 0) add(if (display.days == 1) "只看今天" else "只看近 ${display.days} 天")
+                    if (display.query.isNotBlank()) add("含「${display.query.trim()}」")
+                    if (display.hiddenKinds.isNotEmpty()) add("隐藏了 ${display.hiddenKinds.size} 类记录")
+                }
+                Notice("地图筛选：" + why.joinToString("，"), "调整") { showLayers = true }
+            }
+        }
+
+        // Right: map controls.
+        Column(
+            Modifier.align(Alignment.CenterEnd).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SmallFloatingActionButton(onClick = { showLayers = true }) { Icon(Icons.Default.Layers, "图层") }
+            SmallFloatingActionButton(onClick = { camera.resetNorth() }) {
+                Icon(Icons.Default.Navigation, "指北", Modifier.rotate(-camera.bearing.toFloat()))
+            }
+            SmallFloatingActionButton(onClick = {
+                val f = fix
+                if (f != null) camera.animateTo(f.position, maxOf(camera.zoom, 16.0)) else viewModel.startLocation()
+            }) { Icon(Icons.Default.MyLocation, "定位") }
+            SmallFloatingActionButton(onClick = onOpenRecords) { Icon(Icons.AutoMirrored.Filled.List, "记录") }
+            SmallFloatingActionButton(onClick = onOpenTools) { Icon(Icons.Default.Build, "工具") }
+            onOpenAssistant?.let { SmallFloatingActionButton(onClick = it) { Icon(Icons.Default.Mic, "助手") } }
+            if (team.linked) {
+                SmallFloatingActionButton(onClick = onOpenChat) {
+                    androidx.compose.material3.BadgedBox(
+                        badge = { if (unread > 0) androidx.compose.material3.Badge { Text(if (unread > 99) "99+" else "$unread") } },
+                    ) { Icon(Icons.AutoMirrored.Filled.Chat, "组内消息") }
+                }
+            }
+            SmallFloatingActionButton(onClick = onOpenTeam) {
+                androidx.compose.material3.BadgedBox(
+                    badge = {
+                        if (team.linked && team.online.size > 1) androidx.compose.material3.Badge { Text("${team.online.size}") }
+                    },
+                ) {
+                    Icon(
+                        Icons.Default.Groups,
+                        "工作组",
+                        tint = when {
+                            !team.linked -> androidx.compose.material3.LocalContentColor.current
+                            team.needsRejoin || team.error != null -> androidx.compose.material3.MaterialTheme.colorScheme.error
+                            team.connection == org.geocrew.core.network.RealtimeState.Connected -> androidx.compose.ui.graphics.Color(0xFF2E7D32)
+                            else -> androidx.compose.material3.MaterialTheme.colorScheme.outline
+                        },
+                    )
+                }
+            }
+            SmallFloatingActionButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, "设置") }
+        }
+
+        // Bottom: status line, selection card and the tool bar.
+        Column(
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            val legendShown = remember(overlays.features, overlays.legend) { overlays.legend.used(overlays.features) }
+            val linesShown = remember(overlays.features) { lineStylesUsed(overlays.features) }
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MapLegend(legendTitle(overlays.legend.key, project?.config?.fields.orEmpty()), legendShown, linesShown)
+                ScaleBar(camera)
+            }
+            StatusLine(
+                onClick = { showGoTo = true },
+                text = buildString {
+                    val f = fix
+                    if (f != null) {
+                        append(CoordinateFormatter.format(f.position, format))
+                        f.accuracy?.let { append("  ±%.0f m".format(it)) }
+                        f.position.alt?.let { append("  海拔 %.0f m".format(it)) }
+                    } else {
+                        append(if (viewModel.locationEnabled()) "等待定位…" else "定位未开启")
+                    }
+                    if (mode is MapMode.Draw || mode is AlignMode) append("\n十字中心 " + CoordinateFormatter.format(camera.center, format))
+                },
+            )
+            val sel = selected
+            if (sel != null && mode == MapMode.Browse) {
+                SelectedFeatureCard(
+                    sel, format,
+                    onOpen = { onOpenFeature(sel.id) },
+                    onDelete = viewModel::deleteSelected,
+                    onClose = viewModel::clearSelection,
+                    onEdit = viewModel::startEdit.takeIf { org.geocrew.core.model.VertexEdit.of(sel) !is org.geocrew.core.model.VertexEdit.Edit.No },
+                )
+            }
+            when (val m = mode) {
+                is MapMode.Draw -> DrawBar(
+                    m,
+                    onAddCenter = { viewModel.addVertex(camera.center) },
+                    onUndo = viewModel::undoVertex,
+                    onFinish = viewModel::finishDraw,
+                    onCancel = viewModel::cancelDraw,
+                    onToggleKind = viewModel::toggleMeasureKind,
+                    onRemovePicked = viewModel::removePicked,
+                    walk = measureWalk,
+                )
+                is AlignMode -> AlignBar(
+                    m,
+                    onTapCenter = { viewModel.onMapClick(camera.center, null) },
+                    onUndo = viewModel::undoAlign,
+                    onApply = viewModel::applyAlign,
+                    onCancel = viewModel::cancelAlign,
+                )
+                MapMode.Browse -> ToolBar(
+                    recording = recording,
+                    hasFix = fix != null,
+                    onPointHere = viewModel::addPointAtFix,
+                    onPointCenter = { viewModel.addPoint(camera.center) },
+                    onTrack = { if (recording) viewModel.tracking.stop(context) else viewModel.tracking.start(context) },
+                    onLine = { viewModel.startDraw(FeatureKind.LINE) },
+                    onPolygon = { viewModel.startDraw(FeatureKind.POLYGON) },
+                    onMeasure = viewModel::startMeasure,
+                )
+            }
+        }
+
+        if (showGoTo) {
+            GoToDialog(
+                format = format,
+                onGo = { p, add ->
+                    showGoTo = false
+                    goneTo = if (add) null else p
+                    goneLabel = GONE_TO_LABEL
+                    camera.animateTo(p, maxOf(camera.zoom, 15.0))
+                    if (add) viewModel.addPoint(p)
+                },
+                onSheet = { s ->
+                    showGoTo = false
+                    goneTo = org.geocrew.core.model.LngLat((s.bounds.west + s.bounds.east) / 2, (s.bounds.south + s.bounds.north) / 2)
+                    goneLabel = s.scale.label + " " + s.code
+                    camera.fit(s.bounds)
+                },
+                onSheetDownload = { s ->
+                    showGoTo = false
+                    camera.fit(s.bounds)
+                    downloadTitle = s.scale.label + " " + s.code
+                    // Start where the whole sheet spans a few tiles across.
+                    downloadZoom = kotlin.math.floor(kotlin.math.ln(360.0 / (s.bounds.east - s.bounds.west)) / kotlin.math.ln(2.0)) + 2
+                    downloadArea = s.bounds
+                },
+                onDismiss = { showGoTo = false },
+            )
+        }
+
+        tappedReference?.let { ReferenceTapDialog(it, viewModel::dismissReference) }
+        if (showLayers) {
+            LayerSheet(
+                base = bm,
+                display = display,
+                kinds = remember(featureList, display.hiddenKinds) {
+                    (featureList.map { it.kind } + display.hiddenKinds.map(::FeatureKind)).distinct()
+                },
+                inTeam = project?.team != null,
+                onDisplay = viewModel::setDisplay,
+                onChoose = { id ->
+                    viewModel.chooseSource(id)
+                    showLayers = false
+                    // An offline map only covers its area: go there if the view is elsewhere.
+                    bm.sources.firstOrNull { it.id == id }?.bounds?.takeIf { it.size == 4 }?.let { (w, s, e, n) ->
+                        val c = camera.center
+                        if (c.lng !in w..e || c.lat !in s..n) camera.fit(org.geocrew.core.model.Bounds(w, s, e, n))
+                    }
+                },
+                onManage = { showLayers = false; onOpenSettings() },
+                onShare = viewModel::toggleSharedBasemap,
+                onDownload = { showLayers = false; downloadTitle = null; downloadZoom = null; downloadArea = camera.visibleBounds() },
+                onPrint = { showLayers = false; printTitle = project?.name.orEmpty() },
+                overlays = overlayItems,
+                reference = referenceLayers,
+                referenceActions = remember(viewModel, camera) {
+                    ReferenceActions(
+                        change = viewModel::setReference,
+                        fit = { id -> showLayers = false; viewModel.referenceBounds(id) { camera.fit(it) } },
+                        remove = viewModel::removeReference,
+                        share = viewModel::toggleReferenceShared,
+                    )
+                },
+                referenceTeam = referenceTeam,
+                overlayActions = remember(viewModel, camera) {
+                    OverlayActions(
+                        add = { pickOverlay.launch(arrayOf("*/*")) },
+                        change = viewModel::setOverlay,
+                        fit = { id -> viewModel.fitOverlay(id, camera.visibleBounds()) },
+                        align = { id -> showLayers = false; viewModel.startAlign(id) },
+                        move = viewModel::moveOverlay,
+                        remove = viewModel::removeOverlay,
+                        share = viewModel::toggleShared,
+                    )
+                },
+                onDismiss = { showLayers = false },
+            )
+        }
+        downloadArea?.let { area ->
+            OfflineDownloadDialog(bm.source, area, downloadZoom ?: camera.zoom, onStart = viewModel::startDownload, onDismiss = { downloadArea = null }, sheet = downloadTitle)
+        }
+        printTitle?.let { initial ->
+            PrintDialog(initial, onDismiss = { printTitle = null }) { title ->
+                printTitle = null
+                printScope.launch {
+                    // Ticks and the north arrow assume a north-up map.
+                    if (kotlin.math.abs(camera.bearing) > 0.1) {
+                        camera.resetNorth()
+                        kotlinx.coroutines.delay(500)
+                    }
+                    val shot = camera.capture()
+                    if (shot == null) {
+                        viewModel.say("地图还没准备好，请稍后再试")
+                        return@launch
+                    }
+                    val p = project
+                    val spec = MapPrintSpec(
+                        title = title.ifBlank { p?.name ?: "地图" },
+                        byline = "制图：" + (p?.team?.nickname ?: settings?.nickname?.ifBlank { null } ?: "—") + " · " + java.time.LocalDate.now(),
+                        source = listOf(bm.source.name, bm.source.attribution).filter { it.isNotBlank() }.distinct().joinToString(" · "),
+                        legend = overlays.legend.used(overlays.features).map { it.color to it.value },
+                        legendTitle = "图例 · " + legendTitle(overlays.legend.key, p?.config?.fields.orEmpty()),
+                        lines = lineStylesUsed(overlays.features),
+                        labels = nameLabels.map { it.position to it.text },
+                    )
+                    pendingPrint = shot to spec
+                    printTarget.launch(spec.title.replace(Regex("[\\\\/:*?\"<>|]"), "_") + ".pdf")
+                }
+            }
+        }
+    }
+}
+
+/** Asks for the sheet's title before printing the view. */
+@Composable
+private fun PrintDialog(initial: String, onDismiss: () -> Unit, onPrint: (String) -> Unit) {
+    var title by rememberSaveable { mutableStateOf(initial) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("导出 PDF 地图") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(title, { title = it.take(60) }, label = { Text("图名") }, singleLine = true)
+                Text(
+                    "按当前视野出一张 A4 图：比例尺取整（如 1:2.5万），带经纬度刻度、指北针、图例和底图来源。出图前地图会转回正北。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPrint(title.trim()) }) { Text("选择保存位置") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+/** The open project's name; tapping it goes back to the project list. */
+@Composable
+private fun ProjectChip(name: String, shared: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clip(MaterialTheme.shapes.extraLarge).clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        shadowElevation = 2.dp,
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (shared) Icons.Default.Groups else Icons.Default.Folder, null,
+                Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(name, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun Crosshair(modifier: Modifier) {
+    Box(modifier.size(36.dp), contentAlignment = Alignment.Center) {
+        Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(36.dp))
+    }
+}
+
+/** Coordinates of the fix; tapping it opens "前往坐标". */
+@Composable
+private fun StatusLine(text: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        tonalElevation = 2.dp,
+    ) {
+        Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+    }
+}
+
+/** Progress of an averaged GPS point, with the running result. */
+@Composable
+private fun AveragingCard(a: MapViewModel.Averaging, onDone: () -> Unit, onCancel: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp)) {
+            Text("正在平均定位，请保持不动 · ${a.elapsed}/${a.seconds} 秒", style = MaterialTheme.typography.bodyMedium)
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { a.elapsed.toFloat() / a.seconds },
+                modifier = Modifier.fillMaxWidth().padding(end = 8.dp, top = 6.dp, bottom = 4.dp),
+            )
+            val r = a.result
+            Text(
+                if (r == null) "等待可用定位…（已收到 ${a.seen} 次）"
+                else "已用 ${r.used}/${a.seen} 次，离散 %.1f m".format(r.spread) + (r.accuracy?.let { "，单次精度约 %.0f m".format(it) } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onCancel) { Text("取消") }
+                TextButton(onClick = onDone, enabled = r != null) { Text("现在打点") }
+            }
+        }
+    }
+}
+
+/** A teammate's call for help, kept at the top of the map until dismissed. */
+@Composable
+private fun AlertCard(text: String, time: java.time.Instant, onShow: (() -> Unit)?, onOpenChat: () -> Unit, onDismiss: () -> Unit) {
+    val ago = java.time.Duration.between(time, java.time.Instant.now()).toMinutes().coerceAtLeast(0)
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp)) {
+            Text(
+                "紧急 · " + if (ago < 1) "刚刚" else if (ago < 60) "$ago 分钟前" else "${ago / 60} 小时前",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer, maxLines = 3)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (onShow != null) TextButton(onClick = onShow) { Text("看位置") }
+                TextButton(onClick = onOpenChat) { Text("回复") }
+                TextButton(onClick = onDismiss) { Text("知道了") }
+            }
+        }
+    }
+}
+
+/** The next meeting point: when, how long until then, and how far and which way from here. */
+@Composable
+private fun MeetingCard(
+    m: org.geocrew.core.model.Rendezvous.Next,
+    now: java.time.Instant,
+    here: LngLat?,
+    onShow: () -> Unit,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val clock = java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(java.time.ZoneId.systemDefault())
+    val today = java.time.LocalDate.ofInstant(now, java.time.ZoneId.systemDefault())
+    val day = java.time.LocalDate.ofInstant(m.at, java.time.ZoneId.systemDefault())
+    val whenText = (if (day == today) "" else if (day == today.plusDays(1)) "明天 " else "${day.monthValue}月${day.dayOfMonth}日 ") + clock.format(m.at)
+    val where = here?.let { p ->
+        val d = org.geocrew.core.model.Geodesy.distance(p, m.position)
+        val b = org.geocrew.core.model.Geodesy.bearing(p, m.position)
+        "距你 ${CoordinateFormatter.distance(d)}，在${org.geocrew.core.model.SeekGuide.direction(b)}方 ${b.toInt()}°"
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp)) {
+            Text(
+                "集合 · $whenText · ${org.geocrew.core.model.Rendezvous.countdown(m.at, now)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Text(
+                listOfNotNull(m.feature.title?.takeIf { it.isNotBlank() } ?: "集合点", where).joinToString("，"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                maxLines = 2,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onShow) { Text("看位置") }
+                TextButton(onClick = onOpen) { Text("详情") }
+                TextButton(onClick = onDismiss) { Text("收起") }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun Notice(text: String, action: String?, onAction: (() -> Unit)?) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            if (action != null && onAction != null) TextButton(onClick = onAction) { Text(action) }
+        }
+    }
+}
+
+@Composable
+private fun KeyPromptCard(onEnterKey: () -> Unit, onSkip: () -> Unit) {
+    Card {
+        Column(Modifier.padding(16.dp)) {
+            Text("使用天地图需要你自己的 Key", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "同勘不内置任何 Key。在天地图开放平台免费注册后申请一个「服务端」类型的 Key，填到设置里即可。" +
+                    "也可以先用其他图源，或在设置里添加自己的图源。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onSkip) { Text("先用其他图源") }
+                Spacer(Modifier.width(8.dp))
+                FilledTonalButton(onClick = onEnterKey) { Text("填写 Key") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TileProblemCard(isTianditu: Boolean, host: String, code: Int, onSwitch: () -> Unit, onCheckKey: () -> Unit, onDismiss: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (isTianditu) "天地图 Key 无效或今日调用已达上限" else "图源拒绝了请求",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                androidx.compose.material3.IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "关闭") }
+            }
+            Text(
+                if (isTianditu) "可以检查 Key 是否填对、类型是否为「服务端」，或先切换到其他图源。（HTTP $code）"
+                else "$host 返回 HTTP $code。可以换一个图源试试。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (isTianditu) TextButton(onClick = onCheckKey) { Text("检查 Key") }
+                TextButton(onClick = onSwitch) { Text("换图源") }
+            }
+        }
+    }
+}
+
+private const val GONE_TO_LABEL = "◎ 目标坐标"
+private const val NAME_MIN_ZOOM = 13.0
+
+/** The legend attribute's name as the form calls it. */
+private fun legendTitle(key: String, fields: List<org.geocrew.core.model.FieldTemplate>): String =
+    if (key == org.geocrew.core.model.Props.LITHOLOGY) "岩性" else fields.firstOrNull { it.key == key }?.label ?: key
