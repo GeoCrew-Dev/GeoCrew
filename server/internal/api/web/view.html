@@ -156,6 +156,22 @@
   // Pictures a leader shares over the map (protocol §2.2 key `overlays`), bottom first.
   let overlays = [];
   const hiddenOverlays = new Set();
+  // Base maps the leaders share (key `basemaps`): keyless XYZ, WMTS or WMS sources.
+  let basemaps = [];
+  const BASE_ID = /^[A-Za-z0-9_.-]{1,64}$/;
+  function baseTiles(b) {
+    let url = b.url.trim(), tms = !!b.tms;
+    if (url.includes("{-y}")) { url = url.replace("{-y}", "{y}"); tms = true; }
+    const subs = Array.isArray(b.subdomains) ? b.subdomains.filter((x) => typeof x === "string" && x) : [];
+    const tiles = url.includes("{s}") && subs.length ? subs.slice(0, 32).map((x) => url.replace("{s}", x)) : [url];
+    return { tiles, tms };
+  }
+  function okBase(b) {
+    if (!b || typeof b.id !== "string" || !BASE_ID.test(b.id) || typeof b.name !== "string" || !b.name.trim()) return false;
+    if (typeof b.url !== "string" || !/^https?:\/\//.test(b.url) || b.url.includes("{key}") || b.url.length > 2000) return false;
+    const xyz = b.url.includes("{z}") && b.url.includes("{x}") && (b.url.includes("{y}") || b.url.includes("{-y}"));
+    return xyz || b.url.includes("{bbox-epsg-3857}");
+  }
   const SHA = /^[0-9a-f]{64}$/;
   function okCorners(c) {
     return Array.isArray(c) && c.length === 4 && c.every((p) => Array.isArray(p) && p.length === 2 &&
@@ -164,6 +180,12 @@
   async function loadSettings() {
     try {
       const s = await (await api("/settings")).json();
+      const seenBase = new Set();
+      basemaps = (Array.isArray((s.settings || {}).basemaps) ? s.settings.basemaps : []).filter((b) => {
+        if (!okBase(b) || seenBase.has(b.id)) return false;
+        seenBase.add(b.id); return true;
+      }).map((b) => ({ id: b.id, name: b.name.trim(), maxzoom: Number.isInteger(b.max_zoom) ? Math.min(24, Math.max(1, b.max_zoom)) : 18,
+        attribution: typeof b.attribution === "string" ? b.attribution : "", ...baseTiles(b) }));
       const seenIds = new Set();
       overlays = (Array.isArray((s.settings || {}).overlays) ? s.settings.overlays : []).filter((o) => {
         if (!o || typeof o.id !== "string" || !o.id || seenIds.has(o.id) || !SHA.test(o.file) || !okCorners(o.corners)) return false;
@@ -758,7 +780,7 @@
       else if (m.type === "feature_changed") pull().catch(() => {});
       else if (m.type === "members_changed") loadMembers().then(() => { render(); renderBanner(); }).catch(() => {});
       else if (m.type === "comments_changed") pullComments().catch(() => {});
-      else if (m.type === "settings_changed") loadSettings().then(() => { render(); drawOverlays(); }).catch(() => {});
+      else if (m.type === "settings_changed") loadSettings().then(() => { render(); drawOverlays(); drawBase(); }).catch(() => {});
     };
     sock.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 60 * 1000); };
   }
@@ -795,6 +817,56 @@
       b.onclick = () => { on = !on; apply(); };
       apply();
       box.append(b);
+      return box;
+    }
+    onRemove() {}
+  }
+
+  // The shared base map chosen in this browser, drawn over OpenStreetMap; "" shows OpenStreetMap alone.
+  let baseChoice = "";
+  try { baseChoice = localStorage.getItem("geocrew-base") || ""; } catch (e) { /* private mode */ }
+  let baseSelect = null;
+  let drawnBase = "";
+  function drawBase() {
+    if (!ready) return;
+    const b = basemaps.find((x) => x.id === baseChoice);
+    const key = b ? JSON.stringify([b.tiles, b.tms, b.maxzoom]) : "";
+    if (key !== drawnBase) {
+      if (map.getLayer("shared-base")) map.removeLayer("shared-base");
+      if (map.getSource("shared-base")) map.removeSource("shared-base");
+      if (b) {
+        map.addSource("shared-base", { type: "raster", tiles: b.tiles, tileSize: 256, maxzoom: b.maxzoom, scheme: b.tms ? "tms" : "xyz",
+          attribution: b.attribution ? b.attribution.replace(/[<>&]/g, "") : b.name.replace(/[<>&]/g, "") });
+        // Right above OpenStreetMap, under the relief shading, the overlays and the records.
+        const layers = map.getStyle().layers;
+        const i = layers.findIndex((l) => l.id === "osm");
+        map.addLayer({ id: "shared-base", type: "raster", source: "shared-base" }, layers[i + 1] ? layers[i + 1].id : undefined);
+      }
+      drawnBase = key;
+    }
+    if (baseSelect) {
+      baseSelect.replaceChildren(...[["", "OpenStreetMap"], ...basemaps.map((x) => [x.id, x.name + "（组长共享）"])].map(([v, t]) => {
+        const o = document.createElement("option"); o.value = v; o.textContent = t; return o;
+      }));
+      baseSelect.value = b ? b.id : "";
+      baseSelect.parentElement.style.display = basemaps.length ? "" : "none";
+    }
+  }
+  class BaseControl {
+    onAdd() {
+      const box = document.createElement("div");
+      box.className = "maplibregl-ctrl maplibregl-ctrl-group";
+      box.style.padding = "2px";
+      const sel = document.createElement("select");
+      sel.title = "底图";
+      sel.style.border = "0"; sel.style.maxWidth = "14em";
+      sel.onchange = () => {
+        baseChoice = sel.value;
+        try { localStorage.setItem("geocrew-base", baseChoice); } catch (e) { /* private mode */ }
+        drawBase();
+      };
+      box.append(sel);
+      baseSelect = sel;
       return box;
     }
     onRemove() {}
@@ -842,10 +914,12 @@
         map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
       }
       map.addControl(new ShadeControl(), "top-right");
+      map.addControl(new BaseControl(), "top-left");
       ready = true;
       drawTrails();
       render();
       drawOverlays();
+      drawBase();
     });
     $("q").oninput = renderList;
     $("who").onchange = render;

@@ -74,9 +74,13 @@ func (s *Server) viewPage(w http.ResponseWriter, r *http.Request) {
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("X-Frame-Options", "DENY")
+	// Map tiles come from OpenStreetMap, the public DEM for relief shading
+	// and whatever base maps the leaders share (protocol v0 §2.2, key
+	// `basemaps`), so images and fetches may go to any https host. Scripts
+	// stay limited to this server and the pinned MapLibre build.
 	h.Set("Content-Security-Policy", "default-src 'self'; "+
 		"script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; "+
-		"img-src 'self' data: blob: https://tile.openstreetmap.org; connect-src 'self' ws: wss: https://tile.openstreetmap.org; "+
+		"img-src 'self' data: blob: https:; connect-src 'self' ws: wss: https:; "+
 		"worker-src blob:; frame-ancestors 'none'")
 	w.Write(viewHTML)
 }
