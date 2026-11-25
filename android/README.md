@@ -2,7 +2,7 @@
 
 开源的野外地质移动工具：多图源底图、实时定位、野外记录与小组协同。
 
-> 状态：早期开发。规划见 [geocrew-protocol](https://github.com/GeoCrew-Dev/GeoCrew-Protocol/blob/main/docs/roadmap.md)。
+> 状态：这是重写前的旧代码，已冻结，不再加功能；新版按主仓库的 [`docs/charter.md`](../docs/charter.md) 和 [`docs/adr/`](../docs/adr/) 重写。下文描述的是旧版的功能和流程。
 
 ## 底图与天地图 Key
 
@@ -37,7 +37,7 @@
 
 开发时可以在 `local.properties` 里写 `tianditu.key=你的Key`，它只会进入 debug 包作为默认 Key；release 包永远不带 Key。
 
-每次推送到 `main`，GitHub Actions 会编译调试版 APK 并跑单元测试，APK 可在运行记录的 Artifacts 中下载。另一个任务会拉取[服务端](https://github.com/GeoCrew-Dev/GeoCrew-Server)最新代码、启动后让网络层（建组、入组、同步与冲突、照片、讨论、实时位置、查看链接）真连一遍。本地想跑这一段，先启动服务端，再：
+每次推送到 `main`，GitHub Actions 会编译调试版 APK 并跑单元测试，APK 可在运行记录的 Artifacts 中下载。另一个任务会用主仓库 [`server/`](../server) 的代码编译服务端、启动后让网络层（建组、入组、同步与冲突、照片、讨论、实时位置、查看链接）真连一遍。本地想跑这一段，先启动服务端，再：
 
 ```bash
 GEOCREW_TEST_SERVER=http://127.0.0.1:8080 ./gradlew :core:network:test
@@ -45,13 +45,13 @@ GEOCREW_TEST_SERVER=http://127.0.0.1:8080 ./gradlew :core:network:test
 
 ## 更新
 
-正式版每天第一次打开时查一次 [Releases](https://github.com/GeoCrew-Dev/GeoCrew-Android/releases)，有新版本就弹窗显示版本号、发布时间和更新说明，可以「下载并安装」「跳过这个版本」或「以后再说」；设置 › 版本更新里也能手动检查、关掉启动时检查。下载完先核对发布附带的 `SHA256SUMS`，再确认安装包是同勘、版本更新、签名和手机上装的一致，然后交给系统安装器，最后一步由你点「安装」（安卓不允许应用静默安装；第一次会先请你允许同勘安装应用）。记录、照片和设置都会保留。
+正式版每天第一次打开时查一次 Releases（旧版的更新源仍指向已删除的 GeoCrew-Android 仓库，查不到版本就不提示；新版改读主仓库发布列表里以 `android-v` 开头的版本），有新版本就弹窗显示版本号、发布时间和更新说明，可以「下载并安装」「跳过这个版本」或「以后再说」；设置 › 版本更新里也能手动检查、关掉启动时检查。下载完先核对发布附带的 `SHA256SUMS`，再确认安装包是同勘、版本更新、签名和手机上装的一致，然后交给系统安装器，最后一步由你点「安装」（安卓不允许应用静默安装；第一次会先请你允许同勘安装应用）。记录、照片和设置都会保留。
 
 调试包签名不同，不能覆盖正式版，所以不检查更新。上架应用商店或 F-Droid 的包用 `-Pgeocrew.updates=false` 编译：不检查更新，也不申请安装应用的权限。分叉项目可以用 `-Pgeocrew.updateFeed=https://api.github.com/repos/你/仓库/releases/latest` 指向自己的发布。
 
 ## 发布与签名
 
-推送 `v0.3.0` 这样的标签，`Release` 工作流会跑测试、用 `-Pgeocrew.version=0.3.0` 编译正式包（versionCode 由版本号算出：1.2.3 → 1020399，预发布 1.2.3-rc.2 → 1020302，新版本总能覆盖旧版本），生成 `geocrew-android-0.3.0.apk`、`SHA256SUMS` 和按提交记录整理的更新说明，并在说明里写上签名证书指纹。标签带 `-rc.1` 这类后缀的发成预发布，应用不会提示。
+（以下是旧仓库的发布流程，合并进主仓库后没有迁移，新版的发布流程随重写一起做，标签用 `android-v0.3.0` 这样的格式。）推送 `v0.3.0` 这样的标签，`Release` 工作流会跑测试、用 `-Pgeocrew.version=0.3.0` 编译正式包（versionCode 由版本号算出：1.2.3 → 1020399，预发布 1.2.3-rc.2 → 1020302，新版本总能覆盖旧版本），生成 `geocrew-android-0.3.0.apk`、`SHA256SUMS` 和按提交记录整理的更新说明，并在说明里写上签名证书指纹。标签带 `-rc.1` 这类后缀的发成预发布，应用不会提示。
 
 签名密钥只放在仓库 Secrets 里，仓库里不提交任何密钥。维护者第一次发布前在自己电脑上生成一把并妥善备份（**丢了就不能再给已安装的用户推更新**，只能让大家卸载重装）：
 

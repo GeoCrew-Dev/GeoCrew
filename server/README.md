@@ -1,6 +1,6 @@
 # 同勘 GeoCrew 服务端
 
-同勘 GeoCrew 小组协同功能的自部署服务端参考实现，按 [geocrew-protocol](https://github.com/GeoCrew-Dev/GeoCrew-Protocol) 中的协议 v0 实现。单个可执行文件，无外部依赖，数据存在一个 SQLite 文件和一个附件目录里。
+同勘 GeoCrew 小组协同功能的自部署服务端参考实现，按主仓库 [`protocol/`](../protocol) 中的协议 v0 实现。单个可执行文件，无外部依赖，数据存在一个 SQLite 文件和一个附件目录里。
 
 > 状态：早期版本。已实现工作区与邀请码、角色（组长 / 成员 / 只读）、要素增量同步与冲突处理、修改历史、附件上传下载、WebSocket 实时位置与变更通知。
 
@@ -9,8 +9,8 @@
 需要一台装有 Docker 的 Linux 服务器：
 
 ```bash
-git clone https://github.com/GeoCrew-Dev/GeoCrew-Server.git
-cd geocrew-server
+git clone https://github.com/GeoCrew-Dev/GeoCrew.git
+cd GeoCrew/server
 docker compose up -d          # 拉取已发布的镜像；还没有发布版本时加 --build 在本机构建
 curl http://localhost:8080/api/v0/info
 ```
@@ -29,7 +29,7 @@ Caddy 会自动申请证书，并原样转发 WebSocket。放在反向代理后�
 
 ## 不用 Docker
 
-从 [Releases](https://github.com/GeoCrew-Dev/GeoCrew-Server/releases) 下载对应平台的程序（`geocrew-server-linux-amd64` 等），先核对 `SHA256SUMS`：
+从主仓库的 [Releases](https://github.com/GeoCrew-Dev/GeoCrew/releases)（标签以 `server-v` 开头的）下载对应平台的程序（`geocrew-server-linux-amd64` 等），先核对 `SHA256SUMS`：
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
@@ -41,7 +41,7 @@ geocrew-server -addr :8080 -data /var/lib/geocrew
 
 ## 更新
 
-每次发布都附带各平台程序、`SHA256SUMS` 和更新说明（按提交记录自动生成）。服务端每天查一次有没有新版本，有就在日志里提示一行；不想联网检查可以设 `GEOCREW_UPDATE_CHECK=false`，用自己的镜像源可以设 `GEOCREW_UPDATE_URL`（GitHub 接口格式）。
+每次发布都附带各平台程序、`SHA256SUMS` 和更新说明（按提交记录自动生成）。服务端每天查一次有没有新版本，有就在日志里提示一行；不想联网检查可以设 `GEOCREW_UPDATE_CHECK=false`，用自己的镜像源可以设 `GEOCREW_UPDATE_URL`（GitHub 接口格式：发布列表，或者单个版本）。默认读主仓库的发布列表，只认标签以 `server-v` 开头的版本，规则见 [`protocol/docs/releases.md`](../protocol/docs/releases.md)。
 
 **管理页**：设 `GEOCREW_ADMIN_ADDR=127.0.0.1:9181` 后，在这个地址另开一个管理页，显示当前版本、数据库、最新版本和更新说明，以及概览：各工作组的组长、成员数、记录数、附件占用和最近活动，数据库大小、剩余磁盘空间和定时备份（`/api/overview` 给出同样内容的 JSON，带令牌访问）。令牌用 `GEOCREW_ADMIN_TOKEN` 指定（至少 16 位），不指定就在数据目录生成 `admin-token` 文件（只有服务用户可读）。管理页能替换程序，请只监听本机，用 `ssh -L 9181:127.0.0.1:9181 服务器` 访问，不要通过反向代理公开。
 
@@ -63,7 +63,7 @@ docker compose pull && docker compose up -d
 
 想全自动的话可以加 [Watchtower](https://containrrr.dev/watchtower/) 这类工具定时拉新镜像。数据在数据卷里，换镜像不影响；建议先 `admin backup` 一份。固定版本用 `GEOCREW_TAG=0.2.0 docker compose up -d`。
 
-**发布新版本**（维护者）：打 `v0.2.0` 这样的标签并推送，`Release` 工作流会跑测试、编译 linux/amd64、linux/arm64、linux/arm（ARMv7）、darwin、windows 程序，生成 `SHA256SUMS` 和更新说明，推送 `ghcr.io/geocrew-dev/geocrew-server` 多架构镜像（`0.2.0` 和 `latest`）。带 `-rc.1` 这类后缀的标签发成预发布，不会推 `latest`。
+**发布新版本**（维护者）：在主仓库打 `server-v0.2.0` 这样的标签并推送，根目录的 `server-release.yml` 工作流会跑测试，编译 linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64 程序（不再提供 32 位版本），生成 `SHA256SUMS` 和更新说明（只收 `server/` 下的提交），推送 `ghcr.io/geocrew-dev/geocrew-server` 多架构镜像（`0.2.0` 和 `latest`）。带 `-rc.1` 这类后缀的标签发成预发布，不会推 `latest`。
 
 ## 配置
 
@@ -255,11 +255,11 @@ go run ./cmd/geocrew-server
 GEOCREW_TEST_POSTGRES="postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" go test ./internal/store/...
 ```
 
-改了接口后，可以用协议仓库的一致性检查从外部跑一遍（CI 每次提交也会跑）：
+改了接口后，可以用 `protocol/conformance` 的一致性检查从外部跑一遍（CI 每次改动 `server/` 或 `protocol/` 也会跑）：
 
 ```bash
 go run ./cmd/geocrew-server -data /tmp/geocrew-check &
-go run github.com/GeoCrew-Dev/GeoCrew-Protocol/conformance@latest -server http://localhost:8080
+(cd ../protocol/conformance && go run . -server http://localhost:8080)
 ```
 
 部署到服务器后想快速确认它能用，跑 `scripts/smoke.sh https://你的域名`（要 curl 和 jq）：查版本、建一个临时工作组、推一条记录再拉回来、生成查看链接、调 MCP 工具，每步打一行 ok。它会留下一个名为 smoke-test-… 的工作组，最后一行给出删除它的命令。
