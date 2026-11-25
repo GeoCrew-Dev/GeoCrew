@@ -56,6 +56,8 @@
   #banner { margin-top: 6px; font-size: 12px; }
   #banner div { padding: 4px 8px; border-radius: 6px; margin-top: 4px; cursor: pointer; }
   #banner .urgent { background: color-mix(in srgb, #c62828 15%, transparent); color: #c62828; }
+  #banner .notice { background: color-mix(in srgb, var(--accent) 6%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.2em; overflow: hidden; }
+  #banner .notice.open { max-height: none; }
   #banner .call { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   #list .msg .body { white-space: pre-wrap; word-break: break-word; }
   #list .urgent { color: #c62828; }
@@ -168,6 +170,8 @@
   const hiddenOverlays = new Set();
   // Base maps the leaders share (key `basemaps`): keyless XYZ, WMTS or WMS sources.
   let basemaps = [];
+  // The pinned notice a leader posted (key `notice`), or null.
+  let notice = null;
   const BASE_ID = /^[A-Za-z0-9_.-]{1,64}$/;
   function baseTiles(b) {
     let url = b.url.trim(), tms = !!b.tms;
@@ -203,6 +207,9 @@
         seenIds.add(o.id); return true;
       }).map((o) => ({ id: o.id, name: typeof o.name === "string" && o.name ? o.name : "叠加图", file: o.file, corners: o.corners,
         opacity: Number.isFinite(o.opacity) ? Math.min(1, Math.max(0.1, o.opacity)) : 0.6 }));
+      const nt = (s.settings || {}).notice;
+      notice = nt && typeof nt.text === "string" && nt.text.trim() ? { text: nt.text.trim().slice(0, 2000),
+        by: typeof nt.by === "string" ? nt.by.trim().slice(0, 40) : "", at: typeof nt.updated_at === "string" ? nt.updated_at : "" } : null;
       const l = (s.settings || {}).legend || {};
       const seen = new Set();
       legend = {
@@ -387,6 +394,13 @@
     const open = () => { messaging = true; checking = false; $("check").classList.remove("on"); $("msgs").classList.add("on"); renderList(); };
     const alert = team().find((c) => c.urgent && !c.answer_to && ago(c.created_at, 6));
     if (alert) box.append(Object.assign(document.createElement("div"), { className: "urgent", textContent: "紧急：" + (alert.nickname || "组员") + " " + when(alert.created_at) + " · " + alert.body, onclick: open }));
+    if (notice) {
+      const meta = ["公告", notice.by, notice.at && !isNaN(new Date(notice.at)) ? when(notice.at) : ""].filter(Boolean).join(" · ");
+      const d = Object.assign(document.createElement("div"), { className: "notice", title: "点一下展开或收起" });
+      d.append(Object.assign(document.createElement("b"), { textContent: meta + "：" }), document.createTextNode(notice.text));
+      d.onclick = () => d.classList.toggle("open");
+      box.append(d);
+    }
     const r = rollCall();
     if (r) box.append(Object.assign(document.createElement("div"), { className: r.help.length ? "urgent" : "call", textContent: rollLine(r), onclick: open }));
     for (const o of outings().slice(0, 4)) {

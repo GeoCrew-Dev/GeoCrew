@@ -923,3 +923,49 @@ func TestOutings(t *testing.T) {
 		}
 	}
 }
+
+func TestNoticePush(t *testing.T) {
+	var mu sync.Mutex
+	got := map[string][]push.Notice{}
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var n push.Notice
+		_ = json.NewDecoder(r.Body).Decode(&n)
+		mu.Lock()
+		got[r.URL.Path] = append(got[r.URL.Path], n)
+		mu.Unlock()
+	}))
+	defer sink.Close()
+	var sender *push.Sender
+	e := newEnvWith(t, func(s *Server) {
+		sender = push.New(s.Store, push.Options{AllowPrivate: true, Log: s.Log})
+		s.Push = sender
+	})
+	var leader, a joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "A"}, &a)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+	for _, m := range []joinResp{leader, a} {
+		e.call("PUT", base+"/push", m.Token, map[string]any{"endpoint": sink.URL + "/" + m.MemberID}, nil)
+	}
+	put := func(settings map[string]any) int64 {
+		var r settingsResp
+		if c := e.call("PUT", base+"/settings", leader.Token, map[string]any{"settings": settings}, &r); c != 200 {
+			t.Fatalf("put settings: %d", c)
+		}
+		return r.Version
+	}
+	n1 := map[string]any{"text": "今天走 3 号路线", "updated_at": "2026-11-25T01:00:00Z", "by": "组长"}
+	put(map[string]any{"form": []any{}})                                                              // no notice: nothing to tell
+	v := put(map[string]any{"form": []any{}, "notice": n1})                                           // new notice
+	put(map[string]any{"legend": map[string]any{}, "notice": n1})                                     // same notice, other edit
+	put(map[string]any{"notice": map[string]any{"text": "  ", "updated_at": "2026-11-25T02:00:00Z"}}) // blank
+	put(map[string]any{})                                                                             // taken down
+	sender.Close()
+
+	if l := got["/"+leader.MemberID]; len(l) != 0 {
+		t.Fatalf("poster got %+v", l)
+	}
+	if l := got["/"+a.MemberID]; len(l) != 1 || l[0].Type != "notice" || l[0].From != leader.MemberID || l[0].Seq != v {
+		t.Fatalf("member got %+v", l)
+	}
+}

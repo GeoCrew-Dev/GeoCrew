@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
 
@@ -157,11 +159,45 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		base = *req.BaseVersion
 	}
 	ws := r.PathValue("ws")
+	before, _, err := s.Store.Settings(r.Context(), ws)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	v, err := s.Store.PutSettings(r.Context(), ws, req.Settings, base)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.Hub.SettingsChanged(ws, v)
+	if s.Push != nil && newNotice(before, req.Settings) {
+		s.Push.Notify(push.Notice{Type: push.EventNotice, Workspace: ws, From: member(r).ID, Seq: v}, push.Audience{Except: member(r).ID})
+	}
 	writeJSON(w, http.StatusOK, settingsResp{v, req.Settings})
+}
+
+// noticeKey is the part of the shared settings' notice (protocol §2.2) that
+// tells one posting from another.
+type noticeKey struct {
+	Text      string `json:"text"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+func noticeIn(settings json.RawMessage) noticeKey {
+	var s struct {
+		Notice *noticeKey `json:"notice"`
+	}
+	if json.Unmarshal(settings, &s) != nil || s.Notice == nil {
+		return noticeKey{}
+	}
+	s.Notice.Text = strings.TrimSpace(s.Notice.Text)
+	return *s.Notice
+}
+
+// newNotice reports whether after carries a non-empty notice that before
+// did not, so members hear about a new or changed notice but not about other
+// settings edits or a notice taken down.
+func newNotice(before, after json.RawMessage) bool {
+	n := noticeIn(after)
+	return n.Text != "" && n != noticeIn(before)
 }

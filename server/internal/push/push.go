@@ -38,10 +38,13 @@ const (
 	// EventOverdue is an outing past its back_by with no report back
 	// (protocol §8.3), to everyone; cannot be unsubscribed.
 	EventOverdue = "overdue"
+	// EventNotice is a new pinned notice a leader posted in the shared
+	// settings (protocol §2.2, key notice), to everyone but the poster.
+	EventNotice = "notice"
 )
 
 // Events lists every known event type.
-var Events = []string{EventMessage, EventComment, EventTask, EventAlert, EventRollCall, EventOverdue}
+var Events = []string{EventMessage, EventComment, EventTask, EventAlert, EventRollCall, EventOverdue, EventNotice}
 
 // always lists events every member gets whatever they subscribed to.
 var always = []string{EventAlert, EventRollCall, EventOverdue}
@@ -54,7 +57,8 @@ type Notice struct {
 	Feature string `json:"feature,omitempty"`
 	// From is the member who caused the notice.
 	From string `json:"from,omitempty"`
-	// Seq is the comment seq or feature seq to sync up to.
+	// Seq is the comment seq or feature seq to sync up to; for a notice,
+	// the settings version.
 	Seq int64 `json:"seq,omitempty"`
 }
 
