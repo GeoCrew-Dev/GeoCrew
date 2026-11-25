@@ -210,6 +210,12 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 
 页面用 MapLibre GL（从 unpkg 加载，带完整性校验）和 OpenStreetMap 底图，在服务端没有其他依赖。共享底图直接从图源加载，所以只有 https 地址的图源能在这个页面上显示（浏览器会拦下 https 页面里的 http 请求），手机上不受这个限制。如果部署在内网、电脑上不了外网，这个页面打不开地图，其余接口不受影响。
 
+## 接入 AI 工具（MCP）
+
+`POST /api/v0/workspaces/{id}/mcp` 是一个只读的 [MCP](https://modelcontextprotocol.io) 服务端，支持 MCP 的聊天客户端或编辑器接上后，可以直接问「今天谁采了哪些样」「找一下片麻岩的点」「还有哪些记录要补」。在客户端里添加一个远程（Streamable HTTP）MCP 服务器，地址填 `https://你的服务器/api/v0/workspaces/{工作组 ID}/mcp`，请求头加 `Authorization: Bearer 组员令牌`。
+
+工具有五个：工作组概况、找记录（按词、种类、修改人、日期）、看一条记录的全部内容、待核对清单、最近的组内消息。都只读，改动仍在手机应用里做。查看链接接不进来（返回 403）。组员令牌能读写整个工作组，只填进自己信任的工具，详见协议第 11 节。
+
 ## 推送通知
 
 组员可以登记一个推送地址（`PUT /api/v0/workspaces/{id}/push`），之后有新的组内消息、有人在记录下留言、或者有记录被指派给自己时，服务端会向这个地址 POST 一条很短的 JSON。组员发出的**紧急消息**（求助或集合，`urgent: true`）会发给其他所有登记了地址的组员，不受订阅类型限制；只读成员不能发普通消息，但可以发紧急消息。组长可以发起**点名**（`roll_call: true`，例如收工前让大家报平安），通知发给全组，组员的回应（`answer_to` 指向点名）只通知发起的组长，同样不受订阅类型限制，只读成员也能回应。组员单独出去前可以**报外出**（`back_by` 写预计返回时间，正文写去向），回来报**已返回**（`back_from` 指向那条外出，本人或组长都能报）；过了时间还没报返回，服务端每分钟检查一次，给全组发一条 `overdue` 推送，每条外出只发一次。组长在共享设置里发了新的**组内公告**（`notice` 键）时，其他组员收到一条 `notice` 推送；只改别的设置或撤下公告不推送。这和 [UnifiedPush](https://unifiedpush.org/) 的做法一致：手机上装一个分发器（如 ntfy），由它把通知唤醒到同勘，不依赖谷歌服务，分发器也可以自己部署。
@@ -222,6 +228,7 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 | --- | --- |
 | `cmd/geocrew-server` | 入口、优雅退出、健康检查 |
 | `internal/api` | HTTP 与 WebSocket 接口 |
+| `internal/mcp` | MCP（JSON-RPC 2.0）协议层，工具由 `internal/api` 按工作组提供 |
 | `internal/store` | 存储接口（与具体数据库无关） |
 | `internal/store/sqldb` | 基于 `database/sql` 的通用实现：全部查询写一次，引擎差异（占位符、行锁、迁移记录、备份）放在 `Dialect` 里 |
 | `internal/store/sqlite` | 默认 SQLite 方言（纯 Go，无 CGO）与迁移 |

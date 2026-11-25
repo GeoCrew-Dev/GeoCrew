@@ -21,7 +21,7 @@ import (
 const ProtocolVersion = "0"
 
 // Capabilities advertised by /info so clients can adapt to older servers.
-var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "structures", "workload", "gpx", "archive"}
+var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "structures", "workload", "gpx", "archive", "mcp"}
 
 // Server wires the store, file storage and realtime hub into HTTP handlers.
 type Server struct {
@@ -113,6 +113,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST "+ws+"/view-links", s.auth(s.createViewLink, anyRole))
 	mux.Handle("DELETE "+ws+"/view-links", s.auth(s.revokeViewLinks, anyRole))
 	mux.HandleFunc("GET /view/{$}", s.viewPage)
+	// Read-only MCP tools for AI clients (protocol §11); members only, not view links.
+	mux.Handle("POST "+ws+"/mcp", s.auth(s.mcpEndpoint, anyRole))
 	mux.Handle("GET "+ws+"/push", s.auth(s.getPush, anyRole))
 	mux.Handle("PUT "+ws+"/push", s.auth(s.putPush, anyRole))
 	mux.Handle("DELETE "+ws+"/push", s.auth(s.deletePush, anyRole))
