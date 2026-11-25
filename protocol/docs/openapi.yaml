@@ -479,7 +479,7 @@ paths:
                 urgent: { type: boolean, default: false, description: "A call for help or to gather (section 8.1); team messages only; needs the alerts capability" }
                 roll_call: { type: boolean, default: false, description: "A leader's roll call (section 8.2); team messages only; needs the rollcall capability" }
                 answer_to: { type: string, description: "Id of the roll call this team message answers (section 8.2)" }
-                back_by: { type: string, format: date-time, description: "Check-out: when the author expects to be back, from an hour ago to a week ahead (section 8.3); needs the outing capability" }
+                back_by: { type: string, format: date-time, description: "Check-out: when the author expects to be back, within a week of now (section 8.3); needs the outing capability" }
                 back_from: { type: string, description: "Id of the check-out this team message closes; the author or a leader (section 8.3)" }
       responses:
         "200":
