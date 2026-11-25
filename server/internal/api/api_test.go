@@ -879,7 +879,7 @@ func TestOutings(t *testing.T) {
 		{"id": "x1", "body": "x", "back_by": soon, "feature_id": "f1"},
 		{"id": "x2", "body": "x", "back_by": soon, "back_from": "o1"},
 		{"id": "x3", "body": "x", "back_by": soon, "urgent": true},
-		{"id": "x4", "body": "x", "back_by": time.Now().Add(-2 * time.Hour)},
+		{"id": "x4", "body": "x", "back_by": time.Now().Add(-8 * 24 * time.Hour)},
 		{"id": "x5", "body": "x", "back_by": time.Now().Add(8 * 24 * time.Hour)},
 		{"id": "x6", "body": "x", "back_from": "bad id"},
 		{"id": "x7", "body": "x", "back_from": "nope"},

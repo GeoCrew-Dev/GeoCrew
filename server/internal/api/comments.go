@@ -28,9 +28,10 @@ type addCommentReq struct {
 	BackFrom  string     `json:"back_from"`
 }
 
-// An outing's back_by may lie a little in the past (a slow upload) and at most a week ahead.
+// An outing's back_by lies within a week either way: one written without signal may reach the server
+// only after its time has passed, and is then due at once.
 const (
-	outingPast   = time.Hour
+	outingPast   = 7 * 24 * time.Hour
 	outingFuture = 7 * 24 * time.Hour
 )
 
@@ -52,7 +53,7 @@ func (q addCommentReq) validate() (store.Comment, error) {
 	case c.BackFrom != "" && !commentID.MatchString(c.BackFrom):
 		return c, fmt.Errorf("back_from must be the id of an outing")
 	case c.BackBy != nil && (c.BackBy.Before(time.Now().Add(-outingPast)) || c.BackBy.After(time.Now().Add(outingFuture))):
-		return c, fmt.Errorf("back_by must be from an hour ago to a week ahead")
+		return c, fmt.Errorf("back_by must be within a week of now")
 	case c.Urgent && c.FeatureID != "":
 		return c, fmt.Errorf("urgent is only for workspace messages, not comments on a record")
 	case (c.RollCall || c.AnswerTo != "") && c.FeatureID != "":
