@@ -555,7 +555,9 @@ func (s *suite) checks() []check {
 			return expect(r, http.StatusUnauthorized, "unauthorized")
 		}},
 	}
-	return append(append(core, s.messageChecks()...), tail...)
+	checks := append(core, s.messageChecks()...)
+	checks = append(checks, s.exportChecks()...)
+	return append(checks, tail...)
 }
 
 type joinResult struct {
