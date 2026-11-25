@@ -102,6 +102,23 @@ class ActionLayerTest {
     }
 
     @Test
+    fun quickCommandsOnTheRecordAtHand() {
+        val lith = QuickCommand.parse("岩性改成二长花岗岩")!!.single()
+        assertEquals(ActionCatalog.UPDATE_RECORD, lith.name)
+        assertEquals("二长花岗岩", lith.args["lithology"]!!.jsonPrimitive.content)
+        assertEquals(ActionCatalog.CURRENT, lith.args["id"]!!.jsonPrimitive.content)
+        assertEquals("见石英脉穿插", QuickCommand.parse("补充一下，见石英脉穿插")!!.single().args["note_append"]!!.jsonPrimitive.content)
+
+        val s = QuickCommand.parse("采个薄片样 s12")!!.single()
+        assertEquals(ActionCatalog.ADD_SAMPLE, s.name)
+        assertEquals("S12", s.args["no"]!!.jsonPrimitive.content)
+        assertEquals("薄片", s.args["kind"]!!.jsonPrimitive.content)
+        val auto = QuickCommand.parse("采样")!!.single()
+        assertNull(auto.args["no"])
+        assertNull(QuickCommand.parse("岩性120"))
+    }
+
+    @Test
     fun wireFormat() {
         val req = OpenAiWire.request("m", listOf(OpenAiWire.user("hi")), listOf(ActionCatalog.placePoint))
         assertTrue(req.toString().contains("\"name\":\"place_point\""))

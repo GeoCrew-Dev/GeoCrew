@@ -67,6 +67,10 @@ object QuickCommand {
     private val point = Regex("^(?:在这里|这里)?(?:打|定|记|加|新建)(?:一?个)?(?:地质)?点")
     private val attitudeWords = Regex("^(?:产状|记产状|测得?产状)")
     private val noteLead = Regex("^(?:描述|备注|记录|写上|说明)(?:是|为)?")
+    // On the record at hand: "岩性 花岗岩", "补充 见石英脉", "采样 S12".
+    private val lithologyOnly = Regex("^岩性(?:是|为|改成|改为)?(\\D{2,30})$")
+    private val noteAppend = Regex("^(?:补充|追加|备注|描述(?:加上|补充|里加))(?:一下|一句)?(?:是|为)?(.{1,200})$")
+    private val sample = Regex("^(?:采|取|登记|加)了?(?:一?个)?(薄片|光片|化学分析|岩矿|光谱|拣块|重砂)?样(?:品)?(?:号|编号)?(?:是|为)?([A-Za-z0-9-]{1,20})?$")
 
     // 120∠35, 120/35, 120度35度, 倾向120倾角35, 产状120 35.
     private val attitude = listOf(
@@ -133,6 +137,26 @@ object QuickCommand {
                 if (note.isNotEmpty()) put("note", JsonPrimitive(note))
             }
             return call(ActionCatalog.PLACE_POINT, args)
+        }
+
+        fun current(build: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit) = buildJsonObject {
+            put("id", ActionCatalog.CURRENT)
+            build()
+        }
+        lithologyOnly.matchEntire(text)?.let { m ->
+            return call(ActionCatalog.UPDATE_RECORD, current { put("lithology", m.groupValues[1]) })
+        }
+        noteAppend.matchEntire(text)?.let { m ->
+            return call(ActionCatalog.UPDATE_RECORD, current { put("note_append", m.groupValues[1]) })
+        }
+        sample.matchEntire(ChineseNumber.normalize(text))?.let { m ->
+            return call(
+                ActionCatalog.ADD_SAMPLE,
+                current {
+                    m.groupValues[1].takeIf { it.isNotEmpty() }?.let { put("kind", it) }
+                    m.groupValues[2].takeIf { it.isNotEmpty() }?.let { put("no", it.uppercase()) }
+                },
+            )
         }
 
         // An attitude on its own goes on the record at hand.
