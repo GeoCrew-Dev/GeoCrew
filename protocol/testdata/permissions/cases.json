@@ -41,6 +41,7 @@
     { "name": "own rows: a member edits a row they created", "who": "mem", "row": { "perm": "edit_rows", "layer": "points", "owner": "mem" }, "expect": true },
     { "name": "own rows: not someone else's", "who": "mem", "row": { "perm": "edit_rows", "layer": "points", "owner": "smp" }, "expect": false },
     { "name": "all rows: a sampler edits anyone's row", "who": "smp", "row": { "perm": "edit_rows", "layer": "points", "owner": "mem" }, "expect": true },
+    { "name": "creating a row needs edit_rows on that layer: none means no", "who": "gst", "row": { "perm": "edit_rows", "layer": "routes", "owner": "gst" }, "expect": false },
 
     { "name": "a base-role override hides a layer from everyone", "who": "mem", "perm": "view_layer", "layer": "samples", "expect": false },
     { "name": "a role without an override on the layer does not bring it back", "who": "gst", "perm": "view_layer", "layer": "samples", "expect": false },
