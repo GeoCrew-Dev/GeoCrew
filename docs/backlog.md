@@ -23,7 +23,8 @@
 - [x] **章程** [`docs/charter.md`](charter.md)：四个目标、v0.1 的范围和完成标准、分档的功能对等清单、里程碑、不做的事、平台基线、流程。
 - [x] **架构决策** [`docs/adr/`](adr/README.md)：共 15 份。其中 0004（工程存储）、0012（插件）、0013（服务端 GDAL 辅助程序）是草案，等 M1 的技术验证结果再定。
 - [x] **CLAUDE.md**：根目录、`protocol/`、`server/`、`android/` 各一份。
-- [ ] GeoCrew-Native 和 GeoCrew-Plugins 两个仓库的 CLAUDE.md，等这两个仓库开工时补上。
+- [x] GeoCrew-Native 的 CLAUDE.md，随 M1 的 GDAL 验证加上。
+- [ ] GeoCrew-Plugins 的 CLAUDE.md，等这个仓库开工时补上。
 - [x] **合规清单** [`docs/compliance.md`](compliance.md)：初稿。
 - [x] **威胁模型** [`docs/threat-model.md`](threat-model.md)。
 - [x] **许可证清单** [`docs/licenses.md`](licenses.md)：初稿。
@@ -36,13 +37,18 @@
 - [x] **推到 GitHub**：主仓库已经建好并推送（2026-11-25）。
 - [x] 删除三个旧仓库（GeoCrew-Protocol、GeoCrew-Server、GeoCrew-Android），本地和云端都已删除（2026-11-25）。删除前核对过，三个仓库的最新提交都已并入主仓库。
 - [x] **改掉指向旧仓库的地方**：链接和使用说明已改成主仓库路径；Go 模块路径已改成 `github.com/GeoCrew-Dev/GeoCrew/server` 和 `github.com/GeoCrew-Dev/GeoCrew/protocol/conformance`。旧安卓代码里提到旧仓库的注释没改，因为这部分代码要重写。
-- [ ] **分支保护与 PR 流程**：等 PR #1 的 CI 通过后再开。要注意，CI 按路径触发，只改文档的 PR 不会跑任何检查。所以要么不把这些检查设成必须通过，要么另加一个每个 PR 都会跑的轻量检查。
+- [x] **分支保护与 PR 流程**：2026-11-25 在 main 上开启：必须走 PR，管理员也不例外，禁止强推和删除。CI 按路径触发，只改文档的 PR 不跑任何检查，所以没有设必须通过的检查项。
 
 ## M1 技术验证
 
 限时完成，每一项都要写明失败后的退路。
 
-- [ ] 用 vcpkg 把 GDAL ≥ 3.12 编成 AAR（arm64、x86_64），量出 APK 体积。
+- [x] 用 vcpkg 把 GDAL ≥ 3.12 编成 AAR（arm64、x86_64），量出 APK 体积。见[验证报告](spikes/m1-gdal-android.md)。
+  - [ ] 在真机上跑测速程序和仪器测试。
+  - [ ] 体积：定下正式应用是否压缩存放原生库（不压缩 46.5 MB，压缩 18 MB）；列出要用的 GDAL 驱动，裁剪后重新量。
+  - [ ] 评估换 NDK r28 及以上：GDAL 数据文件能编进库里，16 KB 对齐成为默认。
+  - [ ] CI 里用 x86_64 模拟器跑测速程序和仪器测试。
+  - [ ] 定下是否开 SpatiaLite、联网驱动（curl）、XLS（freexl）等特性，先查许可证。
 - [ ] GeoPackage 放在 /sdcard 上：测 10 万要素写入、崩溃后能否恢复、外置存储卡上的表现。退路：工作库放应用私有目录，/sdcard 上放自动导出的副本。
 - [ ] 用 CustomGeometrySource 出图：测 10 万要素，以及编辑后的局部刷新。
 - [ ] 非 Web 墨卡托栅格的显示，比如天地图经纬度瓦片、高斯投影的 GeoTIFF。

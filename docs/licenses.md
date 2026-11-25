@@ -16,9 +16,12 @@
 
 | 组件 | 许可证 | 备注 |
 |---|---|---|
-| GDAL | MIT | 排除属于 GPL 的可选依赖（如 poppler），CI 里检查许可证 |
+| GDAL | MIT | 排除属于 GPL 的可选依赖（如 poppler），GeoCrew-Native 的 CI 逐个检查许可证 |
 | PROJ | MIT | |
 | GEOS | LGPL-2.1 | 安卓上编成单独的 .so，保证用户可以替换重新链接。服务端辅助程序是静态链接，本项目完全开源，满足要求；闭源的分叉要自己处理好 LGPL 的义务 |
+| GNU libiconv | LGPL-2.1+ | 安卓自带的 iconv 读不了 GBK 编码的 Shapefile，所以要带上它（M1 验证发现）。和 GEOS 一样编成单独的 .so。只带库，不带属于 GPL 的 iconv 命令行程序 |
+| GDAL、PROJ 的间接依赖 | 宽松许可 | libtiff（libtiff）、libgeotiff（MIT）、libpng（libpng-2.0）、libjpeg-turbo（BSD-3-Clause 与 IJG）、libwebp（BSD-3-Clause）、zstd（BSD-3-Clause 与 GPL-2.0 双许可，按 BSD-3-Clause 用）、zlib（Zlib）、liblzma（0BSD）、Expat（MIT）、json-c（MIT）、nlohmann-json（MIT），以及编译期用的 fast_float、libdivide |
+| libc++（NDK） | Apache-2.0 WITH LLVM-exception | 安卓上以 libc++_shared.so 随应用发布 |
 | SQLite | 公有领域 | |
 | MapLibre Native | BSD-2-Clause | |
 | QuickJS | MIT | 插件引擎，待技术验证 |
