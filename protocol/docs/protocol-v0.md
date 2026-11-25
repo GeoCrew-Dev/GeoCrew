@@ -116,7 +116,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "create"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
@@ -491,6 +491,17 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 - 推送类型为 `rollcall`（第 9 节）：点名发给除发起人外的所有成员，每条回应只发给发起点名的组长；都**不受** `events` 订阅的限制。
 - 名单由客户端按成员列表计算：点名之后每位未吊销成员（除发起人外）最新的一条回应。客户端应把点名置顶显示到组长结束（删除）为止，回应用一个按钮完成。
 
+### 8.3 外出报备
+
+服务器能力里有 `outing` 时可用。组员单独出去（爬一个山头、去另一条沟）前报一声"去哪、几点回"，回来再报一声；过了时间还没报回来，全组都会收到提醒。
+
+- 外出：全组消息带 `"back_by": "<RFC 3339 时间>"`，正文写去向（如"去北坡看断层"），一般同时带上出发位置 `at`。`back_by` 必须在提交时刻的 1 小时之前到 7 天之后之间，服务端截到整秒保存，否则 `400 invalid_comment`。
+- 返回：全组消息带 `"back_from": "<外出消息的 id>"`，正文由客户端填，如"已返回"，一般带上位置。`back_from` 必须指向本工作区一条未删除的外出消息，否则 `400 invalid_comment`；只有外出的本人或组长能报返回（组长可以替没带手机的人销号），否则 `403 forbidden`。
+- 外出和返回都只能是全组消息，不能同时带，也不能和 `urgent`、`roll_call`、`answer_to` 同时用，否则 `400 invalid_comment`。只读成员也可以报外出和返回。重试时这两个字段也要一致，否则按 `409 id_conflict` 处理。
+- 一条外出在有未删除的返回指向它之前都算"在外"。删除返回会让它重新算在外；删除外出本身则一并作废。
+- 超时提醒：过了 `back_by` 仍在外时，服务端发一次推送 `overdue`（第 9 节）给**全部**成员（含本人，提醒他报返回），每条外出最多一次，通知里的 `from` 是外出的人，`seq` 是那条外出消息的 `seq`。服务端关闭推送时不发，客户端自己按 `back_by` 显示即可。
+- 客户端应把在外的人置顶显示，超时的醒目标红，并提供"已返回"按钮；超时多久、去向和出发位置都由消息本身算出，不依赖推送。
+
 ## 9. 推送通知
 
 服务器能力里有 `push` 时可用（运维人员可以关闭，此时这组接口返回 `404 push_disabled`）。实时通道只在应用打开时有效；推送让应用在后台也能知道有新动静。
@@ -505,6 +516,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `task` | 记录的 `assignee` 变成某人（6.1），且不是本人自己指派、`task_status` 不是 `done` | 被指派的人 |
 | `alert` | 有人发了紧急消息（8.1）；不能通过 `events` 退订 | 除发送者外的全部成员 |
 | `rollcall` | 组长发起点名，或有人回应点名（8.2）；不能通过 `events` 退订 | 点名：除发起人外的全部成员；回应：发起点名的组长 |
+| `overdue` | 外出报备（8.3）过了预计返回时间仍未报返回，每条一次；不能通过 `events` 退订 | 全部成员（含外出的本人） |
 
 服务端向地址 `POST` 一个 JSON（`Content-Type: application/json`）：
 
