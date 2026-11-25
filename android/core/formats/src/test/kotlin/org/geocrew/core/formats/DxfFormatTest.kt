@@ -59,6 +59,23 @@ class DxfFormatTest {
     }
 
     @Test
+    fun writesTheProjectsLocalGrid() {
+        val grid = org.geocrew.core.model.LocalGrid(
+            "北京 54", org.geocrew.core.model.Ellipsoid.BEIJING54, 3, 39,
+            org.geocrew.core.model.DatumShift.Bursa(dx = -14.0, dy = 130.0, dz = 60.0),
+        )
+        val p = LngLat(117.3, 31.8)
+        val out = ByteArrayOutputStream()
+        DxfFormat.write(listOf(feature("a", FeatureKind.GEO_POINT, Geometry.Point(p))), out, ExportContext(localGrid = grid))
+        val g = groups(String(out.toByteArray(), charset("GB18030")))
+        val (n, e) = grid.toGrid(org.geocrew.core.model.Geodetic(p))
+        val i = g.indexOf(0 to "POINT")
+        assertEquals(39_000_000 + e, g[i + 2].second.toDouble(), 0.001)
+        assertEquals(n, g[i + 3].second.toDouble(), 0.001)
+        assertTrue(g.first().second.contains("BEIJING54"))
+    }
+
+    @Test
     fun faultsAndInferredContactsGetTheirOwnLayersAndLinetype() {
         val line = Geometry.LineString(listOf(LngLat(117.3, 31.8), LngLat(117.31, 31.81)))
         val list = listOf(

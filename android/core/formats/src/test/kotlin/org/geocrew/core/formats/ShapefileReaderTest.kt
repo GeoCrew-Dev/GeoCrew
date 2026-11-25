@@ -78,6 +78,23 @@ class ShapefileReaderTest {
     }
 
     @Test
+    fun readsBeijing54ThroughTheProjectsDatumShift() {
+        val grid = org.geocrew.core.model.LocalGrid(
+            "北京 54", org.geocrew.core.model.Ellipsoid.BEIJING54, 3, 39,
+            org.geocrew.core.model.DatumShift.Plane(dx = -38.0, dy = 95.0, rotationSeconds = 4.0, ppm = 6.0),
+        )
+        val p = LngLat(117.3, 31.8)
+        val (n, e) = grid.toGrid(org.geocrew.core.model.Geodetic(p))
+        val prj = """PROJCS["Beijing_1954_3_Degree_GK_Zone_39",GEOGCS["GCS_Beijing_1954",DATUM["D_Beijing_1954",SPHEROID["Krasovsky_1940",6378245.0,298.3]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Gauss_Kruger"],PARAMETER["False_Easting",39500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",117.0],PARAMETER["Scale_Factor",1.0],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]"""
+        val zip = zipOf("a.shp" to pointShp(39_000_000 + e, n), "a.prj" to prj.toByteArray())
+        val shifted = ShapefileFormat.read(ByteArrayInputStream(zip), ctx.copy(localGrid = grid))
+        assertEquals(0.0, Geodesy.distance(p, (shifted.features.single().geometry as Geometry.Point).position), 0.01)
+        assertTrue(shifted.warnings.any { "基准转换" in it && "本地坐标系" in it })
+        val plain = ShapefileFormat.read(ByteArrayInputStream(zip), ctx)
+        assertTrue(Geodesy.distance(p, (plain.features.single().geometry as Geometry.Point).position) > 50)
+    }
+
+    @Test
     fun explainsZipsWithoutShapefiles() {
         try {
             ShapefileFormat.read(ByteArrayInputStream(zipOf("project.json" to "{}".toByteArray())), ctx)

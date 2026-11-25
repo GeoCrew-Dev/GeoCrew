@@ -50,8 +50,13 @@ object DxfFormat : FeatureFormat {
     override fun write(features: List<GeoFeature>, output: OutputStream, ctx: ExportContext): ExportResult {
         val live = features.filter { !it.deleted && it.geometry != null }
         val lngs = live.flatMap { positions(it.geometry) }.map { it.lng }
-        val zone = if (lngs.isEmpty()) 39 else GaussKruger.zone((lngs.min() + lngs.max()) / 2, WIDTH)
-        fun xy(p: LngLat) = GaussKruger.project(p, WIDTH, zone = zone).let { it.yWithZone to it.x }
+        val grid = ctx.localGrid
+        val zone = grid?.zone ?: if (lngs.isEmpty()) 39 else GaussKruger.zone((lngs.min() + lngs.max()) / 2, WIDTH)
+        fun xy(p: LngLat): Pair<Double, Double> = if (grid != null) {
+            grid.toGrid(org.geocrew.core.model.Geodetic(p, p.alt ?: 0.0)).let { (n, e) -> zone * 1_000_000.0 + e to n }
+        } else {
+            GaussKruger.project(p, WIDTH, zone = zone).let { it.yWithZone to it.x }
+        }
 
         val layers = linkedMapOf<String, Int>()
         val dashedLayers = mutableSetOf<String>()
@@ -83,7 +88,12 @@ object DxfFormat : FeatureFormat {
         }
 
         val head = StringBuilder()
-        head.group(999, "GeoCrew ${ctx.title}: CGCS2000 3° Gauss-Kruger zone $zone, CM ${GaussKruger.centralMeridian(zone, WIDTH).fmt()}E, X = easting with zone, Y = northing")
+        val system = if (grid != null) {
+            "${grid.name} (${grid.ellipsoid.name} ${grid.width}° zone $zone, CM ${GaussKruger.centralMeridian(zone, grid.width).fmt()}E, ${grid.shift?.let { it::class.simpleName } ?: "no datum shift"})"
+        } else {
+            "CGCS2000 3° Gauss-Kruger zone $zone, CM ${GaussKruger.centralMeridian(zone, WIDTH).fmt()}E"
+        }
+        head.group(999, "GeoCrew ${ctx.title}: $system, X = easting with zone, Y = northing")
         head.group(0, "SECTION").group(2, "HEADER")
             .group(9, "\$ACADVER").group(1, "AC1009")
             .group(9, "\$DWGCODEPAGE").group(3, "ANSI_936")

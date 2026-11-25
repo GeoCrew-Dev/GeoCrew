@@ -15,6 +15,8 @@ data class ImportContext(
     val newId: () -> String = { UUID.randomUUID().toString() },
     /** The project's form, so columns named by a field's label land in that field. */
     val fields: List<FieldTemplate> = emptyList(),
+    /** The project's local map grid: plane coordinates on its ellipsoid and zone are read through its datum shift. */
+    val localGrid: org.geocrew.core.model.LocalGrid? = null,
 )
 
 /** Extra data an export may use (e.g. per-vertex times for GPX tracks). */
@@ -25,6 +27,8 @@ data class ExportContext(
     val fields: List<FieldTemplate> = emptyList(),
     /** The project's map legend: formats with styles (KML) colour records the same way. */
     val legend: Legend = Legend(),
+    /** The project's local map grid: plane formats (DXF) write its coordinates instead of CGCS2000. */
+    val localGrid: org.geocrew.core.model.LocalGrid? = null,
 )
 
 data class ImportResult(

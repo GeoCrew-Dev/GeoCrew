@@ -2,7 +2,9 @@ package org.geocrew.core.formats
 
 import org.geocrew.core.model.Ellipsoid
 import org.geocrew.core.model.FeatureKind
+import org.geocrew.core.model.GaussKruger
 import org.geocrew.core.model.GeoFeature
+import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.model.Props
@@ -68,7 +70,7 @@ internal object ShapefileReader {
         val table = dbf?.let { Dbf.read(it, cpg) }
         if (table == null) warnings += "图层 $name 没有 .dbf，只导入了图形"
         else if (table.rows.size != shapes.size) warnings += "图层 $name 的属性表有 ${table.rows.size} 行，图形有 ${shapes.size} 个，按顺序对应"
-        val crs = Crs.of(prj, shapes.firstNotNullOfOrNull { it.firstOrNull()?.firstOrNull() })
+        val crs = Crs.of(prj, shapes.firstNotNullOfOrNull { it.firstOrNull()?.firstOrNull() }, ctx.localGrid)
             ?: throw FormatException(if (prj == null) "缺少 .prj，坐标看不出是经纬度还是带号的高斯坐标" else "不支持的坐标系：${prj.take(80)}")
         crs.note?.let { warnings += "图层 $name：$it" }
         val byLabel = ctx.fields.associate { it.label to it.key }
@@ -214,16 +216,24 @@ internal object ShapefileReader {
 
     // --- coordinate systems -------------------------------------------------
 
-    internal class Crs(val note: String?, private val tm: TransverseMercator?) {
-        fun toLngLat(x: Double, y: Double, z: Double?): LngLat =
-            if (tm == null) LngLat(x, y, z) else tm.inverse(x, y).let { LngLat(it.lng, it.lat, z) }
+    internal class Crs(
+        val note: String?,
+        private val tm: TransverseMercator?,
+        /** Read plane coordinates through this grid's datum shift; [tm] then only gives the false easting. */
+        private val grid: org.geocrew.core.model.LocalGrid? = null,
+    ) {
+        fun toLngLat(x: Double, y: Double, z: Double?): LngLat = when {
+            tm == null -> LngLat(x, y, z)
+            grid != null -> grid.fromGrid(y - tm.falseNorthing, x - tm.falseEasting + 500_000.0, z ?: 0.0).let { LngLat(it.lng, it.lat, z) }
+            else -> tm.inverse(x, y).let { LngLat(it.lng, it.lat, z) }
+        }
 
         companion object {
             private val PARAM = Regex("""PARAMETER\s*\[\s*"([^"]+)"\s*,\s*([-+0-9.eE]+)\s*]""", RegexOption.IGNORE_CASE)
             private val PROJECTION = Regex("""PROJECTION\s*\[\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
             private val SPHEROID = Regex("""(?:SPHEROID|ELLIPSOID)\s*\[\s*"([^"]*)"\s*,\s*([0-9.eE+]+)\s*,\s*([0-9.eE+]+)""", RegexOption.IGNORE_CASE)
 
-            fun of(prj: String?, sample: Xyz?): Crs? {
+            fun of(prj: String?, sample: Xyz?, grid: org.geocrew.core.model.LocalGrid? = null): Crs? {
                 if (prj.isNullOrBlank()) return guess(sample)
                 val sph = SPHEROID.find(prj)
                 val ellipsoid = sph?.let { m ->
@@ -248,6 +258,12 @@ internal object ShapefileReader {
                     falseEasting = p["false_easting"] ?: 500_000.0,
                     falseNorthing = p["false_northing"] ?: 0.0,
                 )
+                // The project's own old grid with its datum shift: read through it instead of only swapping ellipsoids.
+                val own = grid?.takeIf {
+                    local && it.shift != null && it.ellipsoid == ellipsoid && abs(tm.scale - 1.0) < 1e-9 &&
+                        abs(Geodesy.wrapLongitude(cm - GaussKruger.centralMeridian(it.zone, it.width))) < 1e-6
+                }
+                if (own != null) return Crs("按本工程的本地坐标系（${own.name}）做了基准转换", tm, own)
                 return Crs(shift, tm)
             }
 
