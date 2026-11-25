@@ -33,7 +33,11 @@
 
 开发时可以在 `local.properties` 里写 `tianditu.key=你的Key`，它只会进入 debug 包作为默认 Key；release 包永远不带 Key。
 
-每次推送到 `main`，GitHub Actions 会编译调试版 APK 并跑单元测试，APK 可在运行记录的 Artifacts 中下载。
+每次推送到 `main`，GitHub Actions 会编译调试版 APK 并跑单元测试，APK 可在运行记录的 Artifacts 中下载。另一个任务会拉取[服务端](https://github.com/GeoCrew-Dev/GeoCrew-Server)最新代码、启动后让网络层（建组、入组、同步与冲突、照片、讨论、实时位置、查看链接）真连一遍。本地想跑这一段，先启动服务端，再：
+
+```bash
+GEOCREW_TEST_SERVER=http://127.0.0.1:8080 ./gradlew :core:network:test
+```
 
 ## 代码结构
 
