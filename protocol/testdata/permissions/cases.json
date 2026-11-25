@@ -6,6 +6,7 @@
       "member":   { "position": 0,  "permissions": { "send_messages": true, "edit_rows": "own", "delete_rows": "own" } },
       "guest":    { "position": 5,  "permissions": {} },
       "surveyor": { "position": 10, "permissions": { "view_locations": true } },
+      "crew_chief": { "position": 15, "permissions": { "manage_roles": true } },
       "sampler":  { "position": 20, "permissions": { "edit_rows": "all" } },
       "deputy":   { "position": 30, "permissions": { "manage_members": true, "manage_roles": true, "edit_rows": "all", "delete_rows": "all", "edit_schema": true, "export_data": true } }
     },
@@ -14,6 +15,7 @@
       "dep": ["deputy"],
       "smp": ["sampler"],
       "sur": ["surveyor"],
+      "chief": ["crew_chief"],
       "gst": ["guest"],
       "mem": [],
       "both": ["sampler", "guest"]
@@ -63,6 +65,9 @@
 
     { "name": "an override on a role below one's own", "who": "dep", "override": { "role": "sampler", "set": { "edit_rows": "own" } }, "expect": true },
     { "name": "not without manage_roles", "who": "smp", "override": { "role": "guest", "set": { "edit_rows": "all" } }, "expect": false },
+    { "name": "not above the level one holds", "who": "chief", "override": { "role": "guest", "set": { "edit_rows": "all" } }, "expect": false },
+    { "name": "at the level one holds", "who": "chief", "override": { "role": "guest", "set": { "edit_rows": "own" } }, "expect": true },
+    { "name": "only view_layer, edit_rows and delete_rows can be overridden", "who": "dep", "override": { "role": "sampler", "set": { "export_data": true } }, "expect": false },
     { "name": "only the leader sets overrides on the base role", "who": "dep", "override": { "role": "member", "set": { "view_layer": false } }, "expect": false },
     { "name": "the leader sets overrides on the base role", "who": "lead", "override": { "role": "member", "set": { "view_layer": false } }, "expect": true },
 

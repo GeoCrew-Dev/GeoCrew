@@ -60,6 +60,9 @@ const (
 	ViewLayer = "view_layer"
 )
 
+// Overridable lists the permissions a layer override may set.
+var Overridable = map[string]bool{ViewLayer: true, EditRows: true, DeleteRows: true}
+
 // Safety rights belong to everyone and no setting can take them away.
 var Safety = map[string]bool{
 	"send_sos":        true,
@@ -212,7 +215,7 @@ func (w Workspace) CanSetOverride(actor, role string, set map[string]Level) bool
 		return false
 	}
 	for perm, level := range set {
-		if w.Level(actor, perm, "") < level {
+		if !Overridable[perm] || w.Level(actor, perm, "") < level {
 			return false
 		}
 	}
