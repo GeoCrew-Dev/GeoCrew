@@ -37,6 +37,9 @@ type Config struct {
 	BackupDir   string
 	BackupEvery time.Duration
 	BackupKeep  int
+	// MetricsAddr, when set, is a second listener serving /metrics
+	// (Prometheus text format); keep it on a private address.
+	MetricsAddr string
 }
 
 func envBool(k string) bool {
@@ -97,6 +100,7 @@ func Load(args []string) (Config, error) {
 		return c, fmt.Errorf("GEOCREW_BACKUP_KEEP: %w", err)
 	}
 	fs.IntVar(&c.BackupKeep, "backup-keep", keep, "how many scheduled backups to keep")
+	fs.StringVar(&c.MetricsAddr, "metrics-addr", env("GEOCREW_METRICS_ADDR", ""), "serve /metrics on this address, e.g. 127.0.0.1:9180; empty turns it off")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}

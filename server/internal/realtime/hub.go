@@ -306,3 +306,23 @@ func (h *Hub) sendLocked(c *Client, msg []byte) {
 		go c.drop()
 	}
 }
+
+// Stats reports how many workspaces have someone connected and how many
+// connections are open: members' devices and web viewers separately.
+func (h *Hub) Stats() (workspaces, members, watchers int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, r := range h.rooms {
+		if len(r.clients) > 0 {
+			workspaces++
+		}
+		for c := range r.clients {
+			if c.Watcher {
+				watchers++
+			} else {
+				members++
+			}
+		}
+	}
+	return
+}

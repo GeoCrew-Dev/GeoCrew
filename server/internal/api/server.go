@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/metrics"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -44,6 +45,8 @@ type Server struct {
 	TrustProxy bool
 	// JoinPerMinute limits create and join attempts per client address (default 10).
 	JoinPerMinute int
+	// Metrics, when set, counts requests by route pattern; see MetricsHandler.
+	Metrics *metrics.Registry
 }
 
 const maxJSONBody = 16 << 20
@@ -206,6 +209,8 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
+		// The mux records the matched pattern on r, placeholders and all.
+		s.Metrics.Request(r.Method, r.Pattern, sw.status, time.Since(start))
 		// The path never contains tokens; query strings may, so they are not logged.
 		s.logger().Info("request", "method", r.Method, "path", r.URL.Path, "status", sw.status,
 			"duration_ms", time.Since(start).Milliseconds())

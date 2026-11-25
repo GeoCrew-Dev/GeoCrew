@@ -81,6 +81,11 @@ func run() error {
 		TrustProxy:    cfg.TrustProxy,
 		JoinPerMinute: cfg.JoinPerMinute,
 	}
+	var metricsSrv *http.Server
+	if cfg.MetricsAddr != "" {
+		// Before Handler, so request counting is on from the first request.
+		metricsSrv = &http.Server{Addr: cfg.MetricsAddr, Handler: srv.MetricsHandler(), ReadHeaderTimeout: 10 * time.Second}
+	}
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),
@@ -101,7 +106,16 @@ func run() error {
 			go backup.Run(ctx, db, backup.Options{Dir: cfg.BackupDir, Every: cfg.BackupEvery, Keep: cfg.BackupKeep, Files: files.Root, Log: log})
 		}
 	}
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
+	if metricsSrv != nil {
+		go func() {
+			log.Info("metrics listening", "addr", cfg.MetricsAddr)
+			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errc <- fmt.Errorf("metrics: %w", err)
+			}
+		}()
+		defer metricsSrv.Close()
+	}
 	go func() {
 		log.Info("geocrew-server listening", "addr", cfg.Addr, "protocol", api.ProtocolVersion,
 			"version", version, "data", cfg.DataDir)

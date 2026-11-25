@@ -55,6 +55,7 @@ go build -o geocrew-server ./cmd/geocrew-server
 | `-backup-dir` | `GEOCREW_BACKUP_DIR` | 空 | 定时备份放到这个目录（只用于 SQLite），空表示不定时备份 |
 | `-backup-every` | `GEOCREW_BACKUP_EVERY` | `24h` | 定时备份间隔，至少 `10m` |
 | `-backup-keep` | `GEOCREW_BACKUP_KEEP` | `7` | 保留最近几份数据库快照 |
+| `-metrics-addr` | `GEOCREW_METRICS_ADDR` | 空 | 在这个地址另开一个端口提供 `/metrics`（Prometheus 文本格式），如 `127.0.0.1:9180`；空表示不提供 |
 
 ### 使用 PostgreSQL
 
@@ -87,6 +88,18 @@ geocrew-server -data /var/lib/geocrew admin revoke 3f9a 7c21
 ```
 
 工作组和成员可以只写 ID 的开头几位。组长换了手机、旧设备找不回来时：用 `invite` 拿到新邀请码，在新手机上加入，再用 `role` 把新设备设为组长，最后 `revoke` 掉旧设备。
+
+## 监控
+
+设了 `GEOCREW_METRICS_ADDR` 后，服务端在这个地址另开一个端口，`GET /metrics` 返回 Prometheus 文本格式的指标，Prometheus、VictoriaMetrics、Grafana Agent 都能直接抓取，`curl` 也能看：
+
+- `geocrew_http_requests_total`：按方法、路由模板（如 `GET /api/v0/workspaces/{ws}/features`，不含具体 ID）和状态码计数
+- `geocrew_http_request_duration_seconds`：按路由模板的耗时直方图
+- `geocrew_realtime_connections`：实时通道连接数，分组员设备和网页查看
+- `geocrew_realtime_workspaces`、`geocrew_workspaces`：有人在线的工作组数、服务器上的工作组总数
+- `geocrew_uptime_seconds`：运行时长
+
+这个端口不做鉴权，请只监听本机或内网地址，不要通过反向代理公开。
 
 ## 备份
 
