@@ -100,6 +100,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | GET | `/api/v0/workspaces/{id}/export.samples.csv?tz_offset=` | 任意 | 样品清单（第 6.4 节），UTF-8 CSV（带 BOM），每件样品一行：样品编号、样品类型、所在记录、经度、纬度、高程、岩性、采样时间、样品备注、记录ID，按编号自然排序；线面上的样品取第一个顶点。`tz_offset` 为采样时间所用时区（东为正，分钟，默认 0）。能力名 `samples` |
 | GET | `/api/v0/workspaces/{id}/export.sections.csv` | 任意 | 实测剖面分层表（第 6.5 节），UTF-8 CSV（带 BOM），每个剖面的每一层一行：剖面、层号、起点斜距、终点斜距、岩性、倾向、倾角、产状来源（实测 / 借用）、真厚度、备注、记录ID，剖面按名称自然排序。能力名 `sections` |
 | GET | `/api/v0/workspaces/{id}/export.boreholes.csv` | 任意 | 钻孔分层表（第 6.11 节），UTF-8 CSV（带 BOM），每个钻孔的每一层一行：孔号、孔口经度、孔口纬度、孔口高程、终孔深度、水位埋深、层号、层顶深度、层底深度、厚度、岩性、描述、记录ID，钻孔按孔号自然排序。能力名 `boreholes` |
+| GET | `/api/v0/workspaces/{id}/export.structures.csv` | 任意 | 产状表，UTF-8 CSV（带 BOM），每条面状产状（`dip_direction`、`dip`）和线状构造（第 6.12 节）各一行：记录、种类（面状或线状）、类型（线和面的线型名称，或线状构造的 `lineation_type`，省略时为「线理」）、倾向或倾伏向、倾角或倾伏角、走向（只有面状）、经度、纬度、高程、岩性、记录ID；线和面取第一个顶点的位置，记录按名称自然排序。能力名 `structures` |
 | GET | `/api/v0/workspaces/{id}/export.routes.csv` | 任意 | 地质路线记录表（第 6.6 节），UTF-8 CSV（带 BOM）：每条路线一个目的行、按 `stops` 顺序每个点一行（路线、日期、参加人员、序号、点号、类型、经度、纬度、海拔、岩性、产状、点上描述、至下一点描述、记录ID）和一个小结行，找不到的点跳过，路线按日期和路线号自然排序。能力名 `routes` |
 | GET | `/api/v0/workspaces/{id}/checks` | 任意 | 记录核对：`{"issues": [{"feature", "title", "code", "message"}]}`，列出值得再看一眼的记录，按记录名自然排序。`code` 固定为 `duplicate_number`（地质点、照片点、剖面、路线等带数字的编号重名，不分大小写）、`duplicate_sample`（样品编号在工程内重复）、`no_position`（点、线、面、轨迹、照片没有几何）、`poor_accuracy`（`accuracy_m` 超过 `?accuracy_m=`，默认 30）、`far_away`（离全部记录位置中位点超过 `?far_km=`，默认 50 千米，且超过典型距离 10 倍；至少 5 条有位置的记录才判断）、`missing_stop`（路线 `stops` 指向不存在或已删除的记录）、`redo`（组长退回的记录，见 §6.9）；`message` 只供显示，客户端可按 `code` 自行措辞。能力名 `checks` |
 | GET | `/api/v0/workspaces/{id}/export.kml` | 任意 | KML 2.2：每条有几何的记录一个地标，`title`、`note` 作名称和说明，其余简单属性写成 ExtendedData；颜色取记录自带的 simplestyle，否则取共享设置里的 `legend`，每种颜色一个共享 Style。能力名 `kml` |
@@ -121,7 +122,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "create"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "structures", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
@@ -468,7 +469,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `plunge` | 倾伏角，度，0–90；水平线取 0，这时 `trend` 两个方向都对 |
 | `lineation_type` | 类型，文本，可省略；常用值有「线理」「擦痕」「褶皱枢纽」「交面线」「拉伸线理」，省略时按「线理」显示 |
 
-两个数要同时出现才算有效，超出范围的应忽略并原样保留。客户端存储前可以把倾伏角为负的读数换成另一端（`trend` 加 180°、`plunge` 取正）。同一条记录有面状产状时，客户端可以算出线在面上的侧伏角，并在线明显不在面上时提醒。服务端不检查这些字段。
+两个数要同时出现才算有效，超出范围的应忽略并原样保留。客户端存储前可以把倾伏角为负的读数换成另一端（`trend` 加 180°、`plunge` 取正）。同一条记录有面状产状时，客户端可以算出线在面上的侧伏角，并在线明显不在面上时提醒。服务端不检查这些字段；能力里有 `structures` 时，可以按产状表下载全组的面状和线状产状。
 
 ## 7. 实时通道
 

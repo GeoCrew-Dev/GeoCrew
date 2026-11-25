@@ -368,6 +368,20 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/export.structures.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportStructures
+      summary: Planar attitudes and lineations as CSV, one row per measurement (capability "structures", section 6.12)
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 记录, 种类, 类型, 倾向或倾伏向(°), 倾角或倾伏角(°), 走向(°), 经度, 纬度, 高程(m), 岩性, 记录ID"
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v0/workspaces/{ws}/export.boreholes.csv:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
@@ -726,7 +740,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing, boreholes] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing, boreholes, structures] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
