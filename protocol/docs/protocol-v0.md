@@ -246,7 +246,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | kind | 几何 | 主要属性 |
 | --- | --- | --- |
 | `point` | Point | `title`、`note`、`photos`、`audio`、`meet_at`（第 6.8 节） |
-| `geo_point` | Point | 地质点：`title`、`lithology`、`strike`、`dip_direction`、`dip`、`note`、`photos`、`audio` |
+| `geo_point` | Point | 地质点：`title`、`lithology`、`strike`、`dip_direction`、`dip`、`trend`、`plunge`、`lineation_type`（§6.12）、`note`、`photos`、`audio` |
 | `line` | LineString | `title`、`note`、`length_m`、`line_style`（第 6.7 节） |
 | `polygon` | Polygon | `title`、`note`、`area_m2` |
 | `track` | LineString | 轨迹：`title`、`started_at`、`ended_at`、`length_m`；坐标可带高程 |
@@ -452,6 +452,23 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `water` | 地下水位埋深（米），可省略；省略表示未见地下水 |
 
 深度单位为米，范围 0–5000。服务端能力里有 `boreholes` 时，可以按上表的钻孔分层表下载全组的钻孔。v0 把孔当作铅直的，斜孔的方位和倾角留待以后用新字段表示。`bottom` 不比上一层深的分层应忽略并提示，缺少有效数值的条目应忽略，不认识的字段应原样保留。整个对象随记录一起按第 4.3 节的规则合并。服务端不解析这个对象。
+
+### 6.12 线状构造
+
+线理、擦痕、褶皱枢纽、交面线等线状构造用倾伏向和倾伏角表示，放在记录的属性里，可以和面状产状（`strike`、`dip_direction`、`dip`）同时出现在一条记录上：
+
+```json
+"dip_direction": 125, "dip": 42,
+"trend": 160, "plunge": 30, "lineation_type": "擦痕"
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `trend` | 倾伏向，度，0–360，取线向下倾的一端的方位（真北） |
+| `plunge` | 倾伏角，度，0–90；水平线取 0，这时 `trend` 两个方向都对 |
+| `lineation_type` | 类型，文本，可省略；常用值有「线理」「擦痕」「褶皱枢纽」「交面线」「拉伸线理」，省略时按「线理」显示 |
+
+两个数要同时出现才算有效，超出范围的应忽略并原样保留。客户端存储前可以把倾伏角为负的读数换成另一端（`trend` 加 180°、`plunge` 取正）。同一条记录有面状产状时，客户端可以算出线在面上的侧伏角，并在线明显不在面上时提醒。服务端不检查这些字段。
 
 ## 7. 实时通道
 
