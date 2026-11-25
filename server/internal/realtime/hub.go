@@ -7,6 +7,7 @@ package realtime
 
 import (
 	"encoding/json"
+	"sort"
 	"sync"
 	"time"
 )
@@ -203,6 +204,31 @@ func (h *Hub) UpdatePosition(ws string, c *Client, p Position) bool {
 	r.positions[c.MemberID] = p
 	h.broadcastLocked(r, marshal(p), c)
 	return true
+}
+
+// Positions returns the last known position of every member in ws that is
+// newer than PositionTTL, newest first, and who is online right now.
+func (h *Hub) Positions(ws string) (positions []Position, online map[string]bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	positions, online = []Position{}, map[string]bool{}
+	r := h.rooms[ws]
+	if r == nil {
+		return positions, online
+	}
+	for c := range r.clients {
+		if !c.Watcher {
+			online[c.MemberID] = true
+		}
+	}
+	cutoff := h.now().Add(-h.PositionTTL)
+	for _, p := range r.positions {
+		if !p.At.Before(cutoff) {
+			positions = append(positions, p)
+		}
+	}
+	sort.Slice(positions, func(i, j int) bool { return positions[i].At.After(positions[j].At) })
+	return positions, online
 }
 
 // FeatureChanged tells everyone in ws that changes up to seq are available.

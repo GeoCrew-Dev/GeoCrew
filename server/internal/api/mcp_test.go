@@ -4,8 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
 )
 
 type rpcResp struct {
@@ -24,7 +27,8 @@ type rpcResp struct {
 }
 
 func TestMCP(t *testing.T) {
-	e := newEnv(t)
+	var hub *realtime.Hub
+	e := newEnvWith(t, func(s *Server) { hub = s.Hub })
 	var a joinResp
 	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "野外一组", "nickname": "组长"}, &a)
 	base := "/api/v0/workspaces/" + a.WorkspaceID
@@ -71,8 +75,27 @@ func TestMCP(t *testing.T) {
 	if _, r := rpc(a.Token, 2, "resources/list", nil); r.Error == nil || r.Error.Code != -32601 {
 		t.Fatalf("unknown method: %+v", r)
 	}
-	if _, r := rpc(a.Token, 3, "tools/list", nil); len(r.Result.Tools) != 7 {
+	if _, r := rpc(a.Token, 3, "tools/list", nil); len(r.Result.Tools) != 8 {
 		t.Fatalf("tools/list: %d tools", len(r.Result.Tools))
+	}
+
+	if pos, _ := tool("team_positions", nil); len(pos["positions"].([]any)) != 0 || len(pos["online_without_position"].([]any)) != 0 {
+		t.Fatalf("positions before anyone shares: %v", pos)
+	}
+	me := &realtime.Client{MemberID: a.MemberID, Nickname: "组长", Send: make(chan []byte, 8)}
+	hub.Join(a.WorkspaceID, me)
+	if pos, _ := tool("team_positions", nil); fmt.Sprint(pos["online_without_position"]) != "[组长]" {
+		t.Fatalf("online without position: %v", pos)
+	}
+	hub.UpdatePosition(a.WorkspaceID, me, realtime.Position{Lon: 116.3, Lat: 39.9, Accuracy: 6})
+	pos, _ := tool("team_positions", nil)
+	ps := pos["positions"].([]any)
+	if len(ps) != 1 || ps[0].(map[string]any)["nickname"] != "组长" || ps[0].(map[string]any)["online"] != true || ps[0].(map[string]any)["lat"] != 39.9 {
+		t.Fatalf("positions: %v", pos)
+	}
+	hub.Leave(a.WorkspaceID, me)
+	if pos, _ := tool("team_positions", nil); pos["positions"].([]any)[0].(map[string]any)["online"] != false {
+		t.Fatalf("position after leaving: %v", pos)
 	}
 
 	sum, _ := tool("workspace_summary", nil)
@@ -152,7 +175,7 @@ func TestMCP(t *testing.T) {
 	// A view link is the read-only credential to give an AI tool.
 	var link viewLinkResp
 	e.call("POST", base+"/view-links", a.Token, nil, &link)
-	if c, r := rpc(link.Token, 5, "tools/list", nil); c != 200 || len(r.Result.Tools) != 7 {
+	if c, r := rpc(link.Token, 5, "tools/list", nil); c != 200 || len(r.Result.Tools) != 8 {
 		t.Fatalf("view link: %d", c)
 	}
 	e.call("DELETE", base+"/view-links", a.Token, nil, nil)

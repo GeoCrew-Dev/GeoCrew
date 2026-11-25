@@ -102,6 +102,12 @@ func (s *Server) mcpTools(ws string) []mcp.Tool {
 			InputSchema: schema(`"limit":{"type":"integer","minimum":1,"maximum":100,"default":30}`),
 			Call:        func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpMessages(ctx, ws, args) },
 		},
+		{
+			Name: "team_positions", Title: "组员位置",
+			Description: "Where the team is: every member's last shared live position (WGS 84) from the last 15 minutes with accuracy, its age in seconds and whether the member is online, newest first; plus members online without a position. Members share positions only while they choose to in the app.",
+			InputSchema: schema(``),
+			Call:        func(ctx context.Context, _ json.RawMessage) (any, error) { return s.mcpPositions(ctx, ws) },
+		},
 	}
 }
 
@@ -493,4 +499,50 @@ func (s *Server) mcpReferenceAt(ctx context.Context, ws string, raw json.RawMess
 		out["unreadable_layers"] = unread
 	}
 	return out, nil
+}
+
+type mcpPosition struct {
+	Nickname   string    `json:"nickname"`
+	Online     bool      `json:"online"`
+	Lon        float64   `json:"lon"`
+	Lat        float64   `json:"lat"`
+	AccuracyM  float64   `json:"accuracy_m,omitempty"`
+	At         time.Time `json:"at"`
+	AgeSeconds int64     `json:"age_seconds"`
+}
+
+func (s *Server) mcpPositions(ctx context.Context, ws string) (any, error) {
+	ms, err := s.Store.Members(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]string{}
+	for _, m := range ms {
+		if !m.Revoked {
+			names[m.ID] = m.Nickname
+		}
+	}
+	ps, online := s.Hub.Positions(ws)
+	now := time.Now()
+	out := []mcpPosition{}
+	placed := map[string]bool{}
+	for _, p := range ps {
+		name, ok := names[p.MemberID]
+		if !ok {
+			continue // revoked since
+		}
+		placed[p.MemberID] = true
+		out = append(out, mcpPosition{
+			Nickname: name, Online: online[p.MemberID], Lon: p.Lon, Lat: p.Lat, AccuracyM: p.Accuracy,
+			At: p.At, AgeSeconds: max(0, int64(now.Sub(p.At).Seconds())),
+		})
+	}
+	without := []string{}
+	for id := range online {
+		if name, ok := names[id]; ok && !placed[id] {
+			without = append(without, name)
+		}
+	}
+	sort.Strings(without)
+	return map[string]any{"positions": out, "online_without_position": without}, nil
 }
