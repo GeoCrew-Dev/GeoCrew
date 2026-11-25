@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -58,6 +59,9 @@ import javax.inject.Inject
 private const val MAX_RECORDING_MILLIS = 10 * 60_000L
 
 data class Revision(val feature: GeoFeature, val author: String)
+
+/** [stats] of a track and which of its stops have no record near them. */
+data class TrackTimeUi(val stats: org.geocrew.core.model.TrackStats, val unrecorded: Set<org.geocrew.core.model.TrackStats.Stop>)
 
 sealed interface HistoryState {
     data object Idle : HistoryState
@@ -161,6 +165,7 @@ class FeatureDetailViewModel @Inject constructor(
     private val session: TeamSession,
     private val terrain: org.geocrew.core.data.repo.TerrainTiles,
     private val teamForms: org.geocrew.core.data.team.TeamForms,
+    private val tracks: org.geocrew.core.data.repo.TrackRepository,
 ) : ViewModel() {
     private val id: String = checkNotNull(savedState[FEATURE_ID_ARG])
 
@@ -234,6 +239,26 @@ class FeatureDetailViewModel @Inject constructor(
     }
 
     val feature: StateFlow<GeoFeature?> = features.observe(id).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /**
+     * A track's times, walking and stops, from the fixes on this phone or
+     * the times synced with the track; null for other records or a track
+     * without times. Stops with no record nearby are flagged.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val trackTime: StateFlow<TrackTimeUi?> = feature
+        .distinctUntilChanged { a, b -> a?.id == b?.id && a?.sync?.version == b?.sync?.version }
+        .flatMapLatest { f ->
+            if (f == null || f.kind != FeatureKind.TRACK) kotlinx.coroutines.flow.flowOf(null)
+            else features.observeProject(f.projectId).map { list ->
+                val fixes = tracks.points(f.id).ifEmpty { org.geocrew.core.model.TrackTimes.fixes(f).orEmpty() }
+                org.geocrew.core.model.TrackStats.of(fixes)?.let { st ->
+                    TrackTimeUi(st, org.geocrew.core.model.TrackStats.unrecordedStops(st, list).toSet())
+                }
+            }
+        }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Lithologies written elsewhere in this project, one entry per record, for suggestions. */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)

@@ -223,7 +223,8 @@ fun FeatureDetailScreen(
             VoiceNotes(f, viewModel)
             SectionHeader("信息")
             val dem by viewModel.dem.collectAsStateWithLifecycle()
-            Info(f, format, dem, viewModel::lookUpDem, viewModel::useDemAltitude)
+            val trackTime by viewModel.trackTime.collectAsStateWithLifecycle()
+            Info(f, format, dem, viewModel::lookUpDem, viewModel::useDemAltitude, trackTime)
             if (onOpenRoute != null && f.kind == FeatureKind.ROUTE) {
                 OutlinedButton(onClick = { onOpenRoute(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("打开地质路线（点序、点间描述与小结）") }
             }
@@ -784,6 +785,38 @@ private fun VoiceNotes(f: GeoFeature, vm: FeatureDetailViewModel) {
     }
 }
 
+/** When a track ran, how long was walking, and where its walker stood still. */
+@Composable
+private fun TrackTimeRows(t: TrackTimeUi) {
+    val s = t.stats
+    val day = DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())
+    val clock = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
+    val sameDay = s.start.atZone(ZoneId.systemDefault()).toLocalDate() == s.end.atZone(ZoneId.systemDefault()).toLocalDate()
+    InfoRow("时间", day.format(s.start) + " – " + (if (sameDay) clock else day).format(s.end) + "（" + spell(s.total) + "）")
+    InfoRow(
+        "行进",
+        spell(s.moving) + (s.movingKmh?.let { "，平均 %.1f km/h".format(it) } ?: "") +
+            (if (!s.unrecorded.isZero) "；中断未记录 " + spell(s.unrecorded) else ""),
+    )
+    if (s.stops.isEmpty()) return
+    val total = s.stops.fold(java.time.Duration.ZERO) { a, x -> a + x.duration }
+    InfoRow("停留", "${s.stops.size} 处，共 ${spell(total)}（原地 30 m 内超过 5 分钟）")
+    s.stops.take(12).forEach { stop ->
+        val flag = if (stop in t.unrecorded) "，附近 50 m 没有记录" else ""
+        Text(
+            "· " + clock.format(stop.from) + " 起停 " + spell(stop.duration) + flag,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (flag.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.tertiary,
+        )
+    }
+    if (s.stops.size > 12) Text("· 另有 ${s.stops.size - 12} 处", style = MaterialTheme.typography.bodySmall)
+}
+
+private fun spell(d: java.time.Duration): String {
+    val m = (d.seconds + 30) / 60
+    return if (m < 60) "$m 分钟" else "${m / 60} 小时" + (if (m % 60 != 0L) " ${m % 60} 分" else "")
+}
+
 /** The public DEM's height under a point, next to the GPS height, and a way to use it when there is none. */
 @Composable
 private fun DemRow(gps: Double?, noAltitude: Boolean, dem: DemState, onLookUp: () -> Unit, onUse: () -> Unit) {
@@ -807,6 +840,7 @@ private fun Info(
     dem: DemState,
     onLookUpDem: () -> Unit,
     onUseDem: () -> Unit,
+    trackTime: TrackTimeUi? = null,
 ) {
     Column(Modifier.padding(horizontal = 16.dp)) {
         when (val g = f.geometry) {
@@ -842,6 +876,7 @@ private fun Info(
                     InfoRow("累计爬升 / 下降", "%.0f m / %.0f m".format(profile.ascent, profile.descent))
                     ElevationChart(profile, Modifier.fillMaxWidth().height(120.dp).padding(vertical = 8.dp))
                 }
+                trackTime?.let { TrackTimeRows(it) }
             }
         }
         InfoRow("创建", fullTime.format(f.createdAt))
