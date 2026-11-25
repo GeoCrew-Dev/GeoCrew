@@ -50,4 +50,36 @@ class MapDisplayTest {
         val square = Geometry.Polygon(listOf(listOf(LngLat(0.0, 0.0), LngLat(2.0, 0.0), LngLat(2.0, 2.0), LngLat(0.0, 2.0), LngLat(0.0, 0.0))))
         assertEquals(LngLat(1.0, 1.0), MapDisplay.anchor(square))
     }
+
+    private fun made(id: String, at: String, title: String? = null, lith: String? = null) = GeoFeature(
+        id, "p", FeatureKind.GEO_POINT, Geometry.Point(LngLat(1.0, 2.0)),
+        buildProperties {
+            title?.let { this[Props.TITLE] = it }
+            lith?.let { this[Props.LITHOLOGY] = it }
+        },
+        Instant.parse(at), SyncInfo(updatedAt = Instant.parse(at)),
+    )
+
+    @Test
+    fun recentDaysCountTodayAsOneInTheLocalZone() {
+        val zone = java.time.ZoneId.of("Asia/Shanghai")
+        val now = Instant.parse("2026-11-25T02:00:00Z") // 10:00 in Beijing
+        val l = listOf(
+            made("today", "2026-11-24T16:30:00Z"), // 00:30 on the 25th, Beijing
+            made("yesterday", "2026-11-24T15:30:00Z"),
+            made("old", "2026-11-20T04:00:00Z"),
+        )
+        assertEquals(listOf("today"), MapDisplay(days = 1).filter(l, null, now = now, zone = zone).map { it.id })
+        assertEquals(listOf("today", "yesterday"), MapDisplay(days = 3).filter(l, null, now = now, zone = zone).map { it.id })
+        assertEquals(listOf("today", "yesterday", "old"), MapDisplay(days = 0).filter(l, null, now = now, zone = zone).map { it.id })
+    }
+
+    @Test
+    fun queryMatchesEveryWordInNameOrLithology() {
+        val l = listOf(made("a", "2026-01-01T00:00:00Z", "D012", "灰岩"), made("b", "2026-01-01T00:00:00Z", "D013", "砂岩"))
+        assertEquals(listOf("a"), MapDisplay(query = " 灰岩 ").filter(l, null).map { it.id })
+        assertEquals(listOf("b"), MapDisplay(query = "d013 砂").filter(l, null).map { it.id })
+        assertEquals(emptyList<String>(), MapDisplay(query = "D012 砂岩").filter(l, null).map { it.id })
+        assertEquals(listOf("a"), MapDisplay(query = "页岩").filter(l, null, keep = "a").map { it.id })
+    }
 }

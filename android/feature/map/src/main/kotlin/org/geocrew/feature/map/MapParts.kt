@@ -269,6 +269,37 @@ internal fun LayerSheet(
                     }
                 }
             }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(0 to "全部日期", 1 to "今天", 3 to "近 3 天", 7 to "近 7 天", 30 to "近 30 天").forEach { (d, label) ->
+                        FilterChip(selected = display.days == d, onClick = { onDisplay { it.copy(days = d) } }, label = { Text(label) })
+                    }
+                }
+            }
+            item {
+                var q by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(display.query) }
+                // Saved a moment after typing stops, so each keystroke does not rewrite the project settings.
+                androidx.compose.runtime.LaunchedEffect(q) {
+                    kotlinx.coroutines.delay(400)
+                    if (q != display.query) onDisplay { it.copy(query = q) }
+                }
+                androidx.compose.material3.OutlinedTextField(
+                    value = q,
+                    onValueChange = { q = it },
+                    label = { Text("只显示名称、岩性或描述含有…") },
+                    placeholder = { Text("如 D012、灰岩；空格分开的词都要有") },
+                    singleLine = true,
+                    trailingIcon = {
+                        if (q.isNotEmpty()) androidx.compose.material3.IconButton(onClick = { q = "" }) {
+                            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Close, "清空")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
             item { DisplaySwitch("记录名称", "放大到一定比例后显示", display.names) { v -> onDisplay { it.copy(names = v) } } }
             item { DisplaySwitch("山体阴影", "按公开 DEM 给底图加地形明暗，影像和 OSM 上也能看出山脊沟谷；需联网，看过的地方有缓存", display.hillshade) { v -> onDisplay { it.copy(hillshade = v) } } }
             item {

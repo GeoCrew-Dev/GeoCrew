@@ -350,7 +350,13 @@ fun MapScreen(
                 PausedDownloadsCard(pausedDownloads, onResume = viewModel::resumeDownload, onDiscard = viewModel::discardDownload)
             }
             if (display.filtering) {
-                Notice(if (display.onlyMyTasks) "地图上只显示我的待办任务" else "地图上隐藏了部分记录", "调整") { showLayers = true }
+                val why = buildList {
+                    if (display.onlyMyTasks) add("只看我的待办")
+                    if (display.days > 0) add(if (display.days == 1) "只看今天" else "只看近 ${display.days} 天")
+                    if (display.query.isNotBlank()) add("含「${display.query.trim()}」")
+                    if (display.hiddenKinds.isNotEmpty()) add("隐藏了 ${display.hiddenKinds.size} 类记录")
+                }
+                Notice("地图筛选：" + why.joinToString("，"), "调整") { showLayers = true }
             }
         }
 

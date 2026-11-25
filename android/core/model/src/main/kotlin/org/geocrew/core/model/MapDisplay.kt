@@ -1,6 +1,8 @@
 package org.geocrew.core.model
 
 import kotlinx.serialization.Serializable
+import java.time.Instant
+import java.time.ZoneId
 
 /**
  * What a project's map shows on top of the base map: which record kinds,
@@ -24,6 +26,10 @@ data class MapDisplay(
     val sheets: String? = null,
     /** Relief shading from the public DEM over the base map. */
     val hillshade: Boolean = false,
+    /** Only records made in the last this many local days, today counting as one; 0 shows all. */
+    val days: Int = 0,
+    /** Only records whose name, lithology or description contains this text; blank shows all. */
+    val query: String = "",
 ) {
     val sheetScale: MapSheet.Scale? get() = sheets?.let { n -> MapSheet.Scale.entries.firstOrNull { it.name == n } }
 
@@ -34,17 +40,36 @@ data class MapDisplay(
     )
 
     /** True when anything is filtered out, so the map can say so. */
-    val filtering: Boolean get() = hiddenKinds.isNotEmpty() || onlyMyTasks
+    val filtering: Boolean get() = hiddenKinds.isNotEmpty() || onlyMyTasks || days > 0 || query.isNotBlank()
 
     /**
      * The records to draw. [keep] (the selected record, say) is always
      * kept so the user never loses what they are looking at.
      */
-    fun filter(features: List<GeoFeature>, memberId: String?, keep: String? = null): List<GeoFeature> {
+    fun filter(
+        features: List<GeoFeature>,
+        memberId: String?,
+        keep: String? = null,
+        now: Instant = Instant.now(),
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): List<GeoFeature> {
         if (!filtering) return features
+        val since = if (days > 0) now.atZone(zone).toLocalDate().minusDays(days - 1L).atStartOfDay(zone).toInstant() else null
+        val words = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         return features.filter { f ->
-            f.id == keep || (shows(f.kind) && (!onlyMyTasks || f.isOpenTaskOf(memberId)))
+            f.id == keep || (
+                shows(f.kind) &&
+                    (!onlyMyTasks || f.isOpenTaskOf(memberId)) &&
+                    (since == null || !f.createdAt.isBefore(since)) &&
+                    (words.isEmpty() || f.matches(words))
+                )
         }
+    }
+
+    /** Every word appears in the name, lithology or description (case-insensitive). */
+    private fun GeoFeature.matches(words: List<String>): Boolean {
+        val text = listOfNotNull(title, properties.string(Props.LITHOLOGY), note).joinToString("\n")
+        return words.all { text.contains(it, ignoreCase = true) }
     }
 
     private fun GeoFeature.isOpenTaskOf(memberId: String?): Boolean {
