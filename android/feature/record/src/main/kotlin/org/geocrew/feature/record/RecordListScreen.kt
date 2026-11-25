@@ -3,6 +3,7 @@ package org.geocrew.feature.record
 import org.geocrew.core.model.samples
 import org.geocrew.core.model.FieldTemplate
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,10 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -99,10 +104,41 @@ fun RecordListScreen(
     val me by viewModel.me.collectAsStateWithLifecycle()
     val issues by viewModel.issues.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
+    val selected by viewModel.selected.collectAsStateWithLifecycle()
+    val canEdit by viewModel.canEdit.collectAsStateWithLifecycle()
+    val batchNote by viewModel.batchNote.collectAsStateWithLifecycle()
+    val selecting = selected.isNotEmpty()
+    var confirmBatchDelete by remember { mutableStateOf(false) }
+    var batchEditing by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = selecting) { viewModel.clearSelection() }
+    androidx.compose.runtime.LaunchedEffect(batchNote) {
+        batchNote?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.consumeBatchNote()
+        }
+    }
+    if (confirmBatchDelete) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmBatchDelete = false },
+            title = { Text("删除 ${selected.size} 条记录？") },
+            text = { Text("删掉的记录会放进「最近删除」，可以恢复；组员那边也会同步删除。") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmBatchDelete = false; viewModel.deleteSelected() }) { Text("删除", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmBatchDelete = false }) { Text("取消") } },
+        )
+    }
+    if (batchEditing) BatchEditDialog(viewModel, selected.size, onDismiss = { batchEditing = false })
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            if (selecting) TopAppBar(
+                title = { Text("已选 ${selected.size} 条") },
+                navigationIcon = { IconButton(onClick = { viewModel.clearSelection() }) { Icon(Icons.Default.Close, "取消多选") } },
+                actions = {
+                    IconButton(onClick = { viewModel.selectAll(items.map { it.id }) }) { Icon(Icons.Default.SelectAll, "全选当前列表") }
+                    IconButton(onClick = { batchEditing = true }) { Icon(Icons.Default.Edit, "批量改属性") }
+                    IconButton(onClick = { confirmBatchDelete = true }) { Icon(Icons.Default.Delete, "删除所选") }
+                },
+            ) else TopAppBar(
                 title = { Text(if (project.isBlank()) "记录" else "记录 · $project") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
@@ -181,7 +217,13 @@ fun RecordListScreen(
                 }
             } else {
                 LazyColumn {
-                    items(items, key = { it.id }) { f -> RecordRow(f, me, config.missing(f), issues[f.id].orEmpty()) { onOpen(f.id) } }
+                    items(items, key = { it.id }) { f ->
+                        RecordRow(
+                            f, me, config.missing(f), issues[f.id].orEmpty(),
+                            selected = if (selecting) f.id in selected else null,
+                            onLongClick = if (canEdit) ({ viewModel.toggleSelected(f.id) }) else null,
+                        ) { if (selecting) viewModel.toggleSelected(f.id) else onOpen(f.id) }
+                    }
                 }
             }
         }
@@ -189,7 +231,17 @@ fun RecordListScreen(
 }
 
 @Composable
-private fun RecordRow(f: GeoFeature, me: String?, missing: List<FieldTemplate>, issues: List<org.geocrew.core.model.RecordCheck.Issue>, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun RecordRow(
+    f: GeoFeature,
+    me: String?,
+    missing: List<FieldTemplate>,
+    issues: List<org.geocrew.core.model.RecordCheck.Issue>,
+    /** Whether the row is picked while selecting several records; null when not selecting. */
+    selected: Boolean? = null,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     ListItem(
         headlineContent = { Text(f.title ?: KindUi.label(f.kind)) },
         supportingContent = {
@@ -229,8 +281,11 @@ private fun RecordRow(f: GeoFeature, me: String?, missing: List<FieldTemplate>, 
                 }
             }
         },
-        leadingContent = { Icon(KindUi.icon(f.kind), null) },
+        leadingContent = {
+            if (selected != null) androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = null)
+            else Icon(KindUi.icon(f.kind), null)
+        },
         trailingContent = { Text(timeFormat.format(f.sync.updatedAt), style = MaterialTheme.typography.bodySmall) },
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = if (onLongClick != null) "多选" else null),
     )
 }

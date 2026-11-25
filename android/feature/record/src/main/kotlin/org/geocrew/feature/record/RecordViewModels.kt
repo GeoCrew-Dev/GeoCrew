@@ -158,6 +158,71 @@ class RecordListViewModel @Inject constructor(
         }
     }
 
+    // --- several records at once -----------------------------------------
+
+    /** Records picked in the list; empty when not selecting. */
+    val selected = MutableStateFlow<Set<String>>(emptySet())
+
+    fun toggleSelected(id: String) {
+        if (!canEdit.value) return
+        selected.value = selected.value.let { if (id in it) it - id else it + id }
+    }
+
+    fun selectAll(ids: Collection<String>) { selected.value = selected.value + ids }
+
+    fun clearSelection() { selected.value = emptySet() }
+
+    /** Attributes that can be set on the picked records ([org.geocrew.core.model.BatchEdit]). */
+    val batchTargets: StateFlow<List<org.geocrew.core.model.BatchEdit.Target>> = combine(attributeKeys, projects.current.map { it.config.fields }.distinctUntilChanged()) { keys, fields ->
+        org.geocrew.core.model.BatchEdit.targets(fields, keys)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _batchNote = MutableStateFlow<String?>(null)
+    /** What the last batch change did, shown once. */
+    val batchNote: StateFlow<String?> = _batchNote.asStateFlow()
+    fun consumeBatchNote() { _batchNote.value = null }
+
+    private fun picked(): List<GeoFeature> = selected.value.let { ids -> all.value.filter { it.id in ids } }
+
+    /** Deletes the picked records; they stay in 最近删除 and can be brought back. */
+    fun deleteSelected() = viewModelScope.launch {
+        if (!canEdit.value) return@launch
+        val list = picked()
+        list.forEach { features.delete(it.id) }
+        clearSelection()
+        _batchNote.value = "已删除 ${list.size} 条记录，可在「最近删除」里恢复"
+    }
+
+    /**
+     * Sets [target] to [raw] (blank removes it) on every picked record it
+     * applies to; each change syncs like a hand edit. Returns an error to
+     * show when the value does not fit the field, else null.
+     */
+    fun setOnSelected(target: org.geocrew.core.model.BatchEdit.Target, raw: String): String? {
+        if (!canEdit.value) return "只读成员不能修改记录"
+        val value = try {
+            target.encode(raw)
+        } catch (e: IllegalArgumentException) {
+            return e.message ?: "这个值不合要求"
+        }
+        val plan = org.geocrew.core.model.BatchEdit.plan(picked(), target, value)
+        viewModelScope.launch {
+            plan.change.forEach { f -> features.edit(f.id) { put(target.key, value) } }
+            clearSelection()
+            _batchNote.value = buildString {
+                append(
+                    when {
+                        plan.change.isEmpty() -> "没有需要修改的记录"
+                        value == null -> "已从 ${plan.change.size} 条记录里去掉「${target.label}」"
+                        else -> "已把 ${plan.change.size} 条记录的「${target.label}」设为「${raw.trim()}」"
+                    },
+                )
+                if (plan.skipped > 0) append("；${plan.skipped} 条记录的类型不用这一项，没有改")
+            }
+        }
+        return null
+    }
+
     /** The record a scanned label stands for (sample number, title or id), in the open project. */
     fun findScanned(text: String): GeoFeature? = org.geocrew.core.model.ScanMatch.find(all.value, text)
 
