@@ -44,10 +44,14 @@ class TeamForms @Inject constructor(
         val basemaps: List<SharedBasemap> = emptyList(),
         val phrases: List<PhraseGroup> = emptyList(),
         val notice: TeamNotice? = null,
+        /** Assistant limits set by the leaders (`ai_limits`), as risk ids. */
+        val aiDeny: List<String> = emptyList(),
+        /** How records are filled in and points named (`record_rules`); null when never shared. */
+        val rules: org.geocrew.core.model.RecordRules? = null,
     )
 
     private fun shared(cfg: org.geocrew.core.model.ProjectConfig) =
-        Shared(cfg.fields, cfg.legend, cfg.localGrid, SharedOverlay.published(cfg.overlays), cfg.teamBasemaps, cfg.phrases, cfg.teamNotice)
+        Shared(cfg.fields, cfg.legend, cfg.localGrid, SharedOverlay.published(cfg.overlays), cfg.teamBasemaps, cfg.phrases, cfg.teamNotice, cfg.teamAiDeny, cfg.recordRules.takeIf { it.active || it != org.geocrew.core.model.RecordRules() })
 
     /** Fetches the workspace copy and applies it when it is newer; publishes pending local edits first. */
     suspend fun sync(h: TeamHandle) {
@@ -106,6 +110,14 @@ class TeamForms @Inject constructor(
     suspend fun publishPhrases(h: TeamHandle, phrases: List<PhraseGroup>): String? =
         publish(h, "常用词") { it.copy(phrases = FieldTerms.clean(phrases)) }
 
+    /** Sets what the in-app assistant may not do for anyone in the workspace. */
+    suspend fun publishAiLimits(h: TeamHandle, deny: Set<org.geocrew.core.model.action.ActionRisk>): String? =
+        publish(h, "AI 限制") { it.copy(aiDeny = deny.filter { r -> r != org.geocrew.core.model.action.ActionRisk.READ }.map { r -> r.id }.sorted()) }
+
+    /** Shares how records are filled in and points named, for the whole workspace. */
+    suspend fun publishRules(h: TeamHandle, rules: org.geocrew.core.model.RecordRules): String? =
+        publish(h, "记录规则") { it.copy(rules = rules.clean()) }
+
     /** Posts [text] as the workspace's pinned notice, signed with the leader's nickname; blank text clears it. */
     suspend fun publishNotice(h: TeamHandle, text: String): String? =
         publish(h, "公告") { it.copy(notice = TeamNotice.of(text, java.time.Instant.now(), h.link.nickname)) }
@@ -114,7 +126,7 @@ class TeamForms @Inject constructor(
         val cfg = projects.get(h.project.id)?.config ?: return null
         val base = cfg.teamFormVersion
         val next = edit(shared(cfg))
-        projects.updateConfig(h.project.id) { it.copy(fields = next.fields, legend = next.legend, localGrid = next.localGrid, teamBasemaps = next.basemaps, phrases = next.phrases, teamNotice = next.notice, teamFormPending = true) }
+        projects.updateConfig(h.project.id) { it.copy(fields = next.fields, legend = next.legend, localGrid = next.localGrid, teamBasemaps = next.basemaps, phrases = next.phrases, teamNotice = next.notice, teamAiDeny = next.aiDeny, recordRules = next.rules ?: it.recordRules, teamFormPending = true) }
         val moved = "组内${what}刚被其他组长修改过，已换成最新版本，请在此基础上再改"
         val remote = h.api.settings(h.link.workspaceId)
         if (remote.version != base) {
@@ -147,6 +159,8 @@ class TeamForms @Inject constructor(
                 teamBasemaps = if (basemapsShared) shared.basemaps else it.teamBasemaps,
                 phrases = if (phrasesShared) shared.phrases else it.phrases,
                 teamNotice = shared.notice,
+                teamAiDeny = shared.aiDeny,
+                recordRules = if (RULES_KEY in remote.settings) shared.rules ?: org.geocrew.core.model.RecordRules() else it.recordRules,
                 teamFormVersion = remote.version,
                 teamFormPending = false,
             )
@@ -167,13 +181,15 @@ class TeamForms @Inject constructor(
             if (shared.phrases.isNotEmpty() || PHRASES_KEY in current) put(PHRASES_KEY, encodePhrases(shared.phrases))
             // A cleared notice drops the key, so older clients and the viewer see none.
             shared.notice?.let { put(NOTICE_KEY, encodeNotice(it)) }
+            if (shared.aiDeny.isNotEmpty() || AI_KEY in current) put(AI_KEY, encodeAi(shared.aiDeny))
+            shared.rules?.let { put(RULES_KEY, json.encodeToJsonElement(org.geocrew.core.model.RecordRules.serializer(), it.clean())) }
         }
         // Pictures go up first, so a member never sees an overlay whose file is not there yet.
         for (o in shared.overlays) {
             val file = overlayImages.file(o.file + if (o.type == SharedOverlay.PNG) ".png" else ".jpg")?.takeIf { it.isFile } ?: continue
             if (!h.api.hasFile(h.link.workspaceId, o.file)) h.api.uploadFile(h.link.workspaceId, o.file, file, o.type)
         }
-        val next = JsonObject(current - GRID_KEY - OVERLAYS_KEY - BASEMAPS_KEY - PHRASES_KEY - NOTICE_KEY + ours)
+        val next = JsonObject(current - GRID_KEY - OVERLAYS_KEY - BASEMAPS_KEY - PHRASES_KEY - NOTICE_KEY - AI_KEY - RULES_KEY + ours)
         val stored = h.api.putSettings(h.link.workspaceId, next, base)
         projects.updateConfig(h.project.id) { it.copy(teamFormVersion = stored.version, teamFormPending = false) }
     }
@@ -186,6 +202,8 @@ class TeamForms @Inject constructor(
         const val BASEMAPS_KEY = "basemaps"
         const val PHRASES_KEY = "phrases"
         const val NOTICE_KEY = "notice"
+        const val AI_KEY = org.geocrew.core.model.action.TeamAiLimits.KEY
+        const val RULES_KEY = "record_rules"
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
         fun encode(fields: List<FieldTemplate>): JsonArray =
@@ -202,7 +220,7 @@ class TeamForms @Inject constructor(
             JsonArray(list.map { json.encodeToJsonElement(SharedBasemap.serializer(), it) })
 
         fun decodeShared(settings: JsonObject) =
-            Shared(decode(settings), decodeLegend(settings), decodeGrid(settings), decodeOverlays(settings), decodeBasemaps(settings), decodePhrases(settings), decodeNotice(settings))
+            Shared(decode(settings), decodeLegend(settings), decodeGrid(settings), decodeOverlays(settings), decodeBasemaps(settings), decodePhrases(settings), decodeNotice(settings), decodeAi(settings), decodeRules(settings))
 
         fun encodePhrases(list: List<PhraseGroup>): JsonArray =
             JsonArray(FieldTerms.clean(list).map { json.encodeToJsonElement(PhraseGroup.serializer(), it) })
@@ -211,6 +229,19 @@ class TeamForms @Inject constructor(
         fun decodePhrases(settings: JsonObject): List<PhraseGroup> {
             val arr = settings[PHRASES_KEY] as? JsonArray ?: return emptyList()
             return FieldTerms.clean(arr.mapNotNull { e -> runCatching { json.decodeFromJsonElement(PhraseGroup.serializer(), e) }.getOrNull() })
+        }
+
+        fun encodeAi(deny: List<String>): JsonElement =
+            org.geocrew.core.model.action.TeamAiLimits(deny.mapNotNull { org.geocrew.core.model.action.ActionRisk.of(it) }.toSet()).toJson()
+
+        /** Reads `ai_limits`; unknown categories are dropped, reading is never forbidden. */
+        fun decodeAi(settings: JsonObject): List<String> =
+            org.geocrew.core.model.action.TeamAiLimits.fromJson(settings[AI_KEY] as? JsonObject).denied.map { it.id }.sorted()
+
+        /** Reads `record_rules`; unknown items are dropped. */
+        fun decodeRules(settings: JsonObject): org.geocrew.core.model.RecordRules? {
+            val obj = settings[RULES_KEY] as? JsonObject ?: return null
+            return runCatching { json.decodeFromJsonElement(org.geocrew.core.model.RecordRules.serializer(), obj) }.getOrNull()?.clean()
         }
 
         fun encodeNotice(n: TeamNotice): JsonElement = json.encodeToJsonElement(TeamNotice.serializer(), n)

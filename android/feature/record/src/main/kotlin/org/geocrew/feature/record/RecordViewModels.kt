@@ -246,7 +246,7 @@ class RecordListViewModel @Inject constructor(
     private val who = combine(me, config) { m, c -> m to c }
 
     /** Slips worth a second look, by record id. */
-    val issues: StateFlow<Map<String, List<RecordCheck.Issue>>> = all.map { RecordCheck.of(it) }
+    val issues: StateFlow<Map<String, List<RecordCheck.Issue>>> = combine(all, config) { list, c -> RecordCheck.of(list, rules = c.recordRules) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     private val filters = combine(kindFilter, query, taskFilter) { k, q, t -> Triple(k, q, t) }

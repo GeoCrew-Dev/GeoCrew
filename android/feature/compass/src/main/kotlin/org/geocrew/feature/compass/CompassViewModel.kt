@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.SettingsRepository
+import org.geocrew.core.model.nextName
 import org.geocrew.core.model.Attitude
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.Geometry
@@ -179,7 +180,7 @@ class CompassViewModel @Inject constructor(
         }
         val f = _fix.value
         val p = projects.ensureCurrent()
-        val name = p.config.numbering.next(FeatureKind.GEO_POINT, features.all(p.id).map { it.title })
+        val name = p.config.nextName(FeatureKind.GEO_POINT, features.all(p.id).map { it.title })
         val created = features.create(p.id, FeatureKind.GEO_POINT, f?.let { Geometry.Point(it.position) }) {
             this[Props.TITLE] = name
             f?.accuracy?.let { this[Props.ACCURACY_M] = Math.round(it * 10) / 10.0 }

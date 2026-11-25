@@ -102,7 +102,7 @@ class ProjectRepository @Inject constructor(
         val sameWorkspace = p.team?.serverUrl == team?.serverUrl && p.team?.workspaceId == team?.workspaceId
         // Form versions and the comment cursor belong to one workspace; a new
         // link starts in step with nothing, and the old team's discussion goes.
-        val config = if (sameWorkspace) p.config else p.config.copy(teamFormVersion = 0, teamFormPending = false, teamCommentSeq = 0, chatReadSeq = 0, teamNotice = null)
+        val config = if (sameWorkspace) p.config else p.config.copy(teamFormVersion = 0, teamFormPending = false, teamCommentSeq = 0, chatReadSeq = 0, teamNotice = null, teamAiDeny = emptyList())
         if (!sameWorkspace) comments.clear(id)
         dao.upsert(p.copy(team = team, config = config).toEntity())
     }

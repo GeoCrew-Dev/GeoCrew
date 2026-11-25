@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import org.geocrew.core.data.repo.FeatureRepository
 import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.data.repo.SettingsRepository
+import org.geocrew.core.model.nextName
 import org.geocrew.core.model.BearingFix
 import org.geocrew.core.model.CoordinateFormat
 import org.geocrew.core.model.FeatureKind
@@ -147,7 +148,7 @@ class BearingFixViewModel @Inject constructor(
         val u = _ui.value
         val r = u.result ?: return@launch
         val p = projects.ensureCurrent()
-        val name = p.config.numbering.next(FeatureKind.GEO_POINT, features.all(p.id).map { it.title })
+        val name = p.config.nextName(FeatureKind.GEO_POINT, features.all(p.id).map { it.title })
         val how = u.sights.filter { it.point != null }.joinToString("；") { "${it.point!!.title} ${it.bearing.trim()}°" }
         val created = features.create(p.id, FeatureKind.GEO_POINT, Geometry.Point(r.position)) {
             this[Props.TITLE] = name

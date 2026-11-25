@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.withContext
 import org.geocrew.core.map.MapImage
 import org.geocrew.core.map.MapOverlays
+import org.geocrew.core.model.nextName
 import org.geocrew.core.model.Bounds
 import org.geocrew.core.model.ImageOverlay
 import org.geocrew.core.model.OverlayAlign
@@ -720,7 +721,7 @@ class MapViewModel @Inject constructor(
         extra: org.geocrew.core.model.PropertiesBuilder.() -> Unit,
     ): Job = viewModelScope.launch {
         val p = project.value ?: projects.ensureCurrent()
-        val name = p.config.numbering.next(kind, features.all(p.id).map { it.title })
+        val name = p.config.nextName(kind, features.all(p.id).map { it.title })
         val f = features.create(p.id, kind, Geometry.Point(position)) {
             this[Props.TITLE] = name
             extra()
