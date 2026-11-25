@@ -58,6 +58,11 @@ type WorkspaceUpdate struct {
 // never collide and logs or support can tell them apart.
 const ViewTokenPrefix = "v_"
 
+// AITokenPrefix starts every AI-link token (protocol v0 §11.1): a
+// short-lived credential an AI tool uses to make changes as the member who
+// created it, accepted only by the MCP endpoint.
+const AITokenPrefix = "a_"
+
 // MaxSettingsBytes bounds a workspace's shared settings document.
 const MaxSettingsBytes = 64 << 10
 
@@ -76,6 +81,9 @@ type Member struct {
 	// (protocol v0 §10): the role is then read-only and the request is not
 	// the member's own activity.
 	Viewer bool `json:"-"`
+	// AI is set when the request came with an AI link of the member's
+	// (protocol v0 §11.1); the role is the member's own.
+	AI bool `json:"-"`
 }
 
 // Feature is one GeoJSON feature plus its sync metadata.
@@ -315,7 +323,11 @@ type Store interface {
 	// the member with Role readonly and Viewer set, until it expires, the
 	// member revokes their links or the member is removed.
 	CreateViewLink(ctx context.Context, workspaceID, memberID string, expires time.Time) (string, error)
-	// RevokeViewLinks ends the member's view links and returns how many were still valid.
+	// CreateAILink issues an AI-link token, starting with [AITokenPrefix],
+	// made by memberID and valid until expires. Authenticate accepts it as
+	// the member with AI set; it ends like a view link.
+	CreateAILink(ctx context.Context, workspaceID, memberID string, expires time.Time) (string, error)
+	// RevokeViewLinks ends the member's view and AI links and returns how many were still valid.
 	RevokeViewLinks(ctx context.Context, workspaceID, memberID string) (int, error)
 	// Touch records that the member was active at the given time.
 	Touch(ctx context.Context, memberID string, at time.Time) error

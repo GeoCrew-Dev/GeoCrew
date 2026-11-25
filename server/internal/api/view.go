@@ -15,6 +15,8 @@ import (
 const (
 	defaultViewHours = 24
 	maxViewHours     = 7 * 24
+	defaultAIHours   = 8
+	maxAIHours       = 24
 )
 
 type viewLinkReq struct {
@@ -85,4 +87,30 @@ func (s *Server) viewPage(w http.ResponseWriter, r *http.Request) {
 		"img-src 'self' data: blob: https:; connect-src 'self' ws: wss: https:; "+
 		"worker-src blob:; frame-ancestors 'none'")
 	w.Write(viewHTML)
+}
+
+// createAILink issues an AI link (protocol v0 §11.1): MCP write tools as
+// this member, for at most a day. Read-only members cannot make one.
+func (s *Server) createAILink(w http.ResponseWriter, r *http.Request) {
+	var req viewLinkReq
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeErr(w, http.StatusBadRequest, "bad_json", "body must be JSON")
+		return
+	}
+	hours := defaultAIHours
+	if req.Hours != nil {
+		hours = *req.Hours
+	}
+	if hours < 1 || hours > maxAIHours {
+		writeErr(w, http.StatusBadRequest, "bad_hours", "hours must be between 1 and 24")
+		return
+	}
+	ws := r.PathValue("ws")
+	expires := time.Now().UTC().Add(time.Duration(hours) * time.Hour).Truncate(time.Second)
+	tok, err := s.Store.CreateAILink(r.Context(), ws, member(r).ID, expires)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, viewLinkResp{Token: tok, ExpiresAt: expires, Path: "/api/v0/workspaces/" + ws + "/mcp"})
 }

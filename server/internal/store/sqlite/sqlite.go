@@ -163,4 +163,5 @@ var migrations = []string{
 	ALTER TABLE comments ADD COLUMN overdue_sent INTEGER NOT NULL DEFAULT 0;
 	CREATE INDEX comments_outing ON comments(back_by_unix) WHERE back_by_unix > 0 AND overdue_sent = 0;`,
 	`ALTER TABLE workspaces ADD COLUMN archived_at TEXT NOT NULL DEFAULT '';`,
+	`ALTER TABLE view_links ADD COLUMN kind TEXT NOT NULL DEFAULT 'view';`,
 }

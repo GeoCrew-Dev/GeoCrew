@@ -28,7 +28,14 @@ const mcpInstructions = `GeoCrew (同勘) workspace of a field geology team. Rec
 // confirmations (actions.md).
 func (s *Server) mcpEndpoint(w http.ResponseWriter, r *http.Request) {
 	ws := r.PathValue("ws")
-	srv := &mcp.Server{Name: "geocrew", Version: s.Version, Instructions: mcpInstructions, Tools: s.mcpTools(ws),
+	tools := s.mcpTools(ws)
+	instructions := mcpInstructions
+	if m := member(r); m.AI {
+		tools = append(tools, s.mcpWriteTools(ws, m)...)
+		instructions = strings.Replace(instructions, "All tools only read; changes are made in the GeoCrew app.",
+			"This credential may also post messages and set task status as the member who made it; confirm with the user before every change. Everything else is changed in the GeoCrew app.", 1)
+	}
+	srv := &mcp.Server{Name: "geocrew", Version: s.Version, Instructions: instructions, Tools: tools,
 		Log: func(tool string, err error) { s.logger().Error("mcp tool", "tool", tool, "err", err) }}
 	srv.ServeHTTP(w, r)
 }

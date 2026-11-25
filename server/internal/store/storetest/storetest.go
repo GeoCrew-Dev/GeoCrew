@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -327,11 +328,24 @@ func viewLinks(t *testing.T, open Opener) {
 	if _, err := d.Authenticate(ctx, ws.ID, old); !errors.Is(err, store.ErrUnauthorized) {
 		t.Fatalf("expired link: %v", err)
 	}
-	if n, err := d.RevokeViewLinks(ctx, ws.ID, a.ID); err != nil || n != 1 {
+	ai, err := d.CreateAILink(ctx, ws.ID, a.ID, time.Now().Add(time.Hour))
+	if err != nil || !strings.HasPrefix(ai, store.AITokenPrefix) {
+		t.Fatalf("ai link: %v %q", err, ai)
+	}
+	if m, err := d.Authenticate(ctx, ws.ID, ai); err != nil || !m.AI || m.Viewer || m.Role != store.RoleLeader || m.ID != a.ID {
+		t.Fatalf("ai token: %v %+v", err, m)
+	}
+	// A view token relabelled as an AI one is not accepted.
+	if _, err := d.Authenticate(ctx, ws.ID, store.AITokenPrefix+strings.TrimPrefix(tok, store.ViewTokenPrefix)); !errors.Is(err, store.ErrUnauthorized) {
+		t.Fatalf("relabelled view token: %v", err)
+	}
+	if n, err := d.RevokeViewLinks(ctx, ws.ID, a.ID); err != nil || n != 2 {
 		t.Fatalf("revoke: %v %d", err, n)
 	}
-	if _, err := d.Authenticate(ctx, ws.ID, tok); !errors.Is(err, store.ErrUnauthorized) {
-		t.Fatalf("revoked link: %v", err)
+	for _, k := range []string{tok, ai} {
+		if _, err := d.Authenticate(ctx, ws.ID, k); !errors.Is(err, store.ErrUnauthorized) {
+			t.Fatalf("revoked link: %v", err)
+		}
 	}
 	at := time.Date(2026, 11, 24, 9, 30, 42, 0, time.UTC)
 	if err := d.Touch(ctx, a.ID, at); err != nil {

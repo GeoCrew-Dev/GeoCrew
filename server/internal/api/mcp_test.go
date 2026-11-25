@@ -182,6 +182,54 @@ func TestMCP(t *testing.T) {
 	if _, r := rpc(a.Token, 4, "tools/call", map[string]any{"name": "delete_everything"}); r.Error == nil {
 		t.Fatal("unknown tool must be an error")
 	}
+	// An AI link adds the write tools and works nowhere but /mcp.
+	if c := e.call("POST", base+"/ai-links", a.Token, map[string]int{"hours": 25}, nil); c != 400 {
+		t.Fatalf("ai link of 25 hours: %d", c)
+	}
+	var ai viewLinkResp
+	if c := e.call("POST", base+"/ai-links", a.Token, nil, &ai); c != 201 || !strings.HasPrefix(ai.Token, "a_") {
+		t.Fatalf("ai link: %d %+v", c, ai)
+	}
+	if c := e.call("GET", base+"/features?since=0", ai.Token, nil, nil); c != 403 {
+		t.Fatalf("ai link outside mcp: %d", c)
+	}
+	if c := e.call("POST", base+"/ai-links", ai.Token, nil, nil); c != 403 {
+		t.Fatalf("ai link making another: %d", c)
+	}
+	aiTool := func(name string, args any) (map[string]any, rpcResp) {
+		t.Helper()
+		c, r := rpc(ai.Token, 9, "tools/call", map[string]any{"name": name, "arguments": args})
+		if c != 200 || r.Error != nil {
+			t.Fatalf("%s: %d %+v", name, c, r.Error)
+		}
+		var v map[string]any
+		_ = json.Unmarshal(r.Result.StructuredContent, &v)
+		return v, r
+	}
+	if _, r := rpc(ai.Token, 3, "tools/list", nil); len(r.Result.Tools) != 11 || !strings.Contains(string(r.Result.Tools[10]), `"readOnlyHint":false`) {
+		t.Fatalf("ai tools/list: %d", len(r.Result.Tools))
+	}
+	if v, _ := aiTool("add_comment", map[string]any{"record": "D001", "body": "AI 帮我记一下：接触带待复查"}); v["posted"] != true || v["record"] != "f1" {
+		t.Fatalf("add_comment: %v", v)
+	}
+	if v, _ := aiTool("set_task_status", map[string]any{"record": "D002", "status": "done"}); v["changed"] != true || v["version"] != 2.0 {
+		t.Fatalf("set_task_status: %v", v)
+	}
+	if ts, _ := tool("tasks", map[string]any{"status": "done"}); ts["matched"] != 1.0 {
+		t.Fatalf("task not done: %v", ts)
+	}
+	if _, r := aiTool("set_task_status", map[string]any{"record": "D001", "status": "done"}); !r.Result.IsError {
+		t.Fatal("unassigned record must be refused")
+	}
+	e.call("PUT", base+"/settings", a.Token, map[string]any{"settings": map[string]any{"ai_limits": map[string]any{"deny": []string{"send"}}}}, nil)
+	if _, r := aiTool("add_comment", map[string]any{"body": "x"}); !r.Result.IsError || !strings.Contains(r.Result.Content[0].Text, "leader") {
+		t.Fatalf("ai_limits deny send: %+v", r.Result)
+	}
+	e.call("DELETE", base+"/view-links", a.Token, nil, nil)
+	if c := e.call("POST", base+"/mcp", ai.Token, map[string]any{"jsonrpc": "2.0", "id": 6, "method": "tools/list"}, nil); c != 401 {
+		t.Fatalf("revoked ai link: %d", c)
+	}
+
 	// A view link is the read-only credential to give an AI tool.
 	var link viewLinkResp
 	e.call("POST", base+"/view-links", a.Token, nil, &link)

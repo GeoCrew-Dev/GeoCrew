@@ -169,7 +169,10 @@ func (d *DB) Authenticate(ctx context.Context, workspaceID, token string) (store
 		return store.Member{}, store.ErrUnauthorized
 	}
 	if strings.HasPrefix(token, store.ViewTokenPrefix) {
-		return d.authenticateView(ctx, workspaceID, token)
+		return d.authenticateLink(ctx, workspaceID, token, "view")
+	}
+	if strings.HasPrefix(token, store.AITokenPrefix) {
+		return d.authenticateLink(ctx, workspaceID, token, "ai")
 	}
 	m, err := scanMember(d.db.QueryRowContext(ctx, memberSelect+` WHERE token_hash = ?`, hashToken(token)))
 	if errors.Is(err, store.ErrNotFound) || (err == nil && (m.Revoked || m.WorkspaceID != workspaceID)) {
@@ -178,15 +181,19 @@ func (d *DB) Authenticate(ctx context.Context, workspaceID, token string) (store
 	return m, err
 }
 
-func (d *DB) authenticateView(ctx context.Context, workspaceID, token string) (store.Member, error) {
+func (d *DB) authenticateLink(ctx context.Context, workspaceID, token, kind string) (store.Member, error) {
 	m, err := scanMember(d.db.QueryRowContext(ctx, memberSelect+` WHERE id = (
-		SELECT member_id FROM view_links WHERE token_hash = ? AND workspace_id = ? AND expires_unix > ?)`,
-		hashToken(token), workspaceID, time.Now().Unix()))
+		SELECT member_id FROM view_links WHERE token_hash = ? AND workspace_id = ? AND expires_unix > ? AND kind = ?)`,
+		hashToken(token), workspaceID, time.Now().Unix(), kind))
 	if errors.Is(err, store.ErrNotFound) || (err == nil && (m.Revoked || m.WorkspaceID != workspaceID)) {
 		return store.Member{}, store.ErrUnauthorized
 	}
 	if err != nil {
 		return store.Member{}, err
+	}
+	if kind == "ai" {
+		m.AI = true
+		return m, nil
 	}
 	m.Role = store.RoleReadonly
 	m.Viewer = true
@@ -194,14 +201,22 @@ func (d *DB) authenticateView(ctx context.Context, workspaceID, token string) (s
 }
 
 func (d *DB) CreateViewLink(ctx context.Context, workspaceID, memberID string, expires time.Time) (string, error) {
-	token := store.ViewTokenPrefix + randHex(24)
+	return d.createLink(ctx, workspaceID, memberID, expires, store.ViewTokenPrefix, "view")
+}
+
+func (d *DB) CreateAILink(ctx context.Context, workspaceID, memberID string, expires time.Time) (string, error) {
+	return d.createLink(ctx, workspaceID, memberID, expires, store.AITokenPrefix, "ai")
+}
+
+func (d *DB) createLink(ctx context.Context, workspaceID, memberID string, expires time.Time, prefix, kind string) (string, error) {
+	token := prefix + randHex(24)
 	now := time.Now()
 	// Expired links of anyone in the workspace are no use to keep.
 	if _, err := d.db.ExecContext(ctx, `DELETE FROM view_links WHERE workspace_id = ? AND expires_unix <= ?`, workspaceID, now.Unix()); err != nil {
 		return "", err
 	}
-	_, err := d.db.ExecContext(ctx, `INSERT INTO view_links (token_hash, workspace_id, member_id, created_at, expires_unix) VALUES (?, ?, ?, ?, ?)`,
-		hashToken(token), workspaceID, memberID, fmtTime(now), expires.Unix())
+	_, err := d.db.ExecContext(ctx, `INSERT INTO view_links (token_hash, workspace_id, member_id, created_at, expires_unix, kind) VALUES (?, ?, ?, ?, ?, ?)`,
+		hashToken(token), workspaceID, memberID, fmtTime(now), expires.Unix(), kind)
 	if err != nil {
 		return "", err
 	}

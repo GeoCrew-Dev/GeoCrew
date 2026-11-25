@@ -21,7 +21,7 @@ import (
 const ProtocolVersion = "0"
 
 // Capabilities advertised by /info so clients can adapt to older servers.
-var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "structures", "workload", "gpx", "archive", "mcp"}
+var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "structures", "workload", "gpx", "archive", "mcp", "mcp_write"}
 
 // Server wires the store, file storage and realtime hub into HTTP handlers.
 type Server struct {
@@ -115,7 +115,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /view/{$}", s.viewPage)
 	// Read-only MCP tools for AI clients (protocol §11). A view link is the
 	// credential to hand an AI tool: read-only, expiring and revocable.
-	mux.Handle("POST "+ws+"/mcp", s.view(s.mcpEndpoint))
+	// An AI link (§11.1) works here and nowhere else; with one the tools
+	// include the first write tools.
+	mux.Handle("POST "+ws+"/mcp", s.authenticateWith(s.mcpEndpoint, anyRole, true, true))
+	mux.Handle("POST "+ws+"/ai-links", s.auth(s.createAILink, writers))
 	mux.Handle("GET "+ws+"/push", s.auth(s.getPush, anyRole))
 	mux.Handle("PUT "+ws+"/push", s.auth(s.putPush, anyRole))
 	mux.Handle("DELETE "+ws+"/push", s.auth(s.deletePush, anyRole))
@@ -163,6 +166,10 @@ func (s *Server) view(next http.HandlerFunc) http.Handler {
 }
 
 func (s *Server) authenticate(next http.HandlerFunc, allowed roleCheck, viewers bool) http.Handler {
+	return s.authenticateWith(next, allowed, viewers, false)
+}
+
+func (s *Server) authenticateWith(next http.HandlerFunc, allowed roleCheck, viewers, ai bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m, err := s.Store.Authenticate(r.Context(), r.PathValue("ws"), token(r))
 		if err != nil {
@@ -171,6 +178,10 @@ func (s *Server) authenticate(next http.HandlerFunc, allowed roleCheck, viewers 
 		}
 		if m.Viewer && !viewers {
 			writeErr(w, http.StatusForbidden, "forbidden", "a view link can only read")
+			return
+		}
+		if m.AI && !ai {
+			writeErr(w, http.StatusForbidden, "forbidden", "an AI link only works with the MCP endpoint")
 			return
 		}
 		if !allowed(m.Role) {
