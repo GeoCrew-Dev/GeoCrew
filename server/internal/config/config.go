@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/update"
 )
 
 // Config holds every runtime setting.
@@ -118,7 +120,7 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&c.SelfCheck, "selfcheck", "", "open and migrate this SQLite file, then exit (used by updates)")
 	fs.StringVar(&c.AdminAddr, "admin-addr", env("GEOCREW_ADMIN_ADDR", ""), "serve the operator console on this address, e.g. 127.0.0.1:9181; empty turns it off")
 	fs.StringVar(&c.AdminToken, "admin-token", env("GEOCREW_ADMIN_TOKEN", ""), "token for the operator console; empty generates one in the data directory")
-	fs.StringVar(&c.UpdateURL, "update-url", env("GEOCREW_UPDATE_URL", "https://api.github.com/repos/GeoCrew-Dev/GeoCrew-Server/releases/latest"), "release feed (GitHub API format) for update checks")
+	fs.StringVar(&c.UpdateURL, "update-url", env("GEOCREW_UPDATE_URL", update.DefaultURL), "release feed (GitHub API format: a release list, or one release) for update checks")
 	updateCheck := true
 	if v := os.Getenv("GEOCREW_UPDATE_CHECK"); v != "" {
 		b, err := strconv.ParseBool(v)

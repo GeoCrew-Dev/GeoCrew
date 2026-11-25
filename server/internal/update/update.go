@@ -14,6 +14,7 @@ package update
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -31,14 +32,20 @@ import (
 	"time"
 )
 
-// DefaultURL is the release feed of the reference server.
-const DefaultURL = "https://api.github.com/repos/GeoCrew-Dev/GeoCrew-Server/releases/latest"
+// DefaultURL is the release list of the GeoCrew monorepo, where every
+// component publishes; server releases are the tags starting with TagPrefix.
+const DefaultURL = "https://api.github.com/repos/GeoCrew-Dev/GeoCrew/releases?per_page=100"
+
+// TagPrefix marks server releases among the monorepo's tags, e.g.
+// server-v0.3.0 next to android-v0.3.0.
+const TagPrefix = "server-v"
 
 // SumsName is the asset that lists "sha256  name" for every other asset.
 const SumsName = "SHA256SUMS"
 
 const (
-	maxFeed   = 1 << 20
+	// A page of 100 releases with all their assets runs to a few MiB.
+	maxFeed   = 8 << 20
 	maxSums   = 64 << 10
 	maxBinary = 256 << 20
 )
@@ -67,9 +74,25 @@ func AssetName(goos, goarch string) string {
 
 // Checker reads the release feed.
 type Checker struct {
-	// URL returns the latest release as GitHub's API does; empty uses DefaultURL.
+	// URL returns releases as GitHub's API does: a release list, or a single
+	// release in the shape of releases/latest. Empty uses DefaultURL.
 	URL    string
 	Client *http.Client
+}
+
+// rawRelease is one release as GitHub's API returns it.
+type rawRelease struct {
+	Tag         string    `json:"tag_name"`
+	Name        string    `json:"name"`
+	Body        string    `json:"body"`
+	HTMLURL     string    `json:"html_url"`
+	PublishedAt time.Time `json:"published_at"`
+	Draft       bool      `json:"draft"`
+	Prerelease  bool      `json:"prerelease"`
+	Assets      []struct {
+		Name string `json:"name"`
+		URL  string `json:"browser_download_url"`
+	} `json:"assets"`
 }
 
 func (c *Checker) client() *http.Client {
@@ -79,7 +102,9 @@ func (c *Checker) client() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
 
-// Latest fetches the newest release.
+// Latest fetches the newest server release: of the feed's releases that are
+// neither drafts nor pre-releases and whose tag names a server version (see
+// ServerVersion), the one with the highest version.
 func (c *Checker) Latest(ctx context.Context) (Release, error) {
 	url := c.URL
 	if url == "" {
@@ -102,33 +127,65 @@ func (c *Checker) Latest(ctx context.Context) (Release, error) {
 	if resp.StatusCode != http.StatusOK {
 		return Release{}, fmt.Errorf("release feed returned %d", resp.StatusCode)
 	}
-	var raw struct {
-		Tag         string    `json:"tag_name"`
-		Name        string    `json:"name"`
-		Body        string    `json:"body"`
-		HTMLURL     string    `json:"html_url"`
-		PublishedAt time.Time `json:"published_at"`
-		Draft       bool      `json:"draft"`
-		Prerelease  bool      `json:"prerelease"`
-		Assets      []struct {
-			Name string `json:"name"`
-			URL  string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxFeed)).Decode(&raw); err != nil {
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFeed))
+	if err != nil {
 		return Release{}, fmt.Errorf("release feed: %w", err)
 	}
-	if raw.Tag == "" || raw.Draft {
+	var list []rawRelease
+	if data = bytes.TrimSpace(data); len(data) > 0 && data[0] == '[' {
+		err = json.Unmarshal(data, &list)
+	} else {
+		var one rawRelease
+		err = json.Unmarshal(data, &one)
+		list = []rawRelease{one}
+	}
+	if err != nil {
+		return Release{}, fmt.Errorf("release feed: %w", err)
+	}
+	var best *rawRelease
+	var version string
+	for i := range list {
+		raw := &list[i]
+		v, ok := ServerVersion(raw.Tag)
+		if !ok || raw.Draft || raw.Prerelease {
+			continue
+		}
+		if best == nil || Compare(v, version) > 0 {
+			best, version = raw, v
+		}
+	}
+	if best == nil {
 		return Release{}, ErrNoRelease
 	}
 	r := Release{
-		Version: strings.TrimPrefix(raw.Tag, "v"), Tag: raw.Tag, Name: raw.Name,
-		PublishedAt: raw.PublishedAt, Notes: raw.Body, URL: raw.HTMLURL, Assets: map[string]string{},
+		Version: version, Tag: best.Tag, Name: best.Name,
+		PublishedAt: best.PublishedAt, Notes: best.Body, URL: best.HTMLURL, Assets: map[string]string{},
 	}
-	for _, a := range raw.Assets {
+	for _, a := range best.Assets {
 		r.Assets[a.Name] = a.URL
 	}
 	return r, nil
+}
+
+// ServerVersion returns the version a server release tag names: the
+// monorepo's "server-v0.3.0", or "v0.3.0" from a feed that carries only
+// server releases (a mirror, or a fork that publishes the server alone).
+// Tags of other components, such as "android-v0.3.0", and tags that hold
+// no release version report false.
+func ServerVersion(tag string) (string, bool) {
+	var v string
+	switch {
+	case strings.HasPrefix(tag, TagPrefix):
+		v = strings.TrimPrefix(tag, TagPrefix)
+	case strings.HasPrefix(tag, "v"):
+		v = strings.TrimPrefix(tag, "v")
+	default:
+		return "", false
+	}
+	if !IsRelease(v) {
+		return "", false
+	}
+	return v, true
 }
 
 // ErrNoRelease means the feed has no published release yet.
