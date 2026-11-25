@@ -207,6 +207,10 @@ class GeoCrewApi(
      */
     fun viewUrl(link: ViewLink): String = base.toString().trimEnd('/') + "/" + link.path.trimStart('/')
 
+    /** The workspace's read-only MCP endpoint for AI tools (protocol §11, capability "mcp"). */
+    fun mcpUrl(workspaceId: String): String =
+        base.newBuilder().addPathSegments("api/v0/workspaces").addPathSegment(workspaceId).addPathSegment("mcp").build().toString()
+
     /** True if the server already has the attachment. */
     suspend fun hasFile(ws: String, sha256: String): Boolean = call(request(wsUrl(ws, "files", sha256)).head().build()) { r ->
         when (r.code) {

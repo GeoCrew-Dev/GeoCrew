@@ -34,7 +34,16 @@ const val INVITE_CODE_ARG = "code"
 
 /** Form for creating or joining a workspace. */
 /** A view link ready to copy or share. */
-data class ViewLinkUi(val url: String, val expiresAt: java.time.Instant?, val hours: Int)
+data class ViewLinkUi(
+    val url: String,
+    val expiresAt: java.time.Instant?,
+    val hours: Int,
+    /** Set when the link was made for an AI tool: the MCP address and the link's token. */
+    val ai: AiAccess? = null,
+)
+
+/** What an MCP client needs: the endpoint and a read-only view-link token for its Authorization header. */
+data class AiAccess(val url: String, val token: String)
 
 data class ConnectForm(
     val server: String = "",
@@ -81,6 +90,10 @@ class TeamViewModel @Inject constructor(
     /** Whether the linked server can make browser view links (its "view" capability). */
     private val _viewAvailable = MutableStateFlow(false)
     val viewAvailable: StateFlow<Boolean> = _viewAvailable.asStateFlow()
+
+    /** Whether the server offers the read-only MCP endpoint for AI tools ("mcp"). */
+    private val _mcpAvailable = MutableStateFlow(false)
+    val mcpAvailable: StateFlow<Boolean> = _mcpAvailable.asStateFlow()
     private val _archiveAvailable = MutableStateFlow(false)
     /** Whether the server can archive a workspace (protocol v0 §2.3). */
     val archiveAvailable: StateFlow<Boolean> = _archiveAvailable.asStateFlow()
@@ -149,6 +162,7 @@ class TeamViewModel @Inject constructor(
                 val caps = h.api.info().capabilities
                 _pushAvailable.value = "push" in caps
                 _viewAvailable.value = "view" in caps
+                _mcpAvailable.value = "view" in caps && "mcp" in caps
                 _archiveAvailable.value = "archive" in caps
             }
         }
@@ -221,13 +235,18 @@ class TeamViewModel @Inject constructor(
         if (bytes == 0L) throw IOException("服务器没有返回数据")
     }
 
-    /** Makes a read-only link to open the workspace in a browser for [hours]. */
-    fun createViewLink(hours: Int) = withHandle("已生成查看链接") { h ->
+    /**
+     * Makes a read-only link to open the workspace in a browser for [hours];
+     * [forAi] also hands out its token with the MCP address, so an AI tool
+     * reads the workspace without the member's own token ever being shown.
+     */
+    fun createViewLink(hours: Int, forAi: Boolean = false) = withHandle(if (forAi) "已生成 AI 工具的只读令牌" else "已生成查看链接") { h ->
         val link = h.api.createViewLink(h.link.workspaceId, hours)
         _viewLink.value = ViewLinkUi(
             url = h.api.viewUrl(link),
             expiresAt = runCatching { java.time.Instant.parse(link.expiresAt) }.getOrNull(),
             hours = hours,
+            ai = if (forAi) AiAccess(h.api.mcpUrl(h.link.workspaceId), link.token) else null,
         )
     }
 

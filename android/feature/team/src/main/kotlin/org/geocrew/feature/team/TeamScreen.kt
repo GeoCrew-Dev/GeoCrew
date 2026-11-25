@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -104,6 +105,7 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val pushAvailable by viewModel.pushAvailable.collectAsStateWithLifecycle()
     val viewAvailable by viewModel.viewAvailable.collectAsStateWithLifecycle()
+    val mcpAvailable by viewModel.mcpAvailable.collectAsStateWithLifecycle()
     val archiveAvailable by viewModel.archiveAvailable.collectAsStateWithLifecycle()
     val viewLink by viewModel.viewLink.collectAsStateWithLifecycle()
     val progress by viewModel.progress.collectAsStateWithLifecycle()
@@ -171,7 +173,9 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
                     onDownload = { uri -> viewModel.downloadPackage(appContext, uri) },
                     pushAvailable = pushAvailable,
                     viewAvailable = viewAvailable,
-                    onCreateViewLink = viewModel::createViewLink,
+                    onCreateViewLink = { viewModel.createViewLink(it) },
+                    mcpAvailable = mcpAvailable,
+                    onCreateAiLink = { viewModel.createViewLink(it, forAi = true) },
                     onRevokeViewLinks = viewModel::revokeViewLinks,
                     progress = progress,
                     shared = remember(p.config) { sharedSummary(p.config) },
@@ -305,6 +309,8 @@ private fun LinkedPanel(
     viewAvailable: Boolean,
     onCreateViewLink: (Int) -> Unit,
     onRevokeViewLinks: () -> Unit,
+    mcpAvailable: Boolean = false,
+    onCreateAiLink: (Int) -> Unit = {},
     progress: Map<String, MemberProgress>,
     /** What the workspace shares, from [sharedSummary]. */
     shared: List<Pair<String, String>> = emptyList(),
@@ -326,6 +332,7 @@ private fun LinkedPanel(
     var confirmRevoke by remember { mutableStateOf<Member?>(null) }
     var showQr by remember { mutableStateOf(false) }
     var askView by remember { mutableStateOf(false) }
+    var askAi by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val shareable = invite?.let { Invite.of(serverUrl, it) }
@@ -449,6 +456,16 @@ private fun LinkedPanel(
                 )
             }
         }
+        if (mcpAvailable && !status.needsRejoin) {
+            item {
+                ListItem(
+                    headlineContent = { Text("接入 AI 工具") },
+                    supportingContent = { Text("让电脑上支持 MCP 的 AI 聊天或编辑器只读查询本组：找记录、看待核对、问今天谁做了什么") },
+                    trailingContent = { Icon(Icons.Default.SmartToy, null) },
+                    modifier = Modifier.clickable(enabled = !busy) { askAi = true },
+                )
+            }
+        }
         if (isLeader) {
             item { SectionHeader("邀请码") }
             item {
@@ -522,6 +539,16 @@ private fun LinkedPanel(
             onDismiss = { askView = false },
         )
     }
+    if (askAi) {
+        ViewLinkRequest(
+            onCreate = { hours -> askAi = false; onCreateAiLink(hours) },
+            onRevokeAll = { askAi = false; onRevokeViewLinks() },
+            onDismiss = { askAi = false },
+            title = "接入 AI 工具",
+            explain = "会生成一个只读令牌（和查看链接一样）：AI 工具在有效期内能读全组数据，不能修改。只填进你信任的工具，用完可以撤销。",
+            confirm = "生成令牌",
+        )
+    }
     if (confirmLeave) {
         AlertDialog(
             onDismissRequest = { confirmLeave = false },
@@ -546,14 +573,21 @@ private val VIEW_HOURS = listOf(2 to "2 小时", 24 to "1 天", 72 to "3 天", 1
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ViewLinkRequest(onCreate: (Int) -> Unit, onRevokeAll: () -> Unit, onDismiss: () -> Unit) {
+private fun ViewLinkRequest(
+    onCreate: (Int) -> Unit,
+    onRevokeAll: () -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "在电脑上查看",
+    explain: String = "拿到链接的人在有效期内都能看到全组数据，但不能修改。只发给你信任的人，用完可以撤销。",
+    confirm: String = "生成链接",
+) {
     var hours by remember { mutableStateOf(24) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("在电脑上查看") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("拿到链接的人在有效期内都能看到全组数据，但不能修改。只发给你信任的人，用完可以撤销。")
+                Text(explain)
                 Text("有效期", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     VIEW_HOURS.forEach { (h, label) ->
@@ -563,7 +597,7 @@ private fun ViewLinkRequest(onCreate: (Int) -> Unit, onRevokeAll: () -> Unit, on
                 TextButton(onClick = onRevokeAll) { Text("撤销我生成的全部链接") }
             }
         },
-        confirmButton = { TextButton(onClick = { onCreate(hours) }) { Text("生成链接") } },
+        confirmButton = { TextButton(onClick = { onCreate(hours) }) { Text(confirm) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
@@ -572,6 +606,10 @@ private fun ViewLinkRequest(onCreate: (Int) -> Unit, onRevokeAll: () -> Unit, on
 private fun ViewLinkDialog(link: ViewLinkUi, onDismiss: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    link.ai?.let { ai ->
+        AiAccessDialog(ai, link, onDismiss)
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("查看链接") },
@@ -600,6 +638,40 @@ private fun ViewLinkDialog(link: ViewLinkUi, onDismiss: () -> Unit) {
                 onDismiss()
             }) { Text("分享") }
         },
+    )
+}
+
+@Composable
+private fun AiAccessDialog(ai: AiAccess, link: ViewLinkUi, onDismiss: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("接入 AI 工具") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("在 AI 工具的 MCP 设置里添加一个远程服务器（Streamable HTTP）：")
+                Text("地址", style = MaterialTheme.typography.labelLarge)
+                SelectionContainer { Text(ai.url, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace) }
+                Text("请求头", style = MaterialTheme.typography.labelLarge)
+                SelectionContainer {
+                    Text("Authorization: Bearer ${ai.token}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                }
+                Text(
+                    (link.expiresAt?.let { "令牌有效期到 ${TIME.format(it)}" } ?: "令牌有效期 ${link.hours} 小时") +
+                        "，只读。撤销查看链接时一并失效。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                copied?.let { Text("已复制$it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(onClick = { clipboard.setText(AnnotatedString(ai.url)); copied = "地址" }) { Text("复制地址") }
+                TextButton(onClick = { clipboard.setText(AnnotatedString("Bearer ${ai.token}")); copied = "令牌" }) { Text("复制令牌") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("完成") } },
     )
 }
 
