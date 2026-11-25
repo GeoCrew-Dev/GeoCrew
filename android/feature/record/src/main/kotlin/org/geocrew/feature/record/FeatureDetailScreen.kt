@@ -293,6 +293,17 @@ private fun TextFields(f: GeoFeature, vm: FeatureDetailViewModel) {
     }
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(title, { title = it }, label = { Text("名称 / 编号") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        val carry by vm.carry.collectAsStateWithLifecycle()
+        // Offered while the typed lithology is still empty, so it never overwrites what is being written.
+        carry?.takeIf { lithology.isBlank() || org.geocrew.core.model.Props.LITHOLOGY !in it.values }?.let { c ->
+            androidx.compose.material3.AssistChip(
+                onClick = {
+                    (c.values[org.geocrew.core.model.Props.LITHOLOGY] as? kotlinx.serialization.json.JsonPrimitive)?.content?.let { lithology = it }
+                    vm.applyCarry(c)
+                },
+                label = { Text("沿用「${c.from}」的" + c.labels.take(4).joinToString("、") + if (c.labels.size > 4) " 等 ${c.labels.size} 项" else "", maxLines = 2) },
+            )
+        }
         if (f.kind == FeatureKind.GEO_POINT) {
             OutlinedTextField(lithology, { lithology = it }, label = { Text("岩性") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             val used by vm.usedLithologies.collectAsStateWithLifecycle()
@@ -307,8 +318,32 @@ private fun TextFields(f: GeoFeature, vm: FeatureDetailViewModel) {
         }
         OutlinedTextField(noteValue, { noteValue = it }, label = { Text("描述 / 备注") }, minLines = 3, modifier = Modifier.fillMaxWidth())
         var showWords by rememberSaveable { mutableStateOf(false) }
+        val context = LocalContext.current
+        val speech = remember { android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH) }
+        val canDictate = remember { speech.resolveActivity(context.packageManager) != null }
+        val dictate = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+            val said = r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
+            if (!said.isNullOrEmpty()) {
+                val (text, at) = org.geocrew.core.model.FieldTerms.insert(noteValue.text, noteValue.selection.min, said)
+                noteValue = androidx.compose.ui.text.input.TextFieldValue(text, androidx.compose.ui.text.TextRange(at))
+            }
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { showWords = !showWords }) { Text(if (showWords) "收起常用词" else "常用词") }
+            Row {
+                TextButton(onClick = { showWords = !showWords }) { Text(if (showWords) "收起常用词" else "常用词") }
+                // Dictation suits cold hands and gloves; the phone's recognizer may work offline.
+                if (canDictate) {
+                    TextButton(onClick = {
+                        runCatching {
+                            dictate.launch(
+                                android.content.Intent(speech).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
+                                    .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "说出描述，会插入到光标处"),
+                            )
+                        }
+                    }) { Text("口述") }
+                }
+            }
             TextButton(onClick = { vm.saveText(title, note, lithology) }) { Text("保存") }
         }
         if (showWords) {

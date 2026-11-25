@@ -58,6 +58,9 @@ import javax.inject.Inject
 /** Longest voice note; a longer talk becomes several. */
 private const val MAX_RECORDING_MILLIS = 10 * 60_000L
 
+/** 沿用上一点: what the previous record of this kind can hand over, from [RecordCarry]. */
+data class CarryUi(val from: String, val values: Map<String, kotlinx.serialization.json.JsonElement>, val labels: List<String>)
+
 data class Revision(val feature: GeoFeature, val author: String)
 
 /** [stats] of a track and which of its stops have no record near them. */
@@ -349,6 +352,26 @@ class FeatureDetailViewModel @Inject constructor(
     /** The project's form: the fields its records are meant to fill in. */
     val form: StateFlow<List<FieldTemplate>> = projects.current.map { it.config.fields }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** What this record could take over from the previous one of its kind (沿用上一点); null when nothing. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val carry: StateFlow<CarryUi?> = feature.map { it?.projectId }.distinctUntilChanged()
+        .flatMapLatest { pid ->
+            if (pid == null) kotlinx.coroutines.flow.flowOf(null)
+            else combine(features.observeProject(pid), feature, form) { list, cur, fields ->
+                if (cur == null || !org.geocrew.core.model.RecordCarry.fresh(cur, fields)) return@combine null
+                val prev = org.geocrew.core.model.RecordCarry.previous(list, cur) ?: return@combine null
+                val values = org.geocrew.core.model.RecordCarry.values(prev, cur, fields)
+                if (values.isEmpty()) null else CarryUi(prev.title ?: "上一条", values, org.geocrew.core.model.RecordCarry.labels(values, fields))
+            }
+        }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Copies [c]'s values onto this record in one edit. */
+    fun applyCarry(c: CarryUi) = viewModelScope.launch {
+        features.edit(id) { c.values.forEach { (k, v) -> this[k] = v } }
+    }
 
     private val _fieldError = MutableStateFlow<String?>(null)
     val fieldError: StateFlow<String?> = _fieldError.asStateFlow()
