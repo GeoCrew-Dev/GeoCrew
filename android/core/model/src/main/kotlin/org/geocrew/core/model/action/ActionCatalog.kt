@@ -40,13 +40,14 @@ object ActionCatalog {
 
     val findRecords = ActionSpec(
         FIND_RECORDS, "查找记录",
-        "在当前工程里按关键词（名称、岩性、描述）、种类、最近几天或离我多远查找记录，返回简短列表。",
+        "在当前工程里按关键词（名称、岩性、描述）、种类、最近几天、离我或离某条记录多远查找记录，返回简短列表；按距离时从近到远。",
         ActionRisk.READ,
         Schema.obj {
             string("query", "关键词，可省略")
             string("kind", "记录种类", enum = listOf("point", "line", "polygon"))
             integer("days", "只看最近几天", min = 1, max = 3650)
-            number("within_m", "只看离当前位置多少米以内", min = 1.0)
+            number("within_m", "只看离当前位置（给了 near 时离那条记录）多少米以内", min = 1.0)
+            string("near", "以这条记录为中心：记录 id 或名称（点号），如 D012；不给 within_m 时取 500 米")
             integer("limit", "最多返回几条，默认 20", min = 1, max = 100)
         },
     )

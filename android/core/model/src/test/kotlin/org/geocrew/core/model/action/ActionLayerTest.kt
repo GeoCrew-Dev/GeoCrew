@@ -119,6 +119,14 @@ class ActionLayerTest {
         for (t in listOf("这里是什么地层", "我在哪个图斑里", "这是什么岩体", "查一下参考图层")) {
             assertEquals(t, ActionCatalog.REFERENCE_HERE, QuickCommand.parse(t)?.single()?.name)
         }
+        val near = QuickCommand.parse("D012附近有哪些点")!!.single()
+        assertEquals(ActionCatalog.FIND_RECORDS, near.name)
+        assertEquals("D012", near.args["near"]!!.jsonPrimitive.content)
+        assertEquals("D12", QuickCommand.parse("d12号点周围有什么")!!.single().args["near"]!!.jsonPrimitive.content)
+        val mine = QuickCommand.parse("附近有哪些点")!!.single()
+        assertEquals(ActionCatalog.FIND_RECORDS, mine.name)
+        assertNull(mine.args["near"])
+        assertEquals(500, mine.args["within_m"]!!.jsonPrimitive.content.toInt())
         for (t in listOf("今天做了多少", "今日小结", "今天进度", "日报")) {
             assertEquals(t, ActionCatalog.DAY_SUMMARY, QuickCommand.parse(t)?.single()?.name)
         }

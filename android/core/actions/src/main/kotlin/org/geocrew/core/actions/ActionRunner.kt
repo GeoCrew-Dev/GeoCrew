@@ -360,11 +360,20 @@ class ActionRunner @Inject constructor(
             else -> null
         }
         val since = a.int("days")?.let { Instant.now().minus(it.toLong(), ChronoUnit.DAYS) }
-        val within = a.num("within_m")
-        val me = if (within != null) here() else null
-        if (within != null && me == null) return ActionResult.fail("没有拿到定位，不能按距离查找")
-        val hits = features.all(p.id).asSequence()
-            .filter { !it.deleted }
+        val all = features.all(p.id).filter { !it.deleted }
+        val nearName = a.str("near")?.takeIf { it.isNotEmpty() }
+        val center = nearName?.let { n ->
+            all.firstOrNull { it.id == n } ?: all.filter { it.title?.trim().equals(n, ignoreCase = true) }.maxByOrNull { it.createdAt }
+                ?: return ActionResult.fail("没有找到名为「$n」的记录")
+        }
+        val within = a.num("within_m") ?: if (center != null) 500.0 else null
+        val me = when {
+            center != null -> MapDisplay.anchor(center.geometry) ?: return ActionResult.fail("「${center.title ?: nearName}」没有位置，不能按距离查找")
+            within != null -> here() ?: return ActionResult.fail("没有拿到定位，不能按距离查找")
+            else -> null
+        }
+        val hits = all.asSequence()
+            .filter { it.id != center?.id }
             .filter { kinds == null || it.kind in kinds }
             .filter { since == null || it.createdAt >= since }
             .filter { f ->
@@ -389,7 +398,23 @@ class ActionRunner @Inject constructor(
                 )
             }
         }
-        return ActionResult(true, "找到 ${hits.size} 条记录", buildJsonObject { put("total", hits.size); put("records", data) })
+        val around = center?.let { "「${it.title ?: nearName}」${within?.toInt()} 米内" } ?: within?.let { "${it.toInt()} 米内" }
+        val text = when {
+            hits.isEmpty() -> around?.let { "${it}没有其他记录" } ?: "没有找到记录"
+            around != null -> "${around}有 ${hits.size} 条记录" + hits.take(5).joinToString("、", "：") { (f, d) ->
+                (f.title ?: unnamed(f.kind)) + (d?.let { "（${Math.round(it)} 米）" } ?: "")
+            } + if (hits.size > 5) "等" else ""
+            else -> "找到 ${hits.size} 条记录"
+        }
+        return ActionResult(true, text, buildJsonObject { put("total", hits.size); put("records", data) })
+    }
+
+    private fun unnamed(k: FeatureKind) = when (k) {
+        FeatureKind.GEO_POINT -> "无名地质点"
+        FeatureKind.TRACK -> "无名轨迹"
+        FeatureKind.LINE -> "无名线"
+        FeatureKind.POLYGON -> "无名面"
+        else -> "无名记录"
     }
 
     private fun detail(f: GeoFeature): JsonObject = buildJsonObject {
