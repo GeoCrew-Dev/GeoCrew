@@ -15,11 +15,13 @@ import (
 // inviteAlphabet: 8 characters without the look-alikes 0/O and 1/I (section 2).
 const lookAlikes = "0O1I"
 
+func nowish() time.Time { return time.Now().UTC().Truncate(time.Second) }
+
 func (s *suite) checks() []check {
 	t0 := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	var main string // a feature edited through the sync checks
 	var mainSeq int64
-	return []check{
+	core := []check{
 		{section: "§3", name: "健康检查 /healthz 返回 ok", run: func() error {
 			r, err := s.c.do(http.MethodGet, "/healthz", "", nil, nil)
 			if err != nil {
@@ -513,6 +515,8 @@ func (s *suite) checks() []check {
 			}
 			return nil
 		}},
+	}
+	tail := []check{
 		{section: "§2", name: "重置邀请码后旧码失效", workspace: true, run: func() error {
 			r, err := s.c.do(http.MethodPost, wsPath(s.ws, "/invite"), s.leader, nil, nil)
 			if err != nil {
@@ -551,6 +555,7 @@ func (s *suite) checks() []check {
 			return expect(r, http.StatusUnauthorized, "unauthorized")
 		}},
 	}
+	return append(append(core, s.messageChecks()...), tail...)
 }
 
 type joinResult struct {

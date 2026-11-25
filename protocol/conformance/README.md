@@ -12,7 +12,7 @@ go run github.com/GeoCrew-Dev/GeoCrew-Protocol/conformance@latest -server https:
 
 - 读 `/healthz` 和 `/api/v0/info`，按 `capabilities` 决定跑哪些检查（没声明的能力跳过）；
 - 新建一个名为 `conformance 日期 时间` 的工作组，再用小写邀请码加入一位组员；
-- 检查鉴权和错误格式、组长和组员各自看到的信息、提交与重复提交、同一请求里 id 重复、`updated_by` 由服务端填写、按 `version`、`updated_at` 定胜负和 `stale` 带回当前版本、历史版本、分页拉取和删除、只读角色、最后一位组长、共享设置的版本和 `409 stale`、附件的 201 / 204 / HEAD / 哈希不符 / Range、实时通道的 `hello`、位置转发和 `feature_changed`；
+- 检查鉴权和错误格式、组长和组员各自看到的信息、提交与重复提交、同一请求里 id 重复、`updated_by` 由服务端填写、按 `version`、`updated_at` 定胜负和 `stale` 带回当前版本、历史版本、分页拉取和删除、只读角色、最后一位组长、共享设置的版本和 `409 stale`、附件的 201 / 204 / HEAD / 哈希不符 / Range、实时通道的 `hello`、位置转发和 `feature_changed`，以及声明了相应能力时的讨论（重试、`409 id_conflict`、删除留痕）、紧急消息、点名和查看链接（只读、越界时长、撤销）；
 - 最后重置邀请码并吊销那位组员。
 
 注意：
