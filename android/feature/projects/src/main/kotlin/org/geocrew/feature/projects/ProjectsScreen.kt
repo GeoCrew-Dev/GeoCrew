@@ -78,8 +78,10 @@ class ProjectsViewModel @Inject constructor(
         list.map { ProjectRow(it, counts[it.id] ?: 0, it.id == cur) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    fun create(name: String, then: () -> Unit) = viewModelScope.launch {
-        val p = projects.create(name)
+    /** Creates a project, taking over [templateId]'s form and map settings (not its records) when given. */
+    fun create(name: String, templateId: String?, then: () -> Unit) = viewModelScope.launch {
+        val config = templateId?.let { id -> rows.value?.firstOrNull { it.project.id == id }?.project?.config?.template() }
+        val p = if (config != null) projects.create(name, config = config) else projects.create(name)
         projects.open(p.id)
         then()
     }
@@ -240,13 +242,47 @@ fun ProjectsScreen(
 
     naming?.let { (id, initial) ->
         var name by remember(id) { mutableStateOf(initial) }
+        var template by remember(id) { mutableStateOf<ProjectRow?>(null) }
+        var picking by remember(id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { naming = null },
             title = { Text(if (id == null) "新建工程" else "重命名工程") },
-            text = { OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("名称") }, singleLine = true) },
+            text = {
+                androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("名称") }, singleLine = true)
+                    val others = loaded.orEmpty()
+                    if (id == null && others.isNotEmpty()) {
+                        Box {
+                            TextButton(onClick = { picking = true }) {
+                                Text(template?.let { "沿用「${it.project.name}」的设置" } ?: "沿用某个工程的设置…")
+                            }
+                            DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
+                                DropdownMenuItem(text = { Text("不沿用，从空白开始") }, onClick = { template = null; picking = false })
+                                others.forEach { r ->
+                                    DropdownMenuItem(text = { Text(r.project.name) }, onClick = { template = r; picking = false })
+                                }
+                            }
+                        }
+                        template?.let { t ->
+                            val c = t.project.config
+                            Text(
+                                "带过来：" + listOfNotNull(
+                                    "表单 ${c.fields.size} 项".takeIf { c.fields.isNotEmpty() },
+                                    "图例".takeIf { c.legend != org.geocrew.core.model.Legend() },
+                                    "常用词".takeIf { c.phrases.isNotEmpty() },
+                                    "编号规则",
+                                    "底图和地图位置",
+                                    "本地坐标系".takeIf { c.localGrid != null },
+                                ).joinToString("、") + "。记录、照片和叠加图不带。",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(enabled = name.isNotBlank(), onClick = {
-                    if (id == null) viewModel.create(name, onOpened) else viewModel.rename(id, name)
+                    if (id == null) viewModel.create(name, template?.project?.id, onOpened) else viewModel.rename(id, name)
                     naming = null
                 }) { Text("确定") }
             },

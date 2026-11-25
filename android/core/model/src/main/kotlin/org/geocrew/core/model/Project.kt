@@ -70,6 +70,26 @@ data class ProjectConfig(
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 
+    /**
+     * The settings a new project takes over from this one (新建时沿用): the
+     * form, legend, description words, numbering, map display, base map,
+     * place on the map and local grid. Nothing tied to this project's data,
+     * pictures or workspace comes along: no description, overlays (their
+     * files belong to this project), team cursors, notice or the base maps a
+     * workspace shared (a base map picked from those falls back to the
+     * default).
+     */
+    fun template(): ProjectConfig = ProjectConfig(
+        baseSourceId = baseSourceId,
+        view = view,
+        fields = fields,
+        legend = legend,
+        numbering = numbering,
+        display = display,
+        localGrid = localGrid,
+        phrases = phrases,
+    )
+
     /** Required fields [f] has not filled yet, in form order. */
     fun missing(f: GeoFeature): List<FieldTemplate> = if (f.deleted) emptyList() else fields.filter { it.missingFrom(f) }
 }
