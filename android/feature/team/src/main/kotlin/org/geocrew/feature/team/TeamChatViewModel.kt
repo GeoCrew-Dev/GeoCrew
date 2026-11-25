@@ -52,6 +52,8 @@ data class ChatUi(
     /** Where the map was last left, offered as the message's position. */
     val mapCenter: LngLat? = null,
     val items: List<ChatRow> = emptyList(),
+    /** The workspace's pinned notice, kept above the messages. */
+    val notice: org.geocrew.core.model.TeamNotice? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -69,7 +71,7 @@ class TeamChatViewModel @Inject constructor(
     private val project = projects.current
 
     val ui: StateFlow<ChatUi> = project
-        .distinctUntilChanged { a, b -> a.id == b.id && a.team == b.team && a.config.view == b.config.view }
+        .distinctUntilChanged { a, b -> a.id == b.id && a.team == b.team && a.config.view == b.config.view && a.config.teamNotice == b.config.teamNotice }
         .flatMapLatest { p ->
             val link = p.team ?: return@flatMapLatest flowOf(ChatUi())
             val titles = features.observeProject(p.id).map { list -> list.associate { it.id to (it.title?.ifBlank { null } ?: "未命名记录") } }
@@ -81,6 +83,7 @@ class TeamChatViewModel @Inject constructor(
                     isLeader = link.role == TeamRepository.ROLE_LEADER,
                     mapCenter = p.config.view?.let { runCatching { LngLat(it.lng, it.lat) }.getOrNull() },
                     items = items.map { ChatRow(it, it.featureId?.let(names::get)) },
+                    notice = p.config.teamNotice,
                 )
             }
         }

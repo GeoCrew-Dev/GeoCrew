@@ -178,6 +178,8 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
                     onPushOn = viewModel::enablePush,
                     onPushOff = viewModel::disablePush,
                     workspaceName = p.team!!.workspaceName,
+                    notice = p.config.teamNotice,
+                    onPostNotice = viewModel::postNotice,
                     onResetInvite = viewModel::resetInvite,
                     onSetRole = viewModel::setRole,
                     onRevoke = viewModel::revoke,
@@ -306,6 +308,8 @@ private fun LinkedPanel(
     onPushOn: (Activity) -> Unit,
     onPushOff: () -> Unit,
     workspaceName: String,
+    notice: org.geocrew.core.model.TeamNotice? = null,
+    onPostNotice: (String) -> Unit = {},
     onResetInvite: () -> Unit,
     onSetRole: (Member, String) -> Unit,
     onRevoke: (Member) -> Unit,
@@ -349,6 +353,7 @@ private fun LinkedPanel(
                 }
             }
         }
+        item { NoticeCard(notice, isLeader, busy, onPostNotice) }
         item {
             ListItem(
                 headlineContent = { Text("组内统一的设置") },
@@ -654,6 +659,54 @@ internal fun ago(t: java.time.Instant, now: java.time.Instant = java.time.Instan
 }
 
 private val DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault())
+
+/** The workspace's pinned notice; leaders post, change or take it down here. */
+@Composable
+private fun NoticeCard(notice: org.geocrew.core.model.TeamNotice?, isLeader: Boolean, busy: Boolean, onPost: (String) -> Unit) {
+    if (notice == null && !isLeader) return
+    var editing by remember { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("组内公告", style = MaterialTheme.typography.titleMedium)
+            if (notice == null) {
+                Text("还没有。发一条公告，比如今天的路线安排或安全提醒，全组和网页查看页都会置顶显示", style = MaterialTheme.typography.bodySmall)
+            } else {
+                SelectionContainer { Text(notice.text, style = MaterialTheme.typography.bodyMedium) }
+                val meta = listOfNotNull(notice.by, notice.postedAt?.let { NOTICE_TIME.format(it) }).joinToString(" · ")
+                if (meta.isNotEmpty()) Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (isLeader) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { editing = true }, enabled = !busy) { Text(if (notice == null) "发布公告" else "修改") }
+                    if (notice != null) TextButton(onClick = { onPost("") }, enabled = !busy) { Text("撤下") }
+                }
+            }
+        }
+    }
+    if (editing) {
+        var text by rememberSaveable { mutableStateOf(notice?.text.orEmpty()) }
+        AlertDialog(
+            onDismissRequest = { editing = false },
+            title = { Text("组内公告") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(org.geocrew.core.model.TeamNotice.MAX_CHARS) },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    maxLines = 8,
+                    supportingText = { Text("${text.length}/${org.geocrew.core.model.TeamNotice.MAX_CHARS}，发布后替换旧公告") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { editing = false; onPost(text) }, enabled = text.isNotBlank()) { Text("发布") }
+            },
+            dismissButton = { TextButton(onClick = { editing = false }) { Text("取消") } },
+        )
+    }
+}
+
+private val NOTICE_TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())
 
 private val TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss").withZone(ZoneId.systemDefault())
 

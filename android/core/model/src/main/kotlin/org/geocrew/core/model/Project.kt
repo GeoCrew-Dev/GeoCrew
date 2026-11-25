@@ -63,6 +63,8 @@ data class ProjectConfig(
     val teamBasemaps: List<org.geocrew.core.model.tiles.SharedBasemap> = emptyList(),
     /** The project's own description words ([FieldTerms]); shared like [fields] in a team project (key `phrases`). */
     val phrases: List<PhraseGroup> = emptyList(),
+    /** The workspace's pinned notice (key `notice`); null when none. Only in team projects. */
+    val teamNotice: TeamNotice? = null,
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 

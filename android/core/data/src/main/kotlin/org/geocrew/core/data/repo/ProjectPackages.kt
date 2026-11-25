@@ -39,7 +39,7 @@ class ProjectPackages @Inject constructor(
             createdAt = p.createdAt.toString(),
             exportedAt = clock.instant().toString(),
             // The view travels with the project; the link to a workspace never does.
-            config = p.config.copy(teamFormVersion = 0, teamFormPending = false, teamCommentSeq = 0, chatReadSeq = 0, pushEnabled = false),
+            config = p.config.copy(teamFormVersion = 0, teamFormPending = false, teamCommentSeq = 0, chatReadSeq = 0, pushEnabled = false, teamNotice = null),
             generator = defaults.userAgent,
         )
         val n = ProjectPackage.write(output, manifest, list, { points[it].orEmpty() }, overlay = overlayImages::file) { ref -> photos.file(ref.sha, ref.kind) }

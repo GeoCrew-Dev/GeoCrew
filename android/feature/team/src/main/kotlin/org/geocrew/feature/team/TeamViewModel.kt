@@ -52,6 +52,7 @@ class TeamViewModel @Inject constructor(
     private val session: TeamSession,
     private val settingsRepo: SettingsRepository,
     private val push: TeamPush,
+    private val forms: org.geocrew.core.data.team.TeamForms,
     features: FeatureRepository,
 ) : ViewModel() {
     val project: StateFlow<Project?> = projects.current.stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -168,6 +169,18 @@ class TeamViewModel @Inject constructor(
         }
         _members.value = emptyList()
         _invite.value = null
+    }
+
+    /** Posts or, with blank [text], clears the workspace's pinned notice (leaders only, protocol v0 §2.2). */
+    fun postNotice(text: String) = act(null) {
+        val h = project.value?.id?.let { team.handle(it) } ?: throw IllegalStateException("当前工程未连接工作组")
+        val moved = try {
+            forms.publishNotice(h, text)
+        } catch (e: IOException) {
+            _message.value = "公告已保存在本机，联网后会发给全组"
+            return@act
+        }
+        _message.value = moved ?: if (text.isBlank()) "已撤下公告" else "已发布公告，组员同步后就能看到"
     }
 
     fun syncNow() = act(null) {

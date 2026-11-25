@@ -85,4 +85,22 @@ class TeamFormsCodecTest {
         )
         assertEquals(listOf(org.geocrew.core.model.PhraseGroup("地层", listOf("蓟县系"))), TeamForms.decodePhrases(s))
     }
+
+    @Test
+    fun noticeRoundTripsAndBlankMeansNone() {
+        val n = org.geocrew.core.model.TeamNotice.of("  今天走 3 号路线，17:00 前回营地  ", java.time.Instant.parse("2026-11-25T01:02:03.456Z"), "老王")!!
+        assertEquals("今天走 3 号路线，17:00 前回营地", n.text)
+        assertEquals("2026-11-25T01:02:03Z", n.updatedAt)
+        val encoded = TeamForms.encodeNotice(n).toString()
+        assertEquals("""{"text":"今天走 3 号路线，17:00 前回营地","updated_at":"2026-11-25T01:02:03Z","by":"老王"}""", encoded)
+        assertEquals(n, TeamForms.decodeNotice(settings("""{"notice": $encoded}""")))
+        assertNull(TeamForms.decodeNotice(settings("""{"notice": {"text": "  ", "updated_at": "2026-11-25T01:02:03Z"}}""")))
+        assertNull(TeamForms.decodeNotice(settings("""{"notice": "文字"}""")))
+        assertNull(TeamForms.decodeNotice(settings("""{}""")))
+        assertNull(org.geocrew.core.model.TeamNotice.of("", java.time.Instant.EPOCH, null))
+        val long = TeamForms.decodeNotice(settings("""{"notice": {"text": "${"字".repeat(2100)}", "updated_at": "x", "by": ""}}"""))!!
+        assertEquals(2000, long.text.length)
+        assertNull(long.by)
+        assertNull(long.postedAt)
+    }
 }

@@ -109,6 +109,7 @@ fun TeamChatScreen(
                 Text("当前工程没有加入工作组。", Modifier.padding(24.dp))
                 return@Column
             }
+            ui.notice?.let { NoticeBar(it, Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) }
             OutingBoard(
                 outings,
                 onBack = viewModel::checkIn,
@@ -260,6 +261,32 @@ fun TeamChatScreen(
  * The current roll call above the messages: the caller sees who has
  * answered and who hasn't; everyone else answers with one tap.
  */
+/** The pinned notice, three lines until tapped. */
+@Composable
+private fun NoticeBar(n: org.geocrew.core.model.TeamNotice, modifier: Modifier = Modifier) {
+    var open by remember(n) { mutableStateOf(false) }
+    androidx.compose.material3.Surface(
+        modifier.fillMaxWidth().clickable { open = !open },
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(
+                listOfNotNull("公告", n.by).joinToString(" · "),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Text(
+                n.text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                maxLines = if (open) Int.MAX_VALUE else 3,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
 @Composable
 private fun RollCallPanel(
     rc: RollCallUi,
