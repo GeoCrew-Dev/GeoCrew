@@ -40,6 +40,7 @@
 
 | 数据 | 条款 |
 |---|---|
+| EPSG 数据集 | EPSG 的使用条款：允许随软件分发，须保留出处和条款说明。随 PROJ 的 proj.db 打进安卓应用 |
 | OpenStreetMap | ODbL，须署名；衍生数据库须以同样条款共享。我们不分发 |
 | Copernicus DEM | 免费，须署名，署名原文待核实 |
 | AWS Terrain Tiles | 按数据来源署名，待核实 |
