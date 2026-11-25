@@ -24,13 +24,15 @@ func (s *Server) mcpWriteTools(ws string, m store.Member) []mcp.Tool {
 			Name: "add_comment", Title: "留言", Effect: mcp.Destructive,
 			Description: "Post a message to the whole team, or a comment on one record (by id or name such as D012). Everyone in the workspace sees it and may get a notification, so confirm the text with the user first.",
 			InputSchema: schema(`"body":{"type":"string","minLength":1,"maxLength":2000},"record":{"type":"string","description":"record id or name; omit for a workspace message"}`, "body"),
-			Call: func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpAddComment(ctx, ws, m, args) },
+			Call:        func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpAddComment(ctx, ws, m, args) },
 		},
 		{
 			Name: "set_task_status", Title: "改任务状态", Effect: mcp.Write,
 			Description: "Set the status of a record assigned to a member (see the tasks tool): todo, doing or done. The change is synced to everyone and kept in the record's history.",
 			InputSchema: schema(`"record":{"type":"string","description":"record id or name"},"status":{"type":"string","enum":["todo","doing","done"]}`, "record", "status"),
-			Call: func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpSetTaskStatus(ctx, ws, m, args) },
+			Call: func(ctx context.Context, args json.RawMessage) (any, error) {
+				return s.mcpSetTaskStatus(ctx, ws, m, args)
+			},
 		},
 	}
 }
