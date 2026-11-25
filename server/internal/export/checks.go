@@ -46,8 +46,8 @@ type CheckOptions struct {
 }
 
 var (
-	locatedKinds  = map[string]bool{"point": true, "geo_point": true, "line": true, "polygon": true, "track": true, "photo": true}
-	numberedKinds = map[string]bool{"point": true, "geo_point": true, "photo": true, "section": true, "route": true}
+	locatedKinds  = map[string]bool{"point": true, "geo_point": true, "line": true, "polygon": true, "track": true, "photo": true, "borehole": true}
+	numberedKinds = map[string]bool{"point": true, "geo_point": true, "photo": true, "section": true, "route": true, "borehole": true}
 )
 
 const minForOutlier = 5

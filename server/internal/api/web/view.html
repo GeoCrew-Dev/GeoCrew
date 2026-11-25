@@ -103,7 +103,7 @@
   const KINDS = {
     point: ["标注点", "#e53935"], geo_point: ["地质点", "#8e24aa"], photo: ["照片点", "#fb8c00"],
     line: ["线", "#1e88e5"], polygon: ["面", "#43a047"], track: ["轨迹", "#00897b"],
-    section: ["实测剖面", "#795548"], route: ["地质路线", "#00838F"],
+    section: ["实测剖面", "#795548"], route: ["地质路线", "#00838F"], borehole: ["钻孔", "#4E342E"],
   };
   const STATUS = { todo: "待办", doing: "进行中", done: "已完成" };
   const kindOf = (p) => KINDS[p.kind] ? p.kind : "point";
@@ -624,6 +624,25 @@
     if (lines.length) { row("分层", lines.slice(0, 8).join("；") + (lines.length > 8 ? "……" : "")); row("总厚度", sum.toFixed(1) + " m"); }
   }
 
+  // Borehole or pit log (protocol v0 §6.11): layers top-down by the depth of their bottom.
+  function boreholeRows(h, row) {
+    if (!h || typeof h !== "object") return;
+    const num = (v) => typeof v === "number" && isFinite(v) && v >= 0;
+    const m = (v) => (Math.round(v * 100) / 100) + " m";
+    let top = 0;
+    const lines = [];
+    for (const l of Array.isArray(h.layers) ? h.layers : []) {
+      if (!l || !num(l.bottom) || !(l.bottom > top)) continue;
+      const no = typeof l.no === "string" && l.no ? l.no : String(lines.length + 1);
+      lines.push([no, typeof l.lithology === "string" ? l.lithology : "", m(top) + "–" + m(l.bottom)].filter(Boolean).join(" "));
+      top = l.bottom;
+    }
+    const depth = num(h.depth) && h.depth > 0 ? h.depth : top;
+    row("孔深", depth > 0 ? m(depth) : "");
+    row("水位", num(h.water) ? m(h.water) : "未见");
+    if (lines.length) row("分层", lines.slice(0, 8).join("；") + (lines.length > 8 ? "……" : ""));
+  }
+
   // Geological route (protocol v0 §6.6): stops in walking order, by record id.
   function routeRows(r, row) {
     if (!r || typeof r !== "object") return;
@@ -690,6 +709,7 @@
     }
     if (k === "section") sectionRows(p.section, row);
     if (k === "route") routeRows(p.route, row);
+    if (k === "borehole") boreholeRows(p.borehole, row);
     row("备注", text(p, "note"));
     row("修改", [members.get(by(f)) || "", upd(f).replace("T", " ").slice(0, 16)].filter(Boolean).join(" · "));
     row("审核", reviewText(f));
