@@ -70,6 +70,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | --- | --- |
 | `form` | 记录表单：属性数组，每项 `{key, label?, type?, options?, unit?, kinds?, required?}`。`type` 为 `TEXT`（默认）、`NUMBER` 或 `CHOICE`；`kinds` 为适用的要素种类，空表示全部；`required: true` 表示这些种类的记录应当填写该属性，客户端据此提示「待补全」，但服务端不校验，提交时也不应拒绝。值写在要素 `properties[key]` 里，文字始终是字符串，数字是 JSON 数字。 |
 | `legend` | 地图图例：`{key, entries: [{value, color}]}`。`key` 是用来着色的要素属性（例如 `lithology` 或表单里的 `formation`），空串表示不着色；`color` 为 `#RRGGBB`。要素 `properties[key]` 的文字（去掉首尾空白、不区分大小写）等于某项 `value` 时，用该颜色画出；要素自带 simplestyle 颜色（`fill`、`stroke`、`marker-color`）时以自带的为准。客户端应忽略颜色格式不对或 `value` 为空、重复的项。 |
+| `local_grid` | 本地坐标系（北京 54、西安 80 等旧坐标）：`{name, ellipsoid, width, zone, shift?}`。`ellipsoid` 为 `CGCS2000`、`WGS84`、`XIAN80`、`BEIJING54`；`width` 为 3 或 6（度），`zone` 为带号。`shift` 是从 GPS 坐标（CGCS2000）到本地坐标的转换参数，省略表示只换椭球：`{"type": "plane", dx, dy, rotationSeconds, ppm}` 为四参数，作用在 CGCS2000 同一中央经线的高斯平面坐标（北向 X、去掉带号的东向 Y）上，`rotationSeconds` 以角秒计；`{"type": "bursa", dx, dy, dz, rx, ry, rz, ppm}` 为七参数（布尔莎模型，坐标框架旋转约定），平移以米、旋转以角秒计，作用在地心直角坐标上。`ppm` 为尺度变化（百万分之一）。值为 `null` 表示组长已停止使用；没有这个键时，客户端保留各自本机的设置。客户端应忽略带宽、带号或参数不合理的值。 |
 
 不认识的键必须原样保留：客户端修改设置时先读取、只改自己负责的键、再整体提交。
 
