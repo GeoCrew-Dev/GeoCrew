@@ -17,9 +17,9 @@
 | `server/` | Go 自部署服务端（原 GeoCrew-Server） |
 | `android/` | 安卓客户端（原 GeoCrew-Android，旧代码，待重写） |
 | `manual/` | 用户手册与教程，用来生成网站文档和应用内的离线帮助 |
-| `docs/` | 项目文档：[待办](docs/backlog.md)、[计划评审](docs/reviews/2026-11-25-plan-review.md)，以后还会放章程和架构决策 |
+| `docs/` | 项目文档：[章程](docs/charter.md)、[架构决策](docs/adr/README.md)、[待办](docs/backlog.md)、合规清单、威胁模型、许可证清单、性能预算、[计划评审](docs/reviews/2026-11-25-plan-review.md) |
 
-三个原仓库的完整提交历史已经并入对应目录，可以用 `git log -- server/` 这样的命令查看。各子目录里原来的 CI 配置暂时不会运行，迁移到根目录的工作记在[待办](docs/backlog.md)里。
+三个原仓库的完整提交历史已经并入对应目录，可以用 `git log -- server/` 这样的命令查看。CI 放在根目录的 `.github/workflows/`，按改动的目录触发。发布标签带组件前缀，比如 `server-v0.3.0`，规则见 `protocol/docs/releases.md`。给 AI 代理的工作规则见 [CLAUDE.md](CLAUDE.md)。
 
 ## 相关仓库
 
