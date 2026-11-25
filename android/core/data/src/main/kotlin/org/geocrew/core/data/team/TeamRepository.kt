@@ -90,6 +90,12 @@ class TeamRepository @Inject constructor(
         }
     }
 
+    /** Renames, archives or reopens the workspace (leader only); the cached name follows. */
+    suspend fun updateWorkspace(h: TeamHandle, name: String? = null, archived: Boolean? = null): WorkspaceInfo =
+        h.api.updateWorkspace(h.link.workspaceId, name, archived).also { ws ->
+            if (ws.name != h.link.workspaceName) projects.linkTeam(h.project.id, h.link.copy(workspaceName = ws.name))
+        }
+
     suspend fun members(h: TeamHandle): List<Member> = h.api.members(h.link.workspaceId)
 
     /** Every revision of a feature the server kept, oldest first. */

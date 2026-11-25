@@ -48,6 +48,8 @@ data class WorkspaceInfo(
     /** 0 until a leader first sets the shared settings; servers without the capability omit it. */
     @SerialName("settings_version") val settingsVersion: Long = 0,
     val online: List<String> = emptyList(),
+    /** Set while the workspace is archived (protocol v0 §2.3): it can be read but not changed or joined. */
+    @SerialName("archived_at") val archivedAt: String? = null,
 )
 
 /** A workspace's shared settings (protocol v0 §2.2); the server does not interpret them. */

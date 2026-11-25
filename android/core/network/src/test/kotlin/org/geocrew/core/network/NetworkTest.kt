@@ -34,6 +34,8 @@ class ParseTest {
         assertEquals(RealtimeEvent.MembersChanged, RealtimeClient.parse("""{"type":"members_changed"}"""))
         assertEquals(RealtimeEvent.SettingsChanged(4), RealtimeClient.parse("""{"type":"settings_changed","version":4}"""))
         assertEquals(RealtimeEvent.CommentsChanged(9), RealtimeClient.parse("""{"type":"comments_changed","seq":9}"""))
+        assertEquals(RealtimeEvent.WorkspaceChanged("秋季", "2026-11-25T03:00:00Z"), RealtimeClient.parse("""{"type":"workspace_changed","name":"秋季","archived_at":"2026-11-25T03:00:00Z"}"""))
+        assertEquals(RealtimeEvent.WorkspaceChanged("秋季", null), RealtimeClient.parse("""{"type":"workspace_changed","name":"秋季"}"""))
         assertEquals(null, RealtimeClient.parse("""{"type":"from_the_future"}"""))
         assertEquals(null, RealtimeClient.parse("not json"))
     }
@@ -101,6 +103,35 @@ class ServerIntegrationTest {
             },
             now, SyncInfo(updatedAt = now),
         ).also { store.features[id] = it }
+    }
+
+    @Test
+    fun archivedWorkspaceKeepsEditsAndStillPulls() = runBlocking {
+        assumeTrue("GEOCREW_TEST_SERVER not set", server != null)
+        val anon = GeoCrewApi(server!!, http)
+        if ("archive" !in anon.info().capabilities) return@runBlocking
+        val lj = anon.createWorkspace("归档组", "组长")
+        val leader = anon.withToken(lj.token)
+        val ws = lj.workspaceId
+        val a = MemoryStore()
+        feature("f1", a, "D001")
+        SyncEngine(leader, a, a, ws, "p", lj.memberId).run()
+
+        val archived = leader.updateWorkspace(ws, name = "归档组 2026", archived = true)
+        assertEquals("归档组 2026", archived.name)
+        assertTrue(archived.archivedAt != null)
+        assertTrue(runCatching { anon.join(lj.inviteCode!!, "迟到") }.exceptionOrNull().let { it is ApiException && it.isArchived })
+
+        a.features["f1"] = a.features["f1"]!!.edited(Instant.now()) { this[Props.TITLE] = "D001 改" }
+        val r = SyncEngine(leader, a, a, ws, "p", lj.memberId).run()
+        assertTrue(r.archived)
+        assertEquals(0, r.pushed)
+        assertTrue(a.features["f1"]!!.sync.dirty) // kept for later
+
+        assertEquals(null, leader.updateWorkspace(ws, archived = false).archivedAt)
+        val r2 = SyncEngine(leader, a, a, ws, "p", lj.memberId).run()
+        assertEquals(1, r2.pushed)
+        assertTrue(!r2.archived)
     }
 
     @Test

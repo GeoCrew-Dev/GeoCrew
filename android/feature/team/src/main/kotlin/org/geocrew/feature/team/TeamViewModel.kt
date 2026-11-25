@@ -81,6 +81,9 @@ class TeamViewModel @Inject constructor(
     /** Whether the linked server can make browser view links (its "view" capability). */
     private val _viewAvailable = MutableStateFlow(false)
     val viewAvailable: StateFlow<Boolean> = _viewAvailable.asStateFlow()
+    private val _archiveAvailable = MutableStateFlow(false)
+    /** Whether the server can archive a workspace (protocol v0 §2.3). */
+    val archiveAvailable: StateFlow<Boolean> = _archiveAvailable.asStateFlow()
 
     /** The view link just made, shown until dismissed. */
     private val _viewLink = MutableStateFlow<ViewLinkUi?>(null)
@@ -146,6 +149,7 @@ class TeamViewModel @Inject constructor(
                 val caps = h.api.info().capabilities
                 _pushAvailable.value = "push" in caps
                 _viewAvailable.value = "view" in caps
+                _archiveAvailable.value = "archive" in caps
             }
         }
     }
@@ -184,6 +188,17 @@ class TeamViewModel @Inject constructor(
             projects.updateConfig(h.project.id) { it.copy(noticeSeenAt = it.teamNotice?.updatedAt) }
         }
         _message.value = moved ?: if (text.isBlank()) "已撤下公告" else "已发布公告，组员同步后就能看到"
+    }
+
+    /** Archives the workspace when the field work is over, or reopens it (leader only, protocol v0 §2.3). */
+    fun setArchived(archived: Boolean) = act(if (archived) "已归档：全组只能查看，邀请码暂停使用" else "已重新打开，组员的修改会接着上传") {
+        session.updateWorkspace(archived = archived)
+    }
+
+    /** Renames the workspace for everyone (leader only). */
+    fun rename(name: String) = act("已改名") {
+        require(name.isNotBlank() && name.trim().length <= 64) { "名称为 1–64 个字" }
+        session.updateWorkspace(name = name.trim())
     }
 
     fun syncNow() = act(null) {
@@ -285,6 +300,7 @@ class TeamViewModel @Inject constructor(
         e.status == 404 && e.code == "bad_invite" -> "邀请码无效或已更换"
         e.status == 404 -> "服务器上找不到对应内容（${e.code}）"
         e.status == 403 && e.code == "create_disabled" -> "这台服务器不接受新建工作组，请向组长要邀请码加入"
+        e.isArchived -> "工作组已归档，组长重新打开后才能修改或加入"
         e.status == 429 -> "尝试次数过多，请稍后再试"
         e.status == 401 -> "身份已失效，请重新加入"
         e.status == 403 -> "当前角色没有这个权限"

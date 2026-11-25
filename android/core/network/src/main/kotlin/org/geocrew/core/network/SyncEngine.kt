@@ -36,6 +36,8 @@ data class SyncReport(
     val seq: Long = 0,
     /** Non-fatal problems, e.g. a photo that failed to upload. */
     val warnings: List<String> = emptyList(),
+    /** The server refused the push because the workspace is archived; local edits wait (protocol v0 §2.3). */
+    val archived: Boolean = false,
 )
 
 /**
@@ -51,6 +53,8 @@ class SyncEngine(
     private val projectId: String,
     private val memberId: String,
     private val batchSize: Int = 200,
+    /** False while the workspace is known to be archived: only pull. */
+    private val push: Boolean = true,
 ) {
     suspend fun run(): SyncReport {
         val warnings = mutableListOf<String>()
@@ -58,14 +62,22 @@ class SyncEngine(
         var overwritten = 0
         var uploaded = 0
         var seq: Long
+        var archived = false
 
         // Push in batches until nothing dirty is left (or nothing progresses).
         var rounds = 0
-        while (true) {
+        while (push) {
             val batch = store.dirty(projectId, batchSize)
             if (batch.isEmpty() || rounds++ > 10_000) break
-            uploaded += uploadAttachments(batch, warnings)
-            val r = api.push(workspaceId, projectId, batch)
+            val r = try {
+                uploaded += uploadAttachments(batch, warnings)
+                api.push(workspaceId, projectId, batch)
+            } catch (e: ApiException) {
+                // An archived workspace still reads: keep the edits and pull.
+                if (!e.isArchived) throw e
+                archived = true
+                break
+            }
             val byId = batch.associateBy { it.id }
             var progressed = false
             for (o in r.outcomes) {
@@ -111,7 +123,7 @@ class SyncEngine(
             }
             if (!page.more || page.features.isEmpty()) break
         }
-        return SyncReport(pushed, pulled, overwritten, uploaded, downloaded, seq, warnings)
+        return SyncReport(pushed, pulled, overwritten, uploaded, downloaded, seq, warnings, archived)
     }
 
     private suspend fun uploadAttachments(batch: List<GeoFeature>, warnings: MutableList<String>): Int {
@@ -124,7 +136,7 @@ class SyncEngine(
                     n++
                 }
             } catch (e: ApiException) {
-                if (e.isAuth || e.isForbidden) throw e
+                if (e.isAuth || e.isForbidden || e.isArchived) throw e
                 warnings += "${kind.label} ${sha.take(8)} 上传失败：${e.message}"
             }
         }

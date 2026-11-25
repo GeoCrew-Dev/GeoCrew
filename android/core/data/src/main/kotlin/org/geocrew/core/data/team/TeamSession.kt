@@ -54,6 +54,8 @@ data class TeamStatus(
     val error: String? = null,
     val pending: Int = 0,
     val online: Set<String> = emptySet(),
+    /** Set while the workspace is archived (protocol v0 §2.3): records still pull, local edits wait. */
+    val archivedAt: String? = null,
 )
 
 /**
@@ -197,10 +199,10 @@ class TeamSession @Inject constructor(
                     .collect { syncComments(handle) }
             }
             realtime.start()
+            // Refresh cached workspace name, role and archived state first; failures are not fatal.
+            refreshWorkspace(handle)
             syncLock.withLock { syncOnce(handle) }
             syncComments(handle)
-            // Refresh cached workspace name and role; failures are not fatal.
-            runCatching { team.workspace(handle) }
             // Servers without the "settings" capability answer 404; the local form then stays as is.
             syncForm(handle)
             awaitCancellation()
@@ -230,7 +232,14 @@ class TeamSession @Inject constructor(
                 val known = projects.get(handle.project.id)?.team?.lastSeq ?: 0L
                 if (e.seq > known) syncLock.withLock { syncOnce(handle) }
             }
-            RealtimeEvent.MembersChanged -> runCatching { team.workspace(handle) }
+            RealtimeEvent.MembersChanged -> refreshWorkspace(handle)
+            is RealtimeEvent.WorkspaceChanged -> {
+                val wasArchived = _status.value.archivedAt != null
+                _status.update { it.copy(archivedAt = e.archivedAt, workspaceName = e.name.ifBlank { it.workspaceName }) }
+                refreshWorkspace(handle)
+                // Reopened: send what was edited meanwhile.
+                if (wasArchived && e.archivedAt == null) syncLock.withLock { syncOnce(handle) }
+            }
             is RealtimeEvent.SettingsChanged -> {
                 val known = projects.get(handle.project.id)?.config?.teamFormVersion ?: 0L
                 if (e.version != known) syncForm(handle)
@@ -240,6 +249,19 @@ class TeamSession @Inject constructor(
             }
             is RealtimeEvent.Error -> _status.update { it.copy(error = e.message.ifBlank { e.code }) }
         }
+    }
+
+    private suspend fun refreshWorkspace(handle: TeamHandle) {
+        runCatching { team.workspace(handle) }.onSuccess { ws -> _status.update { it.copy(archivedAt = ws.archivedAt) } }
+    }
+
+    /** Renames, archives or reopens the current workspace (leader only); reopening sends the edits made meanwhile. */
+    suspend fun updateWorkspace(name: String? = null, archived: Boolean? = null) {
+        val a = active ?: throw java.io.IOException("未连接工作组")
+        val ws = team.updateWorkspace(a.handle, name, archived)
+        val reopened = _status.value.archivedAt != null && ws.archivedAt == null
+        _status.update { it.copy(archivedAt = ws.archivedAt, workspaceName = ws.name) }
+        if (reopened) syncLock.withLock { syncOnce(a.handle) }
     }
 
     private suspend fun syncForm(handle: TeamHandle) {
@@ -282,8 +304,14 @@ class TeamSession @Inject constructor(
                 workspaceId = handle.link.workspaceId,
                 projectId = handle.project.id,
                 memberId = handle.link.memberId,
+                push = _status.value.archivedAt == null,
             ).run()
-            _status.update { it.copy(syncing = false, lastSync = clock.instant(), lastReport = report, error = null) }
+            _status.update {
+                it.copy(
+                    syncing = false, lastSync = clock.instant(), lastReport = report, error = null,
+                    archivedAt = if (report.archived) it.archivedAt ?: clock.instant().toString() else it.archivedAt,
+                )
+            }
             report
         } catch (e: ApiException) {
             val rejected = e.status == 401
@@ -306,6 +334,7 @@ class TeamSession @Inject constructor(
         401 -> "身份已失效（可能已被移出工作组），请重新加入"
         403 -> "当前角色没有修改权限，本地改动未上传"
         404 -> "服务器上找不到该工作组"
+        409 -> if (e.isArchived) "工作组已归档，本机修改暂不上传" else e.message ?: "同步失败（409）"
         else -> e.message ?: "同步失败（${e.status}）"
     }
 

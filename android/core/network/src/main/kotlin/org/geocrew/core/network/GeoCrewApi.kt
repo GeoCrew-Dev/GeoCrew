@@ -32,6 +32,8 @@ import kotlin.coroutines.resumeWithException
 class ApiException(val status: Int, val code: String, message: String) : IOException(message) {
     val isAuth get() = status == 401
     val isForbidden get() = status == 403
+    /** The workspace is archived and takes no changes until a leader reopens it (protocol v0 §2.3). */
+    val isArchived get() = status == 409 && code == "archived"
 }
 
 /** Outcome of pushing one feature (protocol v0 §4.3). */
@@ -86,6 +88,16 @@ class GeoCrewApi(
     suspend fun putSettings(ws: String, settings: JsonObject, baseVersion: Long?): WorkspaceSettings {
         val body = json.encodeToString(PutSettingsReq.serializer(), PutSettingsReq(settings, baseVersion)).toRequestBody(JSON)
         return send(wsUrl(ws, "settings"), "PUT", body, WorkspaceSettings.serializer())
+    }
+
+    /** Renames, archives or reopens the workspace (leader only, protocol v0 §2.3); null leaves a field as it is. */
+    suspend fun updateWorkspace(ws: String, name: String? = null, archived: Boolean? = null): WorkspaceInfo {
+        require(name != null || archived != null) { "nothing to change" }
+        val body = JsonObject(buildMap {
+            if (name != null) put("name", JsonPrimitive(name.trim()))
+            if (archived != null) put("archived", JsonPrimitive(archived))
+        })
+        return send(wsUrl(ws), "PATCH", body.toString().toRequestBody(JSON), WorkspaceInfo.serializer())
     }
 
     suspend fun setRole(ws: String, member: String, role: String) {

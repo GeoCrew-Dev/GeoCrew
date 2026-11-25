@@ -104,6 +104,7 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val pushAvailable by viewModel.pushAvailable.collectAsStateWithLifecycle()
     val viewAvailable by viewModel.viewAvailable.collectAsStateWithLifecycle()
+    val archiveAvailable by viewModel.archiveAvailable.collectAsStateWithLifecycle()
     val viewLink by viewModel.viewLink.collectAsStateWithLifecycle()
     val progress by viewModel.progress.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
@@ -180,6 +181,9 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
                     workspaceName = p.team!!.workspaceName,
                     notice = p.config.teamNotice,
                     onPostNotice = viewModel::postNotice,
+                    archiveAvailable = archiveAvailable,
+                    onArchive = viewModel::setArchived,
+                    onRename = viewModel::rename,
                     onResetInvite = viewModel::resetInvite,
                     onSetRole = viewModel::setRole,
                     onRevoke = viewModel::revoke,
@@ -310,6 +314,9 @@ private fun LinkedPanel(
     workspaceName: String,
     notice: org.geocrew.core.model.TeamNotice? = null,
     onPostNotice: (String) -> Unit = {},
+    archiveAvailable: Boolean = false,
+    onArchive: (Boolean) -> Unit = {},
+    onRename: (String) -> Unit = {},
     onResetInvite: () -> Unit,
     onSetRole: (Member, String) -> Unit,
     onRevoke: (Member) -> Unit,
@@ -334,6 +341,13 @@ private fun LinkedPanel(
                     InfoRow("实时连接", connectionLabel(status.connection))
                     InfoRow("上次同步", status.lastSync?.let { TIME.format(it) } ?: "尚未同步")
                     if (status.pending > 0) InfoRow("待上传", "${status.pending} 条")
+                    status.archivedAt?.let { at ->
+                        val time = runCatching { TIME.format(java.time.Instant.parse(at)) }.getOrDefault("")
+                        Text(
+                            "已归档" + (if (time.isNotEmpty()) "（$time）" else "") + "：野外工作已结束，记录只能查看。本机的修改先留在手机上，组长重新打开后自动上传。",
+                            color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     status.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     if (status.needsRejoin) {
                         Text(
@@ -408,6 +422,9 @@ private fun LinkedPanel(
                     },
                 )
             }
+        }
+        if (isLeader && (archiveAvailable || status.archivedAt != null)) {
+            item { ArchiveItem(status.archivedAt != null, workspace, busy, onArchive, onRename) }
         }
         item {
             val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -732,4 +749,57 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+/** Leader controls for the workspace itself: rename, archive when the field work is over, reopen. */
+@Composable
+private fun ArchiveItem(archived: Boolean, name: String, busy: Boolean, onArchive: (Boolean) -> Unit, onRename: (String) -> Unit) {
+    var confirm by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    ListItem(
+        headlineContent = { Text(if (archived) "工作组已归档" else "归档工作组") },
+        supportingContent = {
+            Column {
+                Text(
+                    if (archived) "全组只能查看和导出，邀请码暂停使用。需要补记时可以重新打开"
+                    else "野外工作结束后归档：记录、照片和讨论都留在服务器上，全组只能查看和导出，不能再修改或加入",
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { confirm = true }, enabled = !busy) { Text(if (archived) "重新打开" else "归档") }
+                    TextButton(onClick = { renaming = true }, enabled = !busy) { Text("改名") }
+                }
+            }
+        },
+    )
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text(if (archived) "重新打开「$name」？" else "归档「$name」？") },
+            text = {
+                Text(
+                    if (archived) "组员又可以提交记录、发消息，用邀请码加入。归档期间各自手机上的修改会自动上传。"
+                    else "归档后组员不能再提交记录、修改设置、发消息或上传照片，也不能用邀请码加入；查看、导出和网页查看链接照常。手机上没上传的修改会先留着，重新打开后再上传。",
+                )
+            },
+            confirmButton = { TextButton(onClick = { confirm = false; onArchive(!archived) }) { Text(if (archived) "重新打开" else "归档") } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("取消") } },
+        )
+    }
+    if (renaming) {
+        var text by remember { mutableStateOf(name) }
+        AlertDialog(
+            onDismissRequest = { renaming = false },
+            title = { Text("工作组改名") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    text, { text = it.take(64) }, singleLine = true, label = { Text("名称") },
+                    supportingText = { Text("组员和网页查看页都会看到新名称") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { renaming = false; onRename(text) }, enabled = text.isNotBlank() && text.trim() != name) { Text("改名") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = false }) { Text("取消") } },
+        )
+    }
 }

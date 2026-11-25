@@ -55,6 +55,9 @@ internal data class SeqWire(val seq: Long)
 internal data class VersionWire(val version: Long)
 
 @Serializable
+internal data class WorkspaceWire(val name: String = "", @SerialName("archived_at") val archivedAt: String? = null)
+
+@Serializable
 internal data class ErrorWire(val error: String = "", val message: String = "")
 
 sealed interface RealtimeEvent {
@@ -65,6 +68,8 @@ sealed interface RealtimeEvent {
     data object MembersChanged : RealtimeEvent
     data class SettingsChanged(val version: Long) : RealtimeEvent
     data class CommentsChanged(val seq: Long) : RealtimeEvent
+    /** The workspace was renamed, archived or reopened (protocol v0 §2.3). */
+    data class WorkspaceChanged(val name: String, val archivedAt: String?) : RealtimeEvent
     data class Error(val code: String, val message: String) : RealtimeEvent
 }
 
@@ -179,6 +184,7 @@ class RealtimeClient(
                     "feature_changed" -> RealtimeEvent.FeatureChanged(json.decodeFromJsonElement(SeqWire.serializer(), o).seq)
                     "comments_changed" -> RealtimeEvent.CommentsChanged(json.decodeFromJsonElement(SeqWire.serializer(), o).seq)
                     "members_changed" -> RealtimeEvent.MembersChanged
+                    "workspace_changed" -> json.decodeFromJsonElement(WorkspaceWire.serializer(), o).let { RealtimeEvent.WorkspaceChanged(it.name, it.archivedAt) }
                     "settings_changed" -> RealtimeEvent.SettingsChanged(json.decodeFromJsonElement(VersionWire.serializer(), o).version)
                     "error" -> json.decodeFromJsonElement(ErrorWire.serializer(), o).let { RealtimeEvent.Error(it.error, it.message) }
                     else -> null
