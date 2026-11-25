@@ -81,14 +81,15 @@ func (s *Server) Handler() http.Handler {
 
 	ws := "/api/v0/workspaces/{ws}"
 	mux.Handle("GET "+ws, s.view(s.workspace))
+	mux.Handle("PATCH "+ws, s.auth(s.updateWorkspace, leaderOnly))
 	mux.Handle("GET "+ws+"/members", s.view(s.members))
 	mux.Handle("PATCH "+ws+"/members/{member}", s.auth(s.setRole, leaderOnly))
 	mux.Handle("DELETE "+ws+"/members/{member}", s.auth(s.revoke, leaderOnly))
 	mux.Handle("POST "+ws+"/invite", s.auth(s.resetInvite, leaderOnly))
 	mux.Handle("GET "+ws+"/settings", s.view(s.settings))
-	mux.Handle("PUT "+ws+"/settings", s.auth(s.putSettings, leaderOnly))
+	mux.Handle("PUT "+ws+"/settings", s.auth(s.open(s.putSettings), leaderOnly))
 	mux.Handle("GET "+ws+"/features", s.view(s.pull))
-	mux.Handle("POST "+ws+"/features", s.auth(s.push, writers))
+	mux.Handle("POST "+ws+"/features", s.auth(s.open(s.push), writers))
 	mux.Handle("GET "+ws+"/features/{feature}/history", s.view(s.history))
 	mux.Handle("GET "+ws+"/export.geojson", s.view(s.exportGeoJSON))
 	mux.Handle("GET "+ws+"/export.samples.csv", s.view(s.exportSamples))
@@ -103,9 +104,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET "+ws+"/checks", s.view(s.checks))
 	mux.Handle("GET "+ws+"/export.geocrew.zip", s.view(s.exportPackage))
 	mux.Handle("GET "+ws+"/comments", s.view(s.comments))
-	mux.Handle("POST "+ws+"/comments", s.auth(s.addComment, anyRole)) // read-only: urgent only
-	mux.Handle("DELETE "+ws+"/comments/{comment}", s.auth(s.deleteComment, writers))
-	mux.Handle("PUT "+ws+"/files/{sha}", s.auth(s.putFile, writers))
+	mux.Handle("POST "+ws+"/comments", s.auth(s.open(s.addComment), anyRole)) // read-only: urgent only
+	mux.Handle("DELETE "+ws+"/comments/{comment}", s.auth(s.open(s.deleteComment), writers))
+	mux.Handle("PUT "+ws+"/files/{sha}", s.auth(s.open(s.putFile), writers))
 	mux.Handle("GET "+ws+"/files/{sha}", s.view(s.getFile))
 	mux.Handle("HEAD "+ws+"/files/{sha}", s.view(s.getFile))
 	mux.Handle("GET "+ws+"/ws", s.view(s.realtime))
@@ -181,6 +182,22 @@ func (s *Server) authenticate(next http.HandlerFunc, allowed roleCheck, viewers 
 	})
 }
 
+// open refuses changes to an archived workspace (protocol v0 §2.3). Reads,
+// membership, view links and push subscriptions stay available.
+func (s *Server) open(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ws, err := s.Store.Workspace(r.Context(), r.PathValue("ws"))
+		if err == nil && ws.ArchivedAt != nil {
+			err = store.ErrArchived
+		}
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		next(w, r)
+	}
+}
+
 // touch keeps last_seen to the minute: at most one write per member and
 // minute, so busy clients cost nothing extra. Failures only log.
 func (s *Server) touch(ctx context.Context, m store.Member) {
@@ -253,6 +270,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeErr(w, http.StatusForbidden, "forbidden", "your role does not allow this action")
 	case errors.Is(err, store.ErrConflict):
 		writeErr(w, http.StatusConflict, "id_conflict", "this id is already used for different content")
+	case errors.Is(err, store.ErrArchived):
+		writeErr(w, http.StatusConflict, "archived", "this workspace is archived; a leader can reopen it")
 	case errors.Is(err, store.ErrLastLeader):
 		writeErr(w, http.StatusConflict, "last_leader", "a workspace must keep at least one leader")
 	default:

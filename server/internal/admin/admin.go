@@ -295,7 +295,11 @@ func listWorkspaces(ctx context.Context, st store.Store, out io.Writer) error {
 				leaders = append(leaders, m.Nickname)
 			}
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", ws.ID, ws.Name, active, strings.Join(leaders, "、"), ws.CreatedAt.Local().Format(time.DateTime))
+		name := ws.Name
+		if ws.ArchivedAt != nil {
+			name += "（已归档）"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", ws.ID, name, active, strings.Join(leaders, "、"), ws.CreatedAt.Local().Format(time.DateTime))
 	}
 	return tw.Flush()
 }

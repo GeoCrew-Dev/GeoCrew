@@ -19,6 +19,7 @@ const (
 	TypeMembersChanged  = "members_changed"
 	TypeSettingsChanged = "settings_changed"
 	TypeCommentsChanged = "comments_changed"
+	TypeWorkspace       = "workspace_changed"
 	TypePresence        = "presence"
 	TypePing            = "ping"
 	TypePong            = "pong"
@@ -225,6 +226,15 @@ func (h *Hub) SettingsChanged(ws string, version int64) {
 		Type    string `json:"type"`
 		Version int64  `json:"version"`
 	}{TypeSettingsChanged, version}))
+}
+
+// WorkspaceChanged tells everyone in ws its name or archived state changed.
+func (h *Hub) WorkspaceChanged(ws, name string, archivedAt *time.Time) {
+	h.Broadcast(ws, marshal(struct {
+		Type       string     `json:"type"`
+		Name       string     `json:"name"`
+		ArchivedAt *time.Time `json:"archived_at,omitempty"`
+	}{TypeWorkspace, name, archivedAt}))
 }
 
 // CommentsChanged tells everyone in ws that comments up to seq are available.

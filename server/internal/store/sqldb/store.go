@@ -112,6 +112,9 @@ func (d *DB) Join(ctx context.Context, inviteCode, nickname string) (store.Works
 	if err != nil {
 		return store.Workspace{}, store.Member{}, "", err
 	}
+	if ws.ArchivedAt != nil {
+		return store.Workspace{}, store.Member{}, "", store.ErrArchived
+	}
 	m, token, err := d.insertMember(ctx, tx, ws.ID, nickname, store.RoleMember)
 	if err != nil {
 		return store.Workspace{}, store.Member{}, "", err
@@ -119,18 +122,22 @@ func (d *DB) Join(ctx context.Context, inviteCode, nickname string) (store.Works
 	return ws, m, token, tx.Commit()
 }
 
-const wsSelect = `SELECT id, name, invite_code, created_at, last_seq, settings_version FROM workspaces`
+const wsSelect = `SELECT id, name, invite_code, created_at, last_seq, settings_version, archived_at FROM workspaces`
 
 type rowScanner interface{ Scan(...any) error }
 
 func scanWorkspace(r rowScanner) (store.Workspace, error) {
 	var ws store.Workspace
-	var created string
-	err := r.Scan(&ws.ID, &ws.Name, &ws.InviteCode, &created, &ws.LastSeq, &ws.SettingsVersion)
+	var created, archived string
+	err := r.Scan(&ws.ID, &ws.Name, &ws.InviteCode, &created, &ws.LastSeq, &ws.SettingsVersion, &archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ws, store.ErrNotFound
 	}
 	ws.CreatedAt = parseTime(created)
+	if archived != "" {
+		t := parseTime(archived)
+		ws.ArchivedAt = &t
+	}
 	return ws, err
 }
 
@@ -213,6 +220,45 @@ func (d *DB) RevokeViewLinks(ctx context.Context, workspaceID, memberID string) 
 
 func (d *DB) Workspace(ctx context.Context, id string) (store.Workspace, error) {
 	return scanWorkspace(d.db.QueryRowContext(ctx, wsSelect+` WHERE id = ?`, id))
+}
+
+func (d *DB) UpdateWorkspace(ctx context.Context, id string, u store.WorkspaceUpdate) (store.Workspace, error) {
+	var name string
+	if u.Name != nil {
+		var err error
+		if name, err = clean(*u.Name, 64); err != nil {
+			return store.Workspace{}, err
+		}
+	}
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return store.Workspace{}, err
+	}
+	defer tx.Rollback()
+	ws, err := scanWorkspace(tx.QueryRowContext(ctx, wsSelect+` WHERE id = ?`+d.dialect.ForUpdate, id))
+	if err != nil {
+		return store.Workspace{}, err
+	}
+	if u.Name != nil {
+		ws.Name = name
+	}
+	if u.Archived != nil {
+		switch {
+		case *u.Archived && ws.ArchivedAt == nil:
+			t := time.Now().UTC().Truncate(time.Second)
+			ws.ArchivedAt = &t
+		case !*u.Archived:
+			ws.ArchivedAt = nil
+		}
+	}
+	archived := ""
+	if ws.ArchivedAt != nil {
+		archived = fmtTime(*ws.ArchivedAt)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE workspaces SET name = ?, archived_at = ? WHERE id = ?`, ws.Name, archived, id); err != nil {
+		return store.Workspace{}, err
+	}
+	return ws, tx.Commit()
 }
 
 func (d *DB) Workspaces(ctx context.Context) ([]store.Workspace, error) {

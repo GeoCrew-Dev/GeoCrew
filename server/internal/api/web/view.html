@@ -391,6 +391,7 @@
   }
   function renderBanner() {
     const box = $("banner"); box.replaceChildren();
+    if (archivedAt) box.append(Object.assign(document.createElement("div"), { className: "call", textContent: "已归档 · " + when(archivedAt) + "：野外工作已结束，记录只读，组长可在应用里重新打开" }));
     const open = () => { messaging = true; checking = false; $("check").classList.remove("on"); $("msgs").classList.add("on"); renderList(); };
     const alert = team().find((c) => c.urgent && !c.answer_to && ago(c.created_at, 6));
     if (alert) box.append(Object.assign(document.createElement("div"), { className: "urgent", textContent: "紧急：" + (alert.nickname || "组员") + " " + when(alert.created_at) + " · " + alert.body, onclick: open }));
@@ -927,6 +928,12 @@
   setInterval(() => { ageMates(); drawTrails(); }, 30 * 1000);
 
   let backoff = 1000;
+  let archivedAt = null;
+  function showWorkspace(ws) {
+    archivedAt = typeof ws.archived_at === "string" && !isNaN(new Date(ws.archived_at)) ? ws.archived_at : null;
+    $("name").textContent = (ws.name || "工作组") + (archivedAt ? "（已归档）" : "");
+    document.title = (ws.name || "工作组") + " · 同勘 GeoCrew";
+  }
   function connect() {
     const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + API + "/ws?access_token=" + encodeURIComponent(TOKEN);
     const sock = new WebSocket(url);
@@ -938,6 +945,7 @@
       else if (m.type === "feature_changed") pull().catch(() => {});
       else if (m.type === "members_changed") loadMembers().then(() => { render(); renderBanner(); }).catch(() => {});
       else if (m.type === "comments_changed") pullComments().catch(() => {});
+      else if (m.type === "workspace_changed") { showWorkspace(m); renderBanner(); }
       else if (m.type === "settings_changed") loadSettings().then(() => { render(); drawOverlays(); drawBase(); }).catch(() => {});
     };
     sock.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 60 * 1000); };
@@ -1116,9 +1124,7 @@
     $("structures").onclick = () => download("/export.structures.csv", "geocrew-" + WS + "-structures.csv");
     $("routes").onclick = () => download("/export.routes.csv", "geocrew-" + WS + "-routes.csv");
 
-    const ws = await (await api("")).json();
-    $("name").textContent = ws.name || "工作组";
-    document.title = (ws.name || "工作组") + " · 同勘 GeoCrew";
+    showWorkspace(await (await api("")).json());
     $("legend").onclick = () => { legendOpen = !legendOpen; renderLegend(); };
     await loadMembers();
     await loadSettings();

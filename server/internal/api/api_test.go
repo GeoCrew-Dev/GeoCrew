@@ -969,3 +969,51 @@ func TestNoticePush(t *testing.T) {
 		t.Fatalf("member got %+v", l)
 	}
 }
+
+func TestArchive(t *testing.T) {
+	e := newEnv(t)
+	var leader, a joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "A"}, &a)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+	if c := e.call("PATCH", base, a.Token, map[string]any{"archived": true}, nil); c != 403 {
+		t.Fatalf("member archives: %d", c)
+	}
+	if c := e.call("PATCH", base, leader.Token, map[string]any{}, nil); c != 400 {
+		t.Fatalf("empty patch: %d", c)
+	}
+	var ws workspaceResp
+	if c := e.call("PATCH", base, leader.Token, map[string]any{"name": "2026 秋季填图", "archived": true}, &ws); c != 200 || ws.Name != "2026 秋季填图" || ws.ArchivedAt == nil {
+		t.Fatalf("archive: %d %+v", c, ws)
+	}
+
+	var errBody errorBody
+	if c := e.call("POST", base+"/features", a.Token, map[string]any{"features": []any{feature("f1", 1, "2026-11-24T08:00:00Z")}}, &errBody); c != 409 || errBody.Error != "archived" {
+		t.Fatalf("push to archived: %d %+v", c, errBody)
+	}
+	if c := e.call("PUT", base+"/settings", leader.Token, map[string]any{"settings": map[string]any{}}, nil); c != 409 {
+		t.Fatalf("settings on archived: %d", c)
+	}
+	if c := e.call("POST", base+"/comments", a.Token, map[string]any{"id": "c1", "text": "hi"}, nil); c != 409 {
+		t.Fatalf("comment on archived: %d", c)
+	}
+	if c := e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "B"}, nil); c != 409 {
+		t.Fatalf("join archived: %d", c)
+	}
+	// Reading goes on.
+	var got workspaceResp
+	if c := e.call("GET", base, a.Token, nil, &got); c != 200 || got.ArchivedAt == nil {
+		t.Fatalf("read archived: %d %+v", c, got)
+	}
+	if c := e.call("GET", base+"/features", a.Token, nil, nil); c != 200 {
+		t.Fatalf("pull archived: %d", c)
+	}
+
+	var reopened workspaceResp
+	if c := e.call("PATCH", base, leader.Token, map[string]any{"archived": false}, &reopened); c != 200 || reopened.ArchivedAt != nil {
+		t.Fatalf("reopen: %d %+v", c, reopened)
+	}
+	if c := e.call("POST", base+"/features", a.Token, map[string]any{"features": []any{feature("f1", 1, "2026-11-24T08:00:00Z")}}, nil); c != 200 {
+		t.Fatalf("push reopened: %d", c)
+	}
+}

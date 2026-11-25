@@ -34,6 +34,7 @@ func Run(t *testing.T, open Opener) {
 		{"LockedProps", lockedProps},
 		{"Outings", outings},
 		{"DeleteWorkspace", deleteWorkspace},
+		{"Archive", archive},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -576,5 +577,45 @@ func deleteWorkspace(t *testing.T, open Opener) {
 	// Deleting twice is not found.
 	if err := d.DeleteWorkspace(ctx, gone.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("second delete: %v", err)
+	}
+}
+
+func archive(t *testing.T, open Opener) {
+	ctx := context.Background()
+	d := open(t)
+	ws, _, _, err := d.CreateWorkspace(ctx, "野外一组", "组长")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ws.ArchivedAt != nil {
+		t.Fatalf("new workspace archived: %v", ws.ArchivedAt)
+	}
+	name, yes, no := " 2026 秋季填图 ", true, false
+	got, err := d.UpdateWorkspace(ctx, ws.ID, store.WorkspaceUpdate{Name: &name, Archived: &yes})
+	if err != nil || got.Name != "2026 秋季填图" || got.ArchivedAt == nil {
+		t.Fatalf("archive: %v %+v", err, got)
+	}
+	read, err := d.Workspace(ctx, ws.ID)
+	if err != nil || read.Name != got.Name || read.ArchivedAt == nil || !read.ArchivedAt.Equal(*got.ArchivedAt) {
+		t.Fatalf("read archived: %v %+v", err, read)
+	}
+	if again, err := d.UpdateWorkspace(ctx, ws.ID, store.WorkspaceUpdate{Archived: &yes}); err != nil || !again.ArchivedAt.Equal(*got.ArchivedAt) {
+		t.Fatalf("archive twice keeps the first time: %v %+v", err, again)
+	}
+	if _, _, _, err := d.Join(ctx, ws.InviteCode, "新人"); !errors.Is(err, store.ErrArchived) {
+		t.Fatalf("join archived: %v", err)
+	}
+	blank := "  "
+	if _, err := d.UpdateWorkspace(ctx, ws.ID, store.WorkspaceUpdate{Name: &blank}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("blank name: %v", err)
+	}
+	if _, err := d.UpdateWorkspace(ctx, "nope", store.WorkspaceUpdate{Archived: &no}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing workspace: %v", err)
+	}
+	if got, err := d.UpdateWorkspace(ctx, ws.ID, store.WorkspaceUpdate{Archived: &no}); err != nil || got.ArchivedAt != nil || got.Name != "2026 秋季填图" {
+		t.Fatalf("reopen: %v %+v", err, got)
+	}
+	if _, _, _, err := d.Join(ctx, ws.InviteCode, "新人"); err != nil {
+		t.Fatalf("join reopened: %v", err)
 	}
 }

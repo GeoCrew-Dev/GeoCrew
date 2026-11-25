@@ -42,6 +42,16 @@ type Workspace struct {
 	LastSeq    int64     `json:"last_seq"`
 	// SettingsVersion increases every time the shared settings change.
 	SettingsVersion int64 `json:"settings_version"`
+	// ArchivedAt is set while the workspace is archived: the field work is
+	// over, everything stays readable and nothing can be changed or joined
+	// until a leader reopens it.
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
+}
+
+// WorkspaceUpdate changes a workspace's own fields; nil fields stay as they are.
+type WorkspaceUpdate struct {
+	Name     *string
+	Archived *bool
 }
 
 // ViewTokenPrefix starts every view-link token, so the two kinds of token
@@ -269,6 +279,8 @@ var (
 	ErrBadInvite    = errors.New("invalid invite code")
 	ErrInvalid      = errors.New("invalid request")
 	ErrLastLeader   = errors.New("workspace must keep at least one leader")
+	// ErrArchived means the workspace is archived and takes no changes.
+	ErrArchived = errors.New("workspace archived")
 	// ErrStale means a conditional update was based on an outdated version.
 	ErrStale = errors.New("stale version")
 	// ErrForbidden means the caller may not act on this object.
@@ -289,7 +301,11 @@ type Store interface {
 	// CreateWorkspace creates a workspace and its first leader. The returned
 	// token is shown once; only its hash is stored.
 	CreateWorkspace(ctx context.Context, name, nickname string) (Workspace, Member, string, error)
-	// Join adds a member using an invite code.
+	// UpdateWorkspace renames, archives or reopens a workspace. Archiving an
+	// archived workspace keeps its original time.
+	UpdateWorkspace(ctx context.Context, id string, u WorkspaceUpdate) (Workspace, error)
+	// Join adds a member using an invite code. An archived workspace
+	// refuses with ErrArchived.
 	Join(ctx context.Context, inviteCode, nickname string) (Workspace, Member, string, error)
 	// Authenticate resolves a bearer token to a non-revoked member of the workspace.
 	Authenticate(ctx context.Context, workspaceID, token string) (Member, error)

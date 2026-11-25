@@ -78,6 +78,28 @@ func (s *Server) workspace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// updateWorkspace renames, archives or reopens the workspace (leader only).
+func (s *Server) updateWorkspace(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name     *string `json:"name"`
+		Archived *bool   `json:"archived"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	if req.Name == nil && req.Archived == nil {
+		writeErr(w, http.StatusBadRequest, "invalid", "nothing to change")
+		return
+	}
+	ws, err := s.Store.UpdateWorkspace(r.Context(), r.PathValue("ws"), store.WorkspaceUpdate{Name: req.Name, Archived: req.Archived})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.Hub.WorkspaceChanged(ws.ID, ws.Name, ws.ArchivedAt)
+	writeJSON(w, http.StatusOK, workspaceResp{Workspace: ws, Me: member(r), InviteCode: ws.InviteCode, Online: s.Hub.Online(ws.ID)})
+}
+
 func (s *Server) members(w http.ResponseWriter, r *http.Request) {
 	ms, err := s.Store.Members(r.Context(), r.PathValue("ws"))
 	if err != nil {
