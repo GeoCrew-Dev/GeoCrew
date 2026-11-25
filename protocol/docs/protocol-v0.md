@@ -104,7 +104,8 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | GET | `/api/v0/workspaces/{id}/export.workload.csv?tz_offset=` | 任意 | 工作量统计，UTF-8 CSV（带 BOM），每个组员每天一行：日期、组员、新建记录、其中地质点、修改次数、样品、照片、轨迹(km)，每人最后一行日期为「合计」。记录的创建人和创建日取它最早的版本，之后每个版本按作者计一次修改；样品按 `taken_at`、照片按拍摄时间计到记录创建人名下；轨迹按开始时间和长度计。`tz_offset` 为分天所用时区（东为正，分钟，默认 0）；已离开的成员显示为「已离开的组员」。只供参考，不作考核依据。能力名 `workload` |
 | GET | `/api/v0/workspaces/{id}/export.routes.csv` | 任意 | 地质路线记录表（第 6.6 节），UTF-8 CSV（带 BOM）：每条路线一个目的行、按 `stops` 顺序每个点一行（路线、日期、参加人员、序号、点号、类型、经度、纬度、海拔、岩性、产状、点上描述、至下一点描述、记录ID）和一个小结行，找不到的点跳过，路线按日期和路线号自然排序。能力名 `routes` |
 | GET | `/api/v0/workspaces/{id}/checks` | 任意 | 记录核对：`{"issues": [{"feature", "title", "code", "message"}]}`，列出值得再看一眼的记录，按记录名自然排序。`code` 固定为 `duplicate_number`（地质点、照片点、剖面、路线等带数字的编号重名，不分大小写）、`duplicate_sample`（样品编号在工程内重复）、`no_position`（点、线、面、轨迹、照片没有几何）、`poor_accuracy`（`accuracy_m` 超过 `?accuracy_m=`，默认 30）、`far_away`（离全部记录位置中位点超过 `?far_km=`，默认 50 千米，且超过典型距离 10 倍；至少 5 条有位置的记录才判断）、`missing_stop`（路线 `stops` 指向不存在或已删除的记录）、`redo`（组长退回的记录，见 §6.9）；`message` 只供显示，客户端可按 `code` 自行措辞。能力名 `checks` |
-| GET | `/api/v0/workspaces/{id}/export.kml` | 任意 | KML 2.2：每条有几何的记录一个地标，`title`、`note` 作名称和说明，其余简单属性写成 ExtendedData；颜色取记录自带的 simplestyle，否则取共享设置里的 `legend`，每种颜色一个共享 Style。能力名 `kml` |
+| GET | `/api/v0/workspaces/{id}/export.kml` | 任意 | KML 2.2：每条有几何的记录一个地标，`title`、`note` 作名称和说明，其余简单属性写成 ExtendedData；颜色取记录自带的 simplestyle，否则取共享设置里的 `legend`，每种颜色一个共享 Style；轨迹带 TimeSpan（`started_at`、`ended_at`），`times_s` 不列进 ExtendedData。能力名 `kml` |
+| GET | `/api/v0/workspaces/{id}/export.gpx` | 任意 | GPX 1.1：点为航点（`wpt`），`kind` 为 `track` 的线为航迹（`trk`，带 `times_s` 时每个点有时间，第 6.13 节），其他线为航线（`rte`，多段线每段一条），面不导出；`title`、`note` 作名称和说明。能力名 `gpx` |
 | GET | `/api/v0/workspaces/{id}/export.gpkg` | 任意 | GeoPackage 1.3（`application/geopackage+sqlite3`）：点、线、面各一张表（`points`、`lines`、`polygons`，EPSG:4326），列有 `record_id`、`kind`、`title`、`note`、`lithology`、`strike`、`dip_direction`、`dip`、`line_style`、`meet_at`、`color`、`updated_at`、`updated_by`（昵称）和 `properties`（全部属性的 JSON）；没有记录的表不建。能力名 `gpkg` |
 | GET | `/api/v0/workspaces/{id}/comments?since=&limit=` | 任意 | 增量拉取讨论（见第 8 节） |
 | POST | `/api/v0/workspaces/{id}/comments` | 组长、成员 | 发言 |
@@ -123,7 +124,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
   "name": "GeoCrew Server",
   "protocol": "0",
   "version": "1a2b3c",
-  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "structures", "workload", "create"],
+  "capabilities": ["sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "push", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "structures", "workload", "gpx", "create"],
   "max_upload_bytes": 33554432,
   "max_push_batch": 500
 }
@@ -251,7 +252,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `geo_point` | Point | 地质点：`title`、`lithology`、`strike`、`dip_direction`、`dip`、`trend`、`plunge`、`lineation_type`（§6.12）、`note`、`photos`、`audio` |
 | `line` | LineString | `title`、`note`、`length_m`、`line_style`（第 6.7 节） |
 | `polygon` | Polygon | `title`、`note`、`area_m2` |
-| `track` | LineString | 轨迹：`title`、`started_at`、`ended_at`、`length_m`；坐标可带高程 |
+| `track` | LineString | 轨迹：`title`、`started_at`、`ended_at`、`length_m`、`times_s`（第 6.13 节）；坐标可带高程 |
 | `photo` | Point | 独立照片点：`photos`、`azimuth`（拍摄方位角） |
 | `section` | LineString（可省略） | 实测剖面：`title`、`section`（第 6.5 节） |
 | `route` | LineString / Point（可省略） | 地质路线：`title`（路线号）、`route`（第 6.6 节） |
@@ -471,6 +472,22 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `lineation_type` | 类型，文本，可省略；常用值有「线理」「擦痕」「褶皱枢纽」「交面线」「拉伸线理」，省略时按「线理」显示 |
 
 两个数要同时出现才算有效，超出范围的应忽略并原样保留。客户端存储前可以把倾伏角为负的读数换成另一端（`trend` 加 180°、`plunge` 取正）。同一条记录有面状产状时，客户端可以算出线在面上的侧伏角，并在线明显不在面上时提醒。服务端不检查这些字段；能力里有 `structures` 时，可以按产状表下载全组的面状和线状产状。
+
+### 6.13 轨迹逐点时间
+
+轨迹（`kind` 为 `track`、几何为 LineString）可以带每个坐标点的定位时间，放在属性 `times_s` 里：一个整数数组，长度与坐标个数相同、顺序一致，每个数是该点距 `started_at` 的秒数：
+
+```json
+"started_at": "2026-11-24T02:00:00Z",
+"times_s": [3, 13, 23, 33]
+```
+
+- 数组不递减。客户端写入时遇到手机时钟往回调，应把后面的数取成前一个数，不要写出变小的值。
+- 读取时只有在 `started_at` 有效、数组长度与坐标个数相同、每一项都是整数且不递减时才使用；否则当作没有逐点时间，原样保留这个字段。
+- 坐标被改动（如抽稀、改形状）时，客户端应同时更新或去掉 `times_s`。MultiLineString 不使用这个字段。
+- 精度为秒，足够做 GPX 导出和按拍摄时间给照片落点；更细的定位信息（精度、速度）仍只留在记录它的手机上。
+
+服务端不检查这个字段。能力里有 `gpx` 时，可以按第 3 节的 GPX 导出下载全组的轨迹（带逐点时间）和点；KML 导出把轨迹的 `started_at`、`ended_at` 写成时间范围，不把 `times_s` 列进属性。
 
 ## 7. 实时通道
 

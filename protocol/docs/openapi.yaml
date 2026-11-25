@@ -471,6 +471,21 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v0/workspaces/{ws}/export.gpx:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportGPX
+      summary: Points as waypoints, tracks with per-fix times (times_s) and other lines as routes, as GPX (capability "gpx")
+      responses:
+        "200":
+          description: GPX 1.1 document
+          content:
+            application/gpx+xml:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
   /api/v0/workspaces/{ws}/export.gpkg:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
@@ -760,7 +775,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing, boreholes, structures, workload] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing, boreholes, structures, workload, gpx] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
