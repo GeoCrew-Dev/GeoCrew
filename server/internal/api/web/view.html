@@ -700,6 +700,10 @@
     }
     row("岩性", text(p, "lithology"));
     if (typeof p.dip_direction === "number" && typeof p.dip === "number") row("产状", Math.round(p.dip_direction) + "°∠" + Math.round(p.dip) + "°");
+    if (typeof p.trend === "number" && typeof p.plunge === "number") {
+      const pad = (v, n) => String(Math.round(v)).padStart(n, "0");
+      row(typeof p.lineation_type === "string" && p.lineation_type ? p.lineation_type : "线理", pad(p.trend, 3) + "°∠" + pad(p.plunge, 2) + "°");
+    }
     if (typeof p.length_m === "number") row("长度", p.length_m >= 1000 ? (p.length_m / 1000).toFixed(2) + " km" : Math.round(p.length_m) + " m");
     if (typeof p.area_m2 === "number") row("面积", p.area_m2 >= 1e6 ? (p.area_m2 / 1e6).toFixed(3) + " km²" : Math.round(p.area_m2) + " m²");
     if (text(p, "assignee_name")) row("任务", text(p, "assignee_name") + "：" + (STATUS[p.task_status] || "待办"));
