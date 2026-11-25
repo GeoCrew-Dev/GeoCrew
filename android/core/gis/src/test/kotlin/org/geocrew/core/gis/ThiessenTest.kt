@@ -8,6 +8,7 @@ import org.geocrew.core.model.Props
 import org.geocrew.core.model.SyncInfo
 import org.geocrew.core.model.buildProperties
 import org.geocrew.core.model.double
+import org.geocrew.core.model.edit
 import org.geocrew.core.model.string
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -49,6 +50,17 @@ class ThiessenTest {
         assertTrue(out.summary, out.summary.contains("按面积加权平均 2.30"))
         assertTrue(out.summary.contains("算术平均 3.00"))
         assertTrue(out.legend.isNotEmpty())
+    }
+
+    @Test fun thicknessGivesVolumeTonnageAndVolumeWeightedGrade() {
+        val a = pt("a", 100.0, 100.0, 1.0).let { it.copy(properties = it.properties.edit { this["h"] = 2.0 }) }
+        val b = pt("b", 300.0, 100.0, 3.0).let { it.copy(properties = it.properties.edit { this["h"] = 6.0 }) }
+        val out = tool.run(ToolInput(listOf(a, b, block), mapOf("value" to "cu", "boundary" to "blk", "thickness" to "h", "density" to "2.5")))
+        // 40 000 m² × 2 m + 40 000 m² × 6 m = 32 万 m³, × 2.5 = 80 万 t (a little less on the ellipsoid); (1 × 8 + 3 × 24) / 32 = 2.5.
+        assertTrue(out.summary, out.summary.contains("体积 31.9"))
+        assertTrue(out.summary, out.summary.contains("矿石量 79.8"))
+        assertTrue(out.summary, out.summary.contains("按体积（面积×厚度）加权平均 2.50"))
+        assertEquals(80_000.0, out.features.first { it.properties.string(ThiessenTool.SOURCE) == "a" }.properties.double(ThiessenTool.VOLUME_M3)!!, 400.0)
     }
 
     @Test fun withoutABoundaryUsesThePaddedExtentAndMergesDuplicates() {

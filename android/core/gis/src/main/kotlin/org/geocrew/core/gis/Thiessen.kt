@@ -28,10 +28,14 @@ class ThiessenTool : GisTool {
         "boundary", "范围（可选）", setOf(GeometryType.POLYGON),
         help = "选一个面作为范围，只用它的外圈；不选时取点的外接矩形向外扩 10%",
     )
-    override val params = listOf(value, boundary)
+    private val thickness = ToolParam.Field("thickness", "厚度属性（可选）", numeric = true, help = "例如矿层真厚度（米）；给了就按面积×厚度算体积，品位按体积加权")
+    private val density = ToolParam.Number("density", "体重（可选）", default = null, min = 0.1, max = 25.0, unit = "t/m³", help = "矿石体重；和厚度一起给出矿石量")
+    override val params = listOf(value, boundary, thickness, density)
 
     /** One point's polygon. */
-    data class Cell(val point: GeoFeature, val ring: List<LngLat>, val areaM2: Double, val value: Double?)
+    data class Cell(val point: GeoFeature, val ring: List<LngLat>, val areaM2: Double, val value: Double?, val thicknessM: Double? = null) {
+        val volumeM3: Double? get() = thicknessM?.let { it * areaM2 }
+    }
 
     data class Result(val cells: List<Cell>, val duplicates: Int, val outside: Int)
 
@@ -47,6 +51,7 @@ class ThiessenTool : GisTool {
         val all = points(input)
         require(all.size >= 2) { "至少需要 2 个点" }
         val valueKey = input.text(value.key)
+        val thickKey = input.text(thickness.key)
         // One cell per location: a second point on the same spot has no area of its own.
         val unique = all.distinctBy { (it.geometry as Geometry.Point).position.let { p -> Math.round(p.lng * 1e7) to Math.round(p.lat * 1e7) } }
         val area = input.feature(boundary)?.geometry
@@ -85,7 +90,10 @@ class ThiessenTool : GisTool {
             if (cell.size < 3) continue
             val ring = cell.map { plane.toLngLat(it[0], it[1]) }
             val polygon = Geometry.Polygon.of(ring)
-            cells += Cell(inside[i], polygon.exterior, polygon.areaSquareMeters(), valueKey?.let { inside[i].number(it) })
+            cells += Cell(
+                inside[i], polygon.exterior, polygon.areaSquareMeters(), valueKey?.let { inside[i].number(it) },
+                thickKey?.let { inside[i].number(it) }?.takeIf { it >= 0 },
+            )
         }
         return Result(cells, all.size - unique.size, unique.size - inside.size)
     }
@@ -103,6 +111,7 @@ class ThiessenTool : GisTool {
                 this[Props.AREA_M2] = Math.round(c.areaM2 * 10) / 10.0
                 this[SOURCE] = c.point.id
                 if (valueKey != null && c.value != null) this[valueKey] = c.value
+                c.volumeM3?.let { this[VOLUME_M3] = Math.round(it).toDouble() }
                 val color = c.value?.let { ramp?.color(it) } ?: PALETTE[n % PALETTE.size]
                 style(fill = color, fillOpacity = 0.35, stroke = "#37474F", strokeWidth = 1.0)
             })
@@ -119,6 +128,21 @@ class ThiessenTool : GisTool {
                 if (valued.size < r.cells.size) lines += "${r.cells.size - valued.size} 块面的点没有这个值，不计入平均。"
             }
         }
+        val thickKey = input.text(thickness.key)
+        if (thickKey != null) {
+            val withH = r.cells.filter { it.volumeM3 != null }
+            if (withH.isEmpty()) lines += "没有点带「$thickKey」的数值，算不了体积。"
+            else {
+                val vol = withH.sumOf { it.volumeM3!! }
+                val rho = input.number(density)
+                lines += "体积 ${fmt(vol / 1e4, 2)} 万 m³（${withH.size} 块面有厚度，平均厚 ${fmt(vol / withH.sumOf { it.areaM2 })} m）" +
+                    (rho?.let { "，矿石量 ${fmt(vol * it / 1e4, 2)} 万 t（体重 ${fmt(it)} t/m³）" } ?: "") + "。"
+                val both = withH.filter { it.value != null }
+                if (valueKey != null && both.isNotEmpty() && both.sumOf { it.volumeM3!! } > 0) {
+                    lines += "「$valueKey」按体积（面积×厚度）加权平均 ${fmt(both.sumOf { it.value!! * it.volumeM3!! } / both.sumOf { it.volumeM3!! })}。"
+                }
+            }
+        }
         if (r.duplicates > 0) lines += "${r.duplicates} 个点与别的点位置重合，已合并。"
         if (r.outside > 0) lines += "${r.outside} 个点在范围外，没有参与。"
         return ToolOutput(out, lines.joinToString("\n"), ramp?.legend { fmt(it) }.orEmpty())
@@ -127,6 +151,8 @@ class ThiessenTool : GisTool {
     companion object {
         /** The point a polygon belongs to, by record id. */
         const val SOURCE = "source_point"
+        /** A cell's area times its point's thickness. */
+        const val VOLUME_M3 = "volume_m3"
         private val PALETTE = listOf("#8DD3C7", "#FFFFB3", "#BEBADA", "#FB8072", "#80B1D3", "#FDB462", "#B3DE69", "#FCCDE5")
 
         /** Sutherland–Hodgman against the half-plane of points nearer [p] than [q]. */
