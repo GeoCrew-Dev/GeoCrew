@@ -102,51 +102,78 @@ func (c *Checker) client() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
 
+// maxPages bounds how far Latest follows a paged release list.
+const maxPages = 5
+
 // Latest fetches the newest server release: of the feed's releases that are
 // neither drafts nor pre-releases and whose tag names a server version (see
-// ServerVersion), the one with the highest version.
+// ServerVersion), the one with the highest version. A release list is read
+// page by page through its Link header until a page holds a server release,
+// at most maxPages pages.
 func (c *Checker) Latest(ctx context.Context) (Release, error) {
 	url := c.URL
 	if url == "" {
 		url = DefaultURL
 	}
+	for page := 0; page < maxPages && url != ""; page++ {
+		list, single, next, err := c.fetch(ctx, url)
+		if err != nil {
+			return Release{}, err
+		}
+		if r, ok := pick(list, single); ok {
+			return r, nil
+		}
+		url = next
+	}
+	return Release{}, ErrNoRelease
+}
+
+// fetch reads one page of the feed: a release list, or a single release
+// (single), and the URL of the next page when the list goes on.
+func (c *Checker) fetch(ctx context.Context, url string) (list []rawRelease, single bool, next string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return Release{}, err
+		return nil, false, "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "geocrew-server-update")
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return Release{}, err
+		return nil, false, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return Release{}, ErrNoRelease
+		return nil, false, "", ErrNoRelease
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Release{}, fmt.Errorf("release feed returned %d", resp.StatusCode)
+		return nil, false, "", fmt.Errorf("release feed returned %d", resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFeed))
 	if err != nil {
-		return Release{}, fmt.Errorf("release feed: %w", err)
+		return nil, false, "", fmt.Errorf("release feed: %w", err)
 	}
-	var list []rawRelease
 	if data = bytes.TrimSpace(data); len(data) > 0 && data[0] == '[' {
 		err = json.Unmarshal(data, &list)
+		next = nextLink(resp.Header.Get("Link"))
 	} else {
 		var one rawRelease
 		err = json.Unmarshal(data, &one)
-		list = []rawRelease{one}
+		list, single = []rawRelease{one}, true
 	}
 	if err != nil {
-		return Release{}, fmt.Errorf("release feed: %w", err)
+		return nil, false, "", fmt.Errorf("release feed: %w", err)
 	}
+	return list, single, next, nil
+}
+
+// pick returns the highest published server release in list; single says
+// the feed carries only server releases (see ServerVersion).
+func pick(list []rawRelease, single bool) (Release, bool) {
 	var best *rawRelease
 	var version string
 	for i := range list {
 		raw := &list[i]
-		v, ok := ServerVersion(raw.Tag)
+		v, ok := ServerVersion(raw.Tag, single)
 		if !ok || raw.Draft || raw.Prerelease {
 			continue
 		}
@@ -155,7 +182,7 @@ func (c *Checker) Latest(ctx context.Context) (Release, error) {
 		}
 	}
 	if best == nil {
-		return Release{}, ErrNoRelease
+		return Release{}, false
 	}
 	r := Release{
 		Version: version, Tag: best.Tag, Name: best.Name,
@@ -164,20 +191,33 @@ func (c *Checker) Latest(ctx context.Context) (Release, error) {
 	for _, a := range best.Assets {
 		r.Assets[a.Name] = a.URL
 	}
-	return r, nil
+	return r, true
+}
+
+// nextLink returns the rel="next" URL of a GitHub-style Link header, or "".
+func nextLink(header string) string {
+	for _, part := range strings.Split(header, ",") {
+		segs := strings.Split(part, ";")
+		for _, s := range segs[1:] {
+			if strings.TrimSpace(s) == `rel="next"` {
+				return strings.Trim(strings.TrimSpace(segs[0]), "<>")
+			}
+		}
+	}
+	return ""
 }
 
 // ServerVersion returns the version a server release tag names: the
-// monorepo's "server-v0.3.0", or "v0.3.0" from a feed that carries only
-// server releases (a mirror, or a fork that publishes the server alone).
-// Tags of other components, such as "android-v0.3.0", and tags that hold
-// no release version report false.
-func ServerVersion(tag string) (string, bool) {
+// monorepo's "server-v0.3.0" or, when alone is set because the feed carries
+// only server releases (a mirror's single release, or a fork that publishes
+// the server alone), also "v0.3.0". Tags of other components, such as
+// "android-v0.3.0", and tags that hold no release version report false.
+func ServerVersion(tag string, alone bool) (string, bool) {
 	var v string
 	switch {
 	case strings.HasPrefix(tag, TagPrefix):
 		v = strings.TrimPrefix(tag, TagPrefix)
-	case strings.HasPrefix(tag, "v"):
+	case alone && strings.HasPrefix(tag, "v"):
 		v = strings.TrimPrefix(tag, "v")
 	default:
 		return "", false
