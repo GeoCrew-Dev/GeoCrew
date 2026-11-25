@@ -7,7 +7,7 @@
 | [0001](0001-monorepo.md) | 单仓库与相关仓库 | 已采纳 |
 | [0002](0002-android-baseline.md) | 安卓平台基线 | 已采纳 |
 | [0003](0003-gis-engine.md) | GIS 引擎：GDAL、PROJ、GEOS | 已采纳 |
-| [0004](0004-project-storage.md) | 工程存储：每个工程一个 GeoPackage | 草案 |
+| [0004](0004-project-storage.md) | 工程存储：每个工程一个 GeoPackage | 已采纳 |
 | [0005](0005-edit-buffer.md) | 编辑缓冲与就地编辑 | 已采纳 |
 | [0006](0006-rendering-and-styles.md) | 渲染与样式模型 | 已采纳 |
 | [0007](0007-expressions.md) | 表达式统一用 SQL | 已采纳 |

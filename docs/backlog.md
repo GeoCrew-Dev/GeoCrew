@@ -22,7 +22,7 @@
 ## M0 治理
 
 - [x] **章程** [`docs/charter.md`](charter.md)：四个目标、v0.1 的范围和完成标准、分档的功能对等清单、里程碑、不做的事、平台基线、流程。
-- [x] **架构决策** [`docs/adr/`](adr/README.md)：共 15 份。其中 0004（工程存储）、0012（插件）、0013（服务端 GDAL 辅助程序）是草案，等 M1 的技术验证结果再定。
+- [x] **架构决策** [`docs/adr/`](adr/README.md)：共 15 份。其中 0012（插件）、0013（服务端 GDAL 辅助程序）是草案，等 M1 的技术验证结果再定；0004（工程存储）已经 M1 验证采纳。
 - [x] **CLAUDE.md**：根目录、`protocol/`、`server/`、`android/` 各一份。
 - [x] GeoCrew-Native 的 CLAUDE.md，随 M1 的 GDAL 验证加上。
 - [ ] GeoCrew-Plugins 的 CLAUDE.md，等这个仓库开工时补上。
@@ -51,7 +51,9 @@
   - [ ] 评估换 NDK r28 及以上：GDAL 数据文件能编进库里，16 KB 对齐成为默认。
   - [ ] CI 里用 x86_64 模拟器跑测速程序和仪器测试。
   - [ ] 定下是否开 SpatiaLite、联网驱动（curl）、XLS（freexl）等特性，先查许可证。
-- [ ] GeoPackage 放在 /sdcard 上：测 10 万要素写入、崩溃后能否恢复、外置存储卡上的表现。退路：工作库放应用私有目录，/sdcard 上放自动导出的副本。
+- [x] GeoPackage 放在 /sdcard 上：测 10 万要素写入、崩溃后能否恢复、外置存储卡上的表现。用 WAL 时可行，见[验证报告](spikes/m1-gpkg-sdcard.md)，ADR 0004 已采纳。
+  - [ ] 手机再连上后，在真机的 /sdcard 和私有目录上跑一遍 `geocrew_storage`。
+  - [ ] 找一张 exFAT 的大容量存储卡，在带卡槽的手机上测。
 - [ ] 用 CustomGeometrySource 出图：测 10 万要素，以及编辑后的局部刷新。
 - [ ] 非 Web 墨卡托栅格的显示，比如天地图经纬度瓦片、高斯投影的 GeoTIFF。
 - [ ] 服务端 GDAL 辅助程序在五个平台上的静态构建。
