@@ -367,6 +367,21 @@ func (s *Server) checks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"issues": issues})
 }
 
+// exportBoreholes downloads the borehole layer table (protocol v0 §6.11) as CSV.
+func (s *Server) exportBoreholes(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="boreholes.csv"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := export.Boreholes(r.Context(), s.Store, ws, w); err != nil {
+		s.logger().Error("export boreholes", "workspace", ws, "err", err)
+	}
+}
+
 // exportSections downloads the measured-section layer table (protocol v0 §6.5) as CSV.
 func (s *Server) exportSections(w http.ResponseWriter, r *http.Request) {
 	ws := r.PathValue("ws")
