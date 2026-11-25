@@ -768,6 +768,98 @@ components:
             form:
               type: array
               items: { $ref: "#/components/schemas/FormField" }
+            legend: { $ref: "#/components/schemas/Legend" }
+            local_grid:
+              description: "Old-style map grid shared by the leaders; null once they stopped using one (section 2.2)"
+              oneOf:
+                - { $ref: "#/components/schemas/LocalGrid" }
+                - { type: "null" }
+            overlays:
+              type: array
+              description: Image overlays the leaders share, drawn bottom first
+              items: { $ref: "#/components/schemas/SharedOverlay" }
+            basemaps:
+              type: array
+              description: Base maps the leaders share; never ones that need an API key
+              items: { $ref: "#/components/schemas/SharedBasemap" }
+
+    Legend:
+      type: object
+      properties:
+        key: { type: string, description: Feature property whose value picks the colour; empty turns the legend off }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [value, color]
+            properties:
+              value: { type: string, description: "Matched trimmed and case-insensitively" }
+              color: { type: string, pattern: "^#[0-9A-Fa-f]{6}$" }
+
+    LocalGrid:
+      type: object
+      required: [name, ellipsoid, width, zone]
+      properties:
+        name: { type: string }
+        ellipsoid: { type: string, enum: [CGCS2000, WGS84, XIAN80, BEIJING54] }
+        width: { type: integer, enum: [3, 6], description: Zone width in degrees }
+        zone: { type: integer, minimum: 1 }
+        shift:
+          description: From GPS (CGCS2000) to the local grid; absent means only the ellipsoid changes
+          oneOf:
+            - type: object
+              required: [type, dx, dy, rotationSeconds, ppm]
+              properties:
+                type: { type: string, const: plane }
+                dx: { type: number, description: Metres north }
+                dy: { type: number, description: Metres east }
+                rotationSeconds: { type: number }
+                ppm: { type: number, minimum: -1000, maximum: 1000 }
+            - type: object
+              required: [type, dx, dy, dz, rx, ry, rz, ppm]
+              properties:
+                type: { type: string, const: bursa }
+                dx: { type: number }
+                dy: { type: number }
+                dz: { type: number }
+                rx: { type: number, description: Arc seconds, coordinate frame convention }
+                ry: { type: number }
+                rz: { type: number }
+                ppm: { type: number, minimum: -1000, maximum: 1000 }
+
+    SharedOverlay:
+      type: object
+      required: [id, name, file, type, width, height, corners]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 64 }
+        name: { type: string }
+        file: { type: string, pattern: "^[0-9a-f]{64}$", description: SHA-256 of the picture, uploaded as an attachment first }
+        type: { type: string, enum: [image/jpeg, image/png] }
+        width: { type: integer, minimum: 1, description: Pixels }
+        height: { type: integer, minimum: 1 }
+        corners:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: "[longitude, latitude] of the top left, top right, bottom right and bottom left corners"
+          items: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+        opacity: { type: number, minimum: 0.1, maximum: 1, default: 0.6 }
+        placement: { type: string, enum: [view, world_file], default: view }
+        control_points: { type: integer, minimum: 0, default: 0 }
+
+    SharedBasemap:
+      type: object
+      required: [id, name, url]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9_.-]{1,64}$" }
+        name: { type: string }
+        url:
+          type: string
+          description: "http(s) tile template with {z} {x} {y} (or {-y}) and optional {s}, or a WMS GetMap address with {bbox-epsg-3857}; never {key}"
+        subdomains: { type: array, items: { type: string } }
+        max_zoom: { type: integer, minimum: 1, maximum: 24, default: 18 }
+        tms: { type: boolean, default: false }
+        attribution: { type: string }
 
     FormField:
       type: object
