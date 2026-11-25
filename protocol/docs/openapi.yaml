@@ -855,6 +855,14 @@ components:
               type: array
               description: Base maps the leaders share; never ones that need an API key
               items: { $ref: "#/components/schemas/SharedBasemap" }
+            notice:
+              type: object
+              description: The pinned notice a leader posted; absent when there is none (section 2.2)
+              required: [text, updated_at]
+              properties:
+                text: { type: string, maxLength: 2000 }
+                updated_at: { type: string, format: date-time }
+                by: { type: string, description: "Nickname of the leader who posted it, for display only" }
 
     Legend:
       type: object
