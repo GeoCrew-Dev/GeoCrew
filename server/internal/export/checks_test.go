@@ -61,3 +61,36 @@ func TestChecks(t *testing.T) {
 		t.Fatalf("messages: %q / %q", issues[1].Message, issues[7].Message)
 	}
 }
+
+func TestChecksRecordRules(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ws, m, _, _ := db.CreateWorkspace(ctx, "组", "甲")
+	if _, err := db.PutSettings(ctx, ws.ID, json.RawMessage(`{"record_rules":{"required":["lithology","attitude","bogus"],"min_photos":2}}`), -1); err != nil {
+		t.Fatal(err)
+	}
+	pt := json.RawMessage(`{"type":"Point","coordinates":[116,40]}`)
+	fs := []store.Feature{
+		{ID: "a", Geometry: pt, Properties: json.RawMessage(`{"kind":"geo_point","title":"D001","lithology":"灰岩","strike":30,"dip":40,"photos":["x","y"]}`)},
+		{ID: "b", Geometry: pt, Properties: json.RawMessage(`{"kind":"geo_point","title":"D002","lithology":" ","dip":40,"photos":["x"]}`)},
+		{ID: "c", Geometry: pt, Properties: json.RawMessage(`{"kind":"line","title":"界线"}`)},
+	}
+	for i := range fs {
+		fs[i].Version, fs[i].UpdatedAt = 1, time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC)
+	}
+	if _, _, err := db.PushFeatures(ctx, ws.ID, m.ID, fs); err != nil {
+		t.Fatal(err)
+	}
+	issues, err := Checks(ctx, db, ws.ID, CheckOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 || issues[0].Feature != "b" || issues[0].Code != IssueIncomplete ||
+		issues[0].Message != "本工程要求填：岩性、产状、照片（至少 2 张，现有 1 张）" {
+		t.Fatalf("issues = %+v", issues)
+	}
+}

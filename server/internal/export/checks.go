@@ -24,11 +24,14 @@ const (
 	IssueMissingStop     = "missing_stop"
 	// IssueRedo: a leader sent the record back (review.state = redo, protocol §6.9).
 	IssueRedo = "redo"
+	// IssueIncomplete: a geological point lacks what the workspace's
+	// record_rules require (shared settings, protocol §2.2).
+	IssueIncomplete = "incomplete"
 )
 
 var issueOrder = map[string]int{
 	IssueDuplicateNumber: 0, IssueDuplicateSample: 1, IssueNoPosition: 2,
-	IssuePoorAccuracy: 3, IssueFarAway: 4, IssueMissingStop: 5, IssueRedo: -1,
+	IssuePoorAccuracy: 3, IssueFarAway: 4, IssueMissingStop: 5, IssueIncomplete: 6, IssueRedo: -1,
 }
 
 // Issue is one thing worth a second look on one record.
@@ -77,7 +80,9 @@ func Checks(ctx context.Context, st store.Store, workspaceID string, opt CheckOp
 		located         bool
 		redo            bool
 		redoNote        string
+		missing         []string
 	}
+	rules := recordRules(ctx, st, workspaceID)
 	var recs []rec
 	err := eachLive(ctx, st, workspaceID, func(f store.Feature) error {
 		var p struct {
@@ -96,6 +101,12 @@ func Checks(ctx context.Context, st store.Store, workspaceID string, opt CheckOp
 				State any `json:"state"`
 				Note  any `json:"note"`
 			} `json:"review"`
+			Lithology    any   `json:"lithology"`
+			Note         any   `json:"note"`
+			Dip          any   `json:"dip"`
+			DipDirection any   `json:"dip_direction"`
+			Strike       any   `json:"strike"`
+			Photos       []any `json:"photos"`
 		}
 		if json.Unmarshal(f.Properties, &p) != nil {
 			return nil
@@ -121,6 +132,18 @@ func Checks(ctx context.Context, st store.Store, workspaceID string, opt CheckOp
 			if e1 == nil && e2 == nil {
 				r.lon, r.lat, r.located = x, y, true
 			}
+		}
+		if r.kind == "geo_point" && rules.active() {
+			_, hasDip := num(p.Dip)
+			_, hasDD := num(p.DipDirection)
+			_, hasStrike := num(p.Strike)
+			r.missing = rules.missing(pointFacts{
+				lithology: strings.TrimSpace(str(p.Lithology)) != "",
+				attitude:  hasDip && (hasDD || hasStrike),
+				note:      strings.TrimSpace(str(p.Note)) != "",
+				sample:    len(r.samples) > 0,
+				photos:    len(p.Photos),
+			})
 		}
 		recs = append(recs, r)
 		return nil
@@ -185,6 +208,9 @@ func Checks(ctx context.Context, st store.Store, workspaceID string, opt CheckOp
 		}
 		if r.accuracy != nil && *r.accuracy > opt.AccuracyLimitM {
 			add(r, IssuePoorAccuracy, fmt.Sprintf("定位精度约 ±%.0f 米", *r.accuracy))
+		}
+		if len(r.missing) > 0 {
+			add(r, IssueIncomplete, "本工程要求填："+strings.Join(r.missing, "、"))
 		}
 		if r.kind == "route" {
 			gone := 0
@@ -261,4 +287,62 @@ func haversine(lon1, lat1, lon2, lat2 float64) float64 {
 	dlat, dlon := (lat2-lat1)*rad, (lon2-lon1)*rad
 	a := math.Sin(dlat/2)*math.Sin(dlat/2) + math.Cos(lat1*rad)*math.Cos(lat2*rad)*math.Sin(dlon/2)*math.Sin(dlon/2)
 	return 2 * r * math.Asin(math.Min(1, math.Sqrt(a)))
+}
+
+// rules is the part of the workspace's record_rules (protocol §2.2) the check uses.
+type rules struct {
+	Required  []string `json:"required"`
+	MinPhotos int      `json:"min_photos"`
+}
+
+type pointFacts struct {
+	lithology, attitude, note, sample bool
+	photos                            int
+}
+
+var requiredLabels = []struct{ id, label string }{
+	{"lithology", "岩性"}, {"attitude", "产状"}, {"note", "描述"}, {"sample", "样品"},
+}
+
+func (r rules) active() bool { return len(r.Required) > 0 || r.MinPhotos > 0 }
+
+// missing lists, in words, what a point lacks; unknown items are ignored.
+func (r rules) missing(f pointFacts) []string {
+	need := map[string]bool{}
+	for _, id := range r.Required {
+		need[id] = true
+	}
+	have := map[string]bool{"lithology": f.lithology, "attitude": f.attitude, "note": f.note, "sample": f.sample}
+	var out []string
+	for _, it := range requiredLabels {
+		if need[it.id] && !have[it.id] {
+			out = append(out, it.label)
+		}
+	}
+	if r.MinPhotos > 0 && f.photos < r.MinPhotos {
+		if r.MinPhotos == 1 {
+			out = append(out, "照片")
+		} else {
+			out = append(out, fmt.Sprintf("照片（至少 %d 张，现有 %d 张）", r.MinPhotos, f.photos))
+		}
+	}
+	return out
+}
+
+// recordRules reads record_rules from the shared settings; none or unreadable means no rules.
+func recordRules(ctx context.Context, st store.Store, workspaceID string) rules {
+	raw, _, err := st.Settings(ctx, workspaceID)
+	if err != nil || len(raw) == 0 {
+		return rules{}
+	}
+	var s struct {
+		RecordRules rules `json:"record_rules"`
+	}
+	if json.Unmarshal(raw, &s) != nil {
+		return rules{}
+	}
+	if s.RecordRules.MinPhotos > 20 {
+		s.RecordRules.MinPhotos = 20
+	}
+	return s.RecordRules
 }
