@@ -84,8 +84,13 @@ func TestConsoleUpdate(t *testing.T) {
 	if w := do(h, "POST", "/update", url.Values{"version": {"1.3.0"}}, "secret-token", nil); w.Code != http.StatusConflict || applied.Load() != 0 {
 		t.Fatal("a version the operator did not see must not be installed", w.Code)
 	}
+	// Where the process cannot replace itself (Windows), the operator restarts it.
+	notice := "正在重启"
+	if !update.CanRestart {
+		notice = "请重启服务"
+	}
 	w = do(h, "POST", "/update", url.Values{"version": {"1.2.0"}}, "secret-token", map[string]string{"Sec-Fetch-Site": "same-origin"})
-	if w.Code != http.StatusOK || applied.Load() != 1 || !strings.Contains(w.Body.String(), "正在重启") {
+	if w.Code != http.StatusOK || applied.Load() != 1 || !strings.Contains(w.Body.String(), notice) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 
