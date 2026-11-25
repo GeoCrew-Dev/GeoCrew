@@ -170,6 +170,22 @@
   const hiddenOverlays = new Set();
   // Base maps the leaders share (key `basemaps`): keyless XYZ, WMTS or WMS sources.
   let basemaps = [];
+  // Reference layers the leaders share (key `reference_layers`): old maps to look at, drawn under the records.
+  let references = [];
+  const hiddenRefs = new Set();
+  const refData = new Map(); // file hash -> FeatureCollection
+  const REF_ID = /^[A-Za-z0-9-]{1,64}$/;
+  const REF_PALETTE = ["#E6A157", "#8DB86B", "#6FA8DC", "#C27BA0", "#F1C232", "#76A5AF", "#E06666", "#93C47D",
+    "#B4A7D6", "#F6B26B", "#A2C4C9", "#D5A6BD", "#FFD966", "#9FC5E8", "#B6D7A8", "#EA9999"];
+  // Same colours as the phones: the legend's entry for the value, else a stable pick from the palette.
+  function refColor(v) {
+    if (v === "") return "#7E57C2";
+    const e = legend.entries.find((x) => x.value.toLowerCase() === v.toLowerCase());
+    if (e) return e.color;
+    let h = 7;
+    for (const ch of v.toLowerCase()) for (let i = 0; i < ch.length; i++) h = (Math.imul(h, 31) + ch.charCodeAt(i)) | 0;
+    return REF_PALETTE[((h % REF_PALETTE.length) + REF_PALETTE.length) % REF_PALETTE.length];
+  }
   // The pinned notice a leader posted (key `notice`), or null.
   let notice = null;
   const BASE_ID = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -207,6 +223,13 @@
         seenIds.add(o.id); return true;
       }).map((o) => ({ id: o.id, name: typeof o.name === "string" && o.name ? o.name : "叠加图", file: o.file, corners: o.corners,
         opacity: Number.isFinite(o.opacity) ? Math.min(1, Math.max(0.1, o.opacity)) : 0.6 }));
+      const seenRefs = new Set();
+      references = (Array.isArray((s.settings || {}).reference_layers) ? s.settings.reference_layers : []).filter((r) => {
+        if (!r || typeof r.id !== "string" || !REF_ID.test(r.id) || seenRefs.has(r.id) || !SHA.test(r.file)) return false;
+        if (typeof r.name !== "string" || !r.name.trim()) return false;
+        seenRefs.add(r.id); return true;
+      }).map((r) => ({ id: r.id, name: r.name.trim().slice(0, 60), file: r.file, colorBy: typeof r.color_by === "string" ? r.color_by : "",
+        opacity: Number.isFinite(r.opacity) ? Math.min(1, Math.max(0.1, r.opacity)) : 0.45 }));
       const nt = (s.settings || {}).notice;
       notice = nt && typeof nt.text === "string" && nt.text.trim() ? { text: nt.text.trim().slice(0, 2000),
         by: typeof nt.by === "string" ? nt.by.trim().slice(0, 40) : "", at: typeof nt.updated_at === "string" ? nt.updated_at : "" } : null;
@@ -264,6 +287,57 @@
     for (const id of want.keys()) if (map.getLayer(id)) map.moveLayer(id, "fill");
   }
 
+  // Draws the shown reference layers as one source under the overlays and records.
+  async function drawReferences() {
+    if (!ready) return;
+    const out = [];
+    for (const r of references) {
+      if (hiddenRefs.has(r.id)) continue;
+      let fc = refData.get(r.file);
+      if (!fc) {
+        try { fc = await (await api("/files/" + r.file)).json(); } catch { continue; } // not uploaded yet: next settings change tries again
+        if (!fc || !Array.isArray(fc.features)) continue;
+        refData.set(r.file, fc);
+      }
+      for (const f of fc.features.slice(0, 20000)) {
+        if (!f || !f.geometry) continue;
+        const p = f.properties && typeof f.properties === "object" ? f.properties : {};
+        const raw = r.colorBy ? p[r.colorBy] : undefined;
+        const v = (typeof raw === "string" || typeof raw === "number") ? String(raw).trim() : "";
+        out.push({ type: "Feature", geometry: f.geometry, properties: { _c: refColor(v), _o: r.opacity, _l: r.name, _v: v, _p: JSON.stringify(p) } });
+      }
+    }
+    const data = { type: "FeatureCollection", features: out };
+    if (map.getSource("refs")) { map.getSource("refs").setData(data); return; }
+    map.addSource("refs", { type: "geojson", data });
+    const under = map.getLayer("fill") ? "fill" : undefined;
+    map.addLayer({ id: "ref-fill", type: "fill", source: "refs", filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+      paint: { "fill-color": ["get", "_c"], "fill-opacity": ["get", "_o"] } }, under);
+    map.addLayer({ id: "ref-line", type: "line", source: "refs",
+      paint: { "line-color": ["case", ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]], "#5f6368", ["get", "_c"]], "line-width": 1, "line-opacity": 0.8 } }, under);
+    map.addLayer({ id: "ref-point", type: "circle", source: "refs", filter: ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
+      paint: { "circle-color": ["get", "_c"], "circle-radius": 4, "circle-stroke-color": "#fff", "circle-stroke-width": 1 } }, under);
+    for (const id of ["ref-fill", "ref-line", "ref-point"]) {
+      map.on("click", id, (e) => {
+        // A record on top wins the tap.
+        if (map.queryRenderedFeatures(e.point, { layers: ["attitude", "lineation", "point", "line", "line-dashed", "fill"].filter((l) => map.getLayer(l)) }).length) return;
+        const f = e.features[0], box = document.createElement("div"); box.className = "pop";
+        const h = document.createElement("h3"); h.textContent = f.properties._l + (f.properties._v ? "：" + f.properties._v : ""); box.append(h);
+        const dl = document.createElement("dl");
+        let props = {};
+        try { props = JSON.parse(f.properties._p); } catch { /* none */ }
+        for (const [k, v] of Object.entries(props).slice(0, 30)) {
+          if (v === null || typeof v === "object") continue;
+          const dt = document.createElement("dt"); dt.textContent = k;
+          const dd = document.createElement("dd"); dd.textContent = String(v).slice(0, 300);
+          dl.append(dt, dd);
+        }
+        box.append(dl);
+        new maplibregl.Popup({ maxWidth: "340px" }).setLngLat(e.lngLat).setDOMContent(box).addTo(map);
+      });
+    }
+  }
+
   function renderLegend() {
     const box = $("legend");
     const all = [...features.values()];
@@ -271,7 +345,7 @@
     const shown = legend.entries.filter((e) => used.has(e.value.toLowerCase()));
     const styles = new Set(all.map(lineStyleOf).filter(Boolean));
     const lines = Object.values(LINE_STYLES).filter((ls) => styles.has(ls));
-    const count = shown.length + lines.length + overlays.length;
+    const count = shown.length + lines.length + overlays.length + references.length;
     box.hidden = !count;
     if (!count) return;
     box.replaceChildren();
@@ -301,6 +375,17 @@
       row.onclick = (e) => e.stopPropagation();
       cb.onchange = () => { if (cb.checked) hiddenOverlays.delete(o.id); else hiddenOverlays.add(o.id); drawOverlays(); };
       row.append(cb, document.createTextNode("叠加图：" + o.name));
+      box.append(row);
+    }
+    for (const r of [...references].reverse()) {
+      const row = document.createElement("label");
+      row.style.display = "block";
+      row.title = "组长共享的参考图层，点一下显示或隐藏";
+      const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: !hiddenRefs.has(r.id) });
+      cb.style.margin = "0 6px 0 0";
+      row.onclick = (e) => e.stopPropagation();
+      cb.onchange = () => { if (cb.checked) hiddenRefs.delete(r.id); else hiddenRefs.add(r.id); drawReferences(); };
+      row.append(cb, document.createTextNode("参考图层：" + r.name));
       box.append(row);
     }
   }
@@ -946,7 +1031,7 @@
       else if (m.type === "members_changed") loadMembers().then(() => { render(); renderBanner(); }).catch(() => {});
       else if (m.type === "comments_changed") pullComments().catch(() => {});
       else if (m.type === "workspace_changed") { showWorkspace(m); renderBanner(); }
-      else if (m.type === "settings_changed") loadSettings().then(() => { render(); drawOverlays(); drawBase(); }).catch(() => {});
+      else if (m.type === "settings_changed") loadSettings().then(() => { render(); drawOverlays(); drawReferences(); drawBase(); }).catch(() => {});
     };
     sock.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 60 * 1000); };
   }
@@ -1089,6 +1174,7 @@
       drawTrails();
       render();
       drawOverlays();
+      drawReferences();
       drawBase();
     });
     $("q").oninput = renderList;

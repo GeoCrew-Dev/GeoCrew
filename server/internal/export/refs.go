@@ -55,18 +55,21 @@ func Refs(props json.RawMessage) []Ref {
 }
 
 // SettingsRefs returns the attachments the shared settings refer to: the
-// pictures of shared overlays (protocol v0 §2.2, key `overlays`).
+// pictures of shared overlays and the GeoJSON files of shared reference
+// layers (protocol v0 §2.2, keys `overlays` and `reference_layers`).
 func SettingsRefs(settings json.RawMessage) []string {
+	type file struct {
+		File string `json:"file"`
+	}
 	var s struct {
-		Overlays []struct {
-			File string `json:"file"`
-		} `json:"overlays"`
+		Overlays   []file `json:"overlays"`
+		References []file `json:"reference_layers"`
 	}
 	if len(settings) == 0 || json.Unmarshal(settings, &s) != nil {
 		return nil
 	}
 	var out []string
-	for _, o := range s.Overlays {
+	for _, o := range append(s.Overlays, s.References...) {
 		if blob.ValidHash(o.File) {
 			out = append(out, o.File)
 		}
@@ -76,7 +79,7 @@ func SettingsRefs(settings json.RawMessage) []string {
 
 // Referenced collects every attachment any revision of any record in the
 // workspace refers to: current, deleted and superseded ones, since history
-// can restore any of them; plus the shared overlay pictures.
+// can restore any of them; plus the files the shared settings refer to.
 func Referenced(ctx context.Context, st store.Store, workspaceID string) (map[string]bool, error) {
 	refs := map[string]bool{}
 	settings, _, err := st.Settings(ctx, workspaceID)
