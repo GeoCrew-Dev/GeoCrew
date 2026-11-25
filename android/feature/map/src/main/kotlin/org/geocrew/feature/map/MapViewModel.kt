@@ -30,6 +30,7 @@ import org.geocrew.core.map.MapImage
 import org.geocrew.core.map.MapOverlays
 import org.geocrew.core.model.nextName
 import org.geocrew.core.model.Bounds
+import org.geocrew.core.model.bounds
 import org.geocrew.core.model.ImageOverlay
 import org.geocrew.core.model.OverlayAlign
 import org.geocrew.core.model.WorldFile
@@ -159,6 +160,7 @@ class MapViewModel @Inject constructor(
     private val terrain: org.geocrew.core.data.repo.TerrainTiles,
     private val teamForms: org.geocrew.core.data.team.TeamForms,
     private val teamRepo: org.geocrew.core.data.team.TeamRepository,
+    private val referenceStore: org.geocrew.core.data.repo.ReferenceLayers,
 ) : ViewModel() {
 
     /** Downloading an area of the base map for offline use; survives leaving the screen. */
@@ -432,6 +434,63 @@ class MapViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, MapOverlays())
 
+    /** The project's reference layers, in drawing order, for the layer sheet. */
+    val referenceLayers: StateFlow<List<org.geocrew.core.model.ReferenceLayer>> = project
+        .map { it?.config?.referenceLayers.orEmpty() }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Shapes of the visible reference layers, read from this phone. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val reference: StateFlow<List<org.geocrew.core.map.ReferenceDraw>> = combine(project.map { it?.id }.distinctUntilChanged(), referenceLayers) { id, l -> id to l }
+        .mapLatest { (id, layers) ->
+            if (id == null) emptyList()
+            else layers.filter { it.visible }.map { org.geocrew.core.map.ReferenceDraw(it, referenceStore.shapes(id, it)) }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _tappedReference = MutableStateFlow<ReferenceTap?>(null)
+
+    /** A reference shape tapped on the map, to show its attributes. */
+    val tappedReference: StateFlow<ReferenceTap?> = _tappedReference.asStateFlow()
+
+    fun dismissReference() {
+        _tappedReference.value = null
+    }
+
+    private fun tapReference(id: String): Boolean {
+        val (layerId, i) = org.geocrew.core.map.ReferenceDraw.parse(id) ?: return false
+        val draw = reference.value.firstOrNull { it.layer.id == layerId } ?: return true
+        val f = draw.shapes.getOrNull(i) ?: return true
+        val rows = f.properties.keys.filter { it != Props.KIND }.mapNotNull { k ->
+            org.geocrew.core.model.ReferenceLayer.text(f, k)?.let { k to it }
+        }
+        _tappedReference.value = ReferenceTap(draw.layer.name, draw.layer.colorBy, rows)
+        return true
+    }
+
+    fun setReference(layerId: String, change: (org.geocrew.core.model.ReferenceLayer) -> org.geocrew.core.model.ReferenceLayer) {
+        val p = project.value ?: return
+        val l = p.config.referenceLayers.firstOrNull { it.id == layerId } ?: return
+        viewModelScope.launch { referenceStore.update(p.id, change(l)) }
+    }
+
+    /** Calls [then] with the extent of a reference layer's shapes, if it has any. */
+    fun referenceBounds(layerId: String, then: (Bounds) -> Unit) {
+        val p = project.value ?: return
+        val l = p.config.referenceLayers.firstOrNull { it.id == layerId } ?: return
+        viewModelScope.launch {
+            val b = referenceStore.shapes(p.id, l).mapNotNull { it.geometry?.bounds() }.reduceOrNull { a, c -> a.union(c) } ?: return@launch
+            if (!l.visible) referenceStore.update(p.id, l.copy(visible = true))
+            then(b)
+        }
+    }
+
+    fun removeReference(layerId: String) {
+        val p = project.value ?: return
+        appScope.launch { referenceStore.remove(p.id, layerId) }
+    }
+
     /** The project's image overlays, each with whether its file is on this device. */
     val overlayItems: StateFlow<List<OverlayItem>> = project.map { p ->
         val team = when (p?.team?.role) {
@@ -688,7 +747,7 @@ class MapViewModel @Inject constructor(
         when (val m = _mode.value) {
             is MapMode.Draw -> _mode.value = tap(m, position, toleranceM)
             is AlignMode -> _mode.value = alignTap(m, position)
-            MapMode.Browse -> _selected.value = featureId
+            MapMode.Browse -> if (featureId == null || !tapReference(featureId)) _selected.value = featureId
         }
     }
 
@@ -950,4 +1009,9 @@ class MapViewModel @Inject constructor(
     private companion object {
         val STALE_AFTER: Duration = Duration.ofMinutes(2)
     }
+}
+
+/** The attributes of a tapped reference shape; [colorBy] is listed first. */
+data class ReferenceTap(val layer: String, val colorBy: String?, val rows: List<Pair<String, String>>) {
+    val sorted get() = rows.sortedBy { if (it.first == colorBy) 0 else 1 }
 }

@@ -52,7 +52,27 @@ data class MapOverlays(
     val sheets: List<org.geocrew.core.model.Bounds> = emptyList(),
     /** Pictures pinned to the map under everything else, bottom first. */
     val images: List<MapImage> = emptyList(),
+    /** Visible reference layers, bottom first, drawn under the records. */
+    val reference: List<ReferenceDraw> = emptyList(),
 )
+
+/** One reference layer's shapes to draw; tapping one reports the id [refId]. */
+data class ReferenceDraw(val layer: org.geocrew.core.model.ReferenceLayer, val shapes: List<GeoFeature>) {
+    companion object {
+        private const val PREFIX = "ref:"
+
+        fun refId(layerId: String, index: Int) = "$PREFIX$layerId:$index"
+
+        /** The layer id and shape index in a tapped id, or null when it is a record's id. */
+        fun parse(id: String?): Pair<String, Int>? {
+            if (id == null || !id.startsWith(PREFIX)) return null
+            val rest = id.removePrefix(PREFIX)
+            val i = rest.lastIndexOf(':')
+            if (i <= 0) return null
+            return rest.substring(0, i) to (rest.substring(i + 1).toIntOrNull() ?: return null)
+        }
+    }
+}
 
 /** A decoded picture to draw over the base map, stretched to its four corners (top left first, clockwise). */
 data class MapImage(
@@ -74,6 +94,20 @@ internal object OverlayGeoJson {
         put("geometry", GeoJson.encodeGeometry(g))
         put("properties", JsonObjectBuilder().apply(props).build())
     }
+
+    fun reference(layers: List<ReferenceDraw>, legend: Legend): String = collection(
+        layers.flatMap { d ->
+            d.shapes.mapIndexedNotNull { i, f ->
+                val g = f.geometry ?: return@mapIndexedNotNull null
+                val value = d.layer.colorBy?.let { org.geocrew.core.model.ReferenceLayer.text(f, it) }
+                feature(g) {
+                    this["fid"] = ReferenceDraw.refId(d.layer.id, i)
+                    this["color"] = org.geocrew.core.model.ReferenceLayer.colorFor(value, legend)
+                    this["op"] = d.layer.opacity.toDouble()
+                }
+            }
+        },
+    )
 
     fun features(list: List<GeoFeature>, selectedId: String?, memberId: String? = null, legend: Legend = Legend()): String = collection(
         list.mapNotNull { f ->

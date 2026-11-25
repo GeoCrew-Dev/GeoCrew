@@ -72,6 +72,8 @@ data class ProjectConfig(
     val teamAiDeny: List<String> = emptyList(),
     /** What records must have and how points are named (`record_rules`); shared in a team, set by leaders. */
     val recordRules: RecordRules = RecordRules(),
+    /** Maps brought in to look at, drawn under the records; kept on this phone only. */
+    val referenceLayers: List<ReferenceLayer> = emptyList(),
     /** [TeamNotice.updatedAt] of the notice this device's user dismissed on the map. Kept per device. */
     val noticeSeenAt: String? = null,
 ) {
@@ -95,6 +97,7 @@ data class ProjectConfig(
         display = display,
         localGrid = localGrid,
         phrases = phrases,
+        recordRules = recordRules,
     )
 
     /** Required fields [f] has not filled yet, in form order. */

@@ -170,8 +170,8 @@ class ActionRunner @Inject constructor(
 
     private suspend fun resolve(id: String?): GeoFeature? {
         if (id == null || id == ActionCatalog.CURRENT) {
-            host.openRecord.value?.let { o -> features.get(o)?.takeIf { !it.deleted }?.let { return it } }
             val p = projects.current.first()
+            host.openRecord.value?.let { o -> features.get(o)?.takeIf { !it.deleted && it.projectId == p.id }?.let { return it } }
             return features.all(p.id).filter { !it.deleted }.maxByOrNull { it.createdAt }
         }
         return features.get(id)?.takeIf { !it.deleted }

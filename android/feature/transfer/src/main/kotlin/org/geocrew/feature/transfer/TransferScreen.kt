@@ -244,9 +244,18 @@ fun TransferScreen(onBack: () -> Unit, viewModel: TransferViewModel = hiltViewMo
                     Text("${p.format.displayName}，共 ${p.result.features.size} 个要素：")
                     p.counts.forEach { (k, n) -> Text("· ${KindUi.label(k)} $n") }
                     p.result.warnings.take(5).forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    Text(
+                        "「导入为记录」会变成本工程的记录，可以编辑并同步给组员；已有的地质图、矿权范围等只想对照着看的，选「作为参考图层」：画在记录下面，点开看属性，不算记录、不同步。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             },
-            confirmButton = { TextButton(onClick = viewModel::confirmImport) { Text("导入") } },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = viewModel::confirmAsReference) { Text("作为参考图层") }
+                    TextButton(onClick = viewModel::confirmImport) { Text("导入为记录") }
+                }
+            },
             dismissButton = { TextButton(onClick = viewModel::cancelImport) { Text("取消") } },
         )
     }

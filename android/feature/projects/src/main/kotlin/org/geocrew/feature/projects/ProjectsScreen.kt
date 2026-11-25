@@ -72,6 +72,7 @@ class ProjectsViewModel @Inject constructor(
     features: FeatureRepository,
     private val team: TeamRepository,
     private val storage: org.geocrew.core.data.repo.StorageMaintenance,
+    private val reference: org.geocrew.core.data.repo.ReferenceLayers,
 ) : ViewModel() {
     /** Null until loaded, so the empty state does not flash. */
     val rows: StateFlow<List<ProjectRow>?> = combine(projects.projects, features.observeCounts(), projects.currentId) { list, counts, cur ->
@@ -137,6 +138,7 @@ class ProjectsViewModel @Inject constructor(
     fun delete(id: String) = viewModelScope.launch {
         team.leave(id)
         projects.delete(id)
+        reference.removeAll(id)
         storage.sweepPhotos()
     }
 }

@@ -181,6 +181,7 @@ fun GeoCrewNavHost(shell: ShellViewModel = hiltViewModel()) {
                 onOpenProjects = { nav.toProjects() },
                 onOpenChat = { nav.navigate(Routes.TEAM_CHAT) { launchSingleTop = true } },
                 onOpenAssistant = { nav.navigate(Routes.ASSISTANT) { launchSingleTop = true } },
+                onSelectionChanged = { id -> if (id != null) shell.host.openRecord.value = id },
                 focusFeatureId = focus,
                 focusPosition = focusAt?.takeIf { it.size == 2 }?.let { runCatching { org.geocrew.core.model.LngLat(it[0], it[1]) }.getOrNull() },
                 onFocusHandled = {

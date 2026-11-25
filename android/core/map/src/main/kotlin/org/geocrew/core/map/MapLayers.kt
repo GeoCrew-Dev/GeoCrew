@@ -54,6 +54,10 @@ internal object MapLayers {
     const val SRC_SKETCH = "gc-sketch"
     const val SRC_GRID = "gc-grid"
     const val SRC_SHEETS = "gc-sheets"
+    const val SRC_REF = "gc-ref"
+    private const val L_REF_FILL = "gc-ref-fill"
+    private const val L_REF_LINE = "gc-ref-line"
+    private const val L_REF_POINT = "gc-ref-point"
 
     const val L_FILL = "gc-fill"
     const val L_LINE = "gc-line"
@@ -64,13 +68,17 @@ internal object MapLayers {
     private const val L_DIP = "gc-dip"
     private const val L_LINEATION = "gc-lineation"
     private const val L_PLUNGE = "gc-plunge"
-    val clickable = arrayOf(L_ATTITUDE, L_LINEATION, L_POINT, L_LINE, L_LINE_DASHED, L_FILL)
+    /** Records first, so a record over a reference shape wins the tap. */
+    val clickable = arrayOf(L_ATTITUDE, L_LINEATION, L_POINT, L_LINE, L_LINE_DASHED, L_FILL, L_REF_POINT, L_REF_LINE, L_REF_FILL)
 
     private const val EMPTY = """{"type":"FeatureCollection","features":[]}"""
 
     private val isPolygon = eq(geometryType(), literal("Polygon"))
     private val isLine = eq(geometryType(), literal("LineString"))
     private val isPoint = eq(geometryType(), literal("Point"))
+    private val anyPolygon = Expression.any(isPolygon, eq(geometryType(), literal("MultiPolygon")))
+    private val anyLine = Expression.any(isLine, eq(geometryType(), literal("MultiLineString")))
+    private val anyPoint = Expression.any(isPoint, eq(geometryType(), literal("MultiPoint")))
     private val selected = eq(get("selected"), literal(true))
     private val hasAttitude = Expression.has("dipdir")
     private val myTask = eq(get("mytask"), literal(true))
@@ -109,7 +117,31 @@ internal object MapLayers {
     )
 
     fun install(style: Style) {
-        listOf(SRC_GRID, SRC_SHEETS, SRC_FEATURES, SRC_ME, SRC_TEAM, SRC_SKETCH).forEach { style.addSource(GeoJsonSource(it, EMPTY)) }
+        listOf(SRC_REF, SRC_GRID, SRC_SHEETS, SRC_FEATURES, SRC_ME, SRC_TEAM, SRC_SKETCH).forEach { style.addSource(GeoJsonSource(it, EMPTY)) }
+
+        // Reference layers (an existing geological map, a licence boundary): under everything the user records.
+        style.addLayer(
+            FillLayer(L_REF_FILL, SRC_REF).withFilter(anyPolygon).withProperties(
+                fillColor(get("color")),
+                fillOpacity(get("op")),
+            ),
+        )
+        style.addLayer(
+            LineLayer(L_REF_LINE, SRC_REF).withFilter(Expression.any(anyLine, anyPolygon)).withProperties(
+                lineColor(switchCase(anyPolygon, literal("#5D4037"), get("color"))),
+                lineWidth(switchCase(anyPolygon, literal(0.8f), literal(2f))),
+                lineOpacity(0.9f),
+            ),
+        )
+        style.addLayer(
+            CircleLayer(L_REF_POINT, SRC_REF).withFilter(anyPoint).withProperties(
+                circleRadius(4f),
+                circleColor(get("color")),
+                circleOpacity(0.9f),
+                circleStrokeColor("#FFFFFF"),
+                circleStrokeWidth(1f),
+            ),
+        )
 
         // Kilometre grid: thin and below everything else, like the grid on a printed topographic map.
         style.addLayer(
@@ -314,6 +346,7 @@ internal object MapLayers {
             AttitudeSymbols.ensurePlungeLabels(style, o.features.mapNotNull { f -> f.plunge?.plunge?.let { Math.round(it).toInt() } }.toSet())
             set(SRC_FEATURES, OverlayGeoJson.features(o.features, o.selectedId, o.memberId, o.legend))
         }
+        if (previous == null || previous.reference !== o.reference || previous.legend != o.legend) set(SRC_REF, OverlayGeoJson.reference(o.reference, o.legend))
         if (previous == null || previous.grid !== o.grid) set(SRC_GRID, OverlayGeoJson.grid(o.grid))
         if (previous == null || previous.sheets != o.sheets) set(SRC_SHEETS, OverlayGeoJson.sheets(o.sheets))
         if (previous == null || previous.me != o.me) set(SRC_ME, OverlayGeoJson.me(o.me))

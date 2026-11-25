@@ -77,6 +77,8 @@ fun MapScreen(
     onOpenChat: () -> Unit = {},
     /** Opens the assistant (voice commands, guided entry, AI). */
     onOpenAssistant: (() -> Unit)? = null,
+    /** The record selected on the map changed (null when none), so "this record" can mean it. */
+    onSelectionChanged: (String?) -> Unit = {},
     /** A feature another screen asked to show; consumed once. */
     focusFeatureId: String? = null,
     /** A position another screen asked to show (e.g. a team message's); consumed once. */
@@ -90,6 +92,8 @@ fun MapScreen(
     val mode by viewModel.mode.collectAsStateWithLifecycle()
     val measureWalk by viewModel.measureWalk.collectAsStateWithLifecycle()
     val selected by viewModel.selected.collectAsStateWithLifecycle()
+    val selectedId = selected?.id
+    LaunchedEffect(selectedId) { onSelectionChanged(selectedId) }
     val fix by viewModel.fix.collectAsStateWithLifecycle()
     val recording by viewModel.isRecording.collectAsStateWithLifecycle()
     val tracking by viewModel.tracking.state.collectAsStateWithLifecycle()
@@ -246,7 +250,12 @@ fun MapScreen(
         }
     }
     val images by viewModel.images.collectAsStateWithLifecycle()
-    val drawn = remember(overlays, grid, images, sheets) { overlays.copy(grid = grid?.lines.orEmpty(), images = images, sheets = sheets.map { it.bounds }) }
+    val reference by viewModel.reference.collectAsStateWithLifecycle()
+    val referenceLayers by viewModel.referenceLayers.collectAsStateWithLifecycle()
+    val tappedReference by viewModel.tappedReference.collectAsStateWithLifecycle()
+    val drawn = remember(overlays, grid, images, sheets, reference) {
+        overlays.copy(grid = grid?.lines.orEmpty(), images = images, sheets = sheets.map { it.bounds }, reference = reference)
+    }
     val gridLabels = remember(grid) {
         grid?.lines?.mapNotNull { l -> l.anchor?.let { org.geocrew.core.map.MapLabel(it, l.label) } }.orEmpty()
     }
@@ -520,6 +529,7 @@ fun MapScreen(
             )
         }
 
+        tappedReference?.let { ReferenceTapDialog(it, viewModel::dismissReference) }
         if (showLayers) {
             LayerSheet(
                 base = bm,
@@ -543,6 +553,14 @@ fun MapScreen(
                 onDownload = { showLayers = false; downloadTitle = null; downloadZoom = null; downloadArea = camera.visibleBounds() },
                 onPrint = { showLayers = false; printTitle = project?.name.orEmpty() },
                 overlays = overlayItems,
+                reference = referenceLayers,
+                referenceActions = remember(viewModel, camera) {
+                    ReferenceActions(
+                        change = viewModel::setReference,
+                        fit = { id -> showLayers = false; viewModel.referenceBounds(id) { camera.fit(it) } },
+                        remove = viewModel::removeReference,
+                    )
+                },
                 overlayActions = remember(viewModel, camera) {
                     OverlayActions(
                         add = { pickOverlay.launch(arrayOf("*/*")) },

@@ -58,6 +58,7 @@ class TransferViewModel @Inject constructor(
     private val tracks: TrackRepository,
     private val photoStore: PhotoStore,
     private val settings: SettingsRepository,
+    private val reference: org.geocrew.core.data.repo.ReferenceLayers,
 ) : ViewModel() {
     private val _preview = MutableStateFlow<ImportPreview?>(null)
     val preview: StateFlow<ImportPreview?> = _preview.asStateFlow()
@@ -99,6 +100,19 @@ class TransferViewModel @Inject constructor(
         features.importAll(incoming)
         _preview.value = null
         _message.value = TransferMessage.Info("已导入 ${p.result.features.size} 个要素。")
+    }
+
+    /** Keeps the file as a reference layer to look at on the map instead of as records. */
+    fun confirmAsReference() = work {
+        val p = _preview.value ?: return@work
+        val project = projects.ensureCurrent()
+        val shapes = p.result.features.filter { it.geometry != null }
+        if (shapes.isEmpty()) return@work fail("「${p.fileName}」里没有带位置的图形。")
+        val layer = reference.add(project.id, p.fileName.substringBeforeLast('.'), shapes)
+        _preview.value = null
+        _message.value = TransferMessage.Info(
+            "已加为参考图层「${layer.name}」（${shapes.size} 个图形）" + (layer.colorBy?.let { "，按「$it」着色" } ?: "") + "。在地图「图层」里的「参考图层」可以开关和调透明度。",
+        )
     }
 
     fun cancelImport() {
