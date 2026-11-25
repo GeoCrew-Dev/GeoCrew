@@ -1,6 +1,6 @@
 # 0003 GIS 引擎：GDAL、PROJ、GEOS
 
-- 状态：已采纳（2026-11-25），构建方式由 M1 技术验证确认
+- 状态：已采纳（2026-11-25），构建方式已由 M1 技术验证确认
 - 相关：[0004](0004-project-storage.md)、[0010](0010-action-registry.md)、[0013](0013-server-gdal-helper.md)、[许可证清单](../licenses.md)
 
 ## 背景
@@ -14,6 +14,7 @@
   - 安卓端：发布成 AAR。
   - 服务端：给 GDAL 辅助程序提供静态库，见 [ADR 0013](0013-server-gdal-helper.md)。
 - 排除 GDAL 里属于 GPL 的可选依赖（如 poppler）。在安卓上，GEOS 编成单独的 .so。
+- 安卓自带的 iconv 读不了 GBK，所以带上 GNU libiconv，同样编成单独的 .so（M1 验证补充）。
 - GDAL 算法注册表里的每个算法，都自动登记成动作：有自动生成的表单，AI 也能调用，见 [ADR 0010](0010-action-registry.md)。克里金、泰森多边形、最省时路线等自有算法，作为内置动作保留。
 - QGIS 的处理工具箱、标注、符号、版面都是 QGIS 自己写的代码，我们要自己写出类似功能，按[章程](../charter.md)里的分档清单逐步做。
 
@@ -28,11 +29,11 @@
 
 ## 代价与后果
 
-- 安装包每种 CPU 架构大约多二三十 MB，PROJ 的坐标系数据库另外约 9 MB，M1 实测。
+- 安装包变大。M1 实测 arm64：原生库剥离符号后 44 MB，proj.db 10 MB、GDAL 数据文件 3 MB；APK 在原生库不压缩存放时 46.5 MB，压缩存放时 18 MB。见[验证报告](../spikes/m1-gdal-android.md)。
 - 原生代码碰到坏文件可能崩溃，所以导入和试读放在独立进程里，见 [ADR 0002](0002-android-baseline.md)。
 - GDAL 的算法数量远少于 QGIS 工具箱，第二档的工具里有一部分要自己写。
 - 旧版手写的格式读写和坐标转换不再保留，但它们的单元测试可以用来核对 GDAL、PROJ 的结果。
 
 ## 状态
 
-已采纳。"用 vcpkg 把 GDAL 编成 AAR，并测出安装包体积"是 M1 的验证项。
+已采纳。构建方式已由 M1 验证确认，见[验证报告](../spikes/m1-gdal-android.md)。
