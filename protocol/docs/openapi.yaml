@@ -382,6 +382,26 @@ paths:
               schema: { type: string }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /api/v0/workspaces/{ws}/export.workload.csv:
+    parameters: [{ $ref: "#/components/parameters/ws" }]
+    get:
+      tags: [features]
+      operationId: exportWorkload
+      summary: Daily work per member as CSV, with a total row per member (capability "workload")
+      parameters:
+        - name: tz_offset
+          in: query
+          description: Minutes east of UTC used to split days
+          schema: { type: integer, minimum: -840, maximum: 840, default: 0 }
+      responses:
+        "200":
+          description: "UTF-8 CSV with a BOM; columns 日期, 组员, 新建记录, 其中地质点, 修改次数, 样品, 照片, 轨迹(km)"
+          content:
+            text/csv:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/v0/workspaces/{ws}/export.boreholes.csv:
     parameters: [{ $ref: "#/components/parameters/ws" }]
     get:
@@ -740,7 +760,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing, boreholes, structures] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing, boreholes, structures, workload] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
