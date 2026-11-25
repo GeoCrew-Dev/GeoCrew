@@ -198,6 +198,13 @@ go run ./cmd/geocrew-server
 GEOCREW_TEST_POSTGRES="postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" go test ./internal/store/...
 ```
 
+改了接口后，可以用协议仓库的一致性检查从外部跑一遍（CI 每次提交也会跑）：
+
+```bash
+go run ./cmd/geocrew-server -data /tmp/geocrew-check &
+go run github.com/GeoCrew-Dev/GeoCrew-Protocol/conformance@latest -server http://localhost:8080
+```
+
 ## 许可
 
 Apache-2.0
