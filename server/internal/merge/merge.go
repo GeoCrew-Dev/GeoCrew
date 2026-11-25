@@ -124,8 +124,14 @@ func Apply(row *Row, ch Change, live map[string]bool, seq int64, serverNow time.
 		}
 	}
 	deleted := out.Deleted != nil && string(out.Deleted.Value) == "true"
+	del := ""
+	if ch.Delete != nil {
+		del = string(ch.Delete.Value)
+	}
 	switch {
-	case ch.Delete != nil && string(ch.Delete.Value) == "true":
+	case del != "" && del != "true" && del != "false":
+		// Not a boolean: ignored here, refused by the request validation.
+	case del == "true":
 		in := Field{Value: json.RawMessage("true"), By: ch.By, At: EditTime(ch.Delete.EditedAt, ch.ClientNow, serverNow), Seq: seq}
 		if editedOthers && !deleted {
 			lost := in
@@ -133,7 +139,7 @@ func Apply(row *Row, ch Change, live map[string]bool, seq int64, serverNow time.
 		} else if !deleted {
 			out.Deleted = &in
 		}
-	case ch.Delete != nil:
+	case del == "false":
 		if deleted {
 			in := Field{Value: json.RawMessage("false"), By: ch.By, At: EditTime(ch.Delete.EditedAt, ch.ClientNow, serverNow), Seq: seq}
 			out.Deleted = &in
