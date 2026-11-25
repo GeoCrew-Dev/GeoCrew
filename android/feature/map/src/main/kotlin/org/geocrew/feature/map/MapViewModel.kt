@@ -41,6 +41,7 @@ import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.GeoFeature
 import org.geocrew.core.model.Geometry
 import org.geocrew.core.model.LngLat
+import org.geocrew.core.model.lengthMeters
 import org.geocrew.core.model.Legend
 import org.geocrew.core.model.MapDisplay
 import org.geocrew.core.model.MapViewport
@@ -95,7 +96,13 @@ sealed interface MapMode {
 }
 
 /** An image overlay as the layer list shows it. */
-data class OverlayItem(val overlay: ImageOverlay, val missing: Boolean)
+data class OverlayItem(val overlay: ImageOverlay, val missing: Boolean, val team: OverlayTeam = OverlayTeam.NONE) {
+    /** Shared by a leader and seen by a member: only showing it and its opacity are up to this phone. */
+    val readOnly: Boolean get() = overlay.shared && team == OverlayTeam.MEMBER
+}
+
+/** Whether the open project is in a workspace, and as what. */
+enum class OverlayTeam { NONE, LEADER, MEMBER }
 
 /**
  * Lining an image overlay up with the map: tap a spot on the picture, then
@@ -145,6 +152,8 @@ class MapViewModel @Inject constructor(
     private val rollCalls: org.geocrew.core.sensors.RollCallActions,
     private val outingActions: org.geocrew.core.sensors.OutingActions,
     private val terrain: org.geocrew.core.data.repo.TerrainTiles,
+    private val teamForms: org.geocrew.core.data.team.TeamForms,
+    private val teamRepo: org.geocrew.core.data.team.TeamRepository,
 ) : ViewModel() {
 
     /** Downloading an area of the base map for offline use; survives leaving the screen. */
@@ -413,8 +422,15 @@ class MapViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, MapOverlays())
 
     /** The project's image overlays, each with whether its file is on this device. */
-    val overlayItems: StateFlow<List<OverlayItem>> = project.map { it?.config?.overlays.orEmpty() }.distinctUntilChanged()
-        .map { list -> withContext(Dispatchers.IO) { list.map { OverlayItem(it, overlayImages.file(it.file)?.isFile != true) } } }
+    val overlayItems: StateFlow<List<OverlayItem>> = project.map { p ->
+        val team = when (p?.team?.role) {
+            null -> OverlayTeam.NONE
+            org.geocrew.core.data.team.TeamRepository.ROLE_LEADER -> OverlayTeam.LEADER
+            else -> OverlayTeam.MEMBER
+        }
+        p?.config?.overlays.orEmpty() to team
+    }.distinctUntilChanged()
+        .map { (list, team) -> withContext(Dispatchers.IO) { list.map { OverlayItem(it, overlayImages.file(it.file)?.isFile != true, team) } } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val bitmaps = java.util.concurrent.ConcurrentHashMap<String, android.graphics.Bitmap>()
@@ -520,9 +536,33 @@ class MapViewModel @Inject constructor(
     }
 
     /** Changes one overlay of the open project. */
-    fun setOverlay(overlayId: String, change: (ImageOverlay) -> ImageOverlay) = viewModelScope.launch {
-        val id = project.value?.id ?: return@launch
-        projects.updateConfig(id) { c -> c.copy(overlays = c.overlays.map { if (it.id == overlayId) change(it) else it }) }
+    fun setOverlay(overlayId: String, change: (ImageOverlay) -> ImageOverlay) = editOverlays { list -> list.map { if (it.id == overlayId) change(it) else it } }
+
+    /** Shares an overlay with the workspace, or stops sharing it (leaders). */
+    fun toggleShared(overlayId: String) = setOverlay(overlayId) { it.copy(shared = !it.shared) }
+
+    /**
+     * Changes the open project's overlays; when a leader's change touches
+     * what the workspace shares, it goes to every member (protocol v0 §2.2).
+     */
+    private fun editOverlays(edit: (List<ImageOverlay>) -> List<ImageOverlay>) = viewModelScope.launch {
+        val p = project.value ?: return@launch
+        var before: List<org.geocrew.core.model.SharedOverlay> = emptyList()
+        var after: List<org.geocrew.core.model.SharedOverlay> = emptyList()
+        projects.updateConfig(p.id) { c ->
+            val next = edit(c.overlays)
+            before = org.geocrew.core.model.SharedOverlay.published(c.overlays)
+            after = org.geocrew.core.model.SharedOverlay.published(next)
+            c.copy(overlays = next)
+        }
+        if (before == after || p.team?.role != org.geocrew.core.data.team.TeamRepository.ROLE_LEADER) return@launch
+        val h = teamRepo.handle(p.id) ?: return@launch
+        val msg = try {
+            teamForms.publishOverlays(h) ?: if (after.size > before.size) "已共享给组员，图片会随同步传给他们" else null
+        } catch (e: java.io.IOException) {
+            "已保存在本机，联网后会同步给组员"
+        }
+        msg?.let { _notice.value = it }
     }
 
     /** Lays an overlay over [view] again, e.g. when its world file put it in the wrong place. */
@@ -534,20 +574,13 @@ class MapViewModel @Inject constructor(
     }
 
     /** Moves an overlay one step up (drawn later) or down in the list. */
-    fun moveOverlay(overlayId: String, up: Boolean) = viewModelScope.launch {
-        val id = project.value?.id ?: return@launch
-        projects.updateConfig(id) { c ->
-            val i = c.overlays.indexOfFirst { it.id == overlayId }
-            val j = if (up) i + 1 else i - 1
-            if (i < 0 || j !in c.overlays.indices) c
-            else c.copy(overlays = c.overlays.toMutableList().apply { add(j, removeAt(i)) })
-        }
+    fun moveOverlay(overlayId: String, up: Boolean) = editOverlays { list ->
+        val i = list.indexOfFirst { it.id == overlayId }
+        val j = if (up) i + 1 else i - 1
+        if (i < 0 || j !in list.indices) list else list.toMutableList().apply { add(j, removeAt(i)) }
     }
 
-    fun removeOverlay(overlayId: String) = viewModelScope.launch {
-        val id = project.value?.id ?: return@launch
-        projects.updateConfig(id) { c -> c.copy(overlays = c.overlays.filterNot { it.id == overlayId }) }
-    }
+    fun removeOverlay(overlayId: String) = editOverlays { list -> list.filterNot { it.id == overlayId } }
 
     private var locationJob: Job? = null
 

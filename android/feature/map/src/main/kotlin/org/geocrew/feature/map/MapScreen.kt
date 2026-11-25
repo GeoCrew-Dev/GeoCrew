@@ -512,6 +512,7 @@ fun MapScreen(
                         align = { id -> showLayers = false; viewModel.startAlign(id) },
                         move = viewModel::moveOverlay,
                         remove = viewModel::removeOverlay,
+                        share = viewModel::toggleShared,
                     )
                 },
                 onDismiss = { showLayers = false },

@@ -12,7 +12,8 @@ import kotlin.math.tan
  * A picture laid over the map, such as a scanned geological map or a sketch
  * plan, pinned by its four corners. It belongs to the project (kept in
  * [ProjectConfig.overlays]); the image itself is a file on this device, carried
- * in project packages but not synced to the workspace.
+ * in project packages. A leader can share one with the workspace
+ * ([shared], protocol v0 §2.2 key `overlays`); members then get it read-only.
  */
 @Serializable
 data class ImageOverlay(
@@ -31,9 +32,15 @@ data class ImageOverlay(
     val placement: Placement = Placement.VIEW,
     /** Control points the corners were last fitted to by hand (see [OverlayAlign]); 0 when not aligned since. */
     val controlPoints: Int = 0,
+    /** Shared with the workspace: a leader's to publish, a member's from the leader. */
+    val shared: Boolean = false,
 ) {
     @Serializable
     enum class Placement { VIEW, WORLD_FILE }
+
+    /** The image's SHA-256, which is also its attachment hash on the workspace server. */
+    val sha256: String get() = file.substringBefore('.')
+    val mimeType: String get() = if (file.endsWith(".png")) "image/png" else "image/jpeg"
 
     val quad: List<LngLat> get() = corners.map { LngLat(it[0], it[1]) }
 

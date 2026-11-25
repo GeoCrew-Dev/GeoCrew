@@ -9,6 +9,7 @@ import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.model.FieldTemplate
 import org.geocrew.core.model.Legend
 import org.geocrew.core.model.LocalGrid
+import org.geocrew.core.model.SharedOverlay
 import org.geocrew.core.network.ApiException
 import org.geocrew.core.network.WorkspaceSettings
 import javax.inject.Inject
@@ -17,16 +18,28 @@ import javax.inject.Singleton
 /**
  * Keeps a linked project's shared setup, its record form, its map legend
  * and its local grid, in step with its workspace's shared settings
- * (protocol v0 §2.2, keys `form`, `legend` and `local_grid`). The workspace copy wins; leaders publish their
+ * and the overlays its leaders share (protocol v0 §2.2, keys `form`,
+ * `legend`, `local_grid` and `overlays`). The workspace copy wins; leaders publish their
  * local edits, and an edit based on an outdated copy is refused rather than
  * silently overwriting another leader's change. All keys move under the one
  * settings version, so they are always published and applied together.
  */
 @Singleton
-class TeamForms @Inject constructor(private val projects: ProjectRepository) {
+class TeamForms @Inject constructor(
+    private val projects: ProjectRepository,
+    private val overlayImages: org.geocrew.core.data.repo.OverlayImages,
+) {
 
     /** What travels in the workspace settings. */
-    data class Shared(val fields: List<FieldTemplate>, val legend: Legend, val localGrid: LocalGrid? = null)
+    data class Shared(
+        val fields: List<FieldTemplate>,
+        val legend: Legend,
+        val localGrid: LocalGrid? = null,
+        val overlays: List<SharedOverlay> = emptyList(),
+    )
+
+    private fun shared(cfg: org.geocrew.core.model.ProjectConfig) =
+        Shared(cfg.fields, cfg.legend, cfg.localGrid, SharedOverlay.published(cfg.overlays))
 
     /** Fetches the workspace copy and applies it when it is newer; publishes pending local edits first. */
     suspend fun sync(h: TeamHandle) {
@@ -34,12 +47,34 @@ class TeamForms @Inject constructor(private val projects: ProjectRepository) {
         val remote = h.api.settings(h.link.workspaceId)
         val leader = h.link.role == TeamRepository.ROLE_LEADER
         // A workspace that never had shared settings adopts the leader's existing ones.
-        val adopt = remote.version == 0L && (cfg.fields.isNotEmpty() || cfg.legend.active || cfg.localGrid != null)
+        val adopt = remote.version == 0L && (cfg.fields.isNotEmpty() || cfg.legend.active || cfg.localGrid != null || cfg.overlays.any { it.shared })
         if (leader && (cfg.teamFormPending || adopt) && remote.version == cfg.teamFormVersion) {
-            put(h, remote.settings, Shared(cfg.fields, cfg.legend, cfg.localGrid), remote.version)
-            return
+            put(h, remote.settings, shared(cfg), remote.version)
+        } else if (remote.version != cfg.teamFormVersion || cfg.teamFormPending) {
+            apply(h, remote)
         }
-        if (remote.version != cfg.teamFormVersion || cfg.teamFormPending) apply(h, remote)
+        fetchOverlays(h)
+    }
+
+    /** Publishes the open project's shared overlays after a leader changed, added or removed one. */
+    suspend fun publishOverlays(h: TeamHandle): String? = publish(h, "叠加图") { it }
+
+    /** Downloads shared overlay pictures this phone lacks; failures wait for the next sync. */
+    private suspend fun fetchOverlays(h: TeamHandle) {
+        val wanted = projects.get(h.project.id)?.config?.overlays.orEmpty().filter { it.shared }
+        for (o in wanted) {
+            val target = overlayImages.file(o.file) ?: continue
+            if (target.isFile) continue
+            runCatching {
+                val tmp = java.io.File.createTempFile("ovl_", ".part")
+                try {
+                    h.api.downloadFile(h.link.workspaceId, o.sha256, tmp)
+                    tmp.inputStream().use { overlayImages.putBlocking(o.file, it) }
+                } finally {
+                    tmp.delete()
+                }
+            }
+        }
     }
 
     /**
@@ -58,7 +93,7 @@ class TeamForms @Inject constructor(private val projects: ProjectRepository) {
     private suspend fun publish(h: TeamHandle, what: String, edit: (Shared) -> Shared): String? {
         val cfg = projects.get(h.project.id)?.config ?: return null
         val base = cfg.teamFormVersion
-        val next = edit(Shared(cfg.fields, cfg.legend, cfg.localGrid))
+        val next = edit(shared(cfg))
         projects.updateConfig(h.project.id) { it.copy(fields = next.fields, legend = next.legend, localGrid = next.localGrid, teamFormPending = true) }
         val moved = "组内${what}刚被其他组长修改过，已换成最新版本，请在此基础上再改"
         val remote = h.api.settings(h.link.workspaceId)
@@ -80,8 +115,16 @@ class TeamForms @Inject constructor(private val projects: ProjectRepository) {
         val shared = decodeShared(remote.settings)
         // A workspace whose leaders never set a grid leaves each phone's own one alone.
         val gridShared = GRID_KEY in remote.settings
+        val overlaysShared = OVERLAYS_KEY in remote.settings
         projects.updateConfig(h.project.id) {
-            it.copy(fields = shared.fields, legend = shared.legend, localGrid = if (gridShared) shared.localGrid else it.localGrid, teamFormVersion = remote.version, teamFormPending = false)
+            it.copy(
+                fields = shared.fields,
+                legend = shared.legend,
+                localGrid = if (gridShared) shared.localGrid else it.localGrid,
+                overlays = if (overlaysShared) SharedOverlay.merge(it.overlays, shared.overlays) else it.overlays,
+                teamFormVersion = remote.version,
+                teamFormPending = false,
+            )
         }
     }
 
@@ -90,7 +133,18 @@ class TeamForms @Inject constructor(private val projects: ProjectRepository) {
         // An explicit null tells members the leader stopped using a grid; no key at all means it was never shared.
         val grid = shared.localGrid?.let { encodeGrid(it) } ?: JsonNull
         val keep = shared.localGrid != null || GRID_KEY in current
-        val next = JsonObject(current - GRID_KEY + (FORM_KEY to encode(shared.fields)) + (LEGEND_KEY to encodeLegend(shared.legend)) + (if (keep) mapOf(GRID_KEY to grid) else emptyMap()))
+        val ours = buildMap<String, JsonElement> {
+            put(FORM_KEY, encode(shared.fields))
+            put(LEGEND_KEY, encodeLegend(shared.legend))
+            if (keep) put(GRID_KEY, grid)
+            if (shared.overlays.isNotEmpty() || OVERLAYS_KEY in current) put(OVERLAYS_KEY, encodeOverlays(shared.overlays))
+        }
+        // Pictures go up first, so a member never sees an overlay whose file is not there yet.
+        for (o in shared.overlays) {
+            val file = overlayImages.file(o.file + if (o.type == SharedOverlay.PNG) ".png" else ".jpg")?.takeIf { it.isFile } ?: continue
+            if (!h.api.hasFile(h.link.workspaceId, o.file)) h.api.uploadFile(h.link.workspaceId, o.file, file, o.type)
+        }
+        val next = JsonObject(current - GRID_KEY - OVERLAYS_KEY + ours)
         val stored = h.api.putSettings(h.link.workspaceId, next, base)
         projects.updateConfig(h.project.id) { it.copy(teamFormVersion = stored.version, teamFormPending = false) }
     }
@@ -99,6 +153,7 @@ class TeamForms @Inject constructor(private val projects: ProjectRepository) {
         const val FORM_KEY = "form"
         const val LEGEND_KEY = "legend"
         const val GRID_KEY = "local_grid"
+        const val OVERLAYS_KEY = "overlays"
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
         fun encode(fields: List<FieldTemplate>): JsonArray =
@@ -108,7 +163,16 @@ class TeamForms @Inject constructor(private val projects: ProjectRepository) {
 
         fun encodeGrid(grid: LocalGrid): JsonElement = json.encodeToJsonElement(LocalGrid.serializer(), grid)
 
-        fun decodeShared(settings: JsonObject) = Shared(decode(settings), decodeLegend(settings), decodeGrid(settings))
+        fun encodeOverlays(list: List<SharedOverlay>): JsonArray =
+            JsonArray(list.map { json.encodeToJsonElement(SharedOverlay.serializer(), it) })
+
+        fun decodeShared(settings: JsonObject) = Shared(decode(settings), decodeLegend(settings), decodeGrid(settings), decodeOverlays(settings))
+
+        /** Reads the `overlays` key, skipping entries this version cannot draw. */
+        fun decodeOverlays(settings: JsonObject): List<SharedOverlay> {
+            val arr = settings[OVERLAYS_KEY] as? JsonArray ?: return emptyList()
+            return arr.mapNotNull { e -> runCatching { json.decodeFromJsonElement(SharedOverlay.serializer(), e) }.getOrNull()?.takeIf(SharedOverlay::valid) }
+        }
 
         /** Reads the `local_grid` key; a missing, unknown or implausible one means none. */
         fun decodeGrid(settings: JsonObject): LocalGrid? {
