@@ -1,0 +1,69 @@
+{
+  "about": "Protocol v1 permission rules (protocol/docs/protocol-v1.md, 工作区、成员与权限; ADR 0009). One workspace and questions about it. Shared by the Go server and the Android client; both must give exactly `expect`. `perm` without `layer` asks whether the member holds it at all; with `layer` it asks for the level on that layer (true when not none).",
+  "workspace": {
+    "leader": "lead",
+    "roles": {
+      "member":   { "position": 0,  "permissions": { "send_messages": true, "edit_rows": "own", "delete_rows": "own" } },
+      "guest":    { "position": 5,  "permissions": {} },
+      "surveyor": { "position": 10, "permissions": { "view_locations": true } },
+      "sampler":  { "position": 20, "permissions": { "edit_rows": "all" } },
+      "deputy":   { "position": 30, "permissions": { "manage_members": true, "manage_roles": true, "edit_rows": "all", "delete_rows": "all", "edit_schema": true, "export_data": true } }
+    },
+    "members": {
+      "lead": [],
+      "dep": ["deputy"],
+      "smp": ["sampler"],
+      "sur": ["surveyor"],
+      "gst": ["guest"],
+      "mem": [],
+      "both": ["sampler", "guest"]
+    },
+    "layers": {
+      "samples": {
+        "member":  { "view_layer": false },
+        "sampler": { "view_layer": true, "edit_rows": "all" }
+      },
+      "routes": {
+        "member": { "delete_rows": "none" },
+        "guest":  { "edit_rows": "none" }
+      }
+    }
+  },
+  "cases": [
+    { "name": "the leader holds every permission", "who": "lead", "perm": "manage_plugins", "expect": true },
+    { "name": "the base role applies to every member", "who": "mem", "perm": "send_messages", "expect": true },
+    { "name": "a permission no role of the member grants", "who": "mem", "perm": "export_data", "expect": false },
+    { "name": "roles add up", "who": "dep", "perm": "export_data", "expect": true },
+    { "name": "someone outside the workspace has nothing", "who": "stranger", "perm": "send_messages", "expect": false },
+    { "name": "safety rights belong to every member", "who": "gst", "perm": "send_sos", "expect": true },
+    { "name": "safety rights still need membership", "who": "stranger", "perm": "send_sos", "expect": false },
+
+    { "name": "own rows: a member edits a row they created", "who": "mem", "row": { "perm": "edit_rows", "layer": "points", "owner": "mem" }, "expect": true },
+    { "name": "own rows: not someone else's", "who": "mem", "row": { "perm": "edit_rows", "layer": "points", "owner": "smp" }, "expect": false },
+    { "name": "all rows: a sampler edits anyone's row", "who": "smp", "row": { "perm": "edit_rows", "layer": "points", "owner": "mem" }, "expect": true },
+
+    { "name": "a base-role override hides a layer from everyone", "who": "mem", "perm": "view_layer", "layer": "samples", "expect": false },
+    { "name": "a role without an override on the layer does not bring it back", "who": "gst", "perm": "view_layer", "layer": "samples", "expect": false },
+    { "name": "a role's own override grants it again", "who": "smp", "perm": "view_layer", "layer": "samples", "expect": true },
+    { "name": "rows of a layer the member cannot see cannot be edited", "who": "mem", "row": { "perm": "edit_rows", "layer": "samples", "owner": "mem" }, "expect": false },
+    { "name": "a role's override replaces another role's general grant", "who": "both", "row": { "perm": "edit_rows", "layer": "routes", "owner": "mem" }, "expect": false },
+    { "name": "the same member on a layer without overrides", "who": "both", "row": { "perm": "edit_rows", "layer": "points", "owner": "mem" }, "expect": true },
+    { "name": "a base-role override binds senior roles too unless they override it", "who": "dep", "row": { "perm": "delete_rows", "layer": "routes", "owner": "mem" }, "expect": false },
+    { "name": "the leader is above layer overrides", "who": "lead", "row": { "perm": "delete_rows", "layer": "routes", "owner": "mem" }, "expect": true },
+
+    { "name": "managing a role below one's own", "who": "dep", "manage_role": { "role": "sampler", "via": "manage_roles" }, "expect": true },
+    { "name": "not a role at one's own level", "who": "dep", "manage_role": { "role": "deputy", "via": "manage_roles" }, "expect": false },
+    { "name": "not without the permission", "who": "smp", "manage_role": { "role": "guest", "via": "manage_roles" }, "expect": false },
+    { "name": "giving a role below one's own to someone needs manage_members", "who": "dep", "manage_role": { "role": "surveyor", "via": "manage_members" }, "expect": true },
+
+    { "name": "granting a permission one holds", "who": "dep", "grant": { "role": "sampler", "perm": "export_data", "level": "all" }, "expect": true },
+    { "name": "not one one lacks", "who": "dep", "grant": { "role": "sampler", "perm": "manage_plugins", "level": "all" }, "expect": false },
+    { "name": "granting a scoped permission at one's own level", "who": "dep", "grant": { "role": "guest", "perm": "edit_rows", "level": "all" }, "expect": true },
+
+    { "name": "managing a member who ranks lower", "who": "dep", "manage_member": "smp", "expect": true },
+    { "name": "nobody manages the leader", "who": "dep", "manage_member": "lead", "expect": false },
+    { "name": "nobody manages themselves", "who": "dep", "manage_member": "dep", "expect": false },
+    { "name": "not without the permission", "who": "smp", "manage_member": "gst", "expect": false },
+    { "name": "the leader manages anyone else", "who": "lead", "manage_member": "dep", "expect": true }
+  ]
+}
