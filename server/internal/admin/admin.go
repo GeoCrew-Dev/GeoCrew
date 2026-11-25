@@ -392,7 +392,7 @@ func files(ctx context.Context, st store.Store, disk *blob.Disk, ws store.Worksp
 		}
 	}
 	fmt.Fprintf(out, "「%s」的附件：%d 个，共 %s\n", ws.Name, len(stored), size(total))
-	fmt.Fprintf(out, "  被记录引用：%d 个（含历史版本）\n", len(refs)-missing)
+	fmt.Fprintf(out, "  被记录引用：%d 个（含历史版本和共享叠加图）\n", len(refs)-missing)
 	fmt.Fprintf(out, "  没有记录引用：%d 个，共 %s\n", orphans, size(orphanBytes))
 	if missing > 0 {
 		fmt.Fprintf(out, "  记录引用了但服务器上没有：%d 个（组员可能还没上传）\n", missing)

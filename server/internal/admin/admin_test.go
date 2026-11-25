@@ -184,6 +184,10 @@ func TestFilesAndPrune(t *testing.T) {
 	historic := put("historic", 48*time.Hour)
 	stale := put("stale", 48*time.Hour)
 	fresh := put("fresh", time.Minute)
+	overlay := put("overlay", 48*time.Hour)
+	if _, err := db.PutSettings(ctx, ws.ID, json.RawMessage(`{"overlays":[{"id":"o1","file":"`+overlay+`"}]}`), 0); err != nil {
+		t.Fatal(err)
+	}
 	missing := strings.Repeat("ab", 32)
 
 	feature := func(v int64, photos ...string) store.Feature {
@@ -207,7 +211,7 @@ func TestFilesAndPrune(t *testing.T) {
 		return out.String()
 	}
 	out := runFiles()
-	for _, want := range []string{"4 个", "被记录引用：2 个", "没有记录引用：2 个", "服务器上没有：1 个"} {
+	for _, want := range []string{"5 个", "被记录引用：3 个", "没有记录引用：2 个", "服务器上没有：1 个"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("report lacks %q:\n%s", want, out)
 		}
@@ -221,7 +225,7 @@ func TestFilesAndPrune(t *testing.T) {
 	for _, f := range left {
 		kept[f.SHA] = true
 	}
-	if !kept[current] || !kept[historic] || !kept[fresh] || kept[stale] {
+	if !kept[current] || !kept[historic] || !kept[fresh] || !kept[overlay] || kept[stale] {
 		t.Fatalf("kept %v", kept)
 	}
 }

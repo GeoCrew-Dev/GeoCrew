@@ -153,9 +153,24 @@
   let legend = { key: "", entries: [] };
   let legendOpen = true;
   const HEX = /^#[0-9a-fA-F]{6}$/;
+  // Pictures a leader shares over the map (protocol §2.2 key `overlays`), bottom first.
+  let overlays = [];
+  const hiddenOverlays = new Set();
+  const SHA = /^[0-9a-f]{64}$/;
+  function okCorners(c) {
+    return Array.isArray(c) && c.length === 4 && c.every((p) => Array.isArray(p) && p.length === 2 &&
+      Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 85);
+  }
   async function loadSettings() {
     try {
       const s = await (await api("/settings")).json();
+      const seenIds = new Set();
+      overlays = (Array.isArray((s.settings || {}).overlays) ? s.settings.overlays : []).filter((o) => {
+        if (!o || typeof o.id !== "string" || !o.id || seenIds.has(o.id) || !SHA.test(o.file) || !okCorners(o.corners)) return false;
+        if (o.type !== "image/jpeg" && o.type !== "image/png") return false;
+        seenIds.add(o.id); return true;
+      }).map((o) => ({ id: o.id, name: typeof o.name === "string" && o.name ? o.name : "叠加图", file: o.file, corners: o.corners,
+        opacity: Number.isFinite(o.opacity) ? Math.min(1, Math.max(0.1, o.opacity)) : 0.6 }));
       const l = (s.settings || {}).legend || {};
       const seen = new Set();
       legend = {
@@ -181,6 +196,35 @@
     const e = v && legend.entries.find((x) => x.value.toLowerCase() === v);
     return e ? [e.color, true] : [KINDS[kindOf(p)][1], false];
   }
+  // Draws the shared overlays under the records, adding, moving and removing only what changed.
+  const drawnOverlays = new Map(); // layer id -> key of what it shows
+  async function drawOverlays() {
+    if (!ready) return;
+    const want = new Map();
+    for (const o of overlays) if (!hiddenOverlays.has(o.id)) want.set("ovl-" + o.id, o);
+    for (const [id, key] of drawnOverlays) {
+      const o = want.get(id);
+      if (o && key === o.file + JSON.stringify(o.corners)) continue;
+      if (map.getLayer(id)) map.removeLayer(id);
+      if (map.getSource(id)) map.removeSource(id);
+      drawnOverlays.delete(id);
+    }
+    for (const [id, o] of want) {
+      if (!drawnOverlays.has(id)) {
+        let url;
+        try { url = await blobURL(o.file); } catch { continue; } // not uploaded yet: next settings change tries again
+        if (drawnOverlays.has(id) || !overlays.includes(o)) continue;
+        map.addSource(id, { type: "image", url, coordinates: o.corners });
+        map.addLayer({ id, type: "raster", source: id, paint: { "raster-opacity": o.opacity, "raster-fade-duration": 0 } }, "fill");
+        drawnOverlays.set(id, o.file + JSON.stringify(o.corners));
+      } else {
+        map.setPaintProperty(id, "raster-opacity", o.opacity);
+      }
+    }
+    // Keep the workspace's order: each one goes just under the records, so the last ends on top.
+    for (const id of want.keys()) if (map.getLayer(id)) map.moveLayer(id, "fill");
+  }
+
   function renderLegend() {
     const box = $("legend");
     const all = [...features.values()];
@@ -188,7 +232,7 @@
     const shown = legend.entries.filter((e) => used.has(e.value.toLowerCase()));
     const styles = new Set(all.map(lineStyleOf).filter(Boolean));
     const lines = Object.values(LINE_STYLES).filter((ls) => styles.has(ls));
-    const count = shown.length + lines.length;
+    const count = shown.length + lines.length + overlays.length;
     box.hidden = !count;
     if (!count) return;
     box.replaceChildren();
@@ -207,6 +251,17 @@
       const row = document.createElement("div");
       const sw = document.createElement("span"); sw.className = "ln" + (ls.fault ? " fault" : "") + (ls.dash ? " dash" : "");
       row.append(sw, document.createTextNode(ls.label));
+      box.append(row);
+    }
+    for (const o of [...overlays].reverse()) {
+      const row = document.createElement("label");
+      row.style.display = "block";
+      row.title = "组长共享的叠加图，点一下显示或隐藏";
+      const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: !hiddenOverlays.has(o.id) });
+      cb.style.margin = "0 6px 0 0";
+      row.onclick = (e) => e.stopPropagation();
+      cb.onchange = () => { if (cb.checked) hiddenOverlays.delete(o.id); else hiddenOverlays.add(o.id); drawOverlays(); };
+      row.append(cb, document.createTextNode("叠加图：" + o.name));
       box.append(row);
     }
   }
@@ -703,7 +758,7 @@
       else if (m.type === "feature_changed") pull().catch(() => {});
       else if (m.type === "members_changed") loadMembers().then(() => { render(); renderBanner(); }).catch(() => {});
       else if (m.type === "comments_changed") pullComments().catch(() => {});
-      else if (m.type === "settings_changed") loadSettings().then(render).catch(() => {});
+      else if (m.type === "settings_changed") loadSettings().then(() => { render(); drawOverlays(); }).catch(() => {});
     };
     sock.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 60 * 1000); };
   }
@@ -790,6 +845,7 @@
       ready = true;
       drawTrails();
       render();
+      drawOverlays();
     });
     $("q").oninput = renderList;
     $("who").onchange = render;
