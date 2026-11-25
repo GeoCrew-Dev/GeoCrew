@@ -58,7 +58,7 @@
 - [ ] **CI 迁移**：合并后的 CI 迁到根目录，按改动的路径触发。原来各仓库的 workflow 暂时留在子目录里，不会运行。
 - [ ] **发布标签**：加前缀（`server-v*`、`android-v*`），服务端和安卓的更新检查改成按前缀筛选。
 - [x] **推到 GitHub**：主仓库已经建好并推送（2026-11-25）。
-- [ ] 删除云端的三个旧仓库（GeoCrew-Protocol、GeoCrew-Server、GeoCrew-Android）。本地的已经删了。
+- [x] 删除三个旧仓库（GeoCrew-Protocol、GeoCrew-Server、GeoCrew-Android），本地和云端都已删除（2026-11-25）。删除前核对过，三个仓库的最新提交都已并入主仓库。
 - [ ] **改掉指向旧仓库的地方**：
   - 替换各处指向这三个旧仓库的链接；
   - Go 模块路径改成 `github.com/GeoCrew-Dev/GeoCrew/server` 和 `github.com/GeoCrew-Dev/GeoCrew/protocol/conformance`。
