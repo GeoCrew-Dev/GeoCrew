@@ -11,6 +11,7 @@
 | `android/` | 旧版安卓客户端，已冻结，待重写 |
 | `manual/` | 用户手册 |
 | `docs/` | 章程、架构决策（`docs/adr/`）、待办、合规、威胁模型、许可证、性能预算、评审、技术验证（`docs/spikes/`） |
+| `spikes/` | 技术验证用的一次性代码，正式实现时重写 |
 
 相关仓库：GeoCrew-Native（原生库构建）、GeoCrew-Plugins（插件目录）、GeoCrew-Dev.github.io（官网）。
 
