@@ -173,6 +173,7 @@ fun TeamScreen(onBack: () -> Unit, onOpenChat: () -> Unit = {}, viewModel: TeamV
                     onCreateViewLink = viewModel::createViewLink,
                     onRevokeViewLinks = viewModel::revokeViewLinks,
                     progress = progress,
+                    shared = remember(p.config) { sharedSummary(p.config) },
                     pushOn = p.config.pushEnabled,
                     onPushOn = viewModel::enablePush,
                     onPushOff = viewModel::disablePush,
@@ -299,6 +300,8 @@ private fun LinkedPanel(
     onCreateViewLink: (Int) -> Unit,
     onRevokeViewLinks: () -> Unit,
     progress: Map<String, MemberProgress>,
+    /** What the workspace shares, from [sharedSummary]. */
+    shared: List<Pair<String, String>> = emptyList(),
     pushOn: Boolean,
     onPushOn: (Activity) -> Unit,
     onPushOff: () -> Unit,
@@ -345,6 +348,24 @@ private fun LinkedPanel(
                     }
                 }
             }
+        }
+        item {
+            ListItem(
+                headlineContent = { Text("组内统一的设置") },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (shared.isEmpty()) {
+                            Text(if (isLeader) "还没有。你设的记录表单、图例、本地坐标系，以及共享的叠加图和底图会同步给全组" else "组长还没有设置统一的记录表单、图例、坐标系、叠加图或底图")
+                        } else {
+                            shared.forEach { (k, v) -> Text("$k：$v") }
+                            Text(
+                                if (isLeader) "在对应页面修改，会同步给全组" else "由组长统一设置，联网同步时更新",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                },
+            )
         }
         item {
             ListItem(
