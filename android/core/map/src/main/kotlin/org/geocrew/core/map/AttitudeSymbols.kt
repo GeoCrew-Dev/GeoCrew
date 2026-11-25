@@ -21,6 +21,9 @@ internal object AttitudeSymbols {
     const val HORIZONTAL = "gc-att-h"
     const val VERTICAL = "gc-att-v"
     const val DIP_PREFIX = "gc-dip-"
+    /** Lineation arrow, drawn pointing north and rotated to the trend. */
+    const val LINEATION = "gc-lin"
+    const val PLUNGE_PREFIX = "gc-pl-"
 
     private val density get() = Resources.getSystem().displayMetrics.density
 
@@ -28,6 +31,32 @@ internal object AttitudeSymbols {
         style.addImage(INCLINED, symbol(ticks = 1))
         style.addImage(VERTICAL, symbol(ticks = 2))
         style.addImage(HORIZONTAL, horizontal())
+        style.addImage(LINEATION, arrow())
+    }
+
+    /** Adds labels for plunge values the style does not have yet. */
+    fun ensurePlungeLabels(style: Style, plunges: Collection<Int>) {
+        for (d in plunges) {
+            val id = PLUNGE_PREFIX + d
+            if (style.getImage(id) == null) style.addImage(id, label(d.toString(), MapColors.LINEATION))
+        }
+    }
+
+    /** An arrow from the centre toward the top: the point sits at its tail, the head shows the trend. */
+    private fun arrow(): Bitmap {
+        val s = (44 * density).toInt()
+        val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val mid = s / 2f
+        val len = 19 * density
+        val head = 6 * density
+        val tip = mid - len
+        for (p in listOf(stroke(5 * density, Color.WHITE), stroke(2.2f * density, Color.parseColor(MapColors.LINEATION)))) {
+            c.drawLine(mid, mid, mid, tip, p)
+            c.drawLine(mid, tip, mid - head * 0.6f, tip + head, p)
+            c.drawLine(mid, tip, mid + head * 0.6f, tip + head, p)
+        }
+        return bmp
     }
 
     /** Adds labels for dip values the style does not have yet. */
@@ -75,9 +104,9 @@ internal object AttitudeSymbols {
         return bmp
     }
 
-    private fun label(text: String): Bitmap {
+    private fun label(text: String, colour: String = MapColors.ATTITUDE): Bitmap {
         val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor(MapColors.ATTITUDE)
+            color = Color.parseColor(colour)
             textSize = 12 * density
             typeface = Typeface.DEFAULT_BOLD
         }

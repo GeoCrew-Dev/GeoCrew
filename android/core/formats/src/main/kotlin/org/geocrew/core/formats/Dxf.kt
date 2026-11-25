@@ -38,6 +38,8 @@ object DxfFormat : FeatureFormat {
     private const val STRIKE_HALF = 25.0
     private const val DIP_TICK = 12.0
     private const val ATTITUDE_LAYER = "产状"
+    private const val LINEATION_LAYER = "线状构造"
+    private const val ARROW = 30.0
     private const val NAME_LAYER = "注记"
     private const val DASHED = "DASHED"
     /** Dash and gap in ground metres: 3 mm and 1 mm at 1:10 000. */
@@ -84,6 +86,10 @@ object DxfFormat : FeatureFormat {
                 val (ax, ay) = midLine(f.geometry)?.let(::xy) ?: (x to y)
                 layers.getOrPut(ATTITUDE_LAYER) { 1 }
                 attitude(body, ax, ay, a.dipDirection, a.dip)
+            }
+            if (f.geometry is Geometry.Point) f.plunge?.let { l ->
+                layers.getOrPut(LINEATION_LAYER) { 5 }
+                lineation(body, x, y, l.trend, l.plunge)
             }
         }
 
@@ -206,6 +212,20 @@ object DxfFormat : FeatureFormat {
         line(out, ATTITUDE_LAYER, x - sx * STRIKE_HALF, y - sy * STRIKE_HALF, x + sx * STRIKE_HALF, y + sy * STRIKE_HALF)
         if (dip >= 1 && dip < 89) line(out, ATTITUDE_LAYER, x, y, x + dx * DIP_TICK, y + dy * DIP_TICK)
         text(out, ATTITUDE_LAYER, x + dx * (DIP_TICK + 4), y + dy * (DIP_TICK + 4) - TEXT_HEIGHT * 0.35, TEXT_HEIGHT * 0.7, "${dip.roundToInt()}°")
+    }
+
+    /** Arrow from the point toward the trend, with the plunge beyond its head. */
+    private fun lineation(out: StringBuilder, x: Double, y: Double, trend: Double, plunge: Double) {
+        fun dir(deg: Double) = Math.toRadians(deg).let { sin(it) to cos(it) }
+        val (dx, dy) = dir(trend)
+        val tx = x + dx * ARROW
+        val ty = y + dy * ARROW
+        line(out, LINEATION_LAYER, x, y, tx, ty)
+        for (side in listOf(-150.0, 150.0)) {
+            val (hx, hy) = dir(trend + side)
+            line(out, LINEATION_LAYER, tx, ty, tx + hx * 8, ty + hy * 8)
+        }
+        text(out, LINEATION_LAYER, tx + dx * 4, ty + dy * 4 - TEXT_HEIGHT * 0.35, TEXT_HEIGHT * 0.7, "${plunge.roundToInt()}°")
     }
 
     /** Nearest of the nine standard AutoCAD colours to a "#rrggbb" colour. */

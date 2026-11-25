@@ -62,6 +62,8 @@ object MapColors {
     const val MEET = "#6A1B9A"
     /** Strike-and-dip symbols. */
     const val ATTITUDE = "#212121"
+    /** Lineation arrows and their plunge, apart from the black strike-and-dip symbols. */
+    const val LINEATION = "#1565C0"
 }
 
 @Composable

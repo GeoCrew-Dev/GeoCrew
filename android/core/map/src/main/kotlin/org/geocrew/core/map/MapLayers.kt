@@ -62,7 +62,9 @@ internal object MapLayers {
     const val L_POINT = "gc-point"
     private const val L_ATTITUDE = "gc-attitude"
     private const val L_DIP = "gc-dip"
-    val clickable = arrayOf(L_ATTITUDE, L_POINT, L_LINE, L_LINE_DASHED, L_FILL)
+    private const val L_LINEATION = "gc-lineation"
+    private const val L_PLUNGE = "gc-plunge"
+    val clickable = arrayOf(L_ATTITUDE, L_LINEATION, L_POINT, L_LINE, L_LINE_DASHED, L_FILL)
 
     private const val EMPTY = """{"type":"FeatureCollection","features":[]}"""
 
@@ -208,6 +210,27 @@ internal object MapLayers {
                 iconIgnorePlacement(true),
             ),
         )
+        // Lineations: a blue arrow toward the trend, its plunge below left of the point.
+        style.addLayer(
+            SymbolLayer(L_LINEATION, SRC_FEATURES).withFilter(Expression.all(isPoint, Expression.has("trend"))).withProperties(
+                iconImage(AttitudeSymbols.LINEATION),
+                iconRotate(Expression.toNumber(get("trend"))),
+                iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+                iconAllowOverlap(true),
+                iconIgnorePlacement(true),
+            ),
+        )
+        style.addLayer(
+            SymbolLayer(L_PLUNGE, SRC_FEATURES)
+                .withFilter(Expression.all(isPoint, Expression.has("trend")))
+                .withProperties(
+                    iconImage(Expression.concat(literal(AttitudeSymbols.PLUNGE_PREFIX), Expression.toString(get("plunge")))),
+                    iconAnchor(Property.ICON_ANCHOR_TOP_RIGHT),
+                    iconOffset(arrayOf(-6f, 4f)),
+                    iconAllowOverlap(true),
+                    iconIgnorePlacement(true),
+                ).also { it.minZoom = 13f },
+        )
         // Dip angle beside the symbol, kept upright; hidden when zoomed far out.
         style.addLayer(
             SymbolLayer(L_DIP, SRC_FEATURES)
@@ -288,6 +311,7 @@ internal object MapLayers {
         fun set(id: String, json: String) = style.getSourceAs<GeoJsonSource>(id)?.setGeoJson(json)
         if (previous == null || previous.features !== o.features || previous.selectedId != o.selectedId || previous.legend != o.legend) {
             AttitudeSymbols.ensureDipLabels(style, o.features.mapNotNull { f -> f.attitude?.dip?.let { Math.round(it).toInt() } }.toSet())
+            AttitudeSymbols.ensurePlungeLabels(style, o.features.mapNotNull { f -> f.plunge?.plunge?.let { Math.round(it).toInt() } }.toSet())
             set(SRC_FEATURES, OverlayGeoJson.features(o.features, o.selectedId, o.memberId, o.legend))
         }
         if (previous == null || previous.grid !== o.grid) set(SRC_GRID, OverlayGeoJson.grid(o.grid))

@@ -100,4 +100,15 @@ class DxfFormatTest {
         assertEquals(5, DxfFormat.aci("#1010F0"))
         assertEquals(null, DxfFormat.aci("red"))
     }
+
+    @Test
+    fun drawsLineationArrowWithPlunge() {
+        val f = feature("l", FeatureKind.GEO_POINT, Geometry.Point(LngLat(117.3, 31.8)), mapOf(Props.TREND to 90.0, Props.PLUNGE to 25.0))
+        val out = ByteArrayOutputStream()
+        DxfFormat.write(listOf(f), out)
+        val g = groups(String(out.toByteArray(), charset("GB18030")))
+        val onLayer = g.zipWithNext().filter { (a, b) -> a.first == 0 && b == (8 to "线状构造") }.map { it.first.second }
+        assertEquals(listOf("LINE", "LINE", "LINE", "TEXT"), onLayer)
+        assertTrue(g.contains(1 to "25°"))
+    }
 }

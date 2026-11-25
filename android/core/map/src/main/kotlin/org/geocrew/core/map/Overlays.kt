@@ -121,6 +121,10 @@ internal object OverlayGeoJson {
                     this["dipdir"] = a.dipDirection
                     this["dip"] = Math.round(a.dip).toDouble()
                 }
+                if (g is Geometry.Point) f.plunge?.let { l ->
+                    this["trend"] = l.trend
+                    this["plunge"] = Math.round(l.plunge).toDouble()
+                }
                 if (g !is Geometry.Point && g !is Geometry.MultiPoint) f.lineStyle?.let { ls ->
                     if (ls.dashed) this["dash"] = true
                     this[if (ls.fault) "fault" else "contact"] = true
