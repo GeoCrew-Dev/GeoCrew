@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/push"
 )
 
 // WatchOutings checks every so often for outings past their back_by with no

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/storetest"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/storetest"
 )
 
 func open(t *testing.T) *DB {

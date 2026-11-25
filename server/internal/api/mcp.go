@@ -14,9 +14,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/export"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/mcp"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/export"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/mcp"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // mcpInstructions tells an AI client what the tools are for.

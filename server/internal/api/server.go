@@ -5,16 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/metrics"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/metrics"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/push"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/realtime"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // ProtocolVersion is the GeoCrew sync protocol version this server speaks.

@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/overview"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/update"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/overview"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/update"
 )
 
 //go:embed page.html

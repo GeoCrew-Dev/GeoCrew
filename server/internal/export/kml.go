@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)

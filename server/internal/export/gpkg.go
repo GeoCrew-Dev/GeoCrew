@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 	_ "modernc.org/sqlite" // GeoPackage files are SQLite databases.
 )
 

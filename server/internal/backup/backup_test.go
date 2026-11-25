@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqlite"
 )
 
 func TestOnceSnapshotsMirrorsAndPrunes(t *testing.T) {

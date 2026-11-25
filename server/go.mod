@@ -1,4 +1,4 @@
-module github.com/GeoCrew-Dev/GeoCrew-Server
+module github.com/GeoCrew-Dev/GeoCrew/server
 
 go 1.24.0
 

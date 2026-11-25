@@ -1,7 +1,7 @@
 // Command conformance checks a GeoCrew server against protocol v0 from the
 // outside, over HTTP and WebSocket only, so any implementation can run it:
 //
-//	go run github.com/GeoCrew-Dev/GeoCrew-Protocol/conformance@latest -server https://geo.example.org
+//	go run github.com/GeoCrew-Dev/GeoCrew/protocol/conformance@latest -server https://geo.example.org
 //
 // It creates a throwaway workspace (the server must offer the "create"
 // capability), joins it as a second member and walks through membership,

@@ -14,10 +14,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/export"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqldb"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/export"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqldb"
 )
 
 // Usage is printed for "admin help" and for unknown commands.

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // RouteHeader is the column order of the geological route table, the same

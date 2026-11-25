@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 func (d *DB) SetPushTarget(ctx context.Context, workspaceID string, t store.PushTarget) error {

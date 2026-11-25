@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // Options says where and how often to back up.

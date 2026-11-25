@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 type fakeTargets struct {

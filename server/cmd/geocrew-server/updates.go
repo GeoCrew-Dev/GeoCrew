@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/config"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqldb"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/update"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/config"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqldb"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/update"
 )
 
 // restartError asks main to start bin in place of this process once

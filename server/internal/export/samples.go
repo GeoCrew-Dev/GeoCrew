@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // SampleHeader is the column order of the sample register, the same as the

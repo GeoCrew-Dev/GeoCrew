@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/overview"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/update"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/overview"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/update"
 )
 
 func releaseFeed(t *testing.T, version string) *httptest.Server {

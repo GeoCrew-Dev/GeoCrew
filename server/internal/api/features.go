@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/export"
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/export"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // wireSync is the "sync" member added to each GeoJSON Feature.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 // Issue codes of the record check, shared with the Android client's

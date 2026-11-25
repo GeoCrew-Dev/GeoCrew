@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 )
 
 const page = 1000

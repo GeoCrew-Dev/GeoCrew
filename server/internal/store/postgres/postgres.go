@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqldb"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqldb"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver
 )

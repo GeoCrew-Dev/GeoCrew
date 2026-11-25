@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/blob"
 )
 
 // ReferenceLayer is one shared reference layer of the settings (protocol
