@@ -140,6 +140,6 @@ class ToolRegistry(tools: Iterable<GisTool>) {
 
     companion object {
         /** Tools that ship with the app. */
-        fun builtIn(): List<GisTool> = listOf(IdwTool(), KrigingTool(), SectionTool(), MapSectionTool(), TerrainTool(), ThreePointTool(), StatisticsTool(), ConvexHullTool(), BufferTool(), ZonalTool(), DensityTool(), HikeTool(), LeastCostTool())
+        fun builtIn(): List<GisTool> = listOf(IdwTool(), KrigingTool(), SectionTool(), MapSectionTool(), TerrainTool(), ThreePointTool(), StatisticsTool(), ConvexHullTool(), BufferTool(), ZonalTool(), DensityTool(), HikeTool(), LeastCostTool(), ThiessenTool())
     }
 }
