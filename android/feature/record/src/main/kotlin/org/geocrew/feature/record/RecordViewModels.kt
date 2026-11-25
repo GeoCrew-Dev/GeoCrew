@@ -94,6 +94,9 @@ class RecordListViewModel @Inject constructor(
 
     val projectName: StateFlow<String> = projects.current.map { it.name }.stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
+    /** The record a scanned label stands for (sample number, title or id), in the open project. */
+    fun findScanned(text: String): GeoFeature? = org.geocrew.core.model.ScanMatch.find(all.value, text)
+
     /** The project's form, which decides what counts as incomplete. */
     val config: StateFlow<ProjectConfig> = projects.current.map { it.config }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, ProjectConfig())

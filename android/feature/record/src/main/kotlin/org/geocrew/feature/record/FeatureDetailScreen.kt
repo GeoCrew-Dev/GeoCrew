@@ -500,17 +500,26 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.addPicked(uri)
     }
+    fun shoot() {
+        val (file, uri) = vm.newCaptureTarget()
+        pending = file
+        // Note the camera's direction before the camera app takes over.
+        scope.launch {
+            vm.takeAim()
+            camera.launch(uri)
+        }
+    }
+    // The app declares CAMERA for in-app scanning, so the system camera app needs it granted too.
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) shoot() else Toast.makeText(context, "拍照需要相机权限", Toast.LENGTH_SHORT).show()
+    }
     val info = f.photoInfo
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
-                val (file, uri) = vm.newCaptureTarget()
-                pending = file
-                // Note the camera's direction before the camera app takes over.
-                scope.launch {
-                    vm.takeAim()
-                    camera.launch(uri)
-                }
+                val has = context.checkSelfPermission(android.Manifest.permission.CAMERA) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (has) shoot() else cameraPermission.launch(android.Manifest.permission.CAMERA)
             }) {
                 Icon(Icons.Default.PhotoCamera, null)
                 Text(" 拍照")

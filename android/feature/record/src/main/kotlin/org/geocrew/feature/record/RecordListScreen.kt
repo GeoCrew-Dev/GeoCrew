@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.ImportExport
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -30,6 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -56,8 +60,28 @@ fun RecordListScreen(
     onOpen: (String) -> Unit,
     onImportExport: () -> Unit,
     onProjects: () -> Unit = {},
+    /** A scanned workspace invite link (geocrew://join…), to open the join form. */
+    onInviteLink: (String) -> Unit = {},
     viewModel: RecordListViewModel = hiltViewModel(),
 ) {
+    var scanning by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    if (scanning) {
+        org.geocrew.core.scan.QrScannerDialog(
+            hint = "对准样品标签或邀请二维码",
+            onResult = { text ->
+                scanning = false
+                if (text.trim().startsWith("geocrew://join", ignoreCase = true)) {
+                    onInviteLink(text.trim())
+                } else {
+                    val hit = viewModel.findScanned(text)
+                    if (hit != null) onOpen(hit.id)
+                    else android.widget.Toast.makeText(context, "当前工程里没有编号为「${text.trim().take(40)}」的样品或记录", android.widget.Toast.LENGTH_LONG).show()
+                }
+            },
+            onDismiss = { scanning = false },
+        )
+    }
     val items by viewModel.items.collectAsStateWithLifecycle()
     val counts by viewModel.counts.collectAsStateWithLifecycle()
     val kind by viewModel.kindFilter.collectAsStateWithLifecycle()
@@ -76,6 +100,7 @@ fun RecordListScreen(
                 title = { Text(if (project.isBlank()) "记录" else "记录 · $project") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
+                    IconButton(onClick = { scanning = true }) { Icon(Icons.Default.QrCodeScanner, "扫码") }
                     IconButton(onClick = onProjects) { Icon(Icons.Default.Folder, "切换工程") }
                     IconButton(onClick = onImportExport) { Icon(Icons.Default.ImportExport, "导入导出") }
                 },

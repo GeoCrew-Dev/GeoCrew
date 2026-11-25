@@ -181,6 +181,8 @@ fun GeoCrewNavHost() {
                 onOpen = { nav.navigate(Routes.feature(it)) },
                 onImportExport = { nav.navigate(Routes.TRANSFER) },
                 onProjects = { nav.toProjects() },
+                // The join form's deep link fills in the server and code.
+                onInviteLink = { link -> runCatching { nav.navigate(android.net.Uri.parse(link)) } },
             )
         }
         composable(Routes.FEATURE, arguments = listOf(navArgument(FEATURE_ID_ARG) { type = NavType.StringType })) {
