@@ -83,7 +83,7 @@ class MemoryStore : SyncStore, AttachmentStore {
 
 /**
  * End-to-end against a real server. Run with GEOCREW_TEST_SERVER=http://127.0.0.1:8080;
- * skipped otherwise (e.g. in Android CI).
+ * skipped otherwise. Android CI runs it in its own job against the server repository's latest code.
  */
 class ServerIntegrationTest {
     private val server = System.getenv("GEOCREW_TEST_SERVER")?.takeIf { it.isNotBlank() }
