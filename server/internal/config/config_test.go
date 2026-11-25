@@ -29,3 +29,21 @@ func TestLoad(t *testing.T) {
 		t.Fatal("non-postgres database accepted")
 	}
 }
+
+func TestBackupOptions(t *testing.T) {
+	c, err := Load(nil)
+	if err != nil || c.BackupDir != "" || c.BackupKeep != 7 || c.BackupEvery.Hours() != 24 {
+		t.Fatalf("defaults: %+v %v", c, err)
+	}
+	t.Setenv("GEOCREW_BACKUP_DIR", "/backups")
+	t.Setenv("GEOCREW_BACKUP_EVERY", "6h")
+	if c, err := Load([]string{"-backup-keep", "3"}); err != nil || c.BackupDir != "/backups" || c.BackupKeep != 3 || c.BackupEvery.Hours() != 6 {
+		t.Fatalf("env and flags: %+v %v", c, err)
+	}
+	if _, err := Load([]string{"-backup-every", "1m"}); err == nil {
+		t.Fatal("too frequent backups accepted")
+	}
+	if _, err := Load([]string{"-backup-keep", "0"}); err == nil {
+		t.Fatal("keeping no backups accepted")
+	}
+}

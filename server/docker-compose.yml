@@ -9,8 +9,11 @@ services:
       GEOCREW_NAME: "GeoCrew Server"
       GEOCREW_MAX_UPLOAD_MB: "32"
       GEOCREW_LOG_FORMAT: "json"
+      # Daily backups into the volume below; point it at another disk in production.
+      # GEOCREW_BACKUP_DIR: "/backups"
     volumes:
       - geocrew-data:/data
+      # - ./backups:/backups
 
 volumes:
   geocrew-data:

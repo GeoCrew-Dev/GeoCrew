@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds every runtime setting.
@@ -31,6 +32,11 @@ type Config struct {
 	Push bool
 	// PushAllowPrivate lets endpoints sit on private networks (a LAN ntfy).
 	PushAllowPrivate bool
+	// BackupDir, when set, receives scheduled database snapshots and an
+	// attachment mirror (SQLite only; PostgreSQL has pg_dump).
+	BackupDir   string
+	BackupEvery time.Duration
+	BackupKeep  int
 }
 
 func envBool(k string) bool {
@@ -80,6 +86,17 @@ func Load(args []string) (Config, error) {
 	fs.BoolVar(&c.Push, "push", pushOn, "send push notices to endpoints members register (UnifiedPush)")
 	fs.BoolVar(&c.PushAllowPrivate, "push-allow-private", envBool("GEOCREW_PUSH_ALLOW_PRIVATE"),
 		"allow push endpoints on private or loopback addresses and plain http (LAN distributors)")
+	fs.StringVar(&c.BackupDir, "backup-dir", env("GEOCREW_BACKUP_DIR", ""), "directory for scheduled backups; empty turns them off")
+	every, err := time.ParseDuration(env("GEOCREW_BACKUP_EVERY", "24h"))
+	if err != nil {
+		return c, fmt.Errorf("GEOCREW_BACKUP_EVERY: %w", err)
+	}
+	fs.DurationVar(&c.BackupEvery, "backup-every", every, "time between scheduled backups")
+	keep, err := strconv.Atoi(env("GEOCREW_BACKUP_KEEP", "7"))
+	if err != nil {
+		return c, fmt.Errorf("GEOCREW_BACKUP_KEEP: %w", err)
+	}
+	fs.IntVar(&c.BackupKeep, "backup-keep", keep, "how many scheduled backups to keep")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
@@ -95,6 +112,12 @@ func Load(args []string) (Config, error) {
 	}
 	if c.JoinPerMinute < 1 {
 		return c, fmt.Errorf("join-per-minute must be at least 1")
+	}
+	if c.BackupDir != "" && c.BackupEvery < 10*time.Minute {
+		return c, fmt.Errorf("backup-every must be at least 10m")
+	}
+	if c.BackupKeep < 1 {
+		return c, fmt.Errorf("backup-keep must be at least 1")
 	}
 	if c.MaxUploadMB < 1 {
 		return c, fmt.Errorf("max upload must be at least 1 MiB")

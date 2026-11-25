@@ -52,6 +52,9 @@ go build -o geocrew-server ./cmd/geocrew-server
 | `-join-per-minute` | `GEOCREW_JOIN_PER_MINUTE` | `10` | 每个客户端地址每分钟可尝试新建 / 加入的次数，防止猜测邀请码 |
 | `-push` | `GEOCREW_PUSH` | `true` | 向组员登记的推送地址发通知（UnifiedPush） |
 | `-push-allow-private` | `GEOCREW_PUSH_ALLOW_PRIVATE` | `false` | 允许推送地址在内网、本机或用 http（推送分发器和服务端在同一局域网时打开） |
+| `-backup-dir` | `GEOCREW_BACKUP_DIR` | 空 | 定时备份放到这个目录（只用于 SQLite），空表示不定时备份 |
+| `-backup-every` | `GEOCREW_BACKUP_EVERY` | `24h` | 定时备份间隔，至少 `10m` |
+| `-backup-keep` | `GEOCREW_BACKUP_KEEP` | `7` | 保留最近几份数据库快照 |
 
 ### 使用 PostgreSQL
 
@@ -92,6 +95,8 @@ geocrew-server -data /var/lib/geocrew admin backup /backups/geocrew-$(date +%F).
 ```
 
 服务运行时也能得到一致的数据库副本（目标文件已存在时不会覆盖）。附件在数据目录的 `files/` 下，按内容命名、只增不改，用 `rsync` 等工具增量复制即可。恢复时把备份文件改名为 `geocrew.db`，和 `files/` 一起放回数据目录。
+
+也可以让服务端自己定时备份：设 `GEOCREW_BACKUP_DIR`（最好在另一块盘或挂载的网络存储上），启动约一分钟后备份一次，之后每隔 `GEOCREW_BACKUP_EVERY` 一次。每次在该目录写一份 `geocrew-年月日-时分秒.db`（UTC 时间，先写临时文件，写完才改名，不会留下半份），只保留最近 `GEOCREW_BACKUP_KEEP` 份；附件增量复制到该目录的 `files/`，服务器上清理掉的附件在这里保留，因为较早的快照可能还引用它们。恢复时挑一份快照改名为 `geocrew.db`，和备份目录的 `files/` 一起放回数据目录。失败只记日志，下一次照常重试。用 PostgreSQL 时这项设置会被忽略，请用 `pg_dump`。
 
 ### 清理附件
 
@@ -161,6 +166,7 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 | `internal/export` | 导出为 GeoJSON 和工程包 |
 | `internal/config` | 参数与环境变量 |
 | `internal/admin` | 运维命令（列出、恢复组长、备份、导出） |
+| `internal/backup` | 定时备份：数据库快照、附件增量镜像、按份数清理 |
 
 再加一种 SQL 数据库只需写一个 `Dialect` 和它的建表语句，并让测试调用 `storetest.Run`；非 SQL 的存储直接实现 `store.Store` 接口。改表结构时，在 `sqlite` 和 `postgres` 两个包的迁移列表末尾各追加一条。
 

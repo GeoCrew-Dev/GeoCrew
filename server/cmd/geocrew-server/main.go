@@ -15,6 +15,7 @@ import (
 
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/admin"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/api"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/backup"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/config"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
@@ -91,6 +92,14 @@ func run() error {
 	defer stop()
 	if sender != nil {
 		go srv.WatchOutings(ctx, time.Minute)
+	}
+	if cfg.BackupDir != "" {
+		if db.Dialect() != "sqlite" {
+			log.Warn("scheduled backups only cover SQLite; use pg_dump for PostgreSQL", "engine", db.Dialect())
+		} else {
+			log.Info("scheduled backups", "dir", cfg.BackupDir, "every", cfg.BackupEvery, "keep", cfg.BackupKeep)
+			go backup.Run(ctx, db, backup.Options{Dir: cfg.BackupDir, Every: cfg.BackupEvery, Keep: cfg.BackupKeep, Files: files.Root, Log: log})
+		}
 	}
 	errc := make(chan error, 1)
 	go func() {
