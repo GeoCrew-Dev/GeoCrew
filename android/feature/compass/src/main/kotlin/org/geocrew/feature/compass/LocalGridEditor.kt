@@ -56,6 +56,9 @@ internal fun LocalGridEditor(
     onClear: () -> Unit,
     onLocate: ((LngLat) -> Unit) -> Unit,
     locating: Boolean,
+    /** Set when this user may not change the grid (a team member: the leader sets it for everyone). */
+    lockedNote: String? = null,
+    saveLabel: String = "保存到本工程",
 ) {
     var ellipsoid by rememberSaveable(saved) { mutableStateOf(saved?.ellipsoid ?: Ellipsoid.BEIJING54) }
     var width by rememberSaveable(saved) { mutableStateOf(saved?.width ?: 3) }
@@ -162,12 +165,16 @@ internal fun LocalGridEditor(
             }
             fitNote?.let { Card { Text(it, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace) } }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                val z = zone ?: return@Button
-                onSave(LocalGrid(name.trim().ifEmpty { defaultName(ellipsoid, width, z) }, ellipsoid, width, z, shift))
-            }, enabled = ready) { Text("保存到本工程") }
-            if (saved != null) TextButton(onClick = onClear) { Text("不再使用") }
+        if (lockedNote != null) {
+            Text(lockedNote, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    val z = zone ?: return@Button
+                    onSave(LocalGrid(name.trim().ifEmpty { defaultName(ellipsoid, width, z) }, ellipsoid, width, z, shift))
+                }, enabled = ready) { Text(saveLabel) }
+                if (saved != null) TextButton(onClick = onClear) { Text("不再使用") }
+            }
         }
         if (saved != null) Text("当前：${saved.name}。${saved.shift.describe()}", style = MaterialTheme.typography.bodySmall)
     }

@@ -42,6 +42,8 @@ class CoordinatesViewModel @Inject constructor(
     private val projects: ProjectRepository,
     features: FeatureRepository,
     private val location: LocationSource,
+    private val team: org.geocrew.core.data.team.TeamRepository,
+    private val forms: org.geocrew.core.data.team.TeamForms,
 ) : ViewModel() {
     val points: StateFlow<List<PointPick>> = projects.current
         .flatMapLatest { p -> features.observeProject(p.id) }
@@ -56,10 +58,38 @@ class CoordinatesViewModel @Inject constructor(
     val grid: StateFlow<LocalGrid?> = projects.current.map { it.config.localGrid }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** Who may change the grid: anyone in a project of their own, only leaders in a team (it is shared, protocol v0 §2.2). */
+    val gridRole: StateFlow<GridRole> = projects.current.map { p ->
+        when (p.team?.role) {
+            null -> GridRole.LOCAL
+            org.geocrew.core.data.team.TeamRepository.ROLE_LEADER -> GridRole.LEADER
+            else -> GridRole.MEMBER
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GridRole.LOCAL)
+
     fun saveGrid(g: LocalGrid?) = viewModelScope.launch {
-        val id = projects.current.first().id
-        projects.updateConfig(id) { it.copy(localGrid = g) }
-        _message.value = if (g == null) "已不再使用本地坐标系" else "已保存：${g.name}"
+        val p = projects.current.first()
+        val done = if (g == null) "已不再使用本地坐标系" else "已保存：${g.name}"
+        when (gridRole.value) {
+            GridRole.MEMBER -> _message.value = "本地坐标系由组长统一设置"
+            GridRole.LOCAL -> {
+                projects.updateConfig(p.id) { it.copy(localGrid = g) }
+                _message.value = done
+            }
+            GridRole.LEADER -> {
+                val h = team.handle(p.id)
+                if (h == null) {
+                    projects.updateConfig(p.id) { it.copy(localGrid = g) }
+                    _message.value = done
+                    return@launch
+                }
+                _message.value = try {
+                    forms.publishGrid(h, g) ?: "$done，已同步给组员"
+                } catch (e: java.io.IOException) {
+                    "已保存在本机，联网后会同步给组员"
+                }
+            }
+        }
     }
 
     private val _locating = MutableStateFlow(false)
@@ -144,3 +174,5 @@ class CoordinatesViewModel @Inject constructor(
 
     private fun csv(s: String) = if (s.any { it == ',' || it == '"' || it == '\n' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
 }
+
+enum class GridRole { LOCAL, LEADER, MEMBER }

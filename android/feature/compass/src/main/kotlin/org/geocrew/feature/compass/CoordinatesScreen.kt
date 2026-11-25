@@ -83,6 +83,7 @@ fun CoordinatesScreen(onBack: () -> Unit, viewModel: CoordinatesViewModel = hilt
     var ellipsoid by rememberSaveable { mutableStateOf(Ellipsoid.CGCS2000) }
     var picking by remember { mutableStateOf(false) }
     val grid by viewModel.grid.collectAsStateWithLifecycle()
+    val gridRole by viewModel.gridRole.collectAsStateWithLifecycle()
     var useGrid by rememberSaveable { mutableStateOf(true) }
     val active = grid?.takeIf { useGrid }
 
@@ -140,6 +141,8 @@ fun CoordinatesScreen(onBack: () -> Unit, viewModel: CoordinatesViewModel = hilt
                         onClear = { viewModel.saveGrid(null) },
                         onLocate = { done -> viewModel.locate { p, _ -> done(p) } },
                         locating = locating,
+                        lockedNote = if (gridRole == GridRole.MEMBER) "工作组里本地坐标系由组长统一设置，组员这里只能查看和试算。" else null,
+                        saveLabel = if (gridRole == GridRole.LEADER) "保存并同步给组员" else "保存到本工程",
                     )
                 }
             } else if (tab == 0) {

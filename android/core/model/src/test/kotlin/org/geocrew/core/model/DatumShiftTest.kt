@@ -115,4 +115,14 @@ class DatumShiftTest {
         assertNotNull(v)
         return v!!
     }
+
+    @Test
+    fun problemRejectsImplausibleGrids() {
+        val ok = LocalGrid("测区", Ellipsoid.BEIJING54, 3, 39, DatumShift.Plane(10.0, -5.0, 1.0, 2.0))
+        assertEquals(null, LocalGrid.problem(ok))
+        assertTrue(LocalGrid.problem(ok.copy(name = " ")) != null)
+        assertTrue(LocalGrid.problem(ok.copy(width = 4)) != null)
+        assertTrue(LocalGrid.problem(ok.copy(zone = 200)) != null)
+        assertTrue(LocalGrid.problem(ok.copy(shift = DatumShift.Bursa(Double.NaN, 0.0, 0.0))) != null)
+    }
 }

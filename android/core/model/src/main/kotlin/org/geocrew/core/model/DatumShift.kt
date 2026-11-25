@@ -196,6 +196,26 @@ data class LocalGrid(
     }
 
     companion object {
+        /** Why [g] cannot be used, or null; for grids read from elsewhere, such as shared settings. */
+        fun problem(g: LocalGrid): String? {
+            if (g.name.isBlank()) return "没有名称"
+            if (g.width != 3 && g.width != 6) return "带宽只能是 3° 或 6°"
+            if (g.zone < 1 || g.zone > 360 / g.width) return "带号不对"
+            val nums = when (val s = g.shift) {
+                is DatumShift.Bursa -> listOf(s.dx, s.dy, s.dz, s.rx, s.ry, s.rz, s.ppm)
+                is DatumShift.Plane -> listOf(s.dx, s.dy, s.rotationSeconds, s.ppm)
+                null -> emptyList()
+            }
+            if (nums.any { !it.isFinite() }) return "参数不是有效数字"
+            val ppm = when (val s = g.shift) {
+                is DatumShift.Bursa -> s.ppm
+                is DatumShift.Plane -> s.ppm
+                null -> 0.0
+            }
+            if (kotlin.math.abs(ppm) > 1000) return "尺度参数过大"
+            return null
+        }
+
         /**
          * Fits a four-parameter plane shift to two or more common points,
          * by least squares. Null with fewer than two distinct points.
