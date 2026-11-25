@@ -288,6 +288,13 @@ fun MapScreen(
             }
             averaging?.let { a -> AveragingCard(a, onDone = viewModel::finishAveraging, onCancel = viewModel::cancelAveraging) }
             mapNotice?.let { Notice(it, "好", viewModel::consumeNotice) }
+            project?.config?.let { cfg ->
+                val n = cfg.teamNotice
+                if (n != null && n.updatedAt != cfg.noticeSeenAt) {
+                    val text = n.text.replace('\n', ' ').let { if (it.length > 80) it.take(79) + "…" else it }
+                    Notice("公告" + (n.by?.let { "（$it）" } ?: "") + "：" + text, "知道了") { viewModel.dismissTeamNotice(n.updatedAt) }
+                }
+            }
             alert?.let { a ->
                 AlertCard(
                     text = "${a.nickname}：${a.body}",

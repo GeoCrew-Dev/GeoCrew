@@ -744,6 +744,12 @@ class MapViewModel @Inject constructor(
     val notice: StateFlow<String?> = _notice.asStateFlow()
     fun consumeNotice() { _notice.value = null }
 
+    /** Hides the team notice posted at [updatedAt] from the map until a newer one arrives. */
+    fun dismissTeamNotice(updatedAt: String) {
+        val id = project.value?.id ?: return
+        viewModelScope.launch { projects.updateConfig(id) { it.copy(noticeSeenAt = updatedAt) } }
+    }
+
     /** Shows [text] as a one-off message on the map. */
     fun say(text: String) { _notice.value = text }
 

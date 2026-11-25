@@ -65,6 +65,8 @@ data class ProjectConfig(
     val phrases: List<PhraseGroup> = emptyList(),
     /** The workspace's pinned notice (key `notice`); null when none. Only in team projects. */
     val teamNotice: TeamNotice? = null,
+    /** [TeamNotice.updatedAt] of the notice this device's user dismissed on the map. Kept per device. */
+    val noticeSeenAt: String? = null,
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 

@@ -179,6 +179,9 @@ class TeamViewModel @Inject constructor(
         } catch (e: IOException) {
             _message.value = "公告已保存在本机，联网后会发给全组"
             return@act
+        } finally {
+            // The poster has read it: keep it off their own map.
+            projects.updateConfig(h.project.id) { it.copy(noticeSeenAt = it.teamNotice?.updatedAt) }
         }
         _message.value = moved ?: if (text.isBlank()) "已撤下公告" else "已发布公告，组员同步后就能看到"
     }

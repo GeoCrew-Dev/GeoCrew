@@ -7,7 +7,7 @@ import java.time.Instant
 /**
  * The workspace's pinned notice (protocol v0 §2.2, key `notice`): one short
  * text a leader posts for the whole team, such as the day's plan or a safety
- * warning. Members see it on the team page and the map; it changes only when
+ * warning. Members see it on the team page, the team chat and the map; it changes only when
  * a leader posts a new one or clears it.
  */
 @Serializable
