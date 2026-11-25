@@ -44,6 +44,8 @@ const Usage = `用法：geocrew-server [参数] admin <命令>
 
   files <工作组> [prune]             统计附件：占用空间、被记录引用的、没有任何记录引用的、缺失的；
                                    加 prune 删除没有引用且上传超过 1 天的附件（历史版本引用的不删）
+  delete <工作组> [confirm]          永久删除整个工作组（成员、令牌、记录和历史、讨论、附件）；
+                                   不加 confirm 只列出将删除的内容；不可恢复，删除前先 backup
 
 <工作组> 和 <成员> 可以写 ID 或其开头几位，只要能唯一确定。
 `
@@ -248,6 +250,15 @@ func RunWith(ctx context.Context, st store.Store, opt Options, args []string, ou
 			return err
 		}
 		return files(ctx, st, opt.Files, ws, len(rest) == 2, time.Now(), out)
+	case "delete":
+		if len(rest) < 1 || len(rest) > 2 || (len(rest) == 2 && rest[1] != "confirm") {
+			return fmt.Errorf("用法：delete <工作组> [confirm]\n\n%s", Usage)
+		}
+		ws, err := findWorkspace(ctx, st, rest[0])
+		if err != nil {
+			return err
+		}
+		return deleteWorkspace(ctx, st, opt.Files, ws, len(rest) == 2, out)
 	default:
 		return fmt.Errorf("未知命令 %q\n\n%s", cmd, Usage)
 	}
@@ -415,6 +426,65 @@ func files(ctx context.Context, st store.Store, disk *blob.Disk, ws store.Worksp
 	if prune {
 		fmt.Fprintf(out, "已删除 %d 个，释放 %s；上传不满 1 天的保留\n", removed, size(removedBytes))
 	}
+	return nil
+}
+
+// deleteWorkspace shows what a workspace holds and, when confirmed,
+// removes it from the database and then its attachment directory.
+func deleteWorkspace(ctx context.Context, st store.Store, disk *blob.Disk, ws store.Workspace, confirmed bool, out io.Writer) error {
+	ms, err := st.Members(ctx, ws.ID)
+	if err != nil {
+		return err
+	}
+	active := 0
+	for _, m := range ms {
+		if !m.Revoked {
+			active++
+		}
+	}
+	records := 0
+	for since := int64(0); ; {
+		fs, more, err := st.PullFeatures(ctx, ws.ID, since, 1000)
+		if err != nil {
+			return err
+		}
+		for _, f := range fs {
+			if !f.Deleted {
+				records++
+			}
+			since = f.Seq
+		}
+		if !more {
+			break
+		}
+	}
+	var files int
+	var bytes int64
+	if disk != nil {
+		stored, err := disk.List(ws.ID)
+		if err != nil {
+			return err
+		}
+		for _, f := range stored {
+			files++
+			bytes += f.Size
+		}
+	}
+	fmt.Fprintf(out, "「%s」（%s，创建于 %s）：%d 位成员，%d 条记录，%d 个附件 %s\n",
+		ws.Name, ws.ID, ws.CreatedAt.Local().Format(time.DateTime), active, records, files, size(bytes))
+	if !confirmed {
+		fmt.Fprintf(out, "以上内容将被永久删除，不可恢复。确认无误（并已 backup）后执行：\n  admin delete %s confirm\n", ws.ID)
+		return nil
+	}
+	if err := st.DeleteWorkspace(ctx, ws.ID); err != nil {
+		return explain(err)
+	}
+	if disk != nil {
+		if err := disk.RemoveWorkspace(ws.ID); err != nil {
+			return fmt.Errorf("数据库里已删除，但附件目录没删干净：%w", err)
+		}
+	}
+	fmt.Fprintf(out, "已删除。组员手机上的数据不受影响。定时备份的数据库快照里仍有它，按保留份数逐渐淘汰；备份目录里的附件不会自动删，需要时手动删除 files/%s。\n", ws.ID)
 	return nil
 }
 

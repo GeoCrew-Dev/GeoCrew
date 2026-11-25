@@ -131,3 +131,12 @@ func (d *Disk) Remove(workspaceID, sha string) error {
 	}
 	return nil
 }
+
+// RemoveWorkspace deletes every file of the workspace; a workspace with no
+// files is not an error.
+func (d *Disk) RemoveWorkspace(workspaceID string) error {
+	if !idRe.MatchString(workspaceID) {
+		return ErrBadHash
+	}
+	return os.RemoveAll(filepath.Join(d.Root, workspaceID))
+}

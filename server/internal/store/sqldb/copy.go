@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-// tables in an order that satisfies the foreign keys.
+// tables in an order that satisfies the foreign keys; every one after
+// workspaces has a workspace_id column (DeleteWorkspace relies on both).
 var tables = []string{
 	"workspaces", "members", "features", "feature_history", "files",
 	"comments", "push_targets", "view_links",

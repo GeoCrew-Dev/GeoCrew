@@ -120,6 +120,15 @@ geocrew-server -data /var/lib/geocrew admin files 3f9a prune    # 删除没有�
 
 组员删掉照片或删掉记录后，原图仍留在服务器上。`files` 列出工作组附件占用的空间、被记录引用的数量、没有任何记录引用的数量，以及记录引用了但服务器上还没有的数量（通常是组员还没联网上传）。`prune` 只删除没有引用、而且上传超过 1 天的附件：记录任何一个历史版本里出现过的照片和录音都算有引用，因为「修改历史」可以把它恢复回来；组长共享的叠加图（共享设置的 `overlays`）也算有引用；应用总是先传照片再传记录，所以新传的附件会保留。建议先备份再清理。
 
+### 删除工作组
+
+```bash
+geocrew-server -data /var/lib/geocrew admin delete 3f9a           # 只列出将删除的内容
+geocrew-server -data /var/lib/geocrew admin delete 3f9a confirm   # 真的删除
+```
+
+项目结束、或者试用时建的测试组不再需要时，`delete` 永久删除整个工作组：成员和令牌（查看链接一并失效）、全部记录和修改历史、讨论、推送登记和附件目录。不加 `confirm` 只显示工作组名称、成员数、记录数和附件占用的空间。删除不可恢复，请先 `backup`；组员手机上的数据不受影响，仍可以导出。定时备份的快照里还会留着它，按保留份数逐渐淘汰，备份目录里的附件需要手动删除。
+
 ## 导出数据
 
 ```bash
@@ -184,7 +193,7 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 | `internal/push` | 推送通知投递（UnifiedPush 风格，内容最少、防内网探测） |
 | `internal/export` | 导出为 GeoJSON 和工程包 |
 | `internal/config` | 参数与环境变量 |
-| `internal/admin` | 运维命令（列出、恢复组长、备份、导出） |
+| `internal/admin` | 运维命令（列出、恢复组长、备份、导出、清理附件、删除工作组） |
 | `internal/backup` | 定时备份：数据库快照、附件增量镜像、按份数清理 |
 
 再加一种 SQL 数据库只需写一个 `Dialect` 和它的建表语句，并让测试调用 `storetest.Run`；非 SQL 的存储直接实现 `store.Store` 接口。改表结构时，在 `sqlite` 和 `postgres` 两个包的迁移列表末尾各追加一条。

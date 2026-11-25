@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -510,6 +511,33 @@ func (d *DB) FeatureHistory(ctx context.Context, workspaceID, featureID string) 
 		out = append(out, f)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) DeleteWorkspace(ctx context.Context, workspaceID string) error {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Waits for pushes in flight, so none lands in a half-deleted workspace.
+	if err := d.lockWorkspace(ctx, tx, workspaceID); err != nil {
+		return err
+	}
+	// Every table but workspaces is keyed by workspace_id; children go first.
+	for i := len(tables) - 1; i > 0; i-- {
+		t := tables[i]
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+t+` WHERE workspace_id = ?`, workspaceID); err != nil {
+			return fmt.Errorf("%s: %w", t, err)
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM workspaces WHERE id = ?`, workspaceID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return tx.Commit()
 }
 
 func (d *DB) PutFileMeta(ctx context.Context, workspaceID string, m store.FileMeta) error {

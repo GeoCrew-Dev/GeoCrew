@@ -250,3 +250,59 @@ func TestCopy(t *testing.T) {
 		t.Fatal("copy without a way to open the target")
 	}
 }
+
+func TestDeleteWorkspace(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	gone, leader, tok, err := db.CreateWorkspace(ctx, "测试组", "老王")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, _, _, err := db.CreateWorkspace(ctx, "北山填图", "老李")
+	if err != nil {
+		t.Fatal(err)
+	}
+	disk := &blob.Disk{Root: t.TempDir()}
+	for _, ws := range []string{gone.ID, kept.ID} {
+		sum := sha256.Sum256([]byte("photo"))
+		if _, err := disk.Put(ws, hex.EncodeToString(sum[:]), strings.NewReader("photo")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	props, _ := json.Marshal(map[string]any{"title": "D1"})
+	f := store.Feature{ID: "f1", Geometry: json.RawMessage(`null`), Properties: props, Version: 1, UpdatedAt: time.Now(), UpdatedBy: leader.ID}
+	if _, _, err := db.PushFeatures(ctx, gone.ID, leader.ID, []store.Feature{f}); err != nil {
+		t.Fatal(err)
+	}
+	del := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := RunWith(ctx, db, Options{Files: disk}, append([]string{"delete"}, args...), &out)
+		return out.String(), err
+	}
+	// Without confirm it only reports.
+	out, err := del(gone.ID[:6])
+	if err != nil || !strings.Contains(out, "1 位成员，1 条记录，1 个附件") || !strings.Contains(out, "confirm") {
+		t.Fatalf("dry run: %v\n%s", err, out)
+	}
+	if _, err := db.Workspace(ctx, gone.ID); err != nil {
+		t.Fatal("dry run deleted the workspace")
+	}
+	if _, err := del(gone.ID, "yes"); err == nil {
+		t.Fatal("accepted a confirmation other than confirm")
+	}
+	if out, err = del(gone.ID, "confirm"); err != nil || !strings.Contains(out, "已删除") {
+		t.Fatalf("delete: %v\n%s", err, out)
+	}
+	if _, err := db.Authenticate(ctx, gone.ID, tok); err == nil {
+		t.Fatal("token of the deleted workspace still works")
+	}
+	if left, _ := disk.List(gone.ID); len(left) != 0 {
+		t.Fatalf("files left: %v", left)
+	}
+	if left, _ := disk.List(kept.ID); len(left) != 1 {
+		t.Fatalf("other workspace's files: %v", left)
+	}
+	if _, err := del(gone.ID); err == nil {
+		t.Fatal("deleting a missing workspace should fail")
+	}
+}

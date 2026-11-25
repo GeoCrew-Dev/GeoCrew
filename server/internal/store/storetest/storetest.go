@@ -33,6 +33,7 @@ func Run(t *testing.T, open Opener) {
 		{"ConcurrentPushes", concurrentPushes},
 		{"LockedProps", lockedProps},
 		{"Outings", outings},
+		{"DeleteWorkspace", deleteWorkspace},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -494,5 +495,86 @@ func outings(t *testing.T, open Opener) {
 	}
 	if due, _ := d.DueOutings(ctx, now.Add(6*time.Hour), 1); len(due) != 1 || due[0].Comment.ID != "o1" {
 		t.Fatalf("after deleting an outing: %v", ids(due))
+	}
+}
+
+func deleteWorkspace(t *testing.T, open Opener) {
+	ctx := context.Background()
+	d := open(t)
+	gone, gl, gtok, err := d.CreateWorkspace(ctx, "收工的项目", "组长")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, gm, mtok, err := d.Join(ctx, gone.InviteCode, "组员")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, kl, ktok, err := d.CreateWorkspace(ctx, "还在用的", "组长")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for _, ws := range []struct{ id, member string }{{gone.ID, gm.ID}, {kept.ID, kl.ID}} {
+		if _, _, err := d.PushFeatures(ctx, ws.id, ws.member, []store.Feature{feat("f1", 1, now)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := d.PushFeatures(ctx, ws.id, ws.member, []store.Feature{feat("f1", 2, now)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.AddComment(ctx, ws.id, ws.member, store.Comment{ID: "c1", Body: "hi"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.PutFileMeta(ctx, ws.id, store.FileMeta{SHA256: "ab", Size: 1, ContentType: "image/jpeg", CreatedAt: now, CreatedBy: ws.member}); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.SetPushTarget(ctx, ws.id, store.PushTarget{MemberID: ws.member, Endpoint: "https://push.example.com/x", Events: []string{"task"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view, err := d.CreateViewLink(ctx, gone.ID, gl.ID, now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.DeleteWorkspace(ctx, gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Workspace(ctx, gone.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("deleted workspace still there: %v", err)
+	}
+	for _, tok := range []string{gtok, mtok, view} {
+		if _, err := d.Authenticate(ctx, gone.ID, tok); err == nil {
+			t.Fatal("a token of the deleted workspace still works")
+		}
+	}
+	if _, _, _, err := d.Join(ctx, gone.InviteCode, "迟到的人"); err == nil {
+		t.Fatal("the deleted workspace's invite still works")
+	}
+	// The other workspace keeps everything.
+	if _, err := d.Authenticate(ctx, kept.ID, ktok); err != nil {
+		t.Fatal(err)
+	}
+	fs, _, err := d.PullFeatures(ctx, kept.ID, 0, 10)
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("kept features: %v %d", err, len(fs))
+	}
+	if h, err := d.FeatureHistory(ctx, kept.ID, "f1"); err != nil || len(h) != 1 {
+		t.Fatalf("kept history: %v %d", err, len(h))
+	}
+	if cs, _, err := d.Comments(ctx, kept.ID, 0, 10); err != nil || len(cs) != 1 {
+		t.Fatalf("kept comments: %v %d", err, len(cs))
+	}
+	if _, err := d.FileMeta(ctx, kept.ID, "ab"); err != nil {
+		t.Fatal(err)
+	}
+	if ts, err := d.PushTargets(ctx, kept.ID); err != nil || len(ts) != 1 {
+		t.Fatalf("kept push targets: %v %d", err, len(ts))
+	}
+	all, err := d.Workspaces(ctx)
+	if err != nil || len(all) != 1 || all[0].ID != kept.ID {
+		t.Fatalf("workspaces after delete: %v %+v", err, all)
+	}
+	// Deleting twice is not found.
+	if err := d.DeleteWorkspace(ctx, gone.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("second delete: %v", err)
 	}
 }

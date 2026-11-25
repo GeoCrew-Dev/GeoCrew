@@ -360,5 +360,11 @@ type Store interface {
 	PutFileMeta(ctx context.Context, workspaceID string, meta FileMeta) error
 	FileMeta(ctx context.Context, workspaceID, sha256 string) (FileMeta, error)
 
+	// DeleteWorkspace removes the workspace and everything in it (members,
+	// tokens, view links, records and their history, comments, push
+	// endpoints, attachment metadata) for good, or returns ErrNotFound.
+	// Attachment files are the caller's to remove.
+	DeleteWorkspace(ctx context.Context, workspaceID string) error
+
 	Close() error
 }
