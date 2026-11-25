@@ -48,8 +48,17 @@ object BuiltInSources {
 }
 
 /** Built-ins plus the user's own sources, with lookup and fallback. */
-class TileCatalog(custom: List<TileSource>) {
-    val sources: List<TileSource> = BuiltInSources.all + custom.map { it.copy(custom = true) }
+/**
+ * The sources offered on this phone: built-in ones, the user's own and those
+ * the open project's workspace shares. A shared source with the id of one of
+ * the user's own (a leader sharing it) is listed once, as the user's own.
+ */
+class TileCatalog(custom: List<TileSource>, team: List<TileSource> = emptyList()) {
+    val sources: List<TileSource> = run {
+        val own = BuiltInSources.all + custom.map { it.copy(custom = true, shared = false) }
+        val ids = own.map { it.id }.toSet()
+        own + team.filter { it.id !in ids }.distinctBy { it.id }.map { it.copy(custom = false, shared = true, keyId = null, offline = false) }
+    }
 
     fun find(id: String?): TileSource? = sources.firstOrNull { it.id == id }
 

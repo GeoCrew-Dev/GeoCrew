@@ -32,6 +32,8 @@ data class TileSource(
     val offline: Boolean = false,
     /** Area covered, as [west, south, east, north] in degrees; null for worldwide sources. */
     val bounds: List<Double>? = null,
+    /** Shared by a workspace leader with the open project (protocol v0 §2.2, key `basemaps`). */
+    val shared: Boolean = false,
 ) {
     val needsKey: Boolean get() = keyId != null
 }

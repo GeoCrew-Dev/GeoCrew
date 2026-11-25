@@ -244,6 +244,8 @@ internal fun LayerSheet(
     onDisplay: ((org.geocrew.core.model.MapDisplay) -> org.geocrew.core.model.MapDisplay) -> Unit,
     onChoose: (String) -> Unit,
     onManage: () -> Unit,
+    /** A leader shares one of their own base maps with the workspace, or stops sharing it. */
+    onShare: (String) -> Unit = {},
     /** Keep the area on screen of the current base map offline. */
     onDownload: () -> Unit,
     overlays: List<OverlayItem>,
@@ -322,9 +324,17 @@ internal fun LayerSheet(
                         val note = listOfNotNull(
                             s.group.ifBlank { null },
                             if (s.custom && !s.offline) "自定义" else null,
+                            if (s.custom && s.id in base.teamIds) "已共享给组员" else null,
                             if (locked) "需要先在设置里填写 Key" else null,
                         ).joinToString(" · ")
-                        if (note.isNotEmpty()) Text(note)
+                        Column {
+                            if (note.isNotEmpty()) Text(note)
+                            if (base.canShare && (s.id in base.teamIds || org.geocrew.core.model.tiles.SharedBasemap.of(s) != null)) {
+                                TextButton(onClick = { onShare(s.id) }) {
+                                    Text(if (s.id in base.teamIds) "取消共享" else "共享给组员")
+                                }
+                            }
+                        }
                     },
                     leadingContent = {
                         Icon(if (s.id == base.chosenId) Icons.Default.RadioButtonChecked else Icons.Default.RadioButtonUnchecked, null)

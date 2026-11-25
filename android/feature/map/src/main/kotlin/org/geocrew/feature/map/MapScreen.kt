@@ -502,6 +502,7 @@ fun MapScreen(
                     }
                 },
                 onManage = { showLayers = false; onOpenSettings() },
+                onShare = viewModel::toggleSharedBasemap,
                 onDownload = { showLayers = false; downloadArea = camera.visibleBounds() },
                 overlays = overlayItems,
                 overlayActions = remember(viewModel, camera) {

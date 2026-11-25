@@ -135,6 +135,10 @@ data class BaseMapUi(
     /** The chosen source needs a key the user has not entered, so [source] is a fallback. */
     val usingFallback: Boolean,
     val showKeyPrompt: Boolean,
+    /** Ids of the sources the open project's workspace shares. */
+    val teamIds: Set<String> = emptySet(),
+    /** This phone leads the open project's workspace, so it may share its own sources. */
+    val canShare: Boolean = false,
 )
 
 @HiltViewModel
@@ -209,9 +213,13 @@ class MapViewModel @Inject constructor(
     val baseMap: StateFlow<BaseMapUi?> = combine(
         settingsRepo.settings,
         projects.current.map { it.config.baseSourceId }.distinctUntilChanged(),
-    ) { s, own ->
+        projects.current.map { p ->
+            p.config.teamBasemaps.filter(org.geocrew.core.model.tiles.SharedBasemap::valid) to
+                (p.team?.role == org.geocrew.core.data.team.TeamRepository.ROLE_LEADER)
+        }.distinctUntilChanged(),
+    ) { s, own, (team, leader) ->
         val keys = settingsRepo.keysOf(s)
-        val catalog = settingsRepo.catalogOf(s)
+        val catalog = org.geocrew.core.model.tiles.TileCatalog(s.customSources, team.map { it.toSource() })
         val chosen = own ?: s.baseSourceId
         val effective = catalog.effective(chosen, keys)
         BaseMapUi(
@@ -222,6 +230,8 @@ class MapViewModel @Inject constructor(
             locked = catalog.sources.filterNot(keys::has).map { it.id }.toSet(),
             usingFallback = effective.id != chosen,
             showKeyPrompt = !s.keyPromptDone && settingsRepo.needsTiandituKey(s),
+            teamIds = team.map { it.id }.toSet(),
+            canShare = leader,
         )
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -540,6 +550,37 @@ class MapViewModel @Inject constructor(
 
     /** Shares an overlay with the workspace, or stops sharing it (leaders). */
     fun toggleShared(overlayId: String) = setOverlay(overlayId) { it.copy(shared = !it.shared) }
+
+    /**
+     * Shares one of the leader's own base maps with the workspace, or stops
+     * sharing it (protocol v0 §2.2, key `basemaps`). Sources that need a key
+     * are never shared, so a leader's personal key stays on their phone.
+     */
+    fun toggleSharedBasemap(sourceId: String) = viewModelScope.launch {
+        val p = project.value ?: return@launch
+        if (p.team?.role != org.geocrew.core.data.team.TeamRepository.ROLE_LEADER) return@launch
+        val b = baseMap.value ?: return@launch
+        val current = p.config.teamBasemaps
+        val sharing = current.none { it.id == sourceId }
+        val next = if (sharing) {
+            val src = b.sources.firstOrNull { it.id == sourceId } ?: return@launch
+            val shared = org.geocrew.core.model.tiles.SharedBasemap.of(src)
+            if (shared == null) {
+                _notice.value = "只能共享不需要 Key 的在线自定义图源"
+                return@launch
+            }
+            current + shared
+        } else {
+            current.filterNot { it.id == sourceId }
+        }
+        val h = teamRepo.handle(p.id) ?: return@launch
+        val msg = try {
+            teamForms.publishBasemaps(h, next) ?: if (sharing) "已共享给组员，他们在图层里就能选这个底图" else "已停止共享这个底图"
+        } catch (e: java.io.IOException) {
+            "已保存在本机，联网后会同步给组员"
+        }
+        _notice.value = msg
+    }
 
     /**
      * Changes the open project's overlays; when a leader's change touches

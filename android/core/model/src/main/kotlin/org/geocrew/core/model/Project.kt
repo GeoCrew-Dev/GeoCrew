@@ -59,6 +59,8 @@ data class ProjectConfig(
     val overlays: List<ImageOverlay> = emptyList(),
     /** A local map grid (Beijing 54, Xi'an 80...) with its datum shift, for coordinate tables. Kept per device. */
     val localGrid: LocalGrid? = null,
+    /** Base maps the workspace shares (protocol v0 §2.2, key `basemaps`), in the leaders' order. */
+    val teamBasemaps: List<org.geocrew.core.model.tiles.SharedBasemap> = emptyList(),
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 
