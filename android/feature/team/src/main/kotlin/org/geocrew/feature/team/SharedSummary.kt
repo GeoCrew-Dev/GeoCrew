@@ -15,6 +15,20 @@ internal fun sharedSummary(c: ProjectConfig): List<Pair<String, String>> = build
     val overlays = c.overlays.filter { it.shared }
     if (overlays.isNotEmpty()) add("叠加图" to overlays.joinToString("、") { it.name }.let(::short))
     if (c.teamBasemaps.isNotEmpty()) add("底图" to c.teamBasemaps.joinToString("、") { it.name }.let(::short))
+    val references = c.referenceLayers.filter { it.shared }
+    if (references.isNotEmpty()) add("参考图层" to references.joinToString("、") { it.name }.let(::short))
+    if (c.recordRules.active) {
+        val r = c.recordRules
+        add(
+            "记录规则" to listOfNotNull(
+                r.pointPrefix?.takeIf { it.isNotBlank() }?.let { "点号 $it…" },
+                r.items.takeIf { it.isNotEmpty() }?.let { items -> "必填" + items.joinToString("、") { it.label } },
+                r.minPhotos.takeIf { it > 0 }?.let { "至少 $it 张照片" },
+            ).joinToString("，").let(::short),
+        )
+    }
+    val denied = c.teamAiDeny.mapNotNull { org.geocrew.core.model.action.ActionRisk.of(it) }
+    if (denied.isNotEmpty()) add("助手限制" to "不许助手" + denied.joinToString("、") { it.label }.let(::short))
 }
 
 private fun short(s: String) = if (s.length <= 40) s else s.take(39) + "…"
