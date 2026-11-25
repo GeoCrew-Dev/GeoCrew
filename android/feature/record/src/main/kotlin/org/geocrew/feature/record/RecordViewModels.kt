@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -305,6 +306,7 @@ class FeatureDetailViewModel @Inject constructor(
     private val teamForms: org.geocrew.core.data.team.TeamForms,
     private val tracks: org.geocrew.core.data.repo.TrackRepository,
     private val offline: org.geocrew.core.speech.OfflineSpeech,
+    private val referenceLayers: org.geocrew.core.data.repo.ReferenceLayers,
 ) : ViewModel() {
     private val id: String = checkNotNull(savedState[FEATURE_ID_ARG])
 
@@ -540,6 +542,21 @@ class FeatureDetailViewModel @Inject constructor(
             this[Props.LITHOLOGY] = lithology.trim().ifBlank { null }
         }
     }
+
+    /** Where a point falls on the project's visible reference layers, e.g. "1:5万地质图：K1b；离 F3 约 120 m". */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val referenceAt: StateFlow<String?> = kotlinx.coroutines.flow.combine(
+        feature.map { (it?.geometry as? org.geocrew.core.model.Geometry.Point)?.position }.distinctUntilChanged(),
+        projects.current.map { p -> p.id to p.config.referenceLayers.filter { it.visible } }.distinctUntilChanged(),
+    ) { at, layers -> at to layers }
+        .mapLatest { (at, pl) ->
+            val (pid, layers) = pl
+            if (at == null || layers.isEmpty()) return@mapLatest null
+            val r = org.geocrew.core.model.ReferenceLookup.at(at, layers.map { it to referenceLayers.shapes(pid, it) })
+            (r.areas.map { "${it.layer}：${it.value ?: "图斑内"}" } + r.lines.map { "离${it.value ?: "「${it.layer}」的线"}约 ${it.meters.toInt()} m" })
+                .joinToString("；").ifEmpty { "不在参考图层的图形里" }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun lookUpDem() = viewModelScope.launch {
         val p = (feature.value?.geometry as? org.geocrew.core.model.Geometry.Point)?.position ?: return@launch

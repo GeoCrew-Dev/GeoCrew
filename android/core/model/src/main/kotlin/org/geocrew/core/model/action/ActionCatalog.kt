@@ -31,6 +31,7 @@ object ActionCatalog {
     const val SEND_TEAM_MESSAGE = "send_team_message"
     const val UNDO_LAST = "undo_last"
     const val DAY_SUMMARY = "day_summary"
+    const val REFERENCE_HERE = "reference_here"
 
     /** "current" in a record id means the record open on screen, or else the newest one. */
     const val CURRENT = "current"
@@ -160,13 +161,24 @@ object ActionCatalog {
         },
     )
 
+    val referenceHere = ActionSpec(
+        REFERENCE_HERE, "查参考图层",
+        "某个位置（省略为当前位置）落在参考图层（导入的旧地质图、矿权范围等）的哪个图斑里，附近 200 米内最近的线（断层、界线）有多远。只看，不改记录。",
+        ActionRisk.READ,
+        Schema.obj {
+            number("lng", "经度，省略为当前位置", min = -180.0, max = 180.0)
+            number("lat", "纬度，省略为当前位置", min = -90.0, max = 90.0)
+        },
+    )
+
     val all: List<ActionSpec> = listOf(
         findRecords, getRecord, open, placePoint, updateRecord, addSample, setAttribute,
         startTrack, stopTrack, takePhoto, deleteRecords, sendTeamMessage, undoLast, daySummary,
+        referenceHere,
     )
 
-    /** Actions whose results carry text people wrote; reading them taints the request. */
-    val returnsUserText: Set<String> = setOf(GET_RECORD, FIND_RECORDS)
+    /** Actions whose results carry text people wrote (records, imported files); reading them taints the request. */
+    val returnsUserText: Set<String> = setOf(GET_RECORD, FIND_RECORDS, REFERENCE_HERE)
 
     fun byName(name: String): ActionSpec? = all.firstOrNull { it.name == name }
 }

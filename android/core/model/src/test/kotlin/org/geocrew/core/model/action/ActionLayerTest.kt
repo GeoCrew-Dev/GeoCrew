@@ -116,6 +116,9 @@ class ActionLayerTest {
         val auto = QuickCommand.parse("采样")!!.single()
         assertNull(auto.args["no"])
         assertNull(QuickCommand.parse("岩性120"))
+        for (t in listOf("这里是什么地层", "我在哪个图斑里", "这是什么岩体", "查一下参考图层")) {
+            assertEquals(t, ActionCatalog.REFERENCE_HERE, QuickCommand.parse(t)?.single()?.name)
+        }
         for (t in listOf("今天做了多少", "今日小结", "今天进度", "日报")) {
             assertEquals(t, ActionCatalog.DAY_SUMMARY, QuickCommand.parse(t)?.single()?.name)
         }

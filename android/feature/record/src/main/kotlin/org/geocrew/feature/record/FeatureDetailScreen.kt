@@ -242,7 +242,8 @@ fun FeatureDetailScreen(
             SectionHeader("信息")
             val dem by viewModel.dem.collectAsStateWithLifecycle()
             val trackTime by viewModel.trackTime.collectAsStateWithLifecycle()
-            Info(f, format, dem, viewModel::lookUpDem, viewModel::useDemAltitude, trackTime)
+            val referenceAt by viewModel.referenceAt.collectAsStateWithLifecycle()
+            Info(f, format, dem, viewModel::lookUpDem, viewModel::useDemAltitude, trackTime, referenceAt)
             if (onOpenRoute != null && f.kind == FeatureKind.ROUTE) {
                 OutlinedButton(onClick = { onOpenRoute(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("打开地质路线（点序、点间描述与小结）") }
             }
@@ -942,6 +943,8 @@ private fun Info(
     onLookUpDem: () -> Unit,
     onUseDem: () -> Unit,
     trackTime: TrackTimeUi? = null,
+    /** Where a point falls on the reference layers, if the project has any shown. */
+    referenceAt: String? = null,
 ) {
     Column(Modifier.padding(horizontal = 16.dp)) {
         when (val g = f.geometry) {
@@ -953,6 +956,7 @@ private fun Info(
                     InfoRow("海拔", "%.1f m".format(it) + when { fromDem -> "（取自地形 DEM）"; source != null -> "（其他来源）"; else -> "" })
                 }
                 DemRow(g.position.alt.takeUnless { fromDem }, g.position.alt == null, dem, onLookUpDem, onUseDem)
+                referenceAt?.let { InfoRow("参考图层", it) }
                 f.properties.double(org.geocrew.core.model.Props.ACCURACY_M)?.let { acc ->
                     val n = f.properties.double(org.geocrew.core.model.Props.GPS_SAMPLES)?.toInt()
                     val spread = f.properties.double(org.geocrew.core.model.Props.GPS_SPREAD_M)

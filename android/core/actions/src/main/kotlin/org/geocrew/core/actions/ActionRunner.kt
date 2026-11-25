@@ -64,6 +64,7 @@ class ActionRunner @Inject constructor(
     private val session: TeamSession,
     private val host: ActionHost,
     val log: ActionLog,
+    private val reference: org.geocrew.core.data.repo.ReferenceLayers,
 ) {
     val specs: List<ActionSpec> get() = ActionCatalog.all
 
@@ -199,6 +200,35 @@ class ActionRunner @Inject constructor(
         val a = call.args
         return when (call.name) {
             ActionCatalog.FIND_RECORDS -> find(a)
+            ActionCatalog.REFERENCE_HERE -> {
+                val p = projects.current.first()
+                if (p.config.referenceLayers.isEmpty()) {
+                    return ActionResult.fail("这个工程还没有参考图层。在「导入」里选一个文件，点「作为参考图层」。")
+                }
+                val layers = p.config.referenceLayers.filter { it.visible }
+                if (layers.isEmpty()) return ActionResult.fail("参考图层都关着，先在地图「图层」里打开要查的那个。")
+                val lng = a.num("lng")
+                val lat = a.num("lat")
+                val at = (if (lng != null && lat != null) LngLat(lng, lat) else here())
+                    ?: return ActionResult.fail("现在拿不到位置，请打开定位后再问。")
+                val r = org.geocrew.core.model.ReferenceLookup.at(at, layers.map { it to reference.shapes(p.id, it) })
+                ActionResult(
+                    true, r.text(),
+                    buildJsonObject {
+                        put("areas", buildJsonArray {
+                            r.areas.forEach { x ->
+                                add(buildJsonObject {
+                                    put("layer", x.layer); x.value?.let { put("value", it) }
+                                    put("attributes", buildJsonObject { x.attributes.entries.take(20).forEach { (k, v) -> put(k, v.take(200)) } })
+                                })
+                            }
+                        })
+                        put("lines", buildJsonArray {
+                            r.lines.forEach { n -> add(buildJsonObject { put("layer", n.layer); n.value?.let { put("value", it) }; put("meters", n.meters.toInt()) }) }
+                        })
+                    },
+                )
+            }
             ActionCatalog.DAY_SUMMARY -> {
                 val p = projects.current.first()
                 val zone = java.time.ZoneId.systemDefault()
