@@ -212,9 +212,9 @@ geocrew-server -data /var/lib/geocrew admin export 3f9a /tmp/北山填图.zip
 
 ## 接入 AI 工具（MCP）
 
-`POST /api/v0/workspaces/{id}/mcp` 是一个只读的 [MCP](https://modelcontextprotocol.io) 服务端，支持 MCP 的聊天客户端或编辑器接上后，可以直接问「今天谁采了哪些样」「找一下片麻岩的点」「还有哪些记录要补」。在客户端里添加一个远程（Streamable HTTP）MCP 服务器，地址填 `https://你的服务器/api/v0/workspaces/{工作组 ID}/mcp`，请求头加 `Authorization: Bearer 组员令牌`。
+`POST /api/v0/workspaces/{id}/mcp` 是一个只读的 [MCP](https://modelcontextprotocol.io) 服务端，支持 MCP 的聊天客户端或编辑器接上后，可以直接问「今天谁采了哪些样」「找一下片麻岩的点」「还有哪些记录要补」。在应用的工作组页点「接入 AI 工具」，选好有效期，就会得到地址和一个只读令牌；在 AI 客户端里添加一个远程（Streamable HTTP）MCP 服务器，地址填它，请求头加 `Authorization: Bearer 令牌`。
 
-工具有五个：工作组概况、找记录（按词、种类、修改人、日期）、看一条记录的全部内容、待核对清单、最近的组内消息。都只读，改动仍在手机应用里做。查看链接接不进来（返回 403）。组员令牌能读写整个工作组，只填进自己信任的工具，详见协议第 11 节。
+令牌就是一个查看链接的令牌：只能读、到期失效，「撤销我生成的全部链接」随时收回。工具有五个：工作组概况、找记录（按词、种类、修改人、日期）、看一条记录的全部内容、待核对清单、最近的组内消息，改动仍在手机应用里做。详见协议第 11 节。
 
 ## 推送通知
 

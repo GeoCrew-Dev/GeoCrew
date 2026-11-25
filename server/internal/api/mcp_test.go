@@ -105,11 +105,15 @@ func TestMCP(t *testing.T) {
 	if _, r := rpc(a.Token, 4, "tools/call", map[string]any{"name": "delete_everything"}); r.Error == nil {
 		t.Fatal("unknown tool must be an error")
 	}
-	// A view link reads the web page, not the AI endpoint.
+	// A view link is the read-only credential to give an AI tool.
 	var link viewLinkResp
 	e.call("POST", base+"/view-links", a.Token, nil, &link)
-	if c := e.call("POST", base+"/mcp", link.Token, map[string]any{"jsonrpc": "2.0", "id": 5, "method": "tools/list"}, nil); c != 403 {
+	if c, r := rpc(link.Token, 5, "tools/list", nil); c != 200 || len(r.Result.Tools) != 5 {
 		t.Fatalf("view link: %d", c)
+	}
+	e.call("DELETE", base+"/view-links", a.Token, nil, nil)
+	if c := e.call("POST", base+"/mcp", link.Token, map[string]any{"jsonrpc": "2.0", "id": 6, "method": "tools/list"}, nil); c != 401 {
+		t.Fatalf("revoked view link: %d", c)
 	}
 }
 

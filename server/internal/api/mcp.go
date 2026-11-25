@@ -19,8 +19,9 @@ import (
 const mcpInstructions = `GeoCrew (同勘) workspace of a field geology team. Records are GeoJSON features: geological points (geo_point) with lithology and attitudes (strike / dip_direction / dip, degrees), tracks, lines, polygons, measured sections, routes and boreholes. Coordinates are WGS 84 longitude, latitude. All tools only read; changes are made in the GeoCrew app. Answer in the user's language; the team usually writes Chinese.`
 
 // mcpEndpoint serves read-only MCP tools for one workspace (protocol v0
-// §11), with the calling member's token. Writing stays in the app, where
-// actions carry risk classes and confirmations (actions.md).
+// §11), with a member's token or, preferably, a view link of theirs.
+// Writing stays in the app, where actions carry risk classes and
+// confirmations (actions.md).
 func (s *Server) mcpEndpoint(w http.ResponseWriter, r *http.Request) {
 	ws := r.PathValue("ws")
 	srv := &mcp.Server{Name: "geocrew", Version: s.Version, Instructions: mcpInstructions, Tools: s.mcpTools(ws),
