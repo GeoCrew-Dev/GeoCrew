@@ -1,0 +1,1254 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>同勘 GeoCrew · 工作组查看</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+      integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
+        integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
+<style>
+  :root { --bg: #fff; --fg: #1c1b1f; --muted: #5f5d66; --line: #dcdbe0; --accent: #2e6b4f; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1c1b1f; --fg: #e6e1e5; --muted: #a9a6b0; --line: #3a383f; --accent: #7fc8a4; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font: 14px/1.45 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--fg); }
+  #app { display: flex; height: 100%; }
+  #side { width: 320px; max-width: 45vw; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+  #side header { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  #side h1 { font-size: 17px; margin: 0 0 2px; }
+  #status, #today { color: var(--muted); font-size: 12px; }
+  #tools { display: flex; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  button, input { font: inherit; color: inherit; }
+  button { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  #q { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  #list { flex: 1; overflow: auto; margin: 0; padding: 0; list-style: none; }
+  #list li { padding: 8px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  #list li:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  #list .sub { color: var(--muted); font-size: 12px; }
+  #list .warn { color: #b26a00; font-size: 12px; }
+  button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  #mapwrap { flex: 1; position: relative; }
+  #map { position: absolute; inset: 0; }
+  #legend { position: absolute; left: 10px; bottom: 30px; z-index: 1; background: color-mix(in srgb, var(--bg) 92%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 12px; max-width: 220px; cursor: pointer; }
+  #legend b { font-weight: 600; }
+  #legend .sw { display: inline-block; width: 16px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  #legend .ln { display: inline-block; width: 16px; height: 0; border-top: 2px solid #212121; margin-right: 6px; vertical-align: 3px; }
+  #legend .ln.fault { border-top-color: #d32f2f; border-top-width: 3px; }
+  #legend .ln.dash { border-top-style: dashed; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .mate { background: #1565c0; color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 10px; border: 2px solid #fff; white-space: nowrap; box-shadow: 0 1px 3px #0006; }
+  .mate.old { background: #78909c; }
+  .mate.replay { background: #00897b; }
+  #replay { position: absolute; left: 50%; transform: translateX(-50%); bottom: 30px; z-index: 1; display: flex; gap: 8px; align-items: center; background: color-mix(in srgb, var(--bg) 92%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font-size: 12px; }
+  #replay[hidden] { display: none; }
+  #replay input { width: min(320px, 40vw); }
+  .maplibregl-popup-content { color: #1c1b1f; max-width: 320px; }
+  .pop h3 { margin: 0 0 4px; font-size: 15px; }
+  .pop dl { margin: 6px 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+  .pop dt { color: #5f5d66; }
+  .pop dd { margin: 0; word-break: break-word; }
+  .pop img { max-width: 100%; border-radius: 6px; margin-top: 4px; }
+  .pop .cap { color: #666; font-size: 12px; }
+  .pop audio { width: 100%; margin-top: 4px; }
+  #banner { margin-top: 6px; font-size: 12px; }
+  #banner div { padding: 4px 8px; border-radius: 6px; margin-top: 4px; cursor: pointer; }
+  #banner .urgent { background: color-mix(in srgb, #c62828 15%, transparent); color: #c62828; }
+  #banner .notice { background: color-mix(in srgb, var(--accent) 6%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.2em; overflow: hidden; }
+  #banner .notice.open { max-height: none; }
+  #banner .call { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  #list .msg .body { white-space: pre-wrap; word-break: break-word; }
+  #list .urgent { color: #c62828; }
+  #list .tag { font-size: 11px; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-right: 6px; }
+  .pop .talk { border-top: 1px solid #ddd; margin-top: 6px; padding-top: 4px; font-size: 12px; }
+  #gate { max-width: 520px; margin: 15vh auto; padding: 0 20px; }
+  @media (max-width: 700px) { #app { flex-direction: column-reverse; } #side { width: 100%; max-width: none; height: 40%; border-right: 0; border-top: 1px solid var(--line); } }
+  #aidlg { max-width: 34em; border: 1px solid #ccc; border-radius: 8px; }
+  #aidlg pre { white-space: pre-wrap; word-break: break-all; background: #f4f4f4; padding: 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="app" hidden>
+  <aside id="side">
+    <header><h1 id="name">工作组</h1><div id="status">正在读取…</div><div id="today"></div><div id="banner"></div></header>
+    <div id="tools">
+      <input id="q" type="search" placeholder="按名称、岩性、备注筛选">
+      <select id="who" title="只看这位组员最后改过的记录"><option value="">全部组员</option></select>
+      <input id="day" type="date" title="只看这一天改过的记录（本机时区）">
+      <button id="fit" type="button">全部</button>
+      <button id="check" type="button" hidden>待核对</button>
+      <button id="msgs" type="button">组内消息</button>
+      <button id="geojson" type="button">下载 GeoJSON</button>
+      <button id="kml" type="button">下载 KML</button>
+      <button id="gpx" type="button">下载 GPX</button>
+      <button id="gpkg" type="button">下载 GeoPackage</button>
+      <button id="package" type="button">下载工程包</button>
+      <button id="samples" type="button">下载样品清单</button>
+      <button id="sections" type="button">下载剖面分层表</button>
+      <button id="boreholes" type="button">下载钻孔分层表</button>
+      <button id="structures" type="button">下载产状表</button>
+      <button id="workload" type="button">下载工作量统计</button>
+      <button id="routes" type="button">下载路线记录表</button>
+      <button id="ai" type="button" hidden title="在支持 MCP 的 AI 工具里只读查询本组">接入 AI 工具</button>
+    </div>
+    <ul id="list"></ul>
+  </aside>
+  <div id="mapwrap"><div id="map"></div><div id="legend" hidden></div>
+    <div id="replay" hidden title="按轨迹逐点时间回放组员当时的位置"><button id="rplay" type="button">回放轨迹</button><input id="rt" type="range" min="0" max="1000" value="0"><span id="rtl"></span></div>
+  </div>
+</div>
+<div id="gate" hidden>
+  <h1>同勘 GeoCrew</h1>
+  <p id="gatemsg">这个页面需要组员在手机上生成的查看链接：工作组页 →「在电脑上查看」。链接只读，到期自动失效。</p>
+</div>
+<dialog id="aidlg">
+  <p>在 AI 工具（支持 MCP 的聊天客户端或编辑器）里添加一个远程 MCP 服务器（Streamable HTTP）：</p>
+  <p>地址</p><pre id="aiurl"></pre>
+  <p>请求头</p><pre id="aihdr"></pre>
+  <p>用的是这个查看链接的令牌：只读，和链接同时到期或撤销。只填进你信任的工具。</p>
+  <form method="dialog"><button id="aicopy" type="button">复制地址</button> <button id="aicopyh" type="button">复制令牌</button> <button>关闭</button></form>
+</dialog>
+<script>
+"use strict";
+(() => {
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const WS = hash.get("ws"), TOKEN = hash.get("t");
+  const $ = (id) => document.getElementById(id);
+  const gate = (msg) => { if (msg) $("gatemsg").textContent = msg; $("gate").hidden = false; $("app").hidden = true; };
+  if (!WS || !TOKEN || !/^[0-9a-f]{1,64}$/.test(WS)) { gate(); return; }
+  // Keep the token out of the address bar once read; reloading still works from history state.
+  history.replaceState({ ws: WS, t: TOKEN }, "", location.pathname + location.hash);
+
+  const API = "/api/v0/workspaces/" + WS;
+  const KINDS = {
+    point: ["标注点", "#e53935"], geo_point: ["地质点", "#8e24aa"], photo: ["照片点", "#fb8c00"],
+    line: ["线", "#1e88e5"], polygon: ["面", "#43a047"], track: ["轨迹", "#00897b"],
+    section: ["实测剖面", "#795548"], route: ["地质路线", "#00838F"], borehole: ["钻孔", "#4E342E"],
+  };
+  const STATUS = { todo: "待办", doing: "进行中", done: "已完成" };
+  const kindOf = (p) => KINDS[p.kind] ? p.kind : "point";
+
+  async function api(path, opts = {}) {
+    const r = await fetch(API + path, { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + TOKEN } });
+    if (r.status === 401) { gate("查看链接已失效（到期、被撤销或成员已被移出）。请让组员重新生成。"); throw new Error("unauthorized"); }
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r;
+  }
+
+  const features = new Map(); // id -> GeoJSON feature
+  const members = new Map();  // id -> nickname
+  let seq = 0, map, ready = false, fitted = false;
+
+  async function pull() {
+    for (;;) {
+      const page = await (await api("/features?since=" + seq)).json();
+      for (const f of page.features || []) {
+        if ((f.sync && f.sync.deleted) || !f.geometry) features.delete(f.id);
+        else features.set(f.id, f);
+      }
+      if (page.seq > seq) seq = page.seq;
+      if (!page.more || !(page.features || []).length) break;
+    }
+    render();
+    loadChecks().catch(() => {});
+  }
+
+  // Records worth a second look (duplicate numbers, no position…), from /checks.
+  let issues = new Map(), checking = false;
+  async function loadChecks() {
+    const r = await (await api("/checks")).json();
+    issues = new Map();
+    for (const i of r.issues || []) {
+      if (!issues.has(i.feature)) issues.set(i.feature, []);
+      issues.get(i.feature).push(i);
+    }
+    if (!issues.size) checking = false;
+    $("check").hidden = !issues.size;
+    $("check").textContent = "待核对 " + issues.size;
+    $("check").classList.toggle("on", checking);
+    renderList();
+  }
+
+  // Shared map legend (protocol §2.2 key `legend`): colours records by one attribute.
+  let legend = { key: "", entries: [] };
+  let legendOpen = true;
+  const HEX = /^#[0-9a-fA-F]{6}$/;
+  // Pictures a leader shares over the map (protocol §2.2 key `overlays`), bottom first.
+  let overlays = [];
+  const hiddenOverlays = new Set();
+  // Base maps the leaders share (key `basemaps`): keyless XYZ, WMTS or WMS sources.
+  let basemaps = [];
+  // Reference layers the leaders share (key `reference_layers`): old maps to look at, drawn under the records.
+  let references = [];
+  const hiddenRefs = new Set();
+  const refData = new Map(); // file hash -> FeatureCollection
+  const REF_ID = /^[A-Za-z0-9-]{1,64}$/;
+  const REF_PALETTE = ["#E6A157", "#8DB86B", "#6FA8DC", "#C27BA0", "#F1C232", "#76A5AF", "#E06666", "#93C47D",
+    "#B4A7D6", "#F6B26B", "#A2C4C9", "#D5A6BD", "#FFD966", "#9FC5E8", "#B6D7A8", "#EA9999"];
+  // Same colours as the phones: the legend's entry for the value, else a stable pick from the palette.
+  function refColor(v) {
+    if (v === "") return "#7E57C2";
+    const e = legend.entries.find((x) => x.value.toLowerCase() === v.toLowerCase());
+    if (e) return e.color;
+    let h = 7;
+    for (const ch of v.toLowerCase()) for (let i = 0; i < ch.length; i++) h = (Math.imul(h, 31) + ch.charCodeAt(i)) | 0;
+    return REF_PALETTE[((h % REF_PALETTE.length) + REF_PALETTE.length) % REF_PALETTE.length];
+  }
+  // The pinned notice a leader posted (key `notice`), or null.
+  let notice = null;
+  const BASE_ID = /^[A-Za-z0-9_.-]{1,64}$/;
+  function baseTiles(b) {
+    let url = b.url.trim(), tms = !!b.tms;
+    if (url.includes("{-y}")) { url = url.replace("{-y}", "{y}"); tms = true; }
+    const subs = Array.isArray(b.subdomains) ? b.subdomains.filter((x) => typeof x === "string" && x) : [];
+    const tiles = url.includes("{s}") && subs.length ? subs.slice(0, 32).map((x) => url.replace("{s}", x)) : [url];
+    return { tiles, tms };
+  }
+  function okBase(b) {
+    if (!b || typeof b.id !== "string" || !BASE_ID.test(b.id) || typeof b.name !== "string" || !b.name.trim()) return false;
+    if (typeof b.url !== "string" || !/^https?:\/\//.test(b.url) || b.url.includes("{key}") || b.url.length > 2000) return false;
+    const xyz = b.url.includes("{z}") && b.url.includes("{x}") && (b.url.includes("{y}") || b.url.includes("{-y}"));
+    return xyz || b.url.includes("{bbox-epsg-3857}");
+  }
+  const SHA = /^[0-9a-f]{64}$/;
+  function okCorners(c) {
+    return Array.isArray(c) && c.length === 4 && c.every((p) => Array.isArray(p) && p.length === 2 &&
+      Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 85);
+  }
+  async function loadSettings() {
+    try {
+      const s = await (await api("/settings")).json();
+      const seenBase = new Set();
+      basemaps = (Array.isArray((s.settings || {}).basemaps) ? s.settings.basemaps : []).filter((b) => {
+        if (!okBase(b) || seenBase.has(b.id)) return false;
+        seenBase.add(b.id); return true;
+      }).map((b) => ({ id: b.id, name: b.name.trim(), maxzoom: Number.isInteger(b.max_zoom) ? Math.min(24, Math.max(1, b.max_zoom)) : 18,
+        attribution: typeof b.attribution === "string" ? b.attribution : "", ...baseTiles(b) }));
+      const seenIds = new Set();
+      overlays = (Array.isArray((s.settings || {}).overlays) ? s.settings.overlays : []).filter((o) => {
+        if (!o || typeof o.id !== "string" || !o.id || seenIds.has(o.id) || !SHA.test(o.file) || !okCorners(o.corners)) return false;
+        if (o.type !== "image/jpeg" && o.type !== "image/png") return false;
+        seenIds.add(o.id); return true;
+      }).map((o) => ({ id: o.id, name: typeof o.name === "string" && o.name ? o.name : "叠加图", file: o.file, corners: o.corners,
+        opacity: Number.isFinite(o.opacity) ? Math.min(1, Math.max(0.1, o.opacity)) : 0.6 }));
+      const seenRefs = new Set();
+      references = (Array.isArray((s.settings || {}).reference_layers) ? s.settings.reference_layers : []).filter((r) => {
+        if (!r || typeof r.id !== "string" || !REF_ID.test(r.id) || seenRefs.has(r.id) || !SHA.test(r.file)) return false;
+        if (typeof r.name !== "string" || !r.name.trim()) return false;
+        seenRefs.add(r.id); return true;
+      }).map((r) => ({ id: r.id, name: r.name.trim().slice(0, 60), file: r.file, colorBy: typeof r.color_by === "string" ? r.color_by : "",
+        opacity: Number.isFinite(r.opacity) ? Math.min(1, Math.max(0.1, r.opacity)) : 0.45 }));
+      const nt = (s.settings || {}).notice;
+      notice = nt && typeof nt.text === "string" && nt.text.trim() ? { text: nt.text.trim().slice(0, 2000),
+        by: typeof nt.by === "string" ? nt.by.trim().slice(0, 40) : "", at: typeof nt.updated_at === "string" ? nt.updated_at : "" } : null;
+      const l = (s.settings || {}).legend || {};
+      const seen = new Set();
+      legend = {
+        key: typeof l.key === "string" ? l.key.trim() : "",
+        entries: (Array.isArray(l.entries) ? l.entries : []).filter((e) => {
+          const v = e && typeof e.value === "string" ? e.value.trim().toLowerCase() : "";
+          if (!v || !HEX.test(e.color) || seen.has(v)) return false;
+          seen.add(v); return true;
+        }).map((e) => ({ value: e.value.trim(), color: e.color })),
+      };
+    } catch (e) { if (e.message === "unauthorized") throw e; }
+  }
+  function legendValue(p) {
+    if (!legend.key || !legend.entries.length) return "";
+    const v = p && p[legend.key];
+    return (typeof v === "string" || typeof v === "number") ? String(v).trim().toLowerCase() : "";
+  }
+  // A record's own simplestyle colour first, then the legend, then its kind.
+  function colorOf(f) {
+    const p = f.properties || {};
+    for (const k of ["fill", "stroke", "marker-color"]) if (typeof p[k] === "string" && HEX.test(p[k])) return [p[k], false];
+    const v = legendValue(p);
+    const e = v && legend.entries.find((x) => x.value.toLowerCase() === v);
+    return e ? [e.color, true] : [KINDS[kindOf(p)][1], false];
+  }
+  // Draws the shared overlays under the records, adding, moving and removing only what changed.
+  const drawnOverlays = new Map(); // layer id -> key of what it shows
+  async function drawOverlays() {
+    if (!ready) return;
+    const want = new Map();
+    for (const o of overlays) if (!hiddenOverlays.has(o.id)) want.set("ovl-" + o.id, o);
+    for (const [id, key] of drawnOverlays) {
+      const o = want.get(id);
+      if (o && key === o.file + JSON.stringify(o.corners)) continue;
+      if (map.getLayer(id)) map.removeLayer(id);
+      if (map.getSource(id)) map.removeSource(id);
+      drawnOverlays.delete(id);
+    }
+    for (const [id, o] of want) {
+      if (!drawnOverlays.has(id)) {
+        let url;
+        try { url = await blobURL(o.file); } catch { continue; } // not uploaded yet: next settings change tries again
+        if (drawnOverlays.has(id) || !overlays.includes(o)) continue;
+        map.addSource(id, { type: "image", url, coordinates: o.corners });
+        map.addLayer({ id, type: "raster", source: id, paint: { "raster-opacity": o.opacity, "raster-fade-duration": 0 } }, "fill");
+        drawnOverlays.set(id, o.file + JSON.stringify(o.corners));
+      } else {
+        map.setPaintProperty(id, "raster-opacity", o.opacity);
+      }
+    }
+    // Keep the workspace's order: each one goes just under the records, so the last ends on top.
+    for (const id of want.keys()) if (map.getLayer(id)) map.moveLayer(id, "fill");
+  }
+
+  // Draws the shown reference layers as one source under the overlays and records.
+  async function drawReferences() {
+    if (!ready) return;
+    const out = [];
+    for (const r of references) {
+      if (hiddenRefs.has(r.id)) continue;
+      let fc = refData.get(r.file);
+      if (!fc) {
+        try { fc = await (await api("/files/" + r.file)).json(); } catch { continue; } // not uploaded yet: next settings change tries again
+        if (!fc || !Array.isArray(fc.features)) continue;
+        refData.set(r.file, fc);
+      }
+      for (const f of fc.features.slice(0, 20000)) {
+        if (!f || !f.geometry) continue;
+        const p = f.properties && typeof f.properties === "object" ? f.properties : {};
+        const raw = r.colorBy ? p[r.colorBy] : undefined;
+        const v = (typeof raw === "string" || typeof raw === "number") ? String(raw).trim() : "";
+        out.push({ type: "Feature", geometry: f.geometry, properties: { _c: refColor(v), _o: r.opacity, _l: r.name, _v: v, _p: JSON.stringify(p) } });
+      }
+    }
+    const data = { type: "FeatureCollection", features: out };
+    if (map.getSource("refs")) { map.getSource("refs").setData(data); return; }
+    map.addSource("refs", { type: "geojson", data });
+    const under = map.getLayer("fill") ? "fill" : undefined;
+    map.addLayer({ id: "ref-fill", type: "fill", source: "refs", filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+      paint: { "fill-color": ["get", "_c"], "fill-opacity": ["get", "_o"] } }, under);
+    map.addLayer({ id: "ref-line", type: "line", source: "refs",
+      paint: { "line-color": ["case", ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]], "#5f6368", ["get", "_c"]], "line-width": 1, "line-opacity": 0.8 } }, under);
+    map.addLayer({ id: "ref-point", type: "circle", source: "refs", filter: ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
+      paint: { "circle-color": ["get", "_c"], "circle-radius": 4, "circle-stroke-color": "#fff", "circle-stroke-width": 1 } }, under);
+    for (const id of ["ref-fill", "ref-line", "ref-point"]) {
+      map.on("click", id, (e) => {
+        // A record on top wins the tap.
+        if (map.queryRenderedFeatures(e.point, { layers: ["attitude", "lineation", "point", "line", "line-dashed", "fill"].filter((l) => map.getLayer(l)) }).length) return;
+        const f = e.features[0], box = document.createElement("div"); box.className = "pop";
+        const h = document.createElement("h3"); h.textContent = f.properties._l + (f.properties._v ? "：" + f.properties._v : ""); box.append(h);
+        const dl = document.createElement("dl");
+        let props = {};
+        try { props = JSON.parse(f.properties._p); } catch { /* none */ }
+        for (const [k, v] of Object.entries(props).slice(0, 30)) {
+          if (v === null || typeof v === "object") continue;
+          const dt = document.createElement("dt"); dt.textContent = k;
+          const dd = document.createElement("dd"); dd.textContent = String(v).slice(0, 300);
+          dl.append(dt, dd);
+        }
+        box.append(dl);
+        new maplibregl.Popup({ maxWidth: "340px" }).setLngLat(e.lngLat).setDOMContent(box).addTo(map);
+      });
+    }
+  }
+
+  function renderLegend() {
+    const box = $("legend");
+    const all = [...features.values()];
+    const used = new Set(all.map((f) => legendValue(f.properties || {})));
+    const shown = legend.entries.filter((e) => used.has(e.value.toLowerCase()));
+    const styles = new Set(all.map(lineStyleOf).filter(Boolean));
+    const lines = Object.values(LINE_STYLES).filter((ls) => styles.has(ls));
+    const count = shown.length + lines.length + overlays.length + references.length;
+    box.hidden = !count;
+    if (!count) return;
+    box.replaceChildren();
+    const head = document.createElement("b");
+    head.textContent = "图例" + (legendOpen ? "" : "（" + count + "）");
+    box.append(head);
+    if (!legendOpen) return;
+    for (const e of shown.slice(0, 12)) {
+      const row = document.createElement("div");
+      const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = e.color;
+      row.append(sw, document.createTextNode(e.value));
+      box.append(row);
+    }
+    if (shown.length > 12) { const more = document.createElement("div"); more.textContent = "另有 " + (shown.length - 12) + " 项"; box.append(more); }
+    for (const ls of lines) {
+      const row = document.createElement("div");
+      const sw = document.createElement("span"); sw.className = "ln" + (ls.fault ? " fault" : "") + (ls.dash ? " dash" : "");
+      row.append(sw, document.createTextNode(ls.label));
+      box.append(row);
+    }
+    for (const o of [...overlays].reverse()) {
+      const row = document.createElement("label");
+      row.style.display = "block";
+      row.title = "组长共享的叠加图，点一下显示或隐藏";
+      const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: !hiddenOverlays.has(o.id) });
+      cb.style.margin = "0 6px 0 0";
+      row.onclick = (e) => e.stopPropagation();
+      cb.onchange = () => { if (cb.checked) hiddenOverlays.delete(o.id); else hiddenOverlays.add(o.id); drawOverlays(); };
+      row.append(cb, document.createTextNode("叠加图：" + o.name));
+      box.append(row);
+    }
+    for (const r of [...references].reverse()) {
+      const row = document.createElement("label");
+      row.style.display = "block";
+      row.title = "组长共享的参考图层，点一下显示或隐藏";
+      const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: !hiddenRefs.has(r.id) });
+      cb.style.margin = "0 6px 0 0";
+      row.onclick = (e) => e.stopPropagation();
+      cb.onchange = () => { if (cb.checked) hiddenRefs.delete(r.id); else hiddenRefs.add(r.id); drawReferences(); };
+      row.append(cb, document.createTextNode("参考图层：" + r.name));
+      box.append(row);
+    }
+  }
+
+  async function loadMembers() {
+    const list = await (await api("/members")).json();
+    members.clear();
+    for (const m of list) if (!m.revoked) members.set(m.id, m.nickname);
+    const sel = $("who"), keep = sel.value;
+    sel.replaceChildren(new Option("全部组员", ""), ...[...members].map(([id, name]) => new Option(name || "未命名", id)));
+    sel.value = members.has(keep) ? keep : "";
+  }
+
+  // Who last changed a record and on which local day, from the two filters above the list.
+  function localDay(t) {
+    const d = t ? new Date(t) : null;
+    if (!d || isNaN(d)) return "";
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function filtering() { return !!($("who").value || $("day").value); }
+  function shown(f) {
+    const who = $("who").value, day = $("day").value;
+    return (!who || by(f) === who) && (!day || localDay(upd(f)) === day);
+  }
+
+  // Team messages and record discussions (protocol v0 §8), read-only here.
+  const comments = new Map(); // id -> comment
+  let cseq = 0, messaging = false;
+  async function pullComments() {
+    for (;;) {
+      const page = await (await api("/comments?since=" + cseq)).json();
+      for (const c of page.comments || []) { if (c.deleted) comments.delete(c.id); else comments.set(c.id, c); }
+      if (page.seq > cseq) cseq = page.seq;
+      if (!page.more || !(page.comments || []).length) break;
+    }
+    renderBanner();
+    if (messaging) renderList();
+  }
+  const when = (t) => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleString("zh-CN", { hour12: false }).slice(0, -3); };
+  const ago = (t, h) => Date.now() - Date.parse(t) <= h * 3600 * 1000;
+  const team = () => [...comments.values()].filter((c) => !c.feature_id).sort((a, b) => b.seq - a.seq);
+  // The newest roll call of the last 24 hours with each member's latest answer (§8.2).
+  function rollCall() {
+    const call = team().find((c) => c.roll_call && ago(c.created_at, 24));
+    if (!call) return null;
+    const answers = new Map();
+    for (const c of team()) if (c.answer_to === call.id && !answers.has(c.author_id)) answers.set(c.author_id, c);
+    const roster = [...members.keys()].filter((id) => id !== call.author_id);
+    const help = [...answers.values()].filter((a) => a.urgent);
+    const silent = roster.filter((id) => !answers.has(id)).map((id) => members.get(id));
+    return { call, answers, roster, help, silent };
+  }
+  // Meeting points (protocol §6.8): a point with meet_at. The one closest in time from an hour ago to a day ahead.
+  function meetAt(f) {
+    const t = f.geometry && f.geometry.type === "Point" && typeof (f.properties || {}).meet_at === "string" ? Date.parse(f.properties.meet_at) : NaN;
+    return isNaN(t) ? null : new Date(t);
+  }
+  function nextMeeting() {
+    const now = Date.now();
+    let best = null;
+    for (const f of features.values()) {
+      const at = meetAt(f);
+      if (!at || at.getTime() < now - 3600e3 || at.getTime() > now + 24 * 3600e3) continue;
+      if (!best || Math.abs(at - now) < Math.abs(best.at - now)) best = { f, at };
+    }
+    return best;
+  }
+  function countdown(at) {
+    const mins = Math.round(Math.abs(at - Date.now()) / 60000);
+    const t = mins >= 60 ? Math.floor(mins / 60) + " 小时" + (mins % 60 ? " " + (mins % 60) + " 分" : "") : mins + " 分钟";
+    return mins < 1 ? "就是现在" : at < Date.now() ? "已过 " + t : "还有 " + t;
+  }
+  function rollLine(r) {
+    return "点名（" + (r.call.nickname || "组长") + " " + when(r.call.created_at) + "）：已回应 " + r.answers.size + "/" + r.roster.length +
+      (r.help.length ? "，求助：" + r.help.map((a) => a.nickname || "组员").join("、") : "") +
+      (r.silent.length ? "；未回应：" + r.silent.slice(0, 12).join("、") + (r.silent.length > 12 ? " 等" : "") : "");
+  }
+  // Check-outs (§8.3): an outing with back_by and no live back_from pointing at it. Overdue first.
+  function outings() {
+    const back = new Set(team().filter((c) => c.back_from).map((c) => c.back_from));
+    return team().filter((c) => c.back_by && !back.has(c.id) && ago(c.created_at, 7 * 24))
+      .map((c) => ({ c, at: new Date(c.back_by) })).filter((o) => !isNaN(o.at))
+      .sort((a, b) => a.at - b.at);
+  }
+  function outingLine(o) {
+    const late = o.at < Date.now();
+    return "外出：" + (o.c.nickname || "组员") + " 预计 " + when(o.c.back_by) + " 回 · " + (late ? "已超时，" + countdown(o.at).replace("已过 ", "超过 ") : countdown(o.at)) + (o.c.body ? " · " + o.c.body : "");
+  }
+  function renderBanner() {
+    const box = $("banner"); box.replaceChildren();
+    if (archivedAt) box.append(Object.assign(document.createElement("div"), { className: "call", textContent: "已归档 · " + when(archivedAt) + "：野外工作已结束，记录只读，组长可在应用里重新打开" }));
+    const open = () => { messaging = true; checking = false; $("check").classList.remove("on"); $("msgs").classList.add("on"); renderList(); };
+    const alert = team().find((c) => c.urgent && !c.answer_to && ago(c.created_at, 6));
+    if (alert) box.append(Object.assign(document.createElement("div"), { className: "urgent", textContent: "紧急：" + (alert.nickname || "组员") + " " + when(alert.created_at) + " · " + alert.body, onclick: open }));
+    if (notice) {
+      const meta = ["公告", notice.by, notice.at && !isNaN(new Date(notice.at)) ? when(notice.at) : ""].filter(Boolean).join(" · ");
+      const d = Object.assign(document.createElement("div"), { className: "notice", title: "点一下展开或收起" });
+      d.append(Object.assign(document.createElement("b"), { textContent: meta + "：" }), document.createTextNode(notice.text));
+      d.onclick = () => d.classList.toggle("open");
+      box.append(d);
+    }
+    const r = rollCall();
+    if (r) box.append(Object.assign(document.createElement("div"), { className: r.help.length ? "urgent" : "call", textContent: rollLine(r), onclick: open }));
+    for (const o of outings().slice(0, 4)) {
+      box.append(Object.assign(document.createElement("div"), {
+        className: o.at < Date.now() ? "urgent" : "call", textContent: outingLine(o),
+        onclick: () => { if (Array.isArray(o.c.at) && o.c.at.length === 2) map.flyTo({ center: o.c.at, zoom: Math.max(map.getZoom(), 14) }); else open(); },
+      }));
+    }
+    const m = nextMeeting();
+    if (m) box.append(Object.assign(document.createElement("div"), {
+      className: "call", textContent: "集合：" + (text(m.f.properties, "title") || "集合点") + " " + when(m.at.toISOString()) + " · " + countdown(m.at),
+      onclick: () => { map.flyTo({ center: m.f.geometry.coordinates.slice(0, 2), zoom: Math.max(map.getZoom(), 15) }); popup(m.f, { lng: m.f.geometry.coordinates[0], lat: m.f.geometry.coordinates[1] }); },
+    }));
+    const n = team().length;
+    $("msgs").textContent = n ? "组内消息 " + n : "组内消息";
+  }
+  function renderMessages(ul) {
+    const r = rollCall();
+    if (r) { const li = document.createElement("li"); li.className = r.help.length ? "urgent" : ""; li.textContent = rollLine(r); ul.append(li); }
+    const q = $("q").value.trim().toLowerCase();
+    const list = team().filter((c) => !q || c.body.toLowerCase().includes(q) || (c.nickname || "").toLowerCase().includes(q)).slice(0, 300);
+    if (!list.length) { const li = document.createElement("li"); li.className = "sub"; li.textContent = "还没有组内消息"; ul.append(li); }
+    for (const c of list) {
+      const li = document.createElement("li"); li.className = "msg" + (c.urgent ? " urgent" : "");
+      const head = document.createElement("div"); head.className = "sub";
+      const tag = c.roll_call ? "点名" : c.answer_to ? (c.urgent ? "求助" : "报平安") : c.urgent ? "紧急" : c.back_by ? "外出" : c.back_from ? "已返回" : "";
+      if (tag) head.append(Object.assign(document.createElement("span"), { className: "tag", textContent: tag }));
+      head.append(document.createTextNode((c.nickname || "组员") + " · " + when(c.created_at) + (Array.isArray(c.at) && c.at.length === 2 ? " · 有位置" : "")));
+      if (c.back_by) head.append(document.createTextNode(" · 预计 " + when(c.back_by) + " 回"));
+      li.append(head, Object.assign(document.createElement("div"), { className: "body", textContent: c.body }));
+      if (Array.isArray(c.at) && c.at.length === 2 && c.at.every((v) => typeof v === "number")) {
+        li.onclick = () => map.flyTo({ center: c.at, zoom: Math.max(map.getZoom(), 15) });
+      }
+      ul.append(li);
+    }
+  }
+
+  // Geological line styles (protocol §6, line_style): contacts black, faults red and thicker, inferred ones dashed.
+  const LINE_STYLES = {
+    contact: { label: "实测地质界线", dash: false, fault: false },
+    inferred_contact: { label: "推测地质界线", dash: true, fault: false },
+    fault: { label: "实测断层", dash: false, fault: true },
+    inferred_fault: { label: "推测断层", dash: true, fault: true },
+  };
+  function lineStyleOf(f) {
+    const p = f.properties || {};
+    return f.geometry && f.geometry.type !== "Point" && f.geometry.type !== "MultiPoint" ? LINE_STYLES[p.line_style] : undefined;
+  }
+
+  // Strike-and-dip symbols: on points, and half way along faults and other lines with an attitude.
+  const attitudeOf = (p) => typeof p.dip_direction === "number" && typeof p.dip === "number" && p.dip >= 0 && p.dip <= 90 ? p : null;
+  function midpoint(path) {
+    if (!Array.isArray(path) || !path.length) return null;
+    const k = Math.cos((path[0][1] * Math.PI) / 180);
+    const seg = path.slice(1).map((b, i) => Math.hypot((b[0] - path[i][0]) * k, b[1] - path[i][1]));
+    let left = seg.reduce((a, b) => a + b, 0) / 2;
+    for (let i = 0; i < seg.length; i++) {
+      if (seg[i] >= left && seg[i] > 0) { const t = left / seg[i], a = path[i], b = path[i + 1]; return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+      left -= seg[i];
+    }
+    return path[path.length - 1];
+  }
+  function anchors() {
+    const out = [];
+    for (const f of features.values()) {
+      if (!shown(f)) continue;
+      const a = attitudeOf(f.properties || {}), g = f.geometry;
+      if (!a || !g || g.type === "Point" || g.type === "MultiPoint") continue;
+      const path = g.type === "LineString" ? g.coordinates : g.type === "Polygon" ? g.coordinates[0]
+        : g.type === "MultiLineString" ? g.coordinates[0] : g.type === "MultiPolygon" ? g.coordinates[0] && g.coordinates[0][0] : null;
+      const at = midpoint(path);
+      if (at) out.push({ type: "Feature", geometry: { type: "Point", coordinates: at }, properties: { _id: f.id, _anchor: true, _dipdir: a.dip_direction, _dip: Math.round(a.dip) } });
+    }
+    return out;
+  }
+  // Symbol images are drawn on demand: "att-h|v|i" for flat, vertical and inclined beds, "dip-<n>" for the angle.
+  const lineationOf = (p) => typeof p.trend === "number" && typeof p.plunge === "number" && p.plunge >= 0 && p.plunge <= 90 && p.trend >= 0 && p.trend <= 360 ? p : null;
+
+  function drawImage(id) {
+    const r = window.devicePixelRatio || 1, c = document.createElement("canvas");
+    if (id === "lin" || id.startsWith("pl-")) {
+      const w = id === "lin" ? 40 : 30, h = id === "lin" ? 40 : 16;
+      c.width = w * r; c.height = h * r;
+      const x = c.getContext("2d"); x.scale(r, r);
+      if (id === "lin") {
+        x.strokeStyle = "#1565c0"; x.lineWidth = 2.2; x.lineCap = "round";
+        x.beginPath(); x.moveTo(20, 20); x.lineTo(20, 3); x.moveTo(16.5, 8); x.lineTo(20, 3); x.lineTo(23.5, 8); x.stroke();
+      } else {
+        x.font = "bold 12px sans-serif"; x.lineWidth = 3; x.strokeStyle = "#fff"; x.fillStyle = "#1565c0"; x.textBaseline = "top";
+        x.strokeText(id.slice(3), 1, 1); x.fillText(id.slice(3), 1, 1);
+      }
+      return { width: w * r, height: h * r, data: x.getImageData(0, 0, w * r, h * r).data };
+    }
+    const dip = id.startsWith("dip-");
+    const w = dip ? 30 : 30, h = dip ? 16 : 30;
+    c.width = w * r; c.height = h * r;
+    const x = c.getContext("2d"); x.scale(r, r);
+    if (dip) {
+      x.font = "bold 12px sans-serif"; x.lineWidth = 3; x.strokeStyle = "#fff"; x.fillStyle = "#b71c1c"; x.textBaseline = "top";
+      x.strokeText(id.slice(4), 1, 1); x.fillText(id.slice(4), 1, 1);
+    } else {
+      x.strokeStyle = "#b71c1c"; x.lineWidth = 2.5; x.lineCap = "round";
+      x.beginPath();
+      if (id === "att-h") { x.arc(15, 15, 7, 0, 2 * Math.PI); x.moveTo(15, 13); x.lineTo(15, 17); x.moveTo(13, 15); x.lineTo(17, 15); }
+      else { x.moveTo(3, 15); x.lineTo(27, 15); x.moveTo(15, 15); x.lineTo(15, id === "att-v" ? 27 : 7); if (id === "att-v") { x.moveTo(15, 15); x.lineTo(15, 3); } }
+      x.stroke();
+    }
+    return { width: w * r, height: h * r, data: x.getImageData(0, 0, w * r, h * r).data };
+  }
+
+  function collection() {
+    return { type: "FeatureCollection", features: [...features.values()].filter(shown).map((f) => ({
+      type: "Feature", id: undefined, geometry: f.geometry,
+      properties: (([c, byLegend]) => {
+        const ls = lineStyleOf(f);
+        const own = typeof (f.properties || {}).stroke === "string";
+        return {
+          _id: f.id, _kind: kindOf(f.properties || {}), _fo: byLegend ? 0.45 : 0.2,
+          _color: ls && !own ? (ls.fault ? "#d32f2f" : "#212121") : c,
+          _w: ls && ls.fault ? 4 : 3, _dash: !!(ls && ls.dash), _meet: !!meetAt(f),
+          ...(f.geometry && f.geometry.type === "Point" && attitudeOf(f.properties || {})
+            ? { _dipdir: f.properties.dip_direction, _dip: Math.round(f.properties.dip) } : {}),
+          ...(f.geometry && f.geometry.type === "Point" && lineationOf(f.properties || {})
+            ? { _trend: f.properties.trend, _plunge: Math.round(f.properties.plunge) } : {}),
+        };
+      })(colorOf(f)),
+    })).concat(anchors()) };
+  }
+
+  const upd = (f) => (f.sync && f.sync.updated_at) || "";
+  const by = (f) => (f.sync && f.sync.updated_by) || "";
+  function text(p, key) { const v = p && p[key]; return typeof v === "string" ? v : (typeof v === "number" ? String(v) : ""); }
+
+  function render() {
+    const n = filtering() ? [...features.values()].filter(shown).length : features.size;
+    $("status").textContent = (filtering() ? "显示 " + n + " / " + features.size : features.size) + " 条记录 · " + members.size + " 位组员";
+    if (ready) map.getSource("records").setData(collection());
+    renderLegend();
+    renderList();
+    renderToday();
+    renderBanner();
+    renderReplay();
+    if (ready && !fitted && features.size) { fitted = true; fitAll(); }
+  }
+
+  // Track replay (protocol v0 §6.13): the shown tracks that carry times_s
+  // can be played back, each walker as a marker where they were at the time.
+  // A track's coordinates and fix times in ms, or null without usable times_s.
+  function timedOf(f) {
+    const p = f.properties || {};
+    if (p.kind !== "track" || !f.geometry || f.geometry.type !== "LineString") return null;
+    const cs = f.geometry.coordinates, ts = p.times_s, t0 = Date.parse(p.started_at);
+    if (!Array.isArray(ts) || ts.length !== cs.length || cs.length < 2 || isNaN(t0)) return null;
+    let ok = true, last = -Infinity;
+    const ms = ts.map((x) => { if (!Number.isInteger(x) || x < last) ok = false; last = x; return t0 + x * 1000; });
+    return ok ? { cs, ms } : null;
+  }
+  function timedTracks() {
+    const out = [];
+    for (const f of features.values()) {
+      const t = shown(f) && timedOf(f);
+      if (t) out.push({ id: f.id, cs: t.cs, ms: t.ms, name: members.get(by(f)) || (f.properties || {}).title || "轨迹" });
+    }
+    return out;
+  }
+  const haversine = (a, b) => {
+    const r = Math.PI / 180;
+    const h = Math.sin((b[1] - a[1]) * r / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin((b[0] - a[0]) * r / 2) ** 2;
+    return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(h)));
+  };
+  // Walking time and stops, as the Android track details show them: a stop is
+  // a run of fixes within 30 m of its first for at least 5 minutes, and a gap
+  // of over 10 minutes between fixes is time not recorded.
+  function trackTiming(t) {
+    const { cs, ms } = t, GAP = 10 * 60e3, stops = [];
+    for (let i = 0; i < cs.length;) {
+      let j = i + 1;
+      while (j < cs.length && haversine(cs[i], cs[j]) <= 30 && ms[j] - ms[j - 1] <= GAP) j++;
+      if (ms[j - 1] - ms[i] >= 5 * 60e3) { stops.push([ms[i], ms[j - 1]]); i = j; } else i++;
+    }
+    let gaps = 0, len = 0;
+    for (let k = 1; k < cs.length; k++) { if (ms[k] - ms[k - 1] > GAP) gaps += ms[k] - ms[k - 1]; len += haversine(cs[k - 1], cs[k]); }
+    const total = ms[ms.length - 1] - ms[0], stopped = stops.reduce((a, s) => a + s[1] - s[0], 0);
+    return { start: ms[0], end: ms[ms.length - 1], total, moving: Math.max(0, total - stopped - gaps), gaps, len, stops, stopped };
+  }
+  const spell = (msec) => { const m = Math.round(msec / 60e3); return m < 60 ? m + " 分钟" : Math.floor(m / 60) + " 小时" + (m % 60 ? " " + m % 60 + " 分" : ""); };
+  let replay = [], rmin = 0, rmax = 0, rtimer = null, ractive = false;
+  const rmarks = new Map();
+  const replayTime = () => rmin + (rmax - rmin) * Number($("rt").value) / 1000;
+  function renderReplay() {
+    replay = timedTracks();
+    $("replay").hidden = !replay.length;
+    if (!replay.length) { stopReplay(); ractive = false; drawReplay(); return; }
+    rmin = Math.min(...replay.map((r) => r.ms[0]));
+    rmax = Math.max(...replay.map((r) => r.ms[r.ms.length - 1]));
+    drawReplay();
+  }
+  // Where a track was at t, or null outside it or inside a gap of over 10 minutes.
+  function replayAt(r, t) {
+    const ms = r.ms;
+    if (t < ms[0] || t > ms[ms.length - 1]) return null;
+    let lo = 0, hi = ms.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (ms[mid] <= t) lo = mid; else hi = mid; }
+    const span = ms[hi] - ms[lo];
+    if (span > 10 * 60 * 1000) return null;
+    const k = span ? (t - ms[lo]) / span : 0, a = r.cs[lo], b = r.cs[hi];
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+  }
+  function drawReplay() {
+    const t = ractive && ready ? replayTime() : null;
+    const seen = new Set();
+    if (t != null) for (const r of replay) {
+      const c = replayAt(r, t);
+      if (!c) continue;
+      seen.add(r.id);
+      const m = rmarks.get(r.id);
+      if (m) { m.setLngLat(c); continue; }
+      const el = document.createElement("div");
+      el.className = "mate replay";
+      el.textContent = r.name;
+      rmarks.set(r.id, new maplibregl.Marker({ element: el }).setLngLat(c).addTo(map));
+    }
+    for (const [id, m] of rmarks) if (!seen.has(id)) { m.remove(); rmarks.delete(id); }
+    $("rtl").textContent = t == null ? replay.length + " 条轨迹带逐点时间" : when(t) + " · " + seen.size + " 条轨迹在走";
+  }
+  function stopReplay() {
+    if (rtimer) { clearInterval(rtimer); rtimer = null; }
+    $("rplay").textContent = "回放轨迹";
+  }
+
+  function renderList() {
+    const q = $("q").value.trim().toLowerCase();
+    const ul = $("list");
+    ul.replaceChildren();
+    if (messaging) return renderMessages(ul);
+    // Records without a position are not on the map, but their issues still list.
+    const pool = checking
+      ? [...issues.keys()].map((id) => features.get(id) || { id, properties: { title: issues.get(id)[0].title } })
+      : [...features.values()];
+    const rows = pool
+      .filter((f) => checking || shown(f))
+      .filter((f) => !q || ["title", "note", "lithology"].some((k) => text(f.properties, k).toLowerCase().includes(q)))
+      .sort((a, b) => upd(b).localeCompare(upd(a)))
+      .slice(0, 500);
+    for (const f of rows) {
+      const p = f.properties || {}, k = kindOf(p);
+      const li = document.createElement("li");
+      const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = colorOf(f)[0];
+      const t = document.createElement("span"); t.textContent = text(p, "title") || KINDS[k][0];
+      const sub = document.createElement("div"); sub.className = "sub";
+      sub.textContent = [KINDS[k][0], text(p, "lithology"), members.get(by(f)) || "", upd(f).slice(0, 10)].filter(Boolean).join(" · ");
+      li.append(dot, t, sub);
+      for (const i of issues.get(f.id) || []) {
+        const w = document.createElement("div"); w.className = "warn"; w.textContent = i.message;
+        li.append(w);
+      }
+      if (f.geometry) li.onclick = () => focus(f);
+      ul.append(li);
+    }
+  }
+
+  // Today's work per member (browser's local day), as the Android team page shows it:
+  // records they last edited today, samples logged today, and tracks started today.
+  function renderToday() {
+    const day = new Date().toDateString();
+    const today = (t) => { const d = t ? new Date(t) : null; return !!d && !isNaN(d) && d.toDateString() === day; };
+    const meters = (g) => {
+      if (!g || g.type !== "LineString" || !Array.isArray(g.coordinates)) return 0;
+      let m = 0;
+      for (let i = 1; i < g.coordinates.length; i++) {
+        const [a, b] = [g.coordinates[i - 1], g.coordinates[i]], r = Math.PI / 180;
+        const h = Math.sin((b[1] - a[1]) * r / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin((b[0] - a[0]) * r / 2) ** 2;
+        m += 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(h)));
+      }
+      return m;
+    };
+    const per = new Map();
+    for (const f of features.values()) {
+      const who = by(f); if (!who) continue;
+      const p = f.properties || {}, a = per.get(who) || { n: 0, s: 0, m: 0 };
+      if (p.kind === "track") { if (today(typeof p.started_at === "string" ? p.started_at : upd(f))) a.m += meters(f.geometry); }
+      else if (today(upd(f))) a.n++;
+      if (Array.isArray(p.samples)) a.s += p.samples.filter((x) => x && typeof x.no === "string" && today(x.taken_at)).length;
+      if (a.n || a.s || a.m) per.set(who, a);
+    }
+    const parts = [...per.entries()].map(([who, a]) => (members.get(who) || "组员") + " " + [
+      a.n ? a.n + " 条记录" : "", a.s ? a.s + " 件样品" : "", a.m ? "轨迹 " + (a.m < 1000 ? a.m.toFixed(0) + " m" : (a.m / 1000).toFixed(2) + " km") : "",
+    ].filter(Boolean).join("、"));
+    $("today").textContent = parts.length ? "今天：" + parts.join("；") : "";
+  }
+
+  function bbox(geom, b = [180, 90, -180, -90]) {
+    const walk = (c) => { if (typeof c[0] === "number") { b[0] = Math.min(b[0], c[0]); b[1] = Math.min(b[1], c[1]); b[2] = Math.max(b[2], c[0]); b[3] = Math.max(b[3], c[1]); } else c.forEach(walk); };
+    if (geom && geom.coordinates) walk(geom.coordinates);
+    return b;
+  }
+
+  function fitAll() {
+    let b = [180, 90, -180, -90];
+    for (const f of features.values()) b = bbox(f.geometry, b);
+    if (b[0] <= b[2]) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 60, maxZoom: 15, duration: 0 });
+  }
+
+  function focus(f) {
+    const b = bbox(f.geometry);
+    if (b[0] === b[2] && b[1] === b[3]) map.flyTo({ center: [b[0], b[1]], zoom: Math.max(map.getZoom(), 15) });
+    else map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 80, maxZoom: 17 });
+    popup(f, f.geometry.type === "Point" ? f.geometry.coordinates : [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]);
+  }
+
+  async function blobURL(sha) {
+    const r = await api("/files/" + sha);
+    return URL.createObjectURL(await r.blob());
+  }
+
+  // Measured section (protocol v0 §6.5): per-layer true thickness from the traverse and the bedding normal.
+  function sectionRows(sec, row) {
+    if (!sec || typeof sec !== "object") return;
+    const num = (v) => typeof v === "number" && isFinite(v);
+    const rad = Math.PI / 180;
+    const legs = (Array.isArray(sec.legs) ? sec.legs : []).filter((l) => l && num(l.azimuth) && num(l.distance) && l.distance > 0)
+      .map((l) => { const b = (num(l.slope) ? l.slope : 0) * rad, a = l.azimuth * rad, h = l.distance * Math.cos(b);
+        return { d: l.distance, v: [h * Math.sin(a), h * Math.cos(a), l.distance * Math.sin(b)] }; });
+    const layers = (Array.isArray(sec.layers) ? sec.layers : []).filter((l) => l && num(l.top));
+    const total = legs.reduce((s, l) => s + l.d, 0);
+    row("导线", legs.length + " 段，共 " + total.toFixed(1) + " m");
+    const att = (l) => num(l.dip_direction) && num(l.dip) ? l : null;
+    const known = layers.map((l, i) => [i, att(l)]).filter((x) => x[1]);
+    let from = 0, sum = 0;
+    const lines = layers.map((l, i) => {
+      const a = from, b = Math.min(l.top, total); from = Math.max(from, l.top);
+      let t = att(l);
+      if (!t && known.length) t = known.reduce((best, x) => { const c = Math.abs(x[0] - i) * 2 + (x[0] < i ? 0 : 1); return c < best[0] ? [c, x[1]] : best; }, [Infinity, null])[1];
+      let thick = null;
+      if (t && b > a) {
+        const dd = t.dip_direction * rad, dp = t.dip * rad;
+        const n = [Math.sin(dp) * Math.sin(dd), Math.sin(dp) * Math.cos(dd), Math.cos(dp)];
+        let s = 0, start = 0;
+        for (const leg of legs) {
+          const end = start + leg.d, len = Math.min(end, b) - Math.max(start, a);
+          if (len > 0) s += (leg.v[0] * n[0] + leg.v[1] * n[1] + leg.v[2] * n[2]) * len / leg.d;
+          start = end;
+        }
+        thick = Math.abs(s); sum += thick;
+      }
+      return [typeof l.no === "string" ? l.no : String(i + 1), typeof l.lithology === "string" ? l.lithology : "", thick == null ? "" : thick.toFixed(1) + " m"].filter(Boolean).join(" ");
+    });
+    if (lines.length) { row("分层", lines.slice(0, 8).join("；") + (lines.length > 8 ? "……" : "")); row("总厚度", sum.toFixed(1) + " m"); }
+  }
+
+  // Borehole or pit log (protocol v0 §6.11): layers top-down by the depth of their bottom.
+  function boreholeRows(h, row) {
+    if (!h || typeof h !== "object") return;
+    const num = (v) => typeof v === "number" && isFinite(v) && v >= 0;
+    const m = (v) => (Math.round(v * 100) / 100) + " m";
+    let top = 0;
+    const lines = [];
+    for (const l of Array.isArray(h.layers) ? h.layers : []) {
+      if (!l || !num(l.bottom) || !(l.bottom > top)) continue;
+      const no = typeof l.no === "string" && l.no ? l.no : String(lines.length + 1);
+      lines.push([no, typeof l.lithology === "string" ? l.lithology : "", m(top) + "–" + m(l.bottom)].filter(Boolean).join(" "));
+      top = l.bottom;
+    }
+    const depth = num(h.depth) && h.depth > 0 ? h.depth : top;
+    row("孔深", depth > 0 ? m(depth) : "");
+    row("水位", num(h.water) ? m(h.water) : "未见");
+    if (lines.length) row("分层", lines.slice(0, 8).join("；") + (lines.length > 8 ? "……" : ""));
+  }
+
+  // Geological route (protocol v0 §6.6): stops in walking order, by record id.
+  function routeRows(r, row) {
+    if (!r || typeof r !== "object") return;
+    const s = (v) => typeof v === "string" ? v.trim() : "";
+    row("日期", s(r.date));
+    row("人员", s(r.members));
+    row("目的", s(r.purpose));
+    const seen = new Set();
+    const stops = (Array.isArray(r.stops) ? r.stops : []).filter((x) => x && s(x.feature) && !seen.has(x.feature) && seen.add(x.feature));
+    const names = stops.map((x) => features.get(x.feature)).filter((f) => f && !f.deleted)
+      .map((f) => text(f.properties || {}, "title") || KINDS[kindOf(f.properties || {})][0]);
+    if (stops.length) row("路线点", names.length + " 个" + (names.length ? "：" + names.slice(0, 10).join(" → ") + (names.length > 10 ? "……" : "") : "") +
+      (names.length < stops.length ? "（另有 " + (stops.length - names.length) + " 个找不到）" : ""));
+    row("小结", s(r.summary));
+  }
+
+  // Lab results on a sample (protocol v0 §6.4): numbers, or "<limit" below the detection limit.
+  function results(r) {
+    if (!r || typeof r !== "object") return "";
+    const parts = Object.keys(r).filter((k) => typeof r[k] === "number" || (typeof r[k] === "string" && r[k].trim().startsWith("<")))
+      .slice(0, 6).map((k) => k + " " + r[k]);
+    return parts.length ? "：" + parts.join("，") : "";
+  }
+
+  // Leader review (protocol §6.9): approved or sent back, by whom, and whether the record changed since.
+  function reviewText(f) {
+    const r = (f.properties || {}).review;
+    if (!r || typeof r !== "object" || (r.state !== "approved" && r.state !== "redo")) return "";
+    const parts = [r.state === "approved" ? "已通过" : "退回重做"];
+    const who = (typeof r.by === "string" && members.get(r.by)) || (typeof r.by_name === "string" && r.by_name);
+    if (who) parts.push(who);
+    if (typeof r.at === "string" && !isNaN(Date.parse(r.at))) {
+      parts.push(when(r.at));
+      if (Date.parse(upd(f)) > Date.parse(r.at) + 1000) parts.push("之后有改动");
+    }
+    let s = parts.join(" · ");
+    if (typeof r.note === "string" && r.note.trim()) s += "：" + r.note.trim();
+    return s;
+  }
+
+  function popup(f, lngLat) {
+    const p = f.properties || {}, k = kindOf(p);
+    const box = document.createElement("div"); box.className = "pop";
+    const h = document.createElement("h3"); h.textContent = text(p, "title") || KINDS[k][0]; box.append(h);
+    const dl = document.createElement("dl");
+    const row = (label, value) => { if (!value) return; const dt = document.createElement("dt"); dt.textContent = label; const dd = document.createElement("dd"); dd.textContent = value; dl.append(dt, dd); };
+    row("类型", KINDS[k][0]);
+    if (lineStyleOf(f)) row("线型", lineStyleOf(f).label);
+    if (meetAt(f)) row("集合", when(meetAt(f).toISOString()) + " · " + countdown(meetAt(f)));
+    if (f.geometry.type === "Point") {
+      const c = f.geometry.coordinates;
+      row("坐标", c[0].toFixed(6) + ", " + c[1].toFixed(6));
+      if (c.length > 2 && c[2] != null) row("海拔", Number(c[2]).toFixed(1) + " m");
+    }
+    row("岩性", text(p, "lithology"));
+    if (typeof p.dip_direction === "number" && typeof p.dip === "number") row("产状", Math.round(p.dip_direction) + "°∠" + Math.round(p.dip) + "°");
+    if (typeof p.trend === "number" && typeof p.plunge === "number") {
+      const pad = (v, n) => String(Math.round(v)).padStart(n, "0");
+      row(typeof p.lineation_type === "string" && p.lineation_type ? p.lineation_type : "线理", pad(p.trend, 3) + "°∠" + pad(p.plunge, 2) + "°");
+    }
+    const timed = k === "track" && timedOf(f);
+    if (timed) {
+      const tt = trackTiming(timed), hm = (t) => new Date(t).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" });
+      row("时间", when(tt.start) + " – " + hm(tt.end) + "（" + spell(tt.total) + "）");
+      row("行进", spell(tt.moving) + (tt.moving > 0 ? "，平均 " + (tt.len / tt.moving * 3600).toFixed(1) + " km/h" : "") + (tt.gaps ? "；中断未记录 " + spell(tt.gaps) : ""));
+      if (tt.stops.length) row("停留", tt.stops.length + " 处，共 " + spell(tt.stopped) + "：" + tt.stops.slice(0, 6).map((x) => hm(x[0]) + " 起 " + spell(x[1] - x[0])).join("、") + (tt.stops.length > 6 ? " 等" : ""));
+    }
+    if (typeof p.length_m === "number") row("长度", p.length_m >= 1000 ? (p.length_m / 1000).toFixed(2) + " km" : Math.round(p.length_m) + " m");
+    if (typeof p.area_m2 === "number") row("面积", p.area_m2 >= 1e6 ? (p.area_m2 / 1e6).toFixed(3) + " km²" : Math.round(p.area_m2) + " m²");
+    if (text(p, "assignee_name")) row("任务", text(p, "assignee_name") + "：" + (STATUS[p.task_status] || "待办"));
+    if (Array.isArray(p.samples)) {
+      const list = p.samples.filter((x) => x && typeof x.no === "string" && x.no)
+        .map((x) => x.no + (typeof x.type === "string" && x.type ? "（" + x.type + "）" : "") + results(x.results));
+      if (list.length) row("样品", list.join("、"));
+    }
+    if (k === "section") sectionRows(p.section, row);
+    if (k === "route") routeRows(p.route, row);
+    if (k === "borehole") boreholeRows(p.borehole, row);
+    row("备注", text(p, "note"));
+    row("修改", [members.get(by(f)) || "", upd(f).replace("T", " ").slice(0, 16)].filter(Boolean).join(" · "));
+    row("审核", reviewText(f));
+    box.append(dl);
+    const talk = [...comments.values()].filter((c) => c.feature_id === f.id).sort((a, b) => a.seq - b.seq);
+    if (talk.length) {
+      const t = document.createElement("div"); t.className = "talk";
+      t.append(Object.assign(document.createElement("b"), { textContent: "讨论 " + talk.length + " 条" }));
+      for (const c of talk.slice(-5)) t.append(Object.assign(document.createElement("div"), { textContent: (c.nickname || "组员") + "（" + when(c.created_at) + "）：" + c.body }));
+      box.append(t);
+    }
+    const media = document.createElement("div"); box.append(media);
+    const shas = (list) => (Array.isArray(list) ? list : []).filter((s) => typeof s === "string" && /^[0-9a-f]{64}$/.test(s));
+    const info = p.photo_info && typeof p.photo_info === "object" ? p.photo_info : {};
+    for (const sha of shas(p.photos).slice(0, 4)) {
+      const pi = info[sha] && typeof info[sha] === "object" ? info[sha] : {};
+      const img = document.createElement("img"); img.alt = pi.sketch === true ? "素描" : "照片"; media.append(img);
+      const cap = [];
+      if (pi.sketch === true) cap.push(typeof pi.drawn_on === "string" && pi.drawn_on ? "野外素描（画在照片上）" : "野外素描");
+      if (typeof pi.azimuth === "number" && pi.sketch !== true) cap.push("朝 " + Math.round(((pi.azimuth % 360) + 360) % 360) + "°");
+      if (typeof pi.taken_at === "string" && !isNaN(Date.parse(pi.taken_at))) cap.push(new Date(pi.taken_at).toLocaleString("zh-CN", { hour12: false }).slice(0, -3));
+      if (cap.length) media.append(Object.assign(document.createElement("div"), { className: "cap", textContent: cap.join(" · ") }));
+      blobURL(sha).then((u) => { img.src = u; }).catch(() => { img.replaceWith(Object.assign(document.createElement("div"), { textContent: img.alt + "还没有上传" })); });
+    }
+    for (const sha of shas(p.audio)) {
+      const a = document.createElement("audio"); a.controls = true; a.preload = "none"; media.append(a);
+      blobURL(sha).then((u) => { a.src = u; }).catch(() => { a.replaceWith(Object.assign(document.createElement("div"), { textContent: "录音还没有上传" })); });
+    }
+    new maplibregl.Popup({ maxWidth: "340px" }).setLngLat(lngLat).setDOMContent(box).addTo(map);
+  }
+
+  // Teammates' live positions over the realtime channel.
+  const mates = new Map(); // member id -> {marker, at}
+  function showMate(pos) {
+    if (typeof pos.lon !== "number" || typeof pos.lat !== "number") return;
+    let m = mates.get(pos.member_id);
+    if (!m) {
+      const el = document.createElement("div"); el.className = "mate";
+      m = { el, marker: new maplibregl.Marker({ element: el }).setLngLat([pos.lon, pos.lat]).addTo(map) };
+      mates.set(pos.member_id, m);
+    }
+    m.el.textContent = pos.nickname || members.get(pos.member_id) || "组员";
+    m.at = Date.parse(pos.at) || Date.now();
+    m.marker.setLngLat([pos.lon, pos.lat]);
+    addTrail(m, pos.lon, pos.lat, m.at);
+    ageMates();
+  }
+
+  // The last half hour of each teammate as a thin line, built from the positions seen
+  // since the page opened: fixes 5 m apart at least, jumps faster than 60 m/s dropped.
+  const TRAIL_MS = 30 * 60 * 1000;
+  function addTrail(m, lon, lat, at) {
+    const t = (m.trail = (m.trail || []).filter((p) => Date.now() - p[2] <= TRAIL_MS));
+    const last = t[t.length - 1];
+    if (last) {
+      if (at <= last[2]) return drawTrails();
+      const r = Math.PI / 180, dx = (lon - last[0]) * r * Math.cos(lat * r) * 6371008.8, dy = (lat - last[1]) * r * 6371008.8;
+      const d = Math.hypot(dx, dy);
+      if (d < 5 || d / Math.max(1, (at - last[2]) / 1000) > 60) return drawTrails();
+    }
+    if (Date.now() - at <= TRAIL_MS) t.push([lon, lat, at]);
+    if (t.length > 300) t.splice(0, t.length - 300);
+    drawTrails();
+  }
+  function drawTrails() {
+    if (!ready || !map.getSource("trails")) return;
+    const fs = [];
+    for (const m of mates.values()) {
+      const c = (m.trail || []).filter((p) => Date.now() - p[2] <= TRAIL_MS).map((p) => [p[0], p[1]]);
+      if (c.length >= 2) fs.push({ type: "Feature", properties: { old: Date.now() - m.at > 5 * 60 * 1000 }, geometry: { type: "LineString", coordinates: c } });
+    }
+    map.getSource("trails").setData({ type: "FeatureCollection", features: fs });
+  }
+  function ageMates() {
+    for (const m of mates.values()) m.el.classList.toggle("old", Date.now() - m.at > 5 * 60 * 1000);
+  }
+  setInterval(() => { ageMates(); drawTrails(); }, 30 * 1000);
+
+  let backoff = 1000;
+  let archivedAt = null;
+  function showWorkspace(ws) {
+    archivedAt = typeof ws.archived_at === "string" && !isNaN(new Date(ws.archived_at)) ? ws.archived_at : null;
+    $("name").textContent = (ws.name || "工作组") + (archivedAt ? "（已归档）" : "");
+    document.title = (ws.name || "工作组") + " · 同勘 GeoCrew";
+  }
+  function connect() {
+    const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + API + "/ws?access_token=" + encodeURIComponent(TOKEN);
+    const sock = new WebSocket(url);
+    sock.onopen = () => { backoff = 1000; };
+    sock.onmessage = (e) => {
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      if (m.type === "hello") (m.positions || []).forEach(showMate);
+      else if (m.type === "position") showMate(m);
+      else if (m.type === "feature_changed") pull().catch(() => {});
+      else if (m.type === "members_changed") loadMembers().then(() => { render(); renderBanner(); }).catch(() => {});
+      else if (m.type === "comments_changed") pullComments().catch(() => {});
+      else if (m.type === "workspace_changed") { showWorkspace(m); renderBanner(); }
+      else if (m.type === "settings_changed") loadSettings().then(() => { render(); drawOverlays(); drawReferences(); drawBase(); }).catch(() => {});
+    };
+    sock.onclose = () => { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 60 * 1000); };
+  }
+
+  function download(path, name) {
+    api(path).then((r) => r.blob()).then((b) => {
+      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(b), download: name });
+      document.body.append(a); a.click(); a.remove();
+    }).catch((e) => alert("下载失败：" + e.message));
+  }
+
+  // Relief shading from the public Terrarium DEM, under the records. Remembered per browser.
+  const DEM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+  function setShade(on) {
+    if (on && !map.getSource("dem")) {
+      map.addSource("dem", { type: "raster-dem", encoding: "terrarium", tiles: [DEM_URL], tileSize: 256, maxzoom: 15,
+        attribution: "山体阴影：Terrain Tiles（Mapzen，SRTM 等）" });
+      map.addLayer({ id: "hillshade", type: "hillshade", source: "dem",
+        paint: { "hillshade-exaggeration": 0.45, "hillshade-shadow-color": "#3e2f1c", "hillshade-highlight-color": "#fffdf5" } }, "fill");
+    }
+    if (map.getLayer("hillshade")) map.setLayoutProperty("hillshade", "visibility", on ? "visible" : "none");
+    try { localStorage.setItem("geocrew-shade", on ? "1" : ""); } catch (e) { /* private mode */ }
+  }
+  class ShadeControl {
+    onAdd() {
+      const box = document.createElement("div");
+      box.className = "maplibregl-ctrl maplibregl-ctrl-group";
+      const b = document.createElement("button");
+      b.type = "button"; b.title = "山体阴影"; b.textContent = "⛰";
+      b.style.fontSize = "16px";
+      let on = false;
+      try { on = localStorage.getItem("geocrew-shade") === "1"; } catch (e) { /* private mode */ }
+      const apply = () => { setShade(on); b.style.background = on ? "#d7e3f4" : ""; b.setAttribute("aria-pressed", String(on)); };
+      b.onclick = () => { on = !on; apply(); };
+      apply();
+      box.append(b);
+      return box;
+    }
+    onRemove() {}
+  }
+
+  // The shared base map chosen in this browser, drawn over OpenStreetMap; "" shows OpenStreetMap alone.
+  let baseChoice = "";
+  try { baseChoice = localStorage.getItem("geocrew-base") || ""; } catch (e) { /* private mode */ }
+  let baseSelect = null;
+  let drawnBase = "";
+  function drawBase() {
+    if (!ready) return;
+    const b = basemaps.find((x) => x.id === baseChoice);
+    const key = b ? JSON.stringify([b.tiles, b.tms, b.maxzoom]) : "";
+    if (key !== drawnBase) {
+      if (map.getLayer("shared-base")) map.removeLayer("shared-base");
+      if (map.getSource("shared-base")) map.removeSource("shared-base");
+      if (b) {
+        map.addSource("shared-base", { type: "raster", tiles: b.tiles, tileSize: 256, maxzoom: b.maxzoom, scheme: b.tms ? "tms" : "xyz",
+          attribution: b.attribution ? b.attribution.replace(/[<>&]/g, "") : b.name.replace(/[<>&]/g, "") });
+        // Right above OpenStreetMap, under the relief shading, the overlays and the records.
+        const layers = map.getStyle().layers;
+        const i = layers.findIndex((l) => l.id === "osm");
+        map.addLayer({ id: "shared-base", type: "raster", source: "shared-base" }, layers[i + 1] ? layers[i + 1].id : undefined);
+      }
+      drawnBase = key;
+    }
+    if (baseSelect) {
+      baseSelect.replaceChildren(...[["", "OpenStreetMap"], ...basemaps.map((x) => [x.id, x.name + "（组长共享）"])].map(([v, t]) => {
+        const o = document.createElement("option"); o.value = v; o.textContent = t; return o;
+      }));
+      baseSelect.value = b ? b.id : "";
+      baseSelect.parentElement.style.display = basemaps.length ? "" : "none";
+    }
+  }
+  class BaseControl {
+    onAdd() {
+      const box = document.createElement("div");
+      box.className = "maplibregl-ctrl maplibregl-ctrl-group";
+      box.style.padding = "2px";
+      const sel = document.createElement("select");
+      sel.title = "底图";
+      sel.style.border = "0"; sel.style.maxWidth = "14em";
+      sel.onchange = () => {
+        baseChoice = sel.value;
+        try { localStorage.setItem("geocrew-base", baseChoice); } catch (e) { /* private mode */ }
+        drawBase();
+      };
+      box.append(sel);
+      baseSelect = sel;
+      return box;
+    }
+    onRemove() {}
+  }
+
+  async function start() {
+    $("app").hidden = false;
+    map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        sources: { osm: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, maxzoom: 19,
+          attribution: "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors" } },
+        layers: [{ id: "osm", type: "raster", source: "osm" }],
+      },
+      center: [105, 35], zoom: 3,
+    });
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+    map.on("load", () => {
+      map.addSource("records", { type: "geojson", data: collection() });
+      map.addLayer({ id: "fill", type: "fill", source: "records", filter: ["==", ["geometry-type"], "Polygon"], paint: { "fill-color": ["get", "_color"], "fill-opacity": ["get", "_fo"] } });
+      map.addLayer({ id: "line", type: "line", source: "records", filter: ["all", ["!=", ["geometry-type"], "Point"], ["!=", ["get", "_dash"], true]],
+        paint: { "line-color": ["get", "_color"], "line-width": ["case", ["==", ["get", "_kind"], "track"], 2, ["get", "_w"]] } });
+      map.addLayer({ id: "line-dashed", type: "line", source: "records", filter: ["all", ["!=", ["geometry-type"], "Point"], ["==", ["get", "_dash"], true]],
+        paint: { "line-color": ["get", "_color"], "line-width": ["get", "_w"], "line-dasharray": [3, 2] } });
+      map.addLayer({ id: "meet", type: "circle", source: "records", filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "_meet"], true]],
+        paint: { "circle-color": "#6a1b9a", "circle-opacity": 0.18, "circle-radius": 18, "circle-stroke-color": "#6a1b9a", "circle-stroke-width": 3 } });
+      map.addLayer({ id: "point", type: "circle", source: "records", filter: ["all", ["==", ["geometry-type"], "Point"], ["!", ["has", "_anchor"]]],
+        paint: { "circle-color": ["get", "_color"], "circle-radius": ["case", ["has", "_dipdir"], 3.5, 6], "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+      map.on("styleimagemissing", (e) => { if (/^(att-[hvi]|dip-\d{1,2}|lin|pl-\d{1,2})$/.test(e.id)) map.addImage(e.id, drawImage(e.id), { pixelRatio: window.devicePixelRatio || 1 }); });
+      map.addLayer({ id: "attitude", type: "symbol", source: "records", filter: ["has", "_dipdir"],
+        layout: {
+          "icon-image": ["case", ["<", ["get", "_dip"], 1], "att-h", [">=", ["get", "_dip"], 89], "att-v", "att-i"],
+          "icon-rotate": ["get", "_dipdir"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
+        } });
+      map.addLayer({ id: "dip", type: "symbol", source: "records", minzoom: 13, filter: ["all", ["has", "_dipdir"], [">=", ["get", "_dip"], 1], ["<", ["get", "_dip"], 89]],
+        layout: { "icon-image": ["concat", "dip-", ["to-string", ["get", "_dip"]]], "icon-anchor": "top-left", "icon-offset": [6, 4], "icon-allow-overlap": true, "icon-ignore-placement": true } });
+      map.addLayer({ id: "lineation", type: "symbol", source: "records", filter: ["has", "_trend"],
+        layout: { "icon-image": "lin", "icon-rotate": ["get", "_trend"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true } });
+      map.addLayer({ id: "plunge", type: "symbol", source: "records", minzoom: 13, filter: ["has", "_trend"],
+        layout: { "icon-image": ["concat", "pl-", ["to-string", ["get", "_plunge"]]], "icon-anchor": "top-right", "icon-offset": [-6, 4], "icon-allow-overlap": true, "icon-ignore-placement": true } });
+      map.addSource("trails", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({ id: "trails", type: "line", source: "trails",
+        paint: { "line-color": ["case", ["get", "old"], "#78909c", "#1565c0"], "line-width": 2, "line-opacity": 0.7 } });
+      for (const id of ["attitude", "lineation", "point", "line", "line-dashed", "fill"]) {
+        map.on("click", id, (e) => { const f = features.get(e.features[0].properties._id); if (f) popup(f, e.lngLat); });
+        map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
+        map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
+      }
+      map.addControl(new ShadeControl(), "top-right");
+      map.addControl(new BaseControl(), "top-left");
+      ready = true;
+      drawTrails();
+      render();
+      drawOverlays();
+      drawReferences();
+      drawBase();
+    });
+    $("q").oninput = renderList;
+    $("who").onchange = render;
+    $("day").onchange = render;
+    $("fit").onclick = fitAll;
+    $("rt").oninput = () => { ractive = true; drawReplay(); };
+    $("rplay").onclick = () => {
+      if (rtimer) { stopReplay(); return; }
+      ractive = true;
+      if (Number($("rt").value) >= 1000) $("rt").value = 0;
+      $("rplay").textContent = "暂停";
+      // About half a minute from the first fix to the last.
+      rtimer = setInterval(() => {
+        const v = Math.min(1000, Number($("rt").value) + 2);
+        $("rt").value = v;
+        drawReplay();
+        if (v >= 1000) stopReplay();
+      }, 60);
+    };
+    $("check").onclick = () => { checking = !checking; messaging = false; $("msgs").classList.remove("on"); $("check").classList.toggle("on", checking); renderList(); };
+    $("msgs").onclick = () => { messaging = !messaging; checking = false; $("check").classList.remove("on"); $("msgs").classList.toggle("on", messaging); renderList(); };
+    $("geojson").onclick = () => download("/export.geojson", "geocrew-" + WS + ".geojson");
+    $("kml").onclick = () => download("/export.kml", "geocrew-" + WS + ".kml");
+    $("gpx").onclick = () => download("/export.gpx", "geocrew-" + WS + ".gpx");
+    $("gpkg").onclick = () => download("/export.gpkg", "geocrew-" + WS + ".gpkg");
+    $("package").onclick = () => download("/export.geocrew.zip", "geocrew-" + WS + ".geocrew.zip");
+    // Sampling times in this computer's zone.
+    $("samples").onclick = () => download("/export.samples.csv?tz_offset=" + (-new Date().getTimezoneOffset()), "geocrew-" + WS + "-samples.csv");
+    $("sections").onclick = () => download("/export.sections.csv", "geocrew-" + WS + "-sections.csv");
+    $("boreholes").onclick = () => download("/export.boreholes.csv", "geocrew-" + WS + "-boreholes.csv");
+    $("workload").onclick = () => download("/export.workload.csv?tz_offset=" + (-new Date().getTimezoneOffset()), "geocrew-" + WS + "-workload.csv");
+    $("structures").onclick = () => download("/export.structures.csv", "geocrew-" + WS + "-structures.csv");
+    $("routes").onclick = () => download("/export.routes.csv", "geocrew-" + WS + "-routes.csv");
+
+    // Offer the read-only MCP endpoint (protocol §11) when the server has it.
+    fetch("/api/v0/info").then((r) => r.json()).then((info) => {
+      if (!(info.capabilities || []).includes("mcp")) return;
+      const url = location.origin + API + "/mcp";
+      $("ai").hidden = false;
+      $("ai").onclick = () => {
+        $("aiurl").textContent = url;
+        $("aihdr").textContent = "Authorization: Bearer " + TOKEN;
+        $("aicopy").textContent = "复制地址"; $("aicopyh").textContent = "复制令牌";
+        $("aidlg").showModal();
+      };
+      const copy = (text, btn) => navigator.clipboard?.writeText(text).then(() => { btn.textContent = "已复制"; });
+      $("aicopy").onclick = () => copy(url, $("aicopy"));
+      $("aicopyh").onclick = () => copy("Bearer " + TOKEN, $("aicopyh"));
+    }).catch(() => {});
+    showWorkspace(await (await api("")).json());
+    $("legend").onclick = () => { legendOpen = !legendOpen; renderLegend(); };
+    await loadMembers();
+    await loadSettings();
+    await pull();
+    await pullComments().catch((e) => { if (e.message === "unauthorized") throw e; });
+    connect();
+    // Ages out the alert and roll call lines even when nothing new arrives.
+    setInterval(renderBanner, 60 * 1000);
+  }
+
+  if (typeof maplibregl === "undefined") { gate("地图组件没有加载成功（需要能访问 unpkg.com）。"); return; }
+  start().catch((e) => { if (e.message !== "unauthorized") $("status").textContent = "读取失败：" + e.message; });
+})();
+</script>
+</body>
+</html>
