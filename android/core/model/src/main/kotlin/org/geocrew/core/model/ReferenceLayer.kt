@@ -22,6 +22,10 @@ data class ReferenceLayer(
     /** Fill opacity of areas, 0.1–1. */
     val opacity: Float = 0.45f,
     val count: Int = 0,
+    /** Shared with the workspace by a leader (protocol v0 §2.2, key `reference_layers`); members only show or hide it. */
+    val shared: Boolean = false,
+    /** SHA-256 of the stored GeoJSON, once the layer has been shared or received. */
+    val file: String? = null,
 ) {
     companion object {
         private val preferred = listOf(

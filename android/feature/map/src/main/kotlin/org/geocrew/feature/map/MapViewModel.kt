@@ -469,11 +469,65 @@ class MapViewModel @Inject constructor(
         return true
     }
 
-    fun setReference(layerId: String, change: (org.geocrew.core.model.ReferenceLayer) -> org.geocrew.core.model.ReferenceLayer) {
+    fun setReference(layerId: String, change: (org.geocrew.core.model.ReferenceLayer) -> org.geocrew.core.model.ReferenceLayer) =
+        editReferences { list -> list.map { if (it.id == layerId) change(it).let { l -> l.copy(opacity = l.opacity.coerceIn(0.1f, 1f)) } else it } }
+
+    /** Shares a reference layer with the workspace, or stops sharing it (leaders). */
+    fun toggleReferenceShared(layerId: String) = viewModelScope.launch {
+        val p = project.value ?: return@launch
+        val l = p.config.referenceLayers.firstOrNull { it.id == layerId } ?: return@launch
+        if (l.shared) {
+            editReferences { list -> list.map { if (it.id == layerId) it.copy(shared = false) else it } }
+            return@launch
+        }
+        val sha = referenceStore.sha256(p.id, layerId) ?: run {
+            _notice.value = "这个参考图层的文件不在本机，请删掉后重新导入"
+            return@launch
+        }
+        editReferences { list -> list.map { if (it.id == layerId) it.copy(shared = true, file = sha) else it } }
+    }
+
+    fun removeReference(layerId: String) {
         val p = project.value ?: return
         val l = p.config.referenceLayers.firstOrNull { it.id == layerId } ?: return
-        viewModelScope.launch { referenceStore.update(p.id, change(l)) }
+        // Members cannot take away what the leader shares; they hide it instead.
+        if (l.shared && p.team?.role != org.geocrew.core.data.team.TeamRepository.ROLE_LEADER) return
+        editReferences(after = { appScope.launch { referenceStore.drop(p.id, layerId) } }) { list -> list.filterNot { it.id == layerId } }
     }
+
+    /** Changes the project's reference layers and, for a leader, publishes the shared ones when they changed. */
+    private fun editReferences(
+        after: () -> Unit = {},
+        edit: (List<org.geocrew.core.model.ReferenceLayer>) -> List<org.geocrew.core.model.ReferenceLayer>,
+    ) = viewModelScope.launch {
+        val p = project.value ?: return@launch
+        var before: List<org.geocrew.core.model.SharedReference> = emptyList()
+        var now: List<org.geocrew.core.model.SharedReference> = emptyList()
+        projects.updateConfig(p.id) { c ->
+            val next = edit(c.referenceLayers)
+            before = org.geocrew.core.model.SharedReference.published(c.referenceLayers)
+            now = org.geocrew.core.model.SharedReference.published(next)
+            c.copy(referenceLayers = next)
+        }
+        after()
+        if (before == now || p.team?.role != org.geocrew.core.data.team.TeamRepository.ROLE_LEADER) return@launch
+        val h = teamRepo.handle(p.id) ?: return@launch
+        val msg = try {
+            teamForms.publishOverlays(h) ?: if (now.size > before.size) "已共享给组员，同步时会传给他们" else null
+        } catch (e: java.io.IOException) {
+            "已保存在本机，联网后会同步给组员"
+        }
+        msg?.let { _notice.value = it }
+    }
+
+    /** Whether this phone leads, belongs to or has no workspace, for what the layer sheet offers. */
+    val referenceTeam: StateFlow<OverlayTeam> = project.map { p ->
+        when (p?.team?.role) {
+            null -> OverlayTeam.NONE
+            org.geocrew.core.data.team.TeamRepository.ROLE_LEADER -> OverlayTeam.LEADER
+            else -> OverlayTeam.MEMBER
+        }
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, OverlayTeam.NONE)
 
     /** Calls [then] with the extent of a reference layer's shapes, if it has any. */
     fun referenceBounds(layerId: String, then: (Bounds) -> Unit) {
@@ -481,7 +535,7 @@ class MapViewModel @Inject constructor(
         val l = p.config.referenceLayers.firstOrNull { it.id == layerId } ?: return
         viewModelScope.launch {
             val b = referenceStore.shapes(p.id, l).mapNotNull { it.geometry?.bounds() }.reduceOrNull { a, c -> a.union(c) } ?: return@launch
-            if (!l.visible) referenceStore.update(p.id, l.copy(visible = true))
+            if (!l.visible) setReference(l.id) { it.copy(visible = true) }
             then(b)
         }
     }

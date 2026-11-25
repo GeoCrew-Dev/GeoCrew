@@ -79,6 +79,27 @@ class TeamFormsCodecTest {
     }
 
     @Test
+    fun referenceLayersRoundTripAndSkipBadEntries() {
+        val hash = "b".repeat(64)
+        val s = settings(
+            """
+            {"reference_layers": [
+              {"id": "r-1", "name": "1:5万地质图", "file": "$hash", "color_by": "代号", "count": 40, "opacity": 0.5, "future": true},
+              {"id": "r-1", "name": "重复", "file": "$hash"},
+              {"id": "bad/id", "name": "坏 id", "file": "$hash"},
+              {"id": "r-2", "name": "坏哈希", "file": "xyz"},
+              {"id": "r-3", "name": "", "file": "$hash"}
+            ]}
+            """,
+        )
+        val list = TeamForms.decodeReferences(s)
+        assertEquals(listOf("r-1"), list.map { it.id })
+        assertEquals("代号", list[0].colorBy)
+        val back = TeamForms.decodeReferences(JsonObject(mapOf(TeamForms.REFERENCES_KEY to TeamForms.encodeReferences(list))))
+        assertEquals(list, back)
+    }
+
+    @Test
     fun phrasesAreCleanedOnTheWayIn() {
         val s = settings(
             """{"phrases": [{"name": "地层", "items": ["蓟县系", " 蓟县系 ", ""]}, {"name": "", "items": ["x"]}, {"name": "空", "items": []}, 3]}""",

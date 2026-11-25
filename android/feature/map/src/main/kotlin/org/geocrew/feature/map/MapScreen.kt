@@ -253,6 +253,7 @@ fun MapScreen(
     val reference by viewModel.reference.collectAsStateWithLifecycle()
     val referenceLayers by viewModel.referenceLayers.collectAsStateWithLifecycle()
     val tappedReference by viewModel.tappedReference.collectAsStateWithLifecycle()
+    val referenceTeam by viewModel.referenceTeam.collectAsStateWithLifecycle()
     val drawn = remember(overlays, grid, images, sheets, reference) {
         overlays.copy(grid = grid?.lines.orEmpty(), images = images, sheets = sheets.map { it.bounds }, reference = reference)
     }
@@ -559,8 +560,10 @@ fun MapScreen(
                         change = viewModel::setReference,
                         fit = { id -> showLayers = false; viewModel.referenceBounds(id) { camera.fit(it) } },
                         remove = viewModel::removeReference,
+                        share = viewModel::toggleReferenceShared,
                     )
                 },
+                referenceTeam = referenceTeam,
                 overlayActions = remember(viewModel, camera) {
                     OverlayActions(
                         add = { pickOverlay.launch(arrayOf("*/*")) },

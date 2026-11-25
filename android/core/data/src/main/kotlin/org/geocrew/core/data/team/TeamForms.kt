@@ -33,6 +33,7 @@ import javax.inject.Singleton
 class TeamForms @Inject constructor(
     private val projects: ProjectRepository,
     private val overlayImages: org.geocrew.core.data.repo.OverlayImages,
+    private val referenceStore: org.geocrew.core.data.repo.ReferenceLayers,
 ) {
 
     /** What travels in the workspace settings. */
@@ -48,10 +49,12 @@ class TeamForms @Inject constructor(
         val aiDeny: List<String> = emptyList(),
         /** How records are filled in and points named (`record_rules`); null when never shared. */
         val rules: org.geocrew.core.model.RecordRules? = null,
+        /** Reference layers the leaders share (`reference_layers`). */
+        val references: List<org.geocrew.core.model.SharedReference> = emptyList(),
     )
 
     private fun shared(cfg: org.geocrew.core.model.ProjectConfig) =
-        Shared(cfg.fields, cfg.legend, cfg.localGrid, SharedOverlay.published(cfg.overlays), cfg.teamBasemaps, cfg.phrases, cfg.teamNotice, cfg.teamAiDeny, cfg.recordRules.takeIf { it.active || it != org.geocrew.core.model.RecordRules() })
+        Shared(cfg.fields, cfg.legend, cfg.localGrid, SharedOverlay.published(cfg.overlays), cfg.teamBasemaps, cfg.phrases, cfg.teamNotice, cfg.teamAiDeny, cfg.recordRules.takeIf { it.active || it != org.geocrew.core.model.RecordRules() }, org.geocrew.core.model.SharedReference.published(cfg.referenceLayers))
 
     /** Fetches the workspace copy and applies it when it is newer; publishes pending local edits first. */
     suspend fun sync(h: TeamHandle) {
@@ -59,13 +62,32 @@ class TeamForms @Inject constructor(
         val remote = h.api.settings(h.link.workspaceId)
         val leader = h.link.role == TeamRepository.ROLE_LEADER
         // A workspace that never had shared settings adopts the leader's existing ones.
-        val adopt = remote.version == 0L && (cfg.fields.isNotEmpty() || cfg.legend.active || cfg.localGrid != null || cfg.overlays.any { it.shared } || cfg.teamBasemaps.isNotEmpty() || cfg.phrases.isNotEmpty())
+        val adopt = remote.version == 0L && (cfg.fields.isNotEmpty() || cfg.legend.active || cfg.localGrid != null || cfg.overlays.any { it.shared } || cfg.teamBasemaps.isNotEmpty() || cfg.phrases.isNotEmpty() || cfg.referenceLayers.any { it.shared })
         if (leader && (cfg.teamFormPending || adopt) && remote.version == cfg.teamFormVersion) {
             put(h, remote.settings, shared(cfg), remote.version)
         } else if (remote.version != cfg.teamFormVersion || cfg.teamFormPending) {
             apply(h, remote)
         }
         fetchOverlays(h)
+        fetchReferences(h)
+    }
+
+    /** Downloads shared reference layers this phone lacks; failures wait for the next sync. */
+    private suspend fun fetchReferences(h: TeamHandle) {
+        val layers = projects.get(h.project.id)?.config?.referenceLayers.orEmpty()
+        for (l in layers.filter { it.shared }) {
+            val sha = l.file ?: continue
+            if (referenceStore.stored(h.project.id, l.id) != null) continue
+            runCatching {
+                val tmp = java.io.File.createTempFile("ref_", ".part")
+                try {
+                    h.api.downloadFile(h.link.workspaceId, sha, tmp)
+                    referenceStore.receive(h.project.id, l.id, tmp)
+                } finally {
+                    tmp.delete()
+                }
+            }
+        }
     }
 
     /** Publishes the open project's shared overlays after a leader changed, added or removed one. */
@@ -150,7 +172,13 @@ class TeamForms @Inject constructor(
         val overlaysShared = OVERLAYS_KEY in remote.settings
         val basemapsShared = BASEMAPS_KEY in remote.settings
         val phrasesShared = PHRASES_KEY in remote.settings
+        val referencesShared = REFERENCES_KEY in remote.settings
+        var droppedReferences = emptySet<String>()
         projects.updateConfig(h.project.id) {
+            if (referencesShared) {
+                val next = org.geocrew.core.model.SharedReference.merge(it.referenceLayers, shared.references).map { l -> l.id }.toSet()
+                droppedReferences = it.referenceLayers.filter { l -> l.shared }.map { l -> l.id }.toSet() - next
+            }
             it.copy(
                 fields = shared.fields,
                 legend = shared.legend,
@@ -158,6 +186,7 @@ class TeamForms @Inject constructor(
                 overlays = if (overlaysShared) SharedOverlay.merge(it.overlays, shared.overlays) else it.overlays,
                 teamBasemaps = if (basemapsShared) shared.basemaps else it.teamBasemaps,
                 phrases = if (phrasesShared) shared.phrases else it.phrases,
+                referenceLayers = if (referencesShared) org.geocrew.core.model.SharedReference.merge(it.referenceLayers, shared.references) else it.referenceLayers,
                 teamNotice = shared.notice,
                 teamAiDeny = shared.aiDeny,
                 recordRules = if (RULES_KEY in remote.settings) shared.rules ?: org.geocrew.core.model.RecordRules() else it.recordRules,
@@ -165,10 +194,11 @@ class TeamForms @Inject constructor(
                 teamFormPending = false,
             )
         }
+        droppedReferences.forEach { referenceStore.drop(h.project.id, it) }
     }
 
     private suspend fun put(h: TeamHandle, current: JsonObject, shared: Shared, base: Long) {
-        // Keep keys other clients put there; only `form`, `legend`, `local_grid`, `phrases`, `overlays` and `basemaps` are ours.
+        // Keep keys other clients put there; only `form`, `legend`, `local_grid`, `phrases`, `overlays`, `basemaps`, `reference_layers` and the keys below are ours.
         // An explicit null tells members the leader stopped using a grid; no key at all means it was never shared.
         val grid = shared.localGrid?.let { encodeGrid(it) } ?: JsonNull
         val keep = shared.localGrid != null || GRID_KEY in current
@@ -179,6 +209,7 @@ class TeamForms @Inject constructor(
             if (shared.overlays.isNotEmpty() || OVERLAYS_KEY in current) put(OVERLAYS_KEY, encodeOverlays(shared.overlays))
             if (shared.basemaps.isNotEmpty() || BASEMAPS_KEY in current) put(BASEMAPS_KEY, encodeBasemaps(shared.basemaps))
             if (shared.phrases.isNotEmpty() || PHRASES_KEY in current) put(PHRASES_KEY, encodePhrases(shared.phrases))
+            if (shared.references.isNotEmpty() || REFERENCES_KEY in current) put(REFERENCES_KEY, encodeReferences(shared.references))
             // A cleared notice drops the key, so older clients and the viewer see none.
             shared.notice?.let { put(NOTICE_KEY, encodeNotice(it)) }
             if (shared.aiDeny.isNotEmpty() || AI_KEY in current) put(AI_KEY, encodeAi(shared.aiDeny))
@@ -189,7 +220,11 @@ class TeamForms @Inject constructor(
             val file = overlayImages.file(o.file + if (o.type == SharedOverlay.PNG) ".png" else ".jpg")?.takeIf { it.isFile } ?: continue
             if (!h.api.hasFile(h.link.workspaceId, o.file)) h.api.uploadFile(h.link.workspaceId, o.file, file, o.type)
         }
-        val next = JsonObject(current - GRID_KEY - OVERLAYS_KEY - BASEMAPS_KEY - PHRASES_KEY - NOTICE_KEY - AI_KEY - RULES_KEY + ours)
+        for (r in shared.references) {
+            val file = referenceStore.stored(h.project.id, r.id) ?: continue
+            if (!h.api.hasFile(h.link.workspaceId, r.file)) h.api.uploadFile(h.link.workspaceId, r.file, file, org.geocrew.core.model.SharedReference.TYPE)
+        }
+        val next = JsonObject(current - GRID_KEY - OVERLAYS_KEY - BASEMAPS_KEY - PHRASES_KEY - NOTICE_KEY - AI_KEY - RULES_KEY - REFERENCES_KEY + ours)
         val stored = h.api.putSettings(h.link.workspaceId, next, base)
         projects.updateConfig(h.project.id) { it.copy(teamFormVersion = stored.version, teamFormPending = false) }
     }
@@ -204,6 +239,7 @@ class TeamForms @Inject constructor(
         const val NOTICE_KEY = "notice"
         const val AI_KEY = org.geocrew.core.model.action.TeamAiLimits.KEY
         const val RULES_KEY = "record_rules"
+        const val REFERENCES_KEY = "reference_layers"
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
         fun encode(fields: List<FieldTemplate>): JsonArray =
@@ -216,11 +252,21 @@ class TeamForms @Inject constructor(
         fun encodeOverlays(list: List<SharedOverlay>): JsonArray =
             JsonArray(list.map { json.encodeToJsonElement(SharedOverlay.serializer(), it) })
 
+        fun encodeReferences(list: List<org.geocrew.core.model.SharedReference>): JsonArray =
+            JsonArray(list.map { json.encodeToJsonElement(org.geocrew.core.model.SharedReference.serializer(), it) })
+
+        /** Reads the `reference_layers` key, skipping entries without a usable id or hash. */
+        fun decodeReferences(settings: JsonObject): List<org.geocrew.core.model.SharedReference> {
+            val arr = settings[REFERENCES_KEY] as? JsonArray ?: return emptyList()
+            return arr.mapNotNull { e -> runCatching { json.decodeFromJsonElement(org.geocrew.core.model.SharedReference.serializer(), e) }.getOrNull()?.takeIf(org.geocrew.core.model.SharedReference::valid) }
+                .distinctBy { it.id }
+        }
+
         fun encodeBasemaps(list: List<SharedBasemap>): JsonArray =
             JsonArray(list.map { json.encodeToJsonElement(SharedBasemap.serializer(), it) })
 
         fun decodeShared(settings: JsonObject) =
-            Shared(decode(settings), decodeLegend(settings), decodeGrid(settings), decodeOverlays(settings), decodeBasemaps(settings), decodePhrases(settings), decodeNotice(settings), decodeAi(settings), decodeRules(settings))
+            Shared(decode(settings), decodeLegend(settings), decodeGrid(settings), decodeOverlays(settings), decodeBasemaps(settings), decodePhrases(settings), decodeNotice(settings), decodeAi(settings), decodeRules(settings), decodeReferences(settings))
 
         fun encodePhrases(list: List<PhraseGroup>): JsonArray =
             JsonArray(FieldTerms.clean(list).map { json.encodeToJsonElement(PhraseGroup.serializer(), it) })

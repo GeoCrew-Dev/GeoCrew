@@ -33,28 +33,37 @@ internal class ReferenceActions(
     /** Move the map to the layer's extent. */
     val fit: (String) -> Unit,
     val remove: (String) -> Unit,
+    /** Share with the workspace or stop sharing (leaders). */
+    val share: (String) -> Unit = {},
 )
 
 /**
  * The "参考图层" part of the layer sheet, shown when the project has any.
  * New ones come from 导入, where a file can be brought in as a reference layer.
  */
-internal fun LazyListScope.referenceSection(list: List<ReferenceLayer>, actions: ReferenceActions) {
+internal fun LazyListScope.referenceSection(list: List<ReferenceLayer>, actions: ReferenceActions, team: OverlayTeam = OverlayTeam.NONE) {
     if (list.isEmpty()) return
     item { Text("参考图层", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) }
-    items(list.asReversed(), key = { "ref-" + it.id }) { ReferenceRow(it, actions) }
+    items(list.asReversed(), key = { "ref-" + it.id }) { ReferenceRow(it, actions, team) }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ReferenceRow(l: ReferenceLayer, actions: ReferenceActions) {
+private fun ReferenceRow(l: ReferenceLayer, actions: ReferenceActions, team: OverlayTeam) {
+    val readOnly = l.shared && team == OverlayTeam.MEMBER
     var opacity by remember(l.id, l.opacity) { mutableFloatStateOf(l.opacity) }
     var confirmRemove by remember { mutableStateOf(false) }
     ListItem(
         headlineContent = { Text(l.name) },
         supportingContent = {
             Column {
-                Text("${l.count} 个图形" + (l.colorBy?.let { " · 按「$it」着色" } ?: "") + " · 只在这台设备上")
+                Text(
+                    "${l.count} 个图形" + (l.colorBy?.let { " · 按「$it」着色" } ?: "") + when {
+                        readOnly -> " · 组长共享"
+                        l.shared -> " · 已共享给组员"
+                        else -> " · 只在这台设备上"
+                    },
+                )
                 Slider(
                     value = opacity,
                     onValueChange = { opacity = it },
@@ -63,7 +72,8 @@ private fun ReferenceRow(l: ReferenceLayer, actions: ReferenceActions) {
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
                     TextButton(onClick = { actions.fit(l.id) }) { Text("定位") }
-                    TextButton(onClick = { confirmRemove = true }) { Text("删除") }
+                    if (team == OverlayTeam.LEADER) TextButton(onClick = { actions.share(l.id) }) { Text(if (l.shared) "取消共享" else "共享给组员") }
+                    if (!readOnly) TextButton(onClick = { confirmRemove = true }) { Text("删除") }
                 }
             }
         },
@@ -73,7 +83,7 @@ private fun ReferenceRow(l: ReferenceLayer, actions: ReferenceActions) {
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
             title = { Text("删除「${l.name}」？") },
-            text = { Text("只从这台设备上拿掉这个参考图层，记录不受影响。") },
+            text = { Text(if (l.shared) "组员那边的这个参考图层也会一起拿掉，记录不受影响。" else "只从这台设备上拿掉这个参考图层，记录不受影响。") },
             confirmButton = { TextButton(onClick = { confirmRemove = false; actions.remove(l.id) }) { Text("删除") } },
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("取消") } },
         )

@@ -254,6 +254,7 @@ internal fun LayerSheet(
     overlayActions: OverlayActions,
     reference: List<org.geocrew.core.model.ReferenceLayer> = emptyList(),
     referenceActions: ReferenceActions = ReferenceActions({ _, _ -> }, {}, {}),
+    referenceTeam: OverlayTeam = OverlayTeam.NONE,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -349,7 +350,7 @@ internal fun LayerSheet(
                 item { DisplaySwitch("组员位置", null, display.team) { v -> onDisplay { it.copy(team = v) } } }
                 item { DisplaySwitch("只看我的任务", "只显示指派给我、还没完成的记录", display.onlyMyTasks) { v -> onDisplay { it.copy(onlyMyTasks = v) } } }
             }
-            referenceSection(reference, referenceActions)
+            referenceSection(reference, referenceActions, referenceTeam)
             overlaySection(overlays, overlayActions)
             item { Text("底图", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) }
             items(base.sources, key = { it.id }) { s ->

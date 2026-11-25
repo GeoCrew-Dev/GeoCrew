@@ -65,6 +65,38 @@ class ReferenceLayers @Inject constructor(
         withContext(Dispatchers.IO) { file(projectId, layerId).delete() }
     }
 
+    /** The stored GeoJSON of [layerId], if it is on this phone. */
+    fun stored(projectId: String, layerId: String): File? = file(projectId, layerId).takeIf { it.isFile }
+
+    /** SHA-256 (hex) of the stored GeoJSON of [layerId]; the attachment hash when it is shared. */
+    suspend fun sha256(projectId: String, layerId: String): String? = withContext(Dispatchers.IO) {
+        val f = stored(projectId, layerId) ?: return@withContext null
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /** Keeps a layer received from the workspace: [src] becomes its stored GeoJSON. */
+    suspend fun receive(projectId: String, layerId: String, src: File) = withContext(Dispatchers.IO) {
+        val f = file(projectId, layerId)
+        f.parentFile?.mkdirs()
+        src.copyTo(f, overwrite = true)
+        cache.remove(layerId)
+    }
+
+    /** Deletes the stored file of a layer the workspace stopped sharing. */
+    suspend fun drop(projectId: String, layerId: String) = withContext(Dispatchers.IO) {
+        cache.remove(layerId)
+        file(projectId, layerId).delete()
+    }
+
     /** Removes every layer file of a deleted project. */
     suspend fun removeAll(projectId: String) = withContext(Dispatchers.IO) { dir(projectId).deleteRecursively() }
 }
