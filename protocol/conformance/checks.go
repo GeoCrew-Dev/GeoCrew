@@ -351,6 +351,28 @@ func (s *suite) checks() []check {
 			if g == nil || syncOf(g)["deleted"] != true {
 				return errors.New("拉取结果里没有带 deleted: true 的要素")
 			}
+			if g["geometry"] == nil {
+				return errors.New("删除后服务端清空了 geometry，客户端无法恢复")
+			}
+			if props, _ := g["properties"].(map[string]any); props["title"] != "D001" {
+				return fmt.Errorf("删除后 properties 应原样保留，得到 %v", g["properties"])
+			}
+			return nil
+		}},
+		{section: "§4.4", name: "已删除的要素可以用更高版本恢复", workspace: true, run: func() error {
+			f := feature(main, 4, t0.Add(5*time.Minute), map[string]any{"kind": "geo_point", "title": "D001"})
+			seq, _, err := s.pushOne(s.leader, f, "applied")
+			if err != nil {
+				return err
+			}
+			p, err := s.pull(s.member, seq-1, 0)
+			if err != nil {
+				return err
+			}
+			g := find(p.Features, main)
+			if g == nil || syncOf(g)["deleted"] == true {
+				return errors.New("恢复后拉取结果里应是未删除的要素")
+			}
 			return nil
 		}},
 		{section: "§2.1", name: "只读成员不能提交，但能拉取", needs: "roles", workspace: true, run: func() error {

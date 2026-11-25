@@ -214,7 +214,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<invite_code>
 | `sync.version` | 客户端 | 从 1 开始，每次本地修改加 1 |
 | `sync.updated_at` | 客户端 | 本地修改时间（离线修改保留真实时间） |
 | `sync.updated_by` | 服务端 | 服务端用提交者的成员 id 覆盖客户端的值 |
-| `sync.deleted` | 客户端 | 软删除标记；删除也是一次修改，`version` 加 1 |
+| `sync.deleted` | 客户端 | 软删除标记；删除也是一次修改，`version` 加 1，内容保留，可再改回 `false` 恢复（§4.4） |
 | `sync.seq` | 服务端 | 服务端接受该修改时分配的序号，提交时忽略 |
 
 `geometry` 可以为 `null`（例如纯文字记录）。常用的 `properties.kind` 约定见第 6 节。
@@ -270,6 +270,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 - `seq` 是下次请求应传的 `since`（没有新数据时等于请求的 `since`）。
 - `more` 为 `true` 时应立即继续拉取。
 - 一个要素多次修改只返回最新版本；已删除要素也会返回（`deleted: true`），客户端据此删除本地副本。
+- 删除不清空内容：已删除要素照常带着删除前的 `geometry` 和 `properties`，服务端原样保存和返回，客户端可以据此做「最近删除」并恢复。恢复就是再提交一次 `version` 更高、`deleted: false` 的修改，和普通修改一样处理。要真正抹掉内容（如误录了隐私信息），先把内容改掉再删除。
 
 ### 4.5 推荐的客户端同步流程
 
