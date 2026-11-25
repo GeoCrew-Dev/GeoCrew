@@ -147,8 +147,13 @@ class GeoCrewApi(
         urgent: Boolean = false,
         rollCall: Boolean = false,
         answerTo: String? = null,
+        backBy: String? = null,
+        backFrom: String? = null,
     ): Comment {
-        val req = json.encodeToString(AddCommentReq.serializer(), AddCommentReq(id, featureId, body, at, urgent, rollCall, answerTo)).toRequestBody(JSON)
+        val req = json.encodeToString(
+            AddCommentReq.serializer(),
+            AddCommentReq(id, featureId, body, at, urgent, rollCall, answerTo, backBy, backFrom),
+        ).toRequestBody(JSON)
         return send(wsUrl(ws, "comments"), "POST", req, Comment.serializer())
     }
 

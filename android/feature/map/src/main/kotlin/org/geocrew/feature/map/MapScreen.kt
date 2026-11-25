@@ -94,6 +94,7 @@ fun MapScreen(
     val unread by viewModel.unreadMessages.collectAsStateWithLifecycle()
     val alert by viewModel.alert.collectAsStateWithLifecycle()
     val rollCall by viewModel.rollCall.collectAsStateWithLifecycle()
+    val outings by viewModel.outings.collectAsStateWithLifecycle()
     val meeting by viewModel.meeting.collectAsStateWithLifecycle()
     val answering by viewModel.answering.collectAsStateWithLifecycle()
     val averaging by viewModel.averaging.collectAsStateWithLifecycle()
@@ -302,6 +303,21 @@ fun MapScreen(
                     },
                     onOpen = { onOpenFeature(m.feature.id) },
                     onDismiss = { viewModel.dismissMeeting(m) },
+                )
+            }
+            if (outings.isNotEmpty()) {
+                val now = org.geocrew.core.ui.ticking()
+                org.geocrew.core.ui.OutingBoard(
+                    outings.filter { it.mine || it.backBy < now },
+                    onBack = viewModel::checkIn,
+                    onShow = { p ->
+                        goneTo = p
+                        goneLabel = "外出出发点"
+                        camera.animateTo(p, maxOf(camera.zoom, 15.0))
+                        followOnFirstFix = false
+                    },
+                    busy = answering,
+                    maxRows = 3,
                 )
             }
             rollCall?.let { c ->

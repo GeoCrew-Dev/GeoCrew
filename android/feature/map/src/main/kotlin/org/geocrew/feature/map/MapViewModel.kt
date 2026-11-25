@@ -142,6 +142,7 @@ class MapViewModel @Inject constructor(
     private val downloads: org.geocrew.core.data.repo.BasemapDownloads,
     private val overlayImages: org.geocrew.core.data.repo.OverlayImages,
     private val rollCalls: org.geocrew.core.sensors.RollCallActions,
+    private val outingActions: org.geocrew.core.sensors.OutingActions,
 ) : ViewModel() {
 
     /** Downloading an area of the base map for offline use; survives leaving the screen. */
@@ -249,6 +250,43 @@ class MapViewModel @Inject constructor(
             rc?.takeIf { !it.call.mine && it.call.id !in gone && it.answers.none { a -> a.mine } }?.call
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Check-outs not closed yet (protocol v0 §8.3); the map shows one's own and overdue ones. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val outings: StateFlow<List<org.geocrew.core.ui.OutingRow>> = project
+        .map { p -> p?.team?.let { Triple(p.id, it.memberId, it.role == org.geocrew.core.data.team.TeamRepository.ROLE_LEADER) } }
+        .distinctUntilChanged()
+        .flatMapLatest { k ->
+            if (k == null) {
+                kotlinx.coroutines.flow.flowOf(emptyList())
+            } else {
+                teamComments.outings(k.first, k.second).map { list ->
+                    list.map {
+                        org.geocrew.core.ui.OutingRow(it.id, it.nickname, it.body, it.backBy ?: it.createdAt, it.mine, it.mine || k.third, it.at)
+                    }
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Checks an outing back in from the map. */
+    fun checkIn(id: String) {
+        val p = project.value ?: return
+        val me = p.team?.memberId ?: return
+        if (_answering.value) return
+        _answering.value = true
+        val center = p.config.view?.let { runCatching { LngLat(it.lng, it.lat) }.getOrNull() }
+        appScope.launch {
+            try {
+                val outing = teamComments.openOutings(p.id, me).firstOrNull { it.id == id } ?: return@launch
+                outingActions.checkIn(p.id, outing, center)?.let { _notice.value = it }
+            } catch (e: java.io.IOException) {
+                _notice.value = if (e is org.geocrew.core.network.ApiException && e.isForbidden) "只有本人和组长能报返回" else "需要联网：${e.message}"
+            } finally {
+                _answering.value = false
+            }
+        }
+    }
 
     private val _answering = MutableStateFlow(false)
     val answering: StateFlow<Boolean> = _answering.asStateFlow()

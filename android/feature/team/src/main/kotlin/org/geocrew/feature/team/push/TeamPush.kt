@@ -92,13 +92,15 @@ class TeamPush @Inject constructor(
         val p = projects.get(projectId) ?: return
         val link = p.team ?: return
         val n = PushNotice.parse(content) ?: return
-        if (n.workspace != link.workspaceId || n.from == link.memberId) return
+        // An overdue check-out also reminds its author to check back in.
+        if (n.workspace != link.workspaceId || (n.from == link.memberId && n.type != "overdue")) return
         val text = when (n.type) {
             "message" -> "有新的组内消息"
             "comment" -> "记录下有新的讨论"
             "task" -> "有一条记录指派给你"
             "alert" -> "组员发出了紧急消息"
             "rollcall" -> "组长在点名，请报平安"
+            "overdue" -> if (n.from == link.memberId) "你的外出已超过预计返回时间，回来了请报返回" else "有组员外出超时未返回"
             else -> return
         }
         // Fetch what the notice announces when it concerns the open project.
@@ -122,6 +124,19 @@ class TeamPush @Inject constructor(
                 call != null && call.mine -> notify(projectId, title, "有组员回应了点名", id = (projectId + "rollcall-answer").hashCode())
                 else -> notify(projectId, title, call?.let { "${it.nickname}：${it.body}" } ?: text, id = (projectId + "rollcall" + n.seq).hashCode(), urgent = true)
             }
+            return
+        }
+        if (n.type == "overdue") {
+            // Name who and where when the check-out is here; still out once synced, or it was closed meanwhile.
+            val out = if (current) comments.openOutings(projectId, link.memberId) else null
+            if (out != null && out.none { it.authorId == n.from }) return
+            val o = out?.filter { it.authorId == n.from }?.minByOrNull { it.backBy ?: it.createdAt }
+            val detail = when {
+                o == null -> text
+                o.mine -> "你外出（${o.body}）已超过预计返回时间，回来了请在组内消息里报返回"
+                else -> "${o.nickname}外出（${o.body}）超过预计返回时间仍未报返回，请设法联系"
+            }
+            notify(projectId, "外出超时 · ${link.workspaceName}", detail, id = (projectId + "overdue" + n.seq).hashCode(), urgent = true)
             return
         }
         notify(projectId, link.workspaceName, text, id = (projectId + n.type).hashCode())

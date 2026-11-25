@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ProjectEntity::class, FeatureEntity::class, TrackPointEntity::class, CommentEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class GeoCrewDatabase : RoomDatabase() {
@@ -56,6 +56,14 @@ abstract class GeoCrewDatabase : RoomDatabase() {
             }
         }
 
-        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        /** Schema 6: check-outs with an expected return time (protocol v0 §8.3). */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE comments ADD COLUMN backBy INTEGER")
+                db.execSQL("ALTER TABLE comments ADD COLUMN backFrom TEXT")
+            }
+        }
+
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
     }
 }

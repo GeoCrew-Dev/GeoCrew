@@ -37,9 +37,15 @@ data class CommentItem(
     val rollCall: Boolean = false,
     /** The roll call this message reports in to. */
     val answerTo: String? = null,
+    /** A check-out: when the author expects to be back (protocol v0 §8.3). */
+    val backBy: Instant? = null,
+    /** The check-out this message closes. */
+    val backFrom: String? = null,
 ) {
     /** An answer saying the sender needs help rather than that all is well. */
     val needsHelp: Boolean get() = answerTo != null && urgent
+
+    fun overdue(now: Instant): Boolean = backBy != null && backBy.isBefore(now)
 }
 
 /**
@@ -90,6 +96,14 @@ class TeamComments @Inject constructor(
                 }
             }
 
+    /** Teammates (and this user) out on their own and not checked back in, soonest due first. */
+    fun outings(projectId: String, me: String?): Flow<List<CommentItem>> =
+        dao.observeOutings(projectId, clock.millis() - OUTING_DAYS * 86_400_000).map { list -> openOutings(list.map { it.toItem(me) }) }
+
+    /** The same, once, for a notification. */
+    suspend fun openOutings(projectId: String, me: String?): List<CommentItem> =
+        openOutings(dao.outings(projectId, clock.millis() - OUTING_DAYS * 86_400_000).map { it.toItem(me) })
+
     /** The newest roll call, for a notification. */
     suspend fun latestRollCall(projectId: String, me: String?): CommentItem? =
         dao.latestRollCall(projectId, clock.millis() - ROLL_CALL_HOURS * 3_600_000)?.toItem(me)
@@ -132,6 +146,8 @@ class TeamComments @Inject constructor(
         urgent: Boolean = false,
         rollCall: Boolean = false,
         answerTo: String? = null,
+        backBy: Instant? = null,
+        backFrom: String? = null,
     ): Boolean {
         val link = projects.get(projectId)?.team ?: return false
         val text = body.trim().let { if (it.codePointCount(0, it.length) > MAX_CHARS) it.take(it.offsetByCodePoints(0, MAX_CHARS)) else it }
@@ -143,6 +159,8 @@ class TeamComments @Inject constructor(
                 createdAt = clock.millis(), seq = 0, urgent = urgent && featureId == null,
                 rollCall = rollCall && featureId == null && answerTo == null,
                 answerTo = answerTo?.takeIf { featureId == null },
+                backBy = backBy?.takeIf { featureId == null && backFrom == null }?.toEpochMilli()?.let { it - it % 1000 },
+                backFrom = backFrom?.takeIf { featureId == null },
             ),
         )
         return true
@@ -158,6 +176,7 @@ class TeamComments @Inject constructor(
     override suspend fun pending(projectId: String): List<Comment> = dao.pending(projectId).map {
         Comment(id = it.id, featureId = it.featureId, body = it.body, at = it.atLng?.let { lng -> listOf(lng, it.atLat ?: 0.0) }, urgent = it.urgent,
             rollCall = it.rollCall, answerTo = it.answerTo,
+            backBy = it.backBy?.let { ms -> Instant.ofEpochMilli(ms).toString() }, backFrom = it.backFrom,
         )
     }
 
@@ -169,6 +188,8 @@ class TeamComments @Inject constructor(
                 atLng = at?.get(0), atLat = at?.get(1), authorId = c.authorId, nickname = c.nickname,
                 createdAt = runCatching { Instant.parse(c.createdAt).toEpochMilli() }.getOrDefault(clock.millis()),
                 seq = c.seq, urgent = c.urgent, rollCall = c.rollCall, answerTo = c.answerTo?.ifEmpty { null },
+                backBy = c.backBy?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() },
+                backFrom = c.backFrom?.ifEmpty { null },
             ),
         )
     }
@@ -186,9 +207,17 @@ class TeamComments @Inject constructor(
         authorId = authorId, nickname = nickname, createdAt = Instant.ofEpochMilli(createdAt),
         pending = seq == 0L, mine = me != null && authorId == me, urgent = urgent,
         rollCall = rollCall, answerTo = answerTo,
+        backBy = backBy?.let(Instant::ofEpochMilli), backFrom = backFrom,
     )
 
     companion object {
+        /** Check-outs without a message closing them, soonest due first. */
+        fun openOutings(items: List<CommentItem>): List<CommentItem> {
+            val closed = items.mapNotNullTo(HashSet()) { it.backFrom }
+            return items.filter { it.backBy != null && it.id !in closed }.sortedBy { it.backBy }
+        }
+
+        const val OUTING_DAYS = 7L
         const val MAX_CHARS = 2000
         const val ALERT_HOURS = 6L
         const val ROLL_CALL_HOURS = 24L

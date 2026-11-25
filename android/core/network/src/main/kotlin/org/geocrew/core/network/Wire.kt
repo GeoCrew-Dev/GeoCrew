@@ -78,6 +78,10 @@ data class Comment(
     @SerialName("roll_call") val rollCall: Boolean = false,
     /** The roll call this message answers (protocol v0 §8.2). */
     @SerialName("answer_to") val answerTo: String? = null,
+    /** A check-out: when the author expects to be back, RFC 3339 (protocol v0 §8.3). */
+    @SerialName("back_by") val backBy: String? = null,
+    /** The check-out this message closes (protocol v0 §8.3). */
+    @SerialName("back_from") val backFrom: String? = null,
 )
 
 @Serializable
@@ -92,6 +96,8 @@ internal data class AddCommentReq(
     val urgent: Boolean = false,
     @SerialName("roll_call") val rollCall: Boolean = false,
     @SerialName("answer_to") val answerTo: String? = null,
+    @SerialName("back_by") val backBy: String? = null,
+    @SerialName("back_from") val backFrom: String? = null,
 )
 
 /** A device's Web Push keys (base64url); the server encrypts notices with them. */

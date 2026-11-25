@@ -40,6 +40,7 @@ import org.geocrew.core.data.team.CommentItem
 import org.geocrew.core.model.LngLat
 import org.geocrew.core.ui.CommentBubble
 import org.geocrew.core.ui.CommentComposer
+import org.geocrew.core.ui.OutingBoard
 import org.geocrew.core.ui.RollCallPrompt
 import org.geocrew.core.ui.commentTime
 
@@ -67,6 +68,8 @@ fun TeamChatScreen(
     val rollBusy by viewModel.rollBusy.collectAsStateWithLifecycle()
     var calling by rememberSaveable { mutableStateOf(false) }
     var ending by rememberSaveable { mutableStateOf(false) }
+    val outings by viewModel.outings.collectAsStateWithLifecycle()
+    var goingOut by rememberSaveable { mutableStateOf(false) }
 
     // Stay at the newest message as messages arrive.
     LaunchedEffect(ui.items.size) {
@@ -85,6 +88,9 @@ fun TeamChatScreen(
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
+                    if (ui.linked) {
+                        TextButton(onClick = { goingOut = true }, enabled = !rollBusy) { Text("外出") }
+                    }
                     if (ui.linked && ui.isLeader) {
                         TextButton(onClick = { calling = true }, enabled = !rollBusy) { Text("点名") }
                     }
@@ -103,6 +109,13 @@ fun TeamChatScreen(
                 Text("当前工程没有加入工作组。", Modifier.padding(24.dp))
                 return@Column
             }
+            OutingBoard(
+                outings,
+                onBack = viewModel::checkIn,
+                onShow = onShowPosition,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                busy = rollBusy,
+            )
             rollCall?.let { rc ->
                 RollCallPanel(
                     rc,
@@ -131,6 +144,8 @@ fun TeamChatScreen(
                         context = when {
                             c.featureId != null -> "关于 " + (row.featureTitle ?: "已删除的记录")
                             c.rollCall -> "点名"
+                            c.backBy != null -> "外出 · 预计 ${commentTime(c.backBy!!)} 回" + if (c.at != null) " · 📍" else ""
+                            c.backFrom != null -> "报返回" + if (c.at != null) " · 📍" else ""
                             c.answerTo != null && c.at != null -> "回应点名 · 📍 点击查看位置"
                             c.answerTo != null -> "回应点名"
                             c.at != null -> "📍 点击查看位置"
@@ -157,7 +172,7 @@ fun TeamChatScreen(
                     placeholder = "发给全组…",
                 )
             } else {
-                Text("只读成员不能发普通消息，但可以用右上角「紧急」求助", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
+                Text("只读成员不能发普通消息，但可以用右上角「外出」报备和「紧急」求助", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -186,6 +201,14 @@ fun TeamChatScreen(
                 }
             },
             dismissButton = { TextButton(onClick = { alerting = false }) { Text("取消") } },
+        )
+    }
+
+    if (goingOut) {
+        CheckOutDialog(
+            choices = remember { viewModel.returnChoices() },
+            onDismiss = { goingOut = false },
+            onConfirm = { where, at -> viewModel.checkOut(where, at); goingOut = false },
         )
     }
 
@@ -320,6 +343,62 @@ private fun AnswerLine(nickname: String, answer: CommentItem?, onShowPosition: (
             },
         )
     }
+}
+
+/**
+ * Checking out before going off alone: where to and when back. Past that
+ * time with no word, the whole team is told.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun CheckOutDialog(
+    choices: List<org.geocrew.core.model.Outing.Choice>,
+    onDismiss: () -> Unit,
+    onConfirm: (String, java.time.Instant) -> Unit,
+) {
+    var where by rememberSaveable { mutableStateOf("") }
+    var picked by rememberSaveable { mutableStateOf<Long?>(null) }
+    var typed by rememberSaveable { mutableStateOf("") }
+    val zone = java.time.ZoneId.systemDefault()
+    val typedAt = typed.takeIf { it.isNotBlank() }?.let { org.geocrew.core.model.Outing.typed(it, java.time.Instant.now(), zone) }
+    val at = typedAt ?: picked?.let(java.time.Instant::ofEpochMilli)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("外出报备") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("单独去一个地方前报一声。过了预计时间你还没报返回，全组都会收到提醒。")
+                androidx.compose.material3.OutlinedTextField(
+                    value = where,
+                    onValueChange = { where = it },
+                    label = { Text("去哪里、做什么") },
+                    placeholder = { Text(org.geocrew.core.sensors.OutingActions.DEFAULT_OUT) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("预计返回", style = MaterialTheme.typography.labelMedium)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    choices.forEach { c ->
+                        FilterChip(
+                            selected = typedAt == null && picked == c.at.toEpochMilli(),
+                            onClick = { picked = c.at.toEpochMilli(); typed = "" },
+                            label = { Text(c.label + " · " + commentTime(c.at)) },
+                        )
+                    }
+                }
+                androidx.compose.material3.OutlinedTextField(
+                    value = typed,
+                    onValueChange = { typed = it },
+                    label = { Text("或输入时间，如 17:30") },
+                    isError = typed.isNotBlank() && typedAt == null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("没有信号时会先存在手机里，联网后发出。", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = { at?.let { onConfirm(where, it) } }, enabled = at != null) { Text("报备") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 private const val MAX_ROWS = 12

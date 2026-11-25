@@ -64,6 +64,7 @@ class TeamChatViewModel @Inject constructor(
     private val location: org.geocrew.core.sensors.LocationSource,
     private val team: TeamRepository,
     private val rollCalls: org.geocrew.core.sensors.RollCallActions,
+    private val outingActions: org.geocrew.core.sensors.OutingActions,
 ) : ViewModel() {
     private val project = projects.current
 
@@ -102,6 +103,28 @@ class TeamChatViewModel @Inject constructor(
         RollCallUi(rc.call, rc.answers.lastOrNull { it.mine }, roster, rc.answers)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** Who is out on their own and when they are due back (protocol v0 §8.3). */
+    val outings: StateFlow<List<org.geocrew.core.ui.OutingRow>> = project
+        .map { p -> p.team?.let { Triple(p.id, it.memberId, it.role == TeamRepository.ROLE_LEADER) } }
+        .distinctUntilChanged()
+        .flatMapLatest { k ->
+            if (k == null) flowOf(emptyList()) else comments.outings(k.first, k.second).map { list -> list.map { it.toRow(k.third) } }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Return times offered with one tap when checking out. */
+    fun returnChoices(): List<org.geocrew.core.model.Outing.Choice> =
+        org.geocrew.core.model.Outing.choices(java.time.Instant.now(), java.time.ZoneId.systemDefault(), ui.value.mapCenter)
+
+    /** Checks out to [where], due back at [backBy]; read-only members may too. */
+    fun checkOut(where: String, backBy: java.time.Instant) = rollAction { outingActions.checkOut(it, where, backBy, ui.value.mapCenter) }
+
+    /** Checks the outing [id] back in: one's own, or anyone's as a leader. */
+    fun checkIn(id: String) = rollAction("只有本人和组长能报返回") { pid ->
+        val outing = comments.openOutings(pid, memberId).firstOrNull { it.id == id } ?: return@rollAction null
+        outingActions.checkIn(pid, outing, ui.value.mapCenter)
+    }
+
     private val _rollBusy = MutableStateFlow(false)
     val rollBusy: StateFlow<Boolean> = _rollBusy.asStateFlow()
 
@@ -110,9 +133,10 @@ class TeamChatViewModel @Inject constructor(
     fun consumeError() { _error.value = null }
 
     private var projectId: String? = null
+    private var memberId: String? = null
 
     init {
-        viewModelScope.launch { project.collect { projectId = it.id } }
+        viewModelScope.launch { project.collect { projectId = it.id; memberId = it.team?.memberId } }
         // Who should answer: fetched when a roll call appears and again as answers come in.
         viewModelScope.launch {
             currentCall.map { it?.call?.id to (it?.answers?.size ?: 0) }.distinctUntilChanged().collect { (id, _) ->
@@ -127,14 +151,14 @@ class TeamChatViewModel @Inject constructor(
         runCatching { team.members(h) }.getOrNull()?.let { members.value = it }
     }
 
-    private fun rollAction(block: suspend (String) -> String?) = viewModelScope.launch {
+    private fun rollAction(forbidden: String = "只有组长和发起人能结束点名", block: suspend (String) -> String?) = viewModelScope.launch {
         val id = projectId ?: return@launch
         if (_rollBusy.value) return@launch
         _rollBusy.value = true
         try {
             block(id)?.let { _error.value = it }
         } catch (e: IOException) {
-            _error.value = if (e is ApiException && e.isForbidden) "只有组长和发起人能结束点名" else "需要联网：${e.message}"
+            _error.value = if (e is ApiException && e.isForbidden) forbidden else "需要联网：${e.message}"
         } finally {
             _rollBusy.value = false
         }
@@ -212,3 +236,8 @@ class TeamChatViewModel @Inject constructor(
         }
     }
 }
+
+private fun CommentItem.toRow(leader: Boolean) = org.geocrew.core.ui.OutingRow(
+    id = id, nickname = nickname, where = body, backBy = backBy ?: createdAt, mine = mine,
+    canClose = mine || leader, at = at,
+)

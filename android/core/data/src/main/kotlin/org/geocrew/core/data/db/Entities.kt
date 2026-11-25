@@ -98,4 +98,8 @@ data class CommentEntity(
     val rollCall: Boolean = false,
     /** The roll call this message answers. */
     val answerTo: String? = null,
+    /** A check-out's expected return, epoch millis (protocol v0 §8.3). */
+    val backBy: Long? = null,
+    /** The check-out this message closes. */
+    val backFrom: String? = null,
 )

@@ -136,6 +136,13 @@ interface CommentDao {
     @Query("SELECT * FROM comments WHERE projectId = :projectId AND answerTo IS NOT NULL ORDER BY createdAt DESC LIMIT 1")
     suspend fun latestAnswer(projectId: String): CommentEntity?
 
+    /** Check-outs written since [sinceMillis] and every message closing one, oldest first (protocol v0 §8.3). */
+    @Query("SELECT * FROM comments WHERE projectId = :projectId AND ((backBy IS NOT NULL AND createdAt >= :sinceMillis) OR backFrom IS NOT NULL) ORDER BY createdAt")
+    fun observeOutings(projectId: String, sinceMillis: Long): Flow<List<CommentEntity>>
+
+    @Query("SELECT * FROM comments WHERE projectId = :projectId AND ((backBy IS NOT NULL AND createdAt >= :sinceMillis) OR backFrom IS NOT NULL) ORDER BY createdAt")
+    suspend fun outings(projectId: String, sinceMillis: Long): List<CommentEntity>
+
     /** Urgent messages written since [sinceMillis], newest first. */
     @Query("SELECT * FROM comments WHERE projectId = :projectId AND urgent = 1 AND createdAt >= :sinceMillis ORDER BY createdAt DESC")
     fun observeUrgent(projectId: String, sinceMillis: Long): Flow<List<CommentEntity>>
