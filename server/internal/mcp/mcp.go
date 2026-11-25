@@ -29,6 +29,25 @@ type Tool struct {
 	// InputSchema is a JSON Schema object for the arguments.
 	InputSchema json.RawMessage
 	Call        func(ctx context.Context, args json.RawMessage) (any, error)
+	// Effect says what the tool changes; the zero value is read-only.
+	// Clients use the hints to decide what to confirm with the user, so
+	// a tool that changes anything must say so here.
+	Effect Effect
+}
+
+// Effect classifies a tool's changes, in line with the client-side risk
+// classes of actions.md: read, write (adds or edits, can be undone from
+// history) and destructive (removes or reaches people outside the record).
+type Effect int
+
+const (
+	Read Effect = iota
+	Write
+	Destructive
+)
+
+func (e Effect) annotations() map[string]any {
+	return map[string]any{"readOnlyHint": e == Read, "destructiveHint": e == Destructive, "openWorldHint": false}
 }
 
 // Server answers MCP requests with a fixed set of tools.
@@ -145,7 +164,7 @@ func (s *Server) dispatch(ctx context.Context, q request) (any, *rpcError) {
 		for _, t := range s.Tools {
 			tools = append(tools, map[string]any{
 				"name": t.Name, "title": t.Title, "description": t.Description,
-				"inputSchema": t.InputSchema, "annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
+				"inputSchema": t.InputSchema, "annotations": t.Effect.annotations(),
 			})
 		}
 		return map[string]any{"tools": tools}, nil

@@ -15,6 +15,7 @@ func TestHandle(t *testing.T) {
 			{Name: "ok", InputSchema: json.RawMessage(`{"type":"object"}`), Call: func(context.Context, json.RawMessage) (any, error) {
 				return map[string]int{"n": 1}, nil
 			}},
+			{Name: "note", Effect: Write, Call: func(context.Context, json.RawMessage) (any, error) { return nil, nil }},
 			{Name: "bad", Call: func(context.Context, json.RawMessage) (any, error) { return nil, BadArgs("limit too big") }},
 			{Name: "boom", Call: func(context.Context, json.RawMessage) (any, error) { return nil, errors.New("disk at /var/x failed") }},
 		}}
@@ -36,6 +37,8 @@ func TestHandle(t *testing.T) {
 		{`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"bad"}}`, `limit too big`, 200},
 		{`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"boom"}}`, `try again later`, 200},
 		{`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{}}`, `"code":-32602`, 200},
+		{`{"jsonrpc":"2.0","id":6,"method":"tools/list"}`, `{"annotations":{"destructiveHint":false,"openWorldHint":false,"readOnlyHint":false},"description":"","inputSchema":null,"name":"note"`, 200},
+		{`{"jsonrpc":"2.0","id":7,"method":"tools/list"}`, `{"annotations":{"destructiveHint":false,"openWorldHint":false,"readOnlyHint":true},"description":"","inputSchema":{"type":"object"},"name":"ok"`, 200},
 	}
 	for _, c := range cases {
 		status, got := call(c.body)
