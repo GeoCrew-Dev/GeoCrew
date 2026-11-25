@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -50,11 +51,14 @@ func (s *Server) mcpTools(ws string) []mcp.Tool {
 		},
 		{
 			Name: "search_records", Title: "查找记录",
-			Description: "Find records by words in title, lithology, note or sample numbers, by kind, by who changed them last and since when. Newest first.",
+			Description: "Find records by words in title, lithology, note or sample numbers, by kind, by who changed them last, since when, and near a place or another record (by first position). Newest first, or nearest first when near is given.",
 			InputSchema: schema(`"query":{"type":"string","description":"words that must all appear (title, lithology, note, sample no.)"},` +
 				`"kind":{"type":"string","description":"e.g. geo_point, track, line, polygon, section, route, borehole"},` +
 				`"member":{"type":"string","description":"nickname of who changed it last"},` +
 				`"since":{"type":"string","description":"date or time, e.g. 2026-11-24 or RFC 3339"},` +
+				`"near_record":{"type":"string","description":"id of a record; finds records around it"},` +
+				`"near_lon":{"type":"number","minimum":-180,"maximum":180},"near_lat":{"type":"number","minimum":-90,"maximum":90},` +
+				`"radius_m":{"type":"number","exclusiveMinimum":0,"maximum":100000,"default":1000},` +
 				`"limit":{"type":"integer","minimum":1,"maximum":100,"default":20}`),
 			Call: func(ctx context.Context, args json.RawMessage) (any, error) { return s.mcpSearch(ctx, ws, args) },
 		},
@@ -165,6 +169,7 @@ type mcpRecordRow struct {
 	Lat       *float64  `json:"lat,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
 	UpdatedBy string    `json:"updated_by,omitempty"`
+	DistanceM *float64  `json:"distance_m,omitempty"`
 }
 
 func clip(s string, n int) string {
@@ -189,11 +194,15 @@ func parseSince(v string) (time.Time, error) {
 
 func (s *Server) mcpSearch(ctx context.Context, ws string, raw json.RawMessage) (any, error) {
 	a, err := args[struct {
-		Query  string `json:"query"`
-		Kind   string `json:"kind"`
-		Member string `json:"member"`
-		Since  string `json:"since"`
-		Limit  int    `json:"limit"`
+		Query  string   `json:"query"`
+		Kind   string   `json:"kind"`
+		Member string   `json:"member"`
+		Since  string   `json:"since"`
+		Limit  int      `json:"limit"`
+		Near   string   `json:"near_record"`
+		Lon    *float64 `json:"near_lon"`
+		Lat    *float64 `json:"near_lat"`
+		Radius float64  `json:"radius_m"`
 	}](raw)
 	if err != nil {
 		return nil, err
@@ -201,6 +210,30 @@ func (s *Server) mcpSearch(ctx context.Context, ws string, raw json.RawMessage) 
 	since, err := parseSince(a.Since)
 	if err != nil {
 		return nil, err
+	}
+	if (a.Lon == nil) != (a.Lat == nil) {
+		return nil, mcp.BadArgs("give both near_lon and near_lat")
+	}
+	if a.Near != "" {
+		rec, err := export.LiveRecord(ctx, s.Store, ws, a.Near)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, mcp.BadArgs("no record %q here", a.Near)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if rec.Lon == nil {
+			return nil, mcp.BadArgs("record %q has no position", a.Near)
+		}
+		a.Lon, a.Lat = rec.Lon, rec.Lat
+	}
+	near := a.Lon != nil
+	radius := a.Radius
+	if radius <= 0 {
+		radius = 1000
+	}
+	if radius > 100000 {
+		return nil, mcp.BadArgs("radius_m is at most 100000")
 	}
 	words := strings.Fields(strings.ToLower(a.Query))
 	who := strings.TrimSpace(a.Member)
@@ -210,6 +243,17 @@ func (s *Server) mcpSearch(ctx context.Context, ws string, raw json.RawMessage) 
 			!since.IsZero() && rec.UpdatedAt.Before(since) {
 			return nil
 		}
+		var dist *float64
+		if near {
+			if rec.Lon == nil || rec.ID == a.Near {
+				return nil
+			}
+			d := math.Round(export.DistanceM(*a.Lon, *a.Lat, *rec.Lon, *rec.Lat))
+			if d > radius {
+				return nil
+			}
+			dist = &d
+		}
 		text := strings.ToLower(rec.Title + " " + rec.Lithology + " " + rec.Note + " " + strings.Join(rec.Samples, " "))
 		for _, w := range words {
 			if !strings.Contains(text, w) {
@@ -218,14 +262,19 @@ func (s *Server) mcpSearch(ctx context.Context, ws string, raw json.RawMessage) 
 		}
 		rows = append(rows, mcpRecordRow{
 			ID: rec.ID, Kind: rec.Kind, Title: rec.Title, Lithology: rec.Lithology, Note: clip(rec.Note, 160),
-			Samples: rec.Samples, Lon: rec.Lon, Lat: rec.Lat, UpdatedAt: rec.UpdatedAt, UpdatedBy: rec.UpdatedBy,
+			Samples: rec.Samples, Lon: rec.Lon, Lat: rec.Lat, UpdatedAt: rec.UpdatedAt, UpdatedBy: rec.UpdatedBy, DistanceM: dist,
 		})
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].UpdatedAt.After(rows[j].UpdatedAt) })
+	sort.SliceStable(rows, func(i, j int) bool {
+		if near {
+			return *rows[i].DistanceM < *rows[j].DistanceM
+		}
+		return rows[i].UpdatedAt.After(rows[j].UpdatedAt)
+	})
 	limit := clampLimit(a.Limit, 20, 100)
 	matched := len(rows)
 	if matched > limit {

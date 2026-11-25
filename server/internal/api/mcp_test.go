@@ -88,6 +88,20 @@ func TestMCP(t *testing.T) {
 	if _, r := tool("search_records", map[string]any{"since": "昨天"}); !r.Result.IsError || !strings.Contains(r.Result.Content[0].Text, "since") {
 		t.Fatalf("bad since: %+v", r.Result)
 	}
+	f3 := feature("f3", 1, "2026-11-25T09:00:00Z")
+	f3["geometry"] = map[string]any{"type": "Point", "coordinates": []float64{116.40, 39.91}} // about 850 m east
+	f3["properties"] = map[string]any{"kind": "geo_point", "title": "D003", "lithology": "花岗岩"}
+	e.call("POST", base+"/features", a.Token, map[string]any{"features": []any{f3}}, nil)
+	around, _ := tool("search_records", map[string]any{"near_record": "f1", "radius_m": 2000})
+	if around["matched"] != 2.0 || !strings.Contains(string(mustJSON(around)), `"D003"`) || !strings.Contains(string(mustJSON(around)), `"distance_m":85`) {
+		t.Fatalf("near: %v", around)
+	}
+	if far, _ := tool("search_records", map[string]any{"near_lon": 116.39, "near_lat": 39.91, "radius_m": 100}); far["matched"] != 2.0 {
+		t.Fatalf("near point: %v", far)
+	}
+	if _, r := tool("search_records", map[string]any{"near_lon": 116.39}); !r.Result.IsError {
+		t.Fatal("near_lon alone must be refused")
+	}
 	rec, _ := tool("get_record", map[string]any{"id": "f1"})
 	if !strings.Contains(string(mustJSON(rec)), "灰白色中粒") || rec["updated_by"] != "组长" {
 		t.Fatalf("get_record: %v", rec)

@@ -97,3 +97,6 @@ func toRecord(f store.Feature, names map[string]string) Record {
 	}
 	return r
 }
+
+// DistanceM is the great-circle distance in metres between two WGS 84 positions.
+func DistanceM(lon1, lat1, lon2, lat2 float64) float64 { return haversine(lon1, lat1, lon2, lat2) }
