@@ -479,6 +479,8 @@ paths:
                 urgent: { type: boolean, default: false, description: "A call for help or to gather (section 8.1); team messages only; needs the alerts capability" }
                 roll_call: { type: boolean, default: false, description: "A leader's roll call (section 8.2); team messages only; needs the rollcall capability" }
                 answer_to: { type: string, description: "Id of the roll call this team message answers (section 8.2)" }
+                back_by: { type: string, format: date-time, description: "Check-out: when the author expects to be back, from an hour ago to a week ahead (section 8.3); needs the outing capability" }
+                back_from: { type: string, description: "Id of the check-out this team message closes; the author or a leader (section 8.3)" }
       responses:
         "200":
           description: Stored (or already stored by an identical retry)
@@ -709,7 +711,7 @@ components:
         version: { type: string }
         capabilities:
           type: array
-          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg] }
+          items: { type: string, examples: [sync, files, realtime, roles, history, settings, export, comments, package, push, alerts, create, view, samples, sections, kml, routes, checks, rollcall, gpkg, outing] }
         max_upload_bytes: { type: integer }
         max_push_batch: { type: integer }
 
@@ -794,6 +796,8 @@ components:
         urgent: { type: boolean, default: false, description: "Urgent team message (section 8.1)" }
         roll_call: { type: boolean, default: false, description: "Roll call started by a leader (section 8.2)" }
         answer_to: { type: string, description: "The roll call this message answers (section 8.2)" }
+        back_by: { type: string, format: date-time, description: "Check-out with an expected return time (section 8.3)" }
+        back_from: { type: string, description: "The check-out this message closes (section 8.3)" }
 
     Sync:
       type: object
@@ -876,8 +880,8 @@ components:
 
     PushEvent:
       type: string
-      enum: [message, comment, task, alert, rollcall]
-      description: "alert and rollcall are always delivered, whatever a target subscribed to"
+      enum: [message, comment, task, alert, rollcall, overdue]
+      description: "alert, rollcall and overdue are always delivered, whatever a target subscribed to"
     PushTarget:
       type: object
       required: [endpoint, events, updated_at]
