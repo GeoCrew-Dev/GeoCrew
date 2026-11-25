@@ -43,7 +43,7 @@ geocrew-server -addr :8080 -data /var/lib/geocrew
 
 每次发布都附带各平台程序、`SHA256SUMS` 和更新说明（按提交记录自动生成）。服务端每天查一次有没有新版本，有就在日志里提示一行；不想联网检查可以设 `GEOCREW_UPDATE_CHECK=false`，用自己的镜像源可以设 `GEOCREW_UPDATE_URL`（GitHub 接口格式）。
 
-**管理页**：设 `GEOCREW_ADMIN_ADDR=127.0.0.1:9181` 后，在这个地址另开一个管理页，显示当前版本、数据库、最新版本和更新说明。令牌用 `GEOCREW_ADMIN_TOKEN` 指定（至少 16 位），不指定就在数据目录生成 `admin-token` 文件（只有服务用户可读）。管理页能替换程序，请只监听本机，用 `ssh -L 9181:127.0.0.1:9181 服务器` 访问，不要通过反向代理公开。
+**管理页**：设 `GEOCREW_ADMIN_ADDR=127.0.0.1:9181` 后，在这个地址另开一个管理页，显示当前版本、数据库、最新版本和更新说明，以及概览：各工作组的组长、成员数、记录数、附件占用和最近活动，数据库大小、剩余磁盘空间和定时备份（`/api/overview` 给出同样内容的 JSON，带令牌访问）。令牌用 `GEOCREW_ADMIN_TOKEN` 指定（至少 16 位），不指定就在数据目录生成 `admin-token` 文件（只有服务用户可读）。管理页能替换程序，请只监听本机，用 `ssh -L 9181:127.0.0.1:9181 服务器` 访问，不要通过反向代理公开。
 
 **一键更新（单文件部署）**：在管理页点「更新到 x.y.z」，或者运行 `geocrew-server -data /var/lib/geocrew admin update apply`。过程是：
 
@@ -87,7 +87,7 @@ docker compose pull && docker compose up -d
 | `-backup-every` | `GEOCREW_BACKUP_EVERY` | `24h` | 定时备份间隔，至少 `10m` |
 | `-backup-keep` | `GEOCREW_BACKUP_KEEP` | `7` | 保留最近几份数据库快照 |
 | `-metrics-addr` | `GEOCREW_METRICS_ADDR` | 空 | 在这个地址另开一个端口提供 `/metrics`（Prometheus 文本格式），如 `127.0.0.1:9180`；空表示不提供 |
-| `-admin-addr` | `GEOCREW_ADMIN_ADDR` | 空 | 管理页地址（版本、更新说明、一键更新），如 `127.0.0.1:9181`；空表示不开 |
+| `-admin-addr` | `GEOCREW_ADMIN_ADDR` | 空 | 管理页地址（版本、更新说明、一键更新、工作组与备份概览），如 `127.0.0.1:9181`；空表示不开 |
 | `-admin-token` | `GEOCREW_ADMIN_TOKEN` | 空 | 管理页令牌，至少 16 位；空则生成在数据目录的 `admin-token` |
 | `-update-check` | `GEOCREW_UPDATE_CHECK` | `true` | 每天检查一次新版本并写日志 |
 | `-update-url` | `GEOCREW_UPDATE_URL` | GitHub Releases | 版本检查地址（GitHub 接口格式，自建镜像或分叉时改） |

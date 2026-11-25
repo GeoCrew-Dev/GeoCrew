@@ -13,6 +13,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/overview"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/update"
 )
 
@@ -33,6 +35,18 @@ var page = template.Must(template.New("page.html").Funcs(template.FuncMap{
 			return ""
 		}
 		return t.In(time.Local).Format("2006-01-02 15:04")
+	},
+	"size": size,
+	"ago":  ago,
+	"join": func(s []string) string {
+		if len(s) == 0 {
+			return "—"
+		}
+		out := s[0]
+		for _, x := range s[1:] {
+			out += "、" + x
+		}
+		return out
 	},
 }).ParseFS(pages, "page.html"))
 
@@ -52,6 +66,9 @@ type Options struct {
 	Log     *slog.Logger
 	// CacheFor is how long a release check is reused; zero means 10 minutes.
 	CacheFor time.Duration
+	// Overview sums up the workspaces, backups and disk; nil hides it.
+	// It is reused for a minute, since it reads every record.
+	Overview func(ctx context.Context) (overview.Overview, error)
 }
 
 type console struct {
@@ -62,6 +79,10 @@ type console struct {
 	checkErr  string
 	checkedAt time.Time
 	applying  bool
+
+	summary    *overview.Overview
+	summaryAt  time.Time
+	summaryErr string
 }
 
 const cookieName = "geocrew_admin"
@@ -80,6 +101,7 @@ func Handler(o Options) http.Handler {
 	mux.HandleFunc("POST /login", c.login)
 	mux.HandleFunc("POST /update", c.authed(c.sameOrigin(c.apply)))
 	mux.HandleFunc("GET /api/update", c.authed(c.status))
+	mux.HandleFunc("GET /api/overview", c.authed(c.overviewJSON))
 	return secure(mux)
 }
 
@@ -168,6 +190,9 @@ type view struct {
 
 	Last    *update.State
 	Refresh bool
+
+	Summary    *overview.Overview
+	SummaryErr string
 }
 
 func (c *console) render(w http.ResponseWriter, code int, v view) {
@@ -217,7 +242,79 @@ func (c *console) base(ctx context.Context, force bool) view {
 	c.mu.Lock()
 	v.Applying = c.applying
 	c.mu.Unlock()
+	v.Summary, v.SummaryErr = c.summarize(ctx, force)
 	return v
+}
+
+// summarize returns the overview, from cache unless it is a minute old or force.
+func (c *console) summarize(ctx context.Context, force bool) (*overview.Overview, string) {
+	if c.o.Overview == nil {
+		return nil, ""
+	}
+	c.mu.Lock()
+	if !force && c.summary != nil && time.Since(c.summaryAt) < time.Minute {
+		defer c.mu.Unlock()
+		return c.summary, ""
+	}
+	c.mu.Unlock()
+	ov, err := c.o.Overview(ctx)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err != nil {
+		c.o.Log.Warn("console overview", "err", err)
+		return c.summary, "概览读取失败：" + err.Error()
+	}
+	c.summary, c.summaryAt = &ov, time.Now()
+	return c.summary, ""
+}
+
+func (c *console) overviewJSON(w http.ResponseWriter, r *http.Request) {
+	if c.o.Overview == nil {
+		http.NotFound(w, r)
+		return
+	}
+	ov, msg := c.summarize(r.Context(), r.URL.Query().Has("fresh"))
+	if ov == nil {
+		http.Error(w, msg, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ov)
+}
+
+func size(n int64) string {
+	switch {
+	case n < 0:
+		return "未知"
+	case n < 1<<10:
+		return fmt.Sprintf("%d B", n)
+	case n < 1<<20:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	case n < 1<<30:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	default:
+		return fmt.Sprintf("%.2f GB", float64(n)/(1<<30))
+	}
+}
+
+// ago says how long ago t was, roughly, in Chinese.
+func ago(t time.Time) string {
+	if t.IsZero() {
+		return "还没有活动"
+	}
+	d := time.Since(t)
+	switch {
+	case d < 2*time.Minute:
+		return "刚刚"
+	case d < time.Hour:
+		return fmt.Sprintf("%d 分钟前", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d 小时前", int(d.Hours()))
+	case d < 60*24*time.Hour:
+		return fmt.Sprintf("%d 天前", int(d.Hours()/24))
+	default:
+		return t.In(time.Local).Format("2006-01-02")
+	}
 }
 
 func (c *console) index(w http.ResponseWriter, r *http.Request) {

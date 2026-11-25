@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/overview"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/update"
 )
 
@@ -115,6 +116,36 @@ func TestConsoleDevBuild(t *testing.T) {
 	h := Handler(Options{Version: "dev", Engine: "sqlite", DataDir: t.TempDir(), Token: "t", Checker: &update.Checker{URL: feed.URL}})
 	if body := do(h, "GET", "/", nil, "t", nil).Body.String(); strings.Contains(body, "有新版本") {
 		t.Fatal("a development build is not offered releases")
+	}
+}
+
+func TestConsoleOverview(t *testing.T) {
+	feed := releaseFeed(t, "1.0.0")
+	var builds atomic.Int32
+	h := Handler(Options{Version: "1.0.0", Engine: "sqlite", DataDir: t.TempDir(), Token: "t", Checker: &update.Checker{URL: feed.URL},
+		Overview: func(context.Context) (overview.Overview, error) {
+			builds.Add(1)
+			return overview.Overview{
+				Workspaces: []overview.Workspace{{ID: "w1", Name: "东山<填图>", Members: 3, Leaders: []string{"老王"}, Records: 42, FileBytes: 3 << 20}},
+				Members:    3, Records: 42, FileBytes: 3 << 20, FreeBytes: 10 << 30,
+			}, nil
+		}})
+	body := do(h, "GET", "/", nil, "t", nil).Body.String()
+	for _, want := range []string{"东山&lt;填图&gt;", "老王", "42", "3.0 MB", "10.00 GB", "未开启"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in\n%s", want, body)
+		}
+	}
+	do(h, "GET", "/", nil, "t", nil)
+	if builds.Load() != 1 {
+		t.Fatalf("the overview should be cached, built %d times", builds.Load())
+	}
+	w := do(h, "GET", "/api/overview?fresh", nil, "t", nil)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"records":42`) || builds.Load() != 2 {
+		t.Fatal(w.Code, w.Body.String(), builds.Load())
+	}
+	if w := do(h, "GET", "/api/overview", nil, "", nil); w.Code == http.StatusOK {
+		t.Fatal("the overview needs the token")
 	}
 }
 

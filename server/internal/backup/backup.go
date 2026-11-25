@@ -107,6 +107,12 @@ func Once(ctx context.Context, st store.Backuper, o Options) (string, error) {
 	return name, nil
 }
 
+// SnapshotTime reads when a snapshot was taken from its file name.
+func SnapshotTime(path string) (time.Time, error) {
+	n := filepath.Base(path)
+	return time.Parse(layout, strings.TrimSuffix(strings.TrimPrefix(n, prefix), suffix))
+}
+
 // Snapshots lists the snapshots in dir, oldest first.
 func Snapshots(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)

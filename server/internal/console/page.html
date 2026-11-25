@@ -25,6 +25,11 @@ input[type=password] { padding:6px 8px; border:1px solid var(--line); border-rad
 button { padding:6px 16px; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
 a.button { display:inline-block; padding:5px 14px; border:1px solid var(--line); border-radius:6px; color:var(--fg); text-decoration:none; }
 .notice { border-color:var(--good); }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th, td { text-align:left; padding:4px 8px 4px 0; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:var(--muted); font-weight:normal; }
+td.n, th.n { text-align:right; white-space:nowrap; }
+.scroll { overflow-x:auto; }
 .error { border-color:var(--bad); }
 </style>
 </head>
@@ -55,6 +60,30 @@ a.button { display:inline-block; padding:5px 14px; border:1px solid var(--line);
     {{if .Error}}（{{.Error}}）{{end}}</p>
   {{end}}
 </section>
+{{with .Summary}}
+<section>
+  <h2>概览</h2>
+  <dl>
+    <dt>工作组</dt><dd>{{len .Workspaces}} 个，{{.Members}} 位成员，{{.Records}} 条记录</dd>
+    <dt>附件</dt><dd>{{size .FileBytes}}</dd>
+    {{if .DatabaseBytes}}<dt>数据库文件</dt><dd>{{size .DatabaseBytes}}</dd>{{end}}
+    <dt>剩余空间</dt><dd>{{size .FreeBytes}}</dd>
+    <dt>定时备份</dt><dd>{{if .BackupDir}}{{with .Backups}}{{len .}} 份，最新 {{with index . 0}}{{when .At}}（{{size .Bytes}}）{{end}}{{else}}<span class="bad">目录里还没有备份</span>{{end}}{{else}}<span class="muted">未开启（GEOCREW_BACKUP_DIR）</span>{{end}}</dd>
+  </dl>
+  {{if .Workspaces}}
+  <div class="scroll"><table>
+    <tr><th>工作组</th><th>组长</th><th class="n">成员</th><th class="n">记录</th><th class="n">附件</th><th>最近活动</th></tr>
+    {{range .Workspaces}}
+    <tr><td>{{.Name}}{{if .Archived}} <span class="muted">已归档</span>{{end}}<div class="muted">{{.ID}}</div></td>
+      <td>{{join .Leaders}}</td><td class="n">{{.Members}}</td><td class="n">{{.Records}}</td>
+      <td class="n">{{size .FileBytes}}</td><td>{{ago .LastActive}}</td></tr>
+    {{end}}
+  </table></div>
+  {{end}}
+  <p class="muted">{{when .At}} 统计，每分钟最多重算一次。删除、归档等操作用 admin 命令。</p>
+</section>
+{{end}}
+{{if $.SummaryErr}}<section class="error"><p class="bad">{{$.SummaryErr}}</p></section>{{end}}
 <section>
   <h2>新版本</h2>
   {{if .CheckErr}}<p class="bad">{{.CheckErr}}</p>

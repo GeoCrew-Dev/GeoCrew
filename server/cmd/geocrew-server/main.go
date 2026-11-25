@@ -21,6 +21,7 @@ import (
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/config"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/console"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/overview"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/postgres"
@@ -207,6 +208,11 @@ func serve(cfg config.Config, log *slog.Logger, trial *trialRun) error {
 		if !opts.Docker {
 			opts.Apply = installer(cfg, db, self)
 		}
+		ovo := overview.Options{Files: files, DataDir: cfg.DataDir, BackupDir: cfg.BackupDir}
+		if db.Dialect() == "sqlite" {
+			ovo.Database = filepath.Join(cfg.DataDir, "geocrew.db")
+		}
+		opts.Overview = func(ctx context.Context) (overview.Overview, error) { return overview.Build(ctx, db, ovo) }
 		adminSrv := &http.Server{Addr: cfg.AdminAddr, Handler: console.Handler(opts), ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			log.Info("operator console listening", "addr", cfg.AdminAddr)
