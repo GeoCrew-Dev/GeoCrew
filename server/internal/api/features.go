@@ -257,14 +257,9 @@ func (s *Server) exportPackage(w http.ResponseWriter, r *http.Request) {
 // of the sampling times; it defaults to UTC.
 func (s *Server) exportSamples(w http.ResponseWriter, r *http.Request) {
 	ws := r.PathValue("ws")
-	zone := time.UTC
-	if v := r.URL.Query().Get("tz_offset"); v != "" {
-		m, err := strconv.Atoi(v)
-		if err != nil || m < -14*60 || m > 14*60 {
-			writeErr(w, http.StatusBadRequest, "bad_tz_offset", "tz_offset must be minutes east of UTC, -840 to 840")
-			return
-		}
-		zone = time.FixedZone("", m*60)
+	zone, ok := tzOffset(w, r)
+	if !ok {
+		return
 	}
 	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
 		s.fail(w, r, err)
@@ -275,6 +270,41 @@ func (s *Server) exportSamples(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if _, err := export.Samples(r.Context(), s.Store, ws, zone, w); err != nil {
 		s.logger().Error("export samples", "workspace", ws, "err", err)
+	}
+}
+
+// tzOffset reads the optional tz_offset query (minutes east of UTC) for
+// exports that group or print by local time; UTC without it. On a bad
+// value it writes the error and returns false.
+func tzOffset(w http.ResponseWriter, r *http.Request) (*time.Location, bool) {
+	v := r.URL.Query().Get("tz_offset")
+	if v == "" {
+		return time.UTC, true
+	}
+	m, err := strconv.Atoi(v)
+	if err != nil || m < -14*60 || m > 14*60 {
+		writeErr(w, http.StatusBadRequest, "bad_tz_offset", "tz_offset must be minutes east of UTC, -840 to 840")
+		return nil, false
+	}
+	return time.FixedZone("", m*60), true
+}
+
+// exportWorkload downloads the team's work per day and member as CSV.
+func (s *Server) exportWorkload(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	zone, ok := tzOffset(w, r)
+	if !ok {
+		return
+	}
+	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="workload.csv"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := export.Workload(r.Context(), s.Store, ws, zone, w); err != nil {
+		s.logger().Error("export workload", "workspace", ws, "err", err)
 	}
 }
 

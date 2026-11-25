@@ -80,6 +80,7 @@
       <button id="sections" type="button">下载剖面分层表</button>
       <button id="boreholes" type="button">下载钻孔分层表</button>
       <button id="structures" type="button">下载产状表</button>
+      <button id="workload" type="button">下载工作量统计</button>
       <button id="routes" type="button">下载路线记录表</button>
     </div>
     <ul id="list"></ul>
@@ -982,6 +983,7 @@
     $("samples").onclick = () => download("/export.samples.csv?tz_offset=" + (-new Date().getTimezoneOffset()), "geocrew-" + WS + "-samples.csv");
     $("sections").onclick = () => download("/export.sections.csv", "geocrew-" + WS + "-sections.csv");
     $("boreholes").onclick = () => download("/export.boreholes.csv", "geocrew-" + WS + "-boreholes.csv");
+    $("workload").onclick = () => download("/export.workload.csv?tz_offset=" + (-new Date().getTimezoneOffset()), "geocrew-" + WS + "-workload.csv");
     $("structures").onclick = () => download("/export.structures.csv", "geocrew-" + WS + "-structures.csv");
     $("routes").onclick = () => download("/export.routes.csv", "geocrew-" + WS + "-routes.csv");
 
