@@ -154,10 +154,12 @@ def seams():
             for lon, lat in grid(1.0):
                 tx, ty = mercator(lon, lat)
                 fx, fy = mercator(*forward(lon, lat))
-                lon2 = lon + math.degrees(size / EARTH)  # the centre of the tile to the east
-                gx, gy = mercator(*forward(lon2, lat))
-                ux, uy = mercator(lon2, lat)
-                gaps.append(math.hypot((gx - ux) - (fx - tx), (gy - uy) - (fy - ty)) / pixel)
+                east = (lon + math.degrees(size / EARTH), lat)
+                north = (lon, math.degrees(2 * math.atan(math.exp((ty + size) / EARTH)) - math.pi / 2))
+                for nlon, nlat in (east, north):  # the centres of the neighbouring tiles
+                    gx, gy = mercator(*forward(nlon, nlat))
+                    ux, uy = mercator(nlon, nlat)
+                    gaps.append(math.hypot((gx - ux) - (fx - tx), (gy - uy) - (fy - ty)) / pixel)
             print("%-6s zoom %2d: seam between neighbouring shifted tiles %s" % (name, zoom, summary(gaps, "px")))
 
 
