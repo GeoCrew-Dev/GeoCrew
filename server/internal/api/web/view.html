@@ -534,19 +534,45 @@
 
   // Track replay (protocol v0 §6.13): the shown tracks that carry times_s
   // can be played back, each walker as a marker where they were at the time.
+  // A track's coordinates and fix times in ms, or null without usable times_s.
+  function timedOf(f) {
+    const p = f.properties || {};
+    if (p.kind !== "track" || !f.geometry || f.geometry.type !== "LineString") return null;
+    const cs = f.geometry.coordinates, ts = p.times_s, t0 = Date.parse(p.started_at);
+    if (!Array.isArray(ts) || ts.length !== cs.length || cs.length < 2 || isNaN(t0)) return null;
+    let ok = true, last = -Infinity;
+    const ms = ts.map((x) => { if (!Number.isInteger(x) || x < last) ok = false; last = x; return t0 + x * 1000; });
+    return ok ? { cs, ms } : null;
+  }
   function timedTracks() {
     const out = [];
     for (const f of features.values()) {
-      const p = f.properties || {};
-      if (p.kind !== "track" || !shown(f) || !f.geometry || f.geometry.type !== "LineString") continue;
-      const cs = f.geometry.coordinates, ts = p.times_s, t0 = Date.parse(p.started_at);
-      if (!Array.isArray(ts) || ts.length !== cs.length || cs.length < 2 || isNaN(t0)) continue;
-      let ok = true, last = -Infinity;
-      const ms = ts.map((x) => { if (!Number.isInteger(x) || x < last) ok = false; last = x; return t0 + x * 1000; });
-      if (ok) out.push({ id: f.id, cs, ms, name: members.get(by(f)) || p.title || "轨迹" });
+      const t = shown(f) && timedOf(f);
+      if (t) out.push({ id: f.id, cs: t.cs, ms: t.ms, name: members.get(by(f)) || (f.properties || {}).title || "轨迹" });
     }
     return out;
   }
+  const haversine = (a, b) => {
+    const r = Math.PI / 180;
+    const h = Math.sin((b[1] - a[1]) * r / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin((b[0] - a[0]) * r / 2) ** 2;
+    return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(h)));
+  };
+  // Walking time and stops, as the Android track details show them: a stop is
+  // a run of fixes within 30 m of its first for at least 5 minutes, and a gap
+  // of over 10 minutes between fixes is time not recorded.
+  function trackTiming(t) {
+    const { cs, ms } = t, GAP = 10 * 60e3, stops = [];
+    for (let i = 0; i < cs.length;) {
+      let j = i + 1;
+      while (j < cs.length && haversine(cs[i], cs[j]) <= 30 && ms[j] - ms[j - 1] <= GAP) j++;
+      if (ms[j - 1] - ms[i] >= 5 * 60e3) { stops.push([ms[i], ms[j - 1]]); i = j; } else i++;
+    }
+    let gaps = 0, len = 0;
+    for (let k = 1; k < cs.length; k++) { if (ms[k] - ms[k - 1] > GAP) gaps += ms[k] - ms[k - 1]; len += haversine(cs[k - 1], cs[k]); }
+    const total = ms[ms.length - 1] - ms[0], stopped = stops.reduce((a, s) => a + s[1] - s[0], 0);
+    return { start: ms[0], end: ms[ms.length - 1], total, moving: Math.max(0, total - stopped - gaps), gaps, len, stops, stopped };
+  }
+  const spell = (msec) => { const m = Math.round(msec / 60e3); return m < 60 ? m + " 分钟" : Math.floor(m / 60) + " 小时" + (m % 60 ? " " + m % 60 + " 分" : ""); };
   let replay = [], rmin = 0, rmax = 0, rtimer = null, ractive = false;
   const rmarks = new Map();
   const replayTime = () => rmin + (rmax - rmin) * Number($("rt").value) / 1000;
@@ -789,6 +815,13 @@
     if (typeof p.trend === "number" && typeof p.plunge === "number") {
       const pad = (v, n) => String(Math.round(v)).padStart(n, "0");
       row(typeof p.lineation_type === "string" && p.lineation_type ? p.lineation_type : "线理", pad(p.trend, 3) + "°∠" + pad(p.plunge, 2) + "°");
+    }
+    const timed = k === "track" && timedOf(f);
+    if (timed) {
+      const tt = trackTiming(timed), hm = (t) => new Date(t).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" });
+      row("时间", when(tt.start) + " – " + hm(tt.end) + "（" + spell(tt.total) + "）");
+      row("行进", spell(tt.moving) + (tt.moving > 0 ? "，平均 " + (tt.len / tt.moving * 3600).toFixed(1) + " km/h" : "") + (tt.gaps ? "；中断未记录 " + spell(tt.gaps) : ""));
+      if (tt.stops.length) row("停留", tt.stops.length + " 处，共 " + spell(tt.stopped) + "：" + tt.stops.slice(0, 6).map((x) => hm(x[0]) + " 起 " + spell(x[1] - x[0])).join("、") + (tt.stops.length > 6 ? " 等" : ""));
     }
     if (typeof p.length_m === "number") row("长度", p.length_m >= 1000 ? (p.length_m / 1000).toFixed(2) + " km" : Math.round(p.length_m) + " m");
     if (typeof p.area_m2 === "number") row("面积", p.area_m2 >= 1e6 ? (p.area_m2 / 1e6).toFixed(3) + " km²" : Math.round(p.area_m2) + " m²");
