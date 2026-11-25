@@ -65,6 +65,8 @@
   .pop .talk { border-top: 1px solid #ddd; margin-top: 6px; padding-top: 4px; font-size: 12px; }
   #gate { max-width: 520px; margin: 15vh auto; padding: 0 20px; }
   @media (max-width: 700px) { #app { flex-direction: column-reverse; } #side { width: 100%; max-width: none; height: 40%; border-right: 0; border-top: 1px solid var(--line); } }
+  #aidlg { max-width: 34em; border: 1px solid #ccc; border-radius: 8px; }
+  #aidlg pre { white-space: pre-wrap; word-break: break-all; background: #f4f4f4; padding: 6px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -89,6 +91,7 @@
       <button id="structures" type="button">下载产状表</button>
       <button id="workload" type="button">下载工作量统计</button>
       <button id="routes" type="button">下载路线记录表</button>
+      <button id="ai" type="button" hidden title="在支持 MCP 的 AI 工具里只读查询本组">接入 AI 工具</button>
     </div>
     <ul id="list"></ul>
   </aside>
@@ -100,6 +103,13 @@
   <h1>同勘 GeoCrew</h1>
   <p id="gatemsg">这个页面需要组员在手机上生成的查看链接：工作组页 →「在电脑上查看」。链接只读，到期自动失效。</p>
 </div>
+<dialog id="aidlg">
+  <p>在 AI 工具（支持 MCP 的聊天客户端或编辑器）里添加一个远程 MCP 服务器（Streamable HTTP）：</p>
+  <p>地址</p><pre id="aiurl"></pre>
+  <p>请求头</p><pre id="aihdr"></pre>
+  <p>用的是这个查看链接的令牌：只读，和链接同时到期或撤销。只填进你信任的工具。</p>
+  <form method="dialog"><button id="aicopy" type="button">复制地址</button> <button id="aicopyh" type="button">复制令牌</button> <button>关闭</button></form>
+</dialog>
 <script>
 "use strict";
 (() => {
@@ -1210,6 +1220,21 @@
     $("structures").onclick = () => download("/export.structures.csv", "geocrew-" + WS + "-structures.csv");
     $("routes").onclick = () => download("/export.routes.csv", "geocrew-" + WS + "-routes.csv");
 
+    // Offer the read-only MCP endpoint (protocol §11) when the server has it.
+    fetch("/api/v0/info").then((r) => r.json()).then((info) => {
+      if (!(info.capabilities || []).includes("mcp")) return;
+      const url = location.origin + API + "/mcp";
+      $("ai").hidden = false;
+      $("ai").onclick = () => {
+        $("aiurl").textContent = url;
+        $("aihdr").textContent = "Authorization: Bearer " + TOKEN;
+        $("aicopy").textContent = "复制地址"; $("aicopyh").textContent = "复制令牌";
+        $("aidlg").showModal();
+      };
+      const copy = (text, btn) => navigator.clipboard?.writeText(text).then(() => { btn.textContent = "已复制"; });
+      $("aicopy").onclick = () => copy(url, $("aicopy"));
+      $("aicopyh").onclick = () => copy("Bearer " + TOKEN, $("aicopyh"));
+    }).catch(() => {});
     showWorkspace(await (await api("")).json());
     $("legend").onclick = () => { legendOpen = !legendOpen; renderLegend(); };
     await loadMembers();
