@@ -78,6 +78,9 @@ data class StereonetUi(
     val density: Stereonet.Density? = null,
     /** Shape of the pole distribution and, for a girdle, the fold axis. */
     val fabric: org.geocrew.core.gis.Fabric? = null,
+    /** Linear structures (trend/plunge) of the same records, plotted as squares. */
+    val lines: List<Lineation> = emptyList(),
+    val lineStats: FisherStats? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -92,14 +95,24 @@ class StereonetViewModel @Inject constructor(
     private val readings = projects.current.map { it.id }.distinctUntilChanged()
         .flatMapLatest { features.observeProject(it) }
         .map { list ->
-            list.mapNotNull { f -> Attitude.fromProperties(f.properties)?.let { (f.properties.string(Props.LITHOLOGY)?.trim().orEmpty()) to it } }
+            list.mapNotNull { f ->
+                val a = Attitude.fromProperties(f.properties)
+                val l = org.geocrew.core.model.Plunge.fromProperties(f.properties)?.let { Lineation(it.trend, it.plunge) }
+                if (a == null && l == null) null else Reading(f.properties.string(Props.LITHOLOGY)?.trim().orEmpty(), a, l)
+            }
         }
 
+    private data class Reading(val group: String, val plane: Attitude?, val line: Lineation?)
+
     val ui: StateFlow<StereonetUi> = combine(readings, group, display) { all, g, d ->
-        val chosen = all.filter { g == null || it.first == g }.map { it.second }
+        val picked = all.filter { g == null || it.group == g }
+        val chosen = picked.mapNotNull { it.plane }
+        val lines = picked.mapNotNull { it.line }
         StereonetUi(
             attitudes = chosen,
-            groups = all.map { it.first }.distinct().sorted(),
+            lines = lines,
+            lineStats = Stereonet.fisher(lines),
+            groups = all.map { it.group }.distinct().sorted(),
             group = g,
             display = d,
             stats = Stereonet.fisher(chosen.map(Stereonet::pole)),
@@ -163,8 +176,15 @@ fun StereonetScreen(onBack: () -> Unit, viewModel: StereonetViewModel = hiltView
 @Composable
 private fun Summary(ui: StereonetUi) {
     val s = ui.stats
+    ui.lineStats?.let { ls ->
+        Text(
+            "线状构造 ${ls.count} 条（图中方块）· 平均 %03.0f°∠%02.0f°".format(ls.mean.trend, ls.mean.plunge) +
+                (ls.alpha95?.let { " · α95 %.1f°".format(it) } ?: ""),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
     if (s == null) {
-        Text("当前工程还没有产状记录。用罗盘测量，或在记录详情里填写倾向和倾角。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (ui.lineStats == null) Text("当前工程还没有产状记录。用罗盘测量，或在记录详情里填写倾向和倾角。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -227,6 +247,8 @@ private fun Net(ui: StereonetUi, modifier: Modifier) {
     val label = MaterialTheme.typography.labelMedium.copy(color = outline)
     val poles = remember(ui.attitudes) { ui.attitudes.map { Stereonet.project(Stereonet.pole(it)) } }
     val circles = remember(ui.attitudes) { ui.attitudes.map { Stereonet.greatCircle(it, steps = 60) } }
+    val lineDots = remember(ui.lines) { ui.lines.map(Stereonet::project) }
+    val lineColor = MaterialTheme.colorScheme.secondary
 
     Canvas(modifier.padding(16.dp)) {
         val r = size.minDimension / 2
@@ -262,6 +284,11 @@ private fun Net(ui: StereonetUi, modifier: Modifier) {
         }
         if (ui.display == NetDisplay.PLANES || ui.display == NetDisplay.BOTH) circles.forEach { line(it, plane.copy(alpha = 0.7f), 1.5.dp.toPx()) }
         if (ui.display == NetDisplay.POLES || ui.display == NetDisplay.BOTH) poles.forEach { drawCircle(pole, 3.5.dp.toPx(), at(it)) }
+        lineDots.forEach { o ->
+            val q = at(o)
+            val h = 3.5.dp.toPx()
+            drawRect(lineColor, topLeft = Offset(q.x - h, q.y - h), size = androidx.compose.ui.geometry.Size(2 * h, 2 * h))
+        }
         ui.stats?.let { s -> meanMarker(at(Stereonet.project(s.mean)), mean) }
         ui.fabric?.takeIf { it.shape == org.geocrew.core.gis.Fabric.Shape.GIRDLE }?.let { f ->
             val pts = Stereonet.greatCircle(f.girdle, steps = 90)

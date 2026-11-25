@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -199,6 +200,13 @@ fun FeatureDetailScreen(
                 SectionHeader("产状")
                 AttitudeEditor(f.attitude, viewModel::setAttitude, onMeasure = onMeasureAttitude?.let { { it(f.id) } })
             }
+            if (f.kind == FeatureKind.GEO_POINT || f.plunge != null || f.lineStyle != null) {
+                SectionHeader("线状构造")
+                PlungeEditor(
+                    f.plunge, f.properties.string(Props.LINEATION_TYPE), f.attitude, viewModel::setPlunge,
+                    onMeasure = onMeasureAttitude?.let { { it(f.id) } },
+                )
+            }
             val fields = form.filter { it.appliesTo(f.kind) }
             if (fields.isNotEmpty()) {
                 SectionHeader("表单")
@@ -362,6 +370,68 @@ private fun LineStyleSwitch(current: LineStyle?, onChange: (LineStyle?) -> Unit)
         LineStyle.entries.forEach { ls ->
             FilterChip(selected = current == ls, onClick = { onChange(if (current == ls) null else ls) }, label = { Text(ls.label) })
         }
+    }
+}
+
+/** Trend and plunge of a lineation, striation or hinge, typed or from the compass. */
+@Composable
+private fun PlungeEditor(
+    current: org.geocrew.core.model.Plunge?,
+    type: String?,
+    plane: Attitude?,
+    onSave: (org.geocrew.core.model.Plunge?, String?) -> Unit,
+    onMeasure: (() -> Unit)?,
+) {
+    var trend by remember(current) { mutableStateOf(current?.let { "%.0f".format(it.trend) } ?: "") }
+    var plunge by remember(current) { mutableStateOf(current?.let { "%.0f".format(it.plunge) } ?: "") }
+    var kind by remember(type) { mutableStateOf(type ?: "线理") }
+    val t = trend.toDoubleOrNull()?.takeIf { it in 0.0..360.0 }
+    val p = plunge.toDoubleOrNull()?.takeIf { it in 0.0..90.0 }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("线理", "擦痕", "褶皱枢纽", "交面线", "拉伸线理").forEach { k ->
+                FilterChip(selected = kind == k, onClick = { kind = k }, label = { Text(k) })
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                trend, { trend = it }, label = { Text("倾伏向 °") },
+                singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                plunge, { plunge = it }, label = { Text("倾伏角 °") },
+                singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(enabled = t != null && p != null, onClick = { onSave(org.geocrew.core.model.Plunge.of(t!!, p!!), kind) }) { Text("保存") }
+            if (onMeasure != null) {
+                OutlinedButton(onClick = onMeasure) {
+                    Icon(Icons.Default.Explore, null)
+                    Text(" 罗盘测量")
+                }
+            }
+            if (current != null) TextButton(onClick = { onSave(null, null) }) { Text("清除") }
+        }
+        current?.let { l ->
+            Text("当前：${type ?: "线理"} ${l.format()}", style = MaterialTheme.typography.bodyMedium)
+            // A striation should lie in its fault plane; say how well it does and give its rake.
+            plane?.let { a ->
+                val off = l.offPlane(a)
+                val rake = l.rakeOn(a)
+                Text(
+                    buildString {
+                        rake?.let { append("在产状 ${a.format()} 的面上侧伏角 %.0f°（从走向 %.0f° 量起）".format(it, a.strike)) }
+                        append(if (rake != null) "；" else "")
+                        append("与该面夹角 %.0f°".format(off))
+                        if (off > 15) append("，不在这个面上，请核对")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (off > 15) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Text("罗盘页切到「线状」后，把手机长边贴着线测量。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

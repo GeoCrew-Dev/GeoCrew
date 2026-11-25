@@ -11,6 +11,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import org.geocrew.core.model.Attitude
+import org.geocrew.core.model.Plunge
 import org.geocrew.core.model.Geodesy
 import org.geocrew.core.model.LngLat
 import javax.inject.Inject
@@ -30,12 +31,18 @@ data class Orientation(
      * at the ground and has no useful direction).
      */
     val lookMagnetic: Double? = null,
+    /**
+     * The line the phone's long edge lies along (magnetic north), its
+     * downward end: for lineations, striations and fold hinges.
+     */
+    val axisMagnetic: Plunge? = null,
 ) {
     val isUnreliable get() = accuracy <= SensorManager.SENSOR_STATUS_ACCURACY_LOW
 
     fun azimuthTrue(declination: Double) = Geodesy.normalizeDegrees(azimuthMagnetic + declination)
     fun planeTrue(declination: Double) = Attitude.of(plane.dipDirection + declination, plane.dip)
     fun lookTrue(declination: Double) = lookMagnetic?.let { Geodesy.normalizeDegrees(it + declination) }
+    fun axisTrue(declination: Double) = axisMagnetic?.let { Plunge.of(it.trend + declination, it.plunge) }
 }
 
 @Singleton
@@ -65,7 +72,9 @@ class OrientationSource @Inject constructor(@ApplicationContext context: Context
             val east = -rotation[2].toDouble()
             val north = -rotation[5].toDouble()
             val look = if (Math.hypot(east, north) < 0.35) null else Geodesy.normalizeDegrees(Math.toDegrees(Math.atan2(east, north)))
-            trySend(Orientation(az, plane, magAccuracy, look))
+            // Second column of R: device y axis (the long edge, toward the top) in (east, north, up).
+            val axis = Plunge.fromVector(rotation[1].toDouble(), rotation[4].toDouble(), rotation[7].toDouble())
+            trySend(Orientation(az, plane, magAccuracy, look, axis))
         }
 
         val listener = object : SensorEventListener {

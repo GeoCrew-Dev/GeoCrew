@@ -352,6 +352,17 @@ class FeatureDetailViewModel @Inject constructor(
         }
     }
 
+    fun setPlunge(l: org.geocrew.core.model.Plunge?, type: String?) = viewModelScope.launch {
+        features.edit(id) {
+            if (l == null) {
+                remove(Props.TREND); remove(Props.PLUNGE); remove(Props.LINEATION_TYPE)
+            } else {
+                l.writeTo(this)
+                this[Props.LINEATION_TYPE] = type?.trim()?.ifEmpty { null }
+            }
+        }
+    }
+
     /** Sets a free attribute. Numbers are stored as numbers so analysis tools can use them. */
     fun setAttribute(key: String, raw: String) = viewModelScope.launch {
         val k = key.trim()

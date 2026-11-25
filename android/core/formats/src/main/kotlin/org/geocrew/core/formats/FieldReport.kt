@@ -117,6 +117,10 @@ data class FieldReport(
                     }
                 }
                 f.attitude?.let { add("产状" to it.format()) }
+                f.plunge?.let { l ->
+                    val type = f.properties.string(Props.LINEATION_TYPE)?.takeIf { it.isNotBlank() } ?: "线理"
+                    add(type to l.format())
+                }
                 f.properties.string(Props.LITHOLOGY)?.takeIf { it.isNotBlank() }?.let { add("岩性" to it) }
                 for (field in fields) {
                     if (!field.appliesTo(f.kind)) continue

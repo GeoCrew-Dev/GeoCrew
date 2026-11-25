@@ -76,6 +76,8 @@ data class GeoFeature(
     val note: String? get() = properties.string(Props.NOTE)
     val photos: List<String> get() = (properties[Props.PHOTOS] as? JsonArray)?.mapNotNull { it.stringOrNull() }.orEmpty()
     val attitude: Attitude? get() = Attitude.fromProperties(properties)
+    /** The linear structure measured here (lineation, striation, fold hinge), if any. */
+    val plunge: Plunge? get() = Plunge.fromProperties(properties)
 
     /** Returns a copy with [edit] applied to the properties and the sync revision bumped. */
     fun edited(at: Instant, geometry: Geometry? = this.geometry, edit: PropertiesBuilder.() -> Unit = {}): GeoFeature =
@@ -112,6 +114,11 @@ object Props {
     const val DIP_DIRECTION = "dip_direction"
     const val DIP = "dip"
     const val AZIMUTH = "azimuth"
+    /** Linear structure (protocol §6.12): trend (倾伏向, 0–360) and plunge (倾伏角, 0–90), see [Plunge]. */
+    const val TREND = "trend"
+    const val PLUNGE = "plunge"
+    /** What the linear structure is, e.g. 线理, 擦痕, 褶皱枢纽 (free text). */
+    const val LINEATION_TYPE = "lineation_type"
     const val LENGTH_M = "length_m"
     const val AREA_M2 = "area_m2"
     const val STARTED_AT = "started_at"
@@ -130,7 +137,7 @@ object Props {
 
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
-        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, BOREHOLE, LITHOLOGY, LINE_STYLE, MEET_AT, REVIEW, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
+        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, BOREHOLE, LITHOLOGY, LINE_STYLE, MEET_AT, REVIEW, STRIKE, DIP_DIRECTION, DIP, AZIMUTH, TREND, PLUNGE, LINEATION_TYPE,
         STARTED_AT, ENDED_AT, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
         ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS, ALT_SOURCE,
     )

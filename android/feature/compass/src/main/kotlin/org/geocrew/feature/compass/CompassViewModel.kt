@@ -16,6 +16,7 @@ import org.geocrew.core.data.repo.SettingsRepository
 import org.geocrew.core.model.Attitude
 import org.geocrew.core.model.FeatureKind
 import org.geocrew.core.model.Geometry
+import org.geocrew.core.model.Plunge
 import org.geocrew.core.model.Props
 import org.geocrew.core.sensors.Fix
 import org.geocrew.core.sensors.LocationSource
@@ -32,7 +33,16 @@ data class CompassReading(
     /** Max deviation (°) of recent readings from their mean; small = phone held still. */
     val spread: Double,
     val unreliable: Boolean,
+    /** Line along the phone's long edge, averaged like [plane]; null on old sensor stacks. */
+    val line: Plunge? = null,
+    val lineSpread: Double = 0.0,
 )
+
+/** What the compass measures: a plane (bedding, joint, fault) or a line (lineation, striation, hinge). */
+enum class CompassMode { PLANE, LINE }
+
+/** Kinds of linear structure offered when saving a line (stored as [Props.LINEATION_TYPE]). */
+val LINEATION_TYPES = listOf("线理", "擦痕", "褶皱枢纽", "交面线", "拉伸线理")
 
 @HiltViewModel
 class CompassViewModel @Inject constructor(
@@ -54,6 +64,16 @@ class CompassViewModel @Inject constructor(
     private val _held = MutableStateFlow<Attitude?>(null)
     val held: StateFlow<Attitude?> = _held.asStateFlow()
 
+    private val _mode = MutableStateFlow(CompassMode.PLANE)
+    val mode: StateFlow<CompassMode> = _mode.asStateFlow()
+
+    /** Frozen line measurement waiting to be saved, in [CompassMode.LINE]. */
+    private val _heldLine = MutableStateFlow<Plunge?>(null)
+    val heldLine: StateFlow<Plunge?> = _heldLine.asStateFlow()
+
+    private val _lineType = MutableStateFlow(LINEATION_TYPES.first())
+    val lineType: StateFlow<String> = _lineType.asStateFlow()
+
     private val _fix = MutableStateFlow<Fix?>(null)
     val fix: StateFlow<Fix?> = _fix.asStateFlow()
 
@@ -66,6 +86,7 @@ class CompassViewModel @Inject constructor(
     val saved: StateFlow<String?> = _saved.asStateFlow()
 
     private val window = ArrayDeque<Attitude>()
+    private val lineWindow = ArrayDeque<Plunge>()
     private var jobs = emptyList<Job>()
 
     fun start() {
@@ -78,7 +99,16 @@ class CompassViewModel @Inject constructor(
                     window.addLast(plane)
                     while (window.size > WINDOW) window.removeFirst()
                     val mean = Attitude.mean(window.toList()) ?: plane
-                    _reading.value = CompassReading(o.azimuthTrue(decl), mean, Attitude.spread(window.toList(), mean), o.isUnreliable)
+                    val axis = o.axisTrue(decl)
+                    if (axis != null) {
+                        lineWindow.addLast(axis)
+                        while (lineWindow.size > WINDOW) lineWindow.removeFirst()
+                    }
+                    val line = Plunge.mean(lineWindow.toList())
+                    _reading.value = CompassReading(
+                        o.azimuthTrue(decl), mean, Attitude.spread(window.toList(), mean), o.isUnreliable,
+                        line, line?.let { Plunge.spread(lineWindow.toList(), it) } ?: 0.0,
+                    )
                 }
             },
             viewModelScope.launch {
@@ -109,20 +139,41 @@ class CompassViewModel @Inject constructor(
         jobs = emptyList()
     }
 
+    fun setMode(m: CompassMode) {
+        _mode.value = m
+        release()
+    }
+
+    fun setLineType(t: String) { _lineType.value = t }
+
     fun hold() {
-        _held.value = _reading.value?.plane
+        when (_mode.value) {
+            CompassMode.PLANE -> _held.value = _reading.value?.plane
+            CompassMode.LINE -> _heldLine.value = _reading.value?.line
+        }
     }
 
     fun release() {
         _held.value = null
+        _heldLine.value = null
     }
 
     /** Writes the held attitude to the target feature, or creates a geological point at the current fix. */
     fun save() = viewModelScope.launch {
-        val a = _held.value ?: return@launch
+        val a = _held.value
+        val l = _heldLine.value
+        if (a == null && l == null) return@launch
+        val type = _lineType.value
+        val write: org.geocrew.core.model.PropertiesBuilder.() -> Unit = {
+            a?.writeTo(this)
+            if (l != null) {
+                l.writeTo(this)
+                this[Props.LINEATION_TYPE] = type
+            }
+        }
         val target = targetId
         if (target != null) {
-            features.edit(target) { a.writeTo(this) }
+            features.edit(target) { write() }
             _saved.value = target
             return@launch
         }
@@ -132,14 +183,14 @@ class CompassViewModel @Inject constructor(
         val created = features.create(p.id, FeatureKind.GEO_POINT, f?.let { Geometry.Point(it.position) }) {
             this[Props.TITLE] = name
             f?.accuracy?.let { this[Props.ACCURACY_M] = Math.round(it * 10) / 10.0 }
-            a.writeTo(this)
+            write()
         }
         _saved.value = created.id
     }
 
     fun savedHandled() {
         _saved.value = null
-        _held.value = null
+        release()
     }
 
     override fun onCleared() = stop()

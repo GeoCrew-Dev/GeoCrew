@@ -1,6 +1,7 @@
 package org.geocrew.feature.compass
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,6 +56,9 @@ fun CompassScreen(
     val declination by viewModel.declination.collectAsStateWithLifecycle()
     val fix by viewModel.fix.collectAsStateWithLifecycle()
     val saved by viewModel.saved.collectAsStateWithLifecycle()
+    val mode by viewModel.mode.collectAsStateWithLifecycle()
+    val heldLine by viewModel.heldLine.collectAsStateWithLifecycle()
+    val lineType by viewModel.lineType.collectAsStateWithLifecycle()
 
     DisposableEffect(Unit) {
         viewModel.start()
@@ -93,8 +97,21 @@ fun CompassScreen(
             )
             Text("手机顶端所指方位（真北）", style = MaterialTheme.typography.bodySmall)
 
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.FilterChip(
+                    selected = mode == CompassMode.PLANE, onClick = { viewModel.setMode(CompassMode.PLANE) },
+                    label = { Text("面状：层面、节理、断层面") },
+                )
+                androidx.compose.material3.FilterChip(
+                    selected = mode == CompassMode.LINE, onClick = { viewModel.setMode(CompassMode.LINE) },
+                    label = { Text("线状：线理、擦痕、枢纽") },
+                )
+            }
+
             val plane = held ?: r?.plane
-            Card(
+            if (mode == CompassMode.LINE) {
+                LineCard(r, heldLine, lineType, viewModel::setLineType)
+            } else Card(
                 Modifier.fillMaxWidth(),
                 colors = if (held != null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer) else CardDefaults.cardColors(),
             ) {
@@ -122,8 +139,9 @@ fun CompassScreen(
                 )
             }
 
+            val anyHeld = held != null || heldLine != null
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (held == null) {
+                if (!anyHeld) {
                     Button(onClick = viewModel::hold, enabled = r != null) { Text("锁定读数") }
                 } else {
                     OutlinedButton(onClick = viewModel::release) { Text("重新测量") }
@@ -131,7 +149,11 @@ fun CompassScreen(
                 }
             }
             Text(
-                "测量方法：把手机背面紧贴岩层面（或贴在放于层面上的平板上），屏幕朝上，读数稳定后锁定。",
+                if (mode == CompassMode.LINE) {
+                    "测量方法：把手机长边（侧面）贴着线理或擦痕放稳，屏幕朝哪边都可以；读的是线朝下倾伏的那一端，读数稳定后锁定。"
+                } else {
+                    "测量方法：把手机背面紧贴岩层面（或贴在放于层面上的平板上），屏幕朝上，读数稳定后锁定。"
+                },
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -171,5 +193,40 @@ private fun CompassRose(azimuth: Double, modifier: Modifier) {
         }
         // Fixed marker: the phone's top.
         drawLine(ring, Offset(c.x, c.y - radius * 1.0f), Offset(c.x, c.y - radius * 0.85f), strokeWidth = 8f)
+    }
+}
+
+/** Live or locked line along the phone's long edge, with the kind of structure to save it as. */
+@Composable
+private fun LineCard(r: CompassReading?, held: org.geocrew.core.model.Plunge?, type: String, onType: (String) -> Unit) {
+    val line = held ?: r?.line
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = if (held != null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer) else CardDefaults.cardColors(),
+    ) {
+        Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(if (held != null) "已锁定的倾伏向∠倾伏角" else "实时：手机长边所贴的线", style = MaterialTheme.typography.labelLarge)
+            Text(line?.format() ?: "—", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            line?.let { Text("倾伏向 %.0f° · 倾伏角 %.0f°".format(it.trend, it.plunge)) }
+            if (held == null && r != null) {
+                if (r.line == null) {
+                    Text("这台手机读不出长边方向", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                } else {
+                    Text(
+                        if (r.lineSpread < 2) "读数稳定，可以锁定" else "读数在晃动（±%.0f°），请把手机贴稳".format(r.lineSpread),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (r.lineSpread < 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+            Row(
+                Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                LINEATION_TYPES.forEach { t ->
+                    androidx.compose.material3.FilterChip(selected = type == t, onClick = { onType(t) }, label = { Text(t) })
+                }
+            }
+        }
     }
 }

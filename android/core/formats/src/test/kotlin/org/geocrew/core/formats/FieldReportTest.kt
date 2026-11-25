@@ -29,6 +29,9 @@ class FieldReportTest {
             this[Props.LITHOLOGY] = "灰岩"
             this[Props.DIP_DIRECTION] = 120.0
             this[Props.DIP] = 35.0
+            this[Props.TREND] = 210.0
+            this[Props.PLUNGE] = 30.0
+            this[Props.LINEATION_TYPE] = "擦痕"
             this["sample_no"] = "S-7"
             this[Props.NOTE] = "见腕足化石"
         },
@@ -57,6 +60,7 @@ class FieldReportTest {
         assertEquals("116.000000, 40.000000", facts["位置"])
         assertEquals("812 m", facts["海拔"])
         assertEquals("120°∠35°", facts["产状"])
+        assertEquals("210°∠30°", facts["擦痕"])
         assertEquals("灰岩", facts["岩性"])
         assertEquals("S-7", facts["样品编号"])
         assertEquals("见腕足化石", d2.note)
