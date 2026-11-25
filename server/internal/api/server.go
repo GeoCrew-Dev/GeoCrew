@@ -21,7 +21,7 @@ import (
 const ProtocolVersion = "0"
 
 // Capabilities advertised by /info so clients can adapt to older servers.
-var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "structures", "workload", "gpx"}
+var Capabilities = []string{"sync", "files", "realtime", "roles", "history", "settings", "export", "comments", "package", "alerts", "view", "samples", "sections", "kml", "routes", "checks", "rollcall", "gpkg", "outing", "boreholes", "structures", "workload", "gpx", "archive"}
 
 // Server wires the store, file storage and realtime hub into HTTP handlers.
 type Server struct {
