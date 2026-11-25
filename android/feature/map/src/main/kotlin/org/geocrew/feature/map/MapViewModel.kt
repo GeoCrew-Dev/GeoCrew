@@ -349,6 +349,7 @@ class MapViewModel @Inject constructor(
      * the public DEM (cached, so it works again offline); null unless a
      * line is being measured.
      */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val measureWalk: StateFlow<String?> = _mode
         .map { m -> (m as? MapMode.Draw)?.takeIf { it.measureOnly && !it.closed && it.vertices.size >= 2 }?.vertices }
         .distinctUntilChanged()
