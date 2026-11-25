@@ -687,7 +687,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | --- | --- | --- |
 | `workspace_summary` | 无 | 名称、是否归档、成员（昵称、角色、最近活动）、记录总数和按 `kind` 计数、样品数、最近修改时间 |
 | `search_records` | `query`（空格分隔、都要出现，在名称、岩性、描述、样品号里找，不分大小写）、`kind`、`member`（最近修改者昵称）、`since`（日期或 RFC 3339 时间）、`near_record`（某条记录的 id）或 `near_lon` 与 `near_lat`、`radius_m`（默认 1000，最多 100000）、`limit`（默认 20，最多 100） | `matched` 总数和记录摘要（id、kind、名称、岩性、描述前 160 字、样品号、首个坐标、修改时间与修改人）；按修改时间从新到旧，给了位置时按首个坐标的距离从近到远并带 `distance_m`，不含作为中心的那条记录 |
-| `get_record` | `id` | 完整要素（与拉取接口同格式）、最近修改人昵称、历史里较早版本的个数 |
+| `get_record` | `id`（记录 id；也可以是名称如 `D012`，只有一条记录叫这个名字时才认） | 完整要素（与拉取接口同格式）、最近修改人昵称、历史里较早版本的个数、这条记录的讨论（最近 50 条，旧的在前） |
 | `review_issues` | 无 | 与 `GET …/checks` 相同的待核对清单 |
 | `reference_at` | `record`（记录 id，取首个坐标）或 `lon` 与 `lat`、`reach_m`（默认 200，最多 5000） | 组长共享的参考图层（§2.2 `reference_layers`）在该处的结果：包含它的面（图层名、`color_by` 属性的值、最多 12 个属性）和 `reach_m` 内的线（同上，带 `distance_m`，从近到远）；没有参考图层时 `layers` 为 0 并带说明 |
 | `workload` | `from`、`to`（日期，含两端）、`tz_offset_minutes`（默认 480，即北京时间） | 与工作量统计表相同的列，每天每人一行；不限日期时带每人的合计行 |
