@@ -202,6 +202,18 @@ class TeamForms @Inject constructor(
         // An explicit null tells members the leader stopped using a grid; no key at all means it was never shared.
         val grid = shared.localGrid?.let { encodeGrid(it) } ?: JsonNull
         val keep = shared.localGrid != null || GRID_KEY in current
+        // Layer files go up first; one the server refuses as too large is left out rather than blocking every other setting.
+        val references = shared.references.filter { r ->
+            val file = referenceStore.stored(h.project.id, r.id) ?: return@filter h.api.hasFile(h.link.workspaceId, r.file)
+            if (h.api.hasFile(h.link.workspaceId, r.file)) return@filter true
+            try {
+                h.api.uploadFile(h.link.workspaceId, r.file, file, org.geocrew.core.model.SharedReference.TYPE)
+                true
+            } catch (e: org.geocrew.core.network.ApiException) {
+                if (e.status != 413) throw e
+                false
+            }
+        }
         val ours = buildMap<String, JsonElement> {
             put(FORM_KEY, encode(shared.fields))
             put(LEGEND_KEY, encodeLegend(shared.legend))
@@ -209,7 +221,7 @@ class TeamForms @Inject constructor(
             if (shared.overlays.isNotEmpty() || OVERLAYS_KEY in current) put(OVERLAYS_KEY, encodeOverlays(shared.overlays))
             if (shared.basemaps.isNotEmpty() || BASEMAPS_KEY in current) put(BASEMAPS_KEY, encodeBasemaps(shared.basemaps))
             if (shared.phrases.isNotEmpty() || PHRASES_KEY in current) put(PHRASES_KEY, encodePhrases(shared.phrases))
-            if (shared.references.isNotEmpty() || REFERENCES_KEY in current) put(REFERENCES_KEY, encodeReferences(shared.references))
+            if (references.isNotEmpty() || REFERENCES_KEY in current) put(REFERENCES_KEY, encodeReferences(references))
             // A cleared notice drops the key, so older clients and the viewer see none.
             shared.notice?.let { put(NOTICE_KEY, encodeNotice(it)) }
             if (shared.aiDeny.isNotEmpty() || AI_KEY in current) put(AI_KEY, encodeAi(shared.aiDeny))
@@ -219,10 +231,6 @@ class TeamForms @Inject constructor(
         for (o in shared.overlays) {
             val file = overlayImages.file(o.file + if (o.type == SharedOverlay.PNG) ".png" else ".jpg")?.takeIf { it.isFile } ?: continue
             if (!h.api.hasFile(h.link.workspaceId, o.file)) h.api.uploadFile(h.link.workspaceId, o.file, file, o.type)
-        }
-        for (r in shared.references) {
-            val file = referenceStore.stored(h.project.id, r.id) ?: continue
-            if (!h.api.hasFile(h.link.workspaceId, r.file)) h.api.uploadFile(h.link.workspaceId, r.file, file, org.geocrew.core.model.SharedReference.TYPE)
         }
         val next = JsonObject(current - GRID_KEY - OVERLAYS_KEY - BASEMAPS_KEY - PHRASES_KEY - NOTICE_KEY - AI_KEY - RULES_KEY - REFERENCES_KEY + ours)
         val stored = h.api.putSettings(h.link.workspaceId, next, base)

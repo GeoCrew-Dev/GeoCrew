@@ -480,6 +480,11 @@ class MapViewModel @Inject constructor(
             editReferences { list -> list.map { if (it.id == layerId) it.copy(shared = false) else it } }
             return@launch
         }
+        val bytes = withContext(Dispatchers.IO) { referenceStore.stored(p.id, layerId)?.length() } ?: 0L
+        if (bytes > MAX_SHARED_REFERENCE_BYTES) {
+            _notice.value = "这个参考图层有 ${bytes shr 20} MB，太大不便共享，可在电脑上简化或裁剪后重新导入"
+            return@launch
+        }
         val sha = referenceStore.sha256(p.id, layerId) ?: run {
             _notice.value = "这个参考图层的文件不在本机，请删掉后重新导入"
             return@launch
@@ -1059,6 +1064,9 @@ class MapViewModel @Inject constructor(
         val STALE_AFTER: Duration = Duration.ofMinutes(2)
     }
 }
+
+/** Largest reference layer a leader may share; the reference server takes 32 MB uploads by default. */
+private const val MAX_SHARED_REFERENCE_BYTES = 30L shl 20
 
 /** The attributes of a tapped reference shape; [colorBy] is listed first. */
 data class ReferenceTap(val layer: String, val colorBy: String?, val rows: List<Pair<String, String>>) {
