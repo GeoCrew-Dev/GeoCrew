@@ -119,6 +119,9 @@ class ActionLayerTest {
         for (t in listOf("这里是什么地层", "我在哪个图斑里", "这是什么岩体", "查一下参考图层")) {
             assertEquals(t, ActionCatalog.REFERENCE_HERE, QuickCommand.parse(t)?.single()?.name)
         }
+        for (t in listOf("大家在哪", "队友都在哪里", "其他人现在在哪儿", "谁离我最近", "组员位置")) {
+            assertEquals(t, ActionCatalog.TEAM_WHERE, QuickCommand.parse(t)?.single()?.name)
+        }
         val near = QuickCommand.parse("D012附近有哪些点")!!.single()
         assertEquals(ActionCatalog.FIND_RECORDS, near.name)
         assertEquals("D012", near.args["near"]!!.jsonPrimitive.content)

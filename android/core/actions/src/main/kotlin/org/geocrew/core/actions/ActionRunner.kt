@@ -229,6 +229,31 @@ class ActionRunner @Inject constructor(
                     },
                 )
             }
+            ActionCatalog.TEAM_WHERE -> {
+                if (!session.status.value.linked) return ActionResult.fail("这个工程还没加入工作组，看不到队友。")
+                val online = session.status.value.online
+                val mates = session.positions.value.values.mapNotNull { t ->
+                    val at = runCatching { LngLat(t.lon, t.lat) }.getOrNull() ?: return@mapNotNull null
+                    org.geocrew.core.model.TeamWhere.Mate(t.nickname, at, t.time, t.memberId in online)
+                }
+                val me = if (mates.isEmpty()) null else here()
+                val rows = org.geocrew.core.model.TeamWhere.rows(me, mates, java.time.Instant.now())
+                ActionResult(
+                    true, org.geocrew.core.model.TeamWhere.text(rows, haveMe = me != null),
+                    buildJsonObject {
+                        put("teammates", buildJsonArray {
+                            rows.forEach { r ->
+                                add(buildJsonObject {
+                                    put("name", r.name); put("lng", r.at.lng); put("lat", r.at.lat); put("online", r.online)
+                                    r.distance?.let { put("meters", it.toInt()) }
+                                    r.bearing?.let { put("bearing", it.toInt()) }
+                                    r.ageSeconds?.let { put("age_seconds", it) }
+                                })
+                            }
+                        })
+                    },
+                )
+            }
             ActionCatalog.DAY_SUMMARY -> {
                 val p = projects.current.first()
                 val zone = java.time.ZoneId.systemDefault()

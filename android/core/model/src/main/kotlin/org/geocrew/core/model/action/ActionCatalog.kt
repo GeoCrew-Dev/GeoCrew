@@ -32,6 +32,7 @@ object ActionCatalog {
     const val UNDO_LAST = "undo_last"
     const val DAY_SUMMARY = "day_summary"
     const val REFERENCE_HERE = "reference_here"
+    const val TEAM_WHERE = "team_where"
 
     /** "current" in a record id means the record open on screen, or else the newest one. */
     const val CURRENT = "current"
@@ -172,14 +173,21 @@ object ActionCatalog {
         },
     )
 
+    val teamWhere = ActionSpec(
+        TEAM_WHERE, "队友在哪",
+        "工作组里每位队友最后共享的位置：离我多远、在哪个方向、多久以前、是否在线，从近到远。断网时按最后收到的位置回答。只看，不改记录。",
+        ActionRisk.READ,
+        Schema.obj {},
+    )
+
     val all: List<ActionSpec> = listOf(
         findRecords, getRecord, open, placePoint, updateRecord, addSample, setAttribute,
         startTrack, stopTrack, takePhoto, deleteRecords, sendTeamMessage, undoLast, daySummary,
-        referenceHere,
+        referenceHere, teamWhere,
     )
 
     /** Actions whose results carry text people wrote (records, imported files); reading them taints the request. */
-    val returnsUserText: Set<String> = setOf(GET_RECORD, FIND_RECORDS, REFERENCE_HERE)
+    val returnsUserText: Set<String> = setOf(GET_RECORD, FIND_RECORDS, REFERENCE_HERE, TEAM_WHERE)
 
     fun byName(name: String): ActionSpec? = all.firstOrNull { it.name == name }
 }

@@ -65,6 +65,7 @@ object QuickCommand {
     private val photo = Regex("^(拍照|拍一?张(照片)?|照相)$")
     private val undo = Regex("^(撤销|撤回|撤销上一步|撤回上一步)$")
     private val today = Regex("^(?:今天|今日)(?:一共|总共)?(?:做了|干了|记了|完成了|采了)?(?:多少|几个|啥|什么|怎么样|进度|小结|汇总|情况)(?:了|啊|呢)?$|^(?:今日|今天的?)?(?:小结|日报|进度)$")
+    private val teamWhere = Regex("^(?:大家|队友|组员|其他人|别人|同伴)(?:们)?(?:现在)?(?:都)?(?:在)?(?:哪|哪里|哪儿|什么地方|什么位置)(?:了|呢|啊)?$|^谁离我最近$|^(?:队友|组员)(?:的)?位置$")
     private val referenceHere = Regex("^(?:这里|这儿|这|我这里|我这儿|当前位置)(?:是|在)(?:什么|哪个|哪一?个)(?:地层|岩性|单元|填图单元|图斑|岩体|矿权)(?:里)?(?:啊|呢)?$|^(?:我在)(?:什么|哪个|哪一?个)(?:地层|单元|图斑|矿权)(?:里)?$|^查(?:一下)?参考图层$")
     private val nearRecord = Regex("^([A-Za-z]{0,6}\\d{1,6}(?:-\\d{1,4})?)(?:号点|号|点)?(?:附近|周围|旁边)(?:都)?(?:有)?(?:哪些|什么|几个|多少)?(?:点|记录|地质点|样品点)?(?:了|呢|啊)?$")
     private val nearMe = Regex("^(?:这里|这儿|我)?(?:附近|周围|旁边)(?:都)?(?:有)?(?:哪些|什么|几个|多少)(?:点|记录|地质点)(?:了|呢|啊)?$")
@@ -126,6 +127,7 @@ object QuickCommand {
             undo.matches(text) -> return call(ActionCatalog.UNDO_LAST)
             today.matches(text) -> return call(ActionCatalog.DAY_SUMMARY)
             referenceHere.matches(text) -> return call(ActionCatalog.REFERENCE_HERE)
+            teamWhere.matches(text) -> return call(ActionCatalog.TEAM_WHERE)
             nearMe.matches(text) -> return call(ActionCatalog.FIND_RECORDS, buildJsonObject { put("within_m", 500) })
         }
         nearRecord.matchEntire(text)?.let { m ->
