@@ -148,6 +148,12 @@ class TeamSession @Inject constructor(
         return syncLock.withLock { syncOnce(a.handle) }
     }
 
+    /** Fetches the open project's shared settings now, e.g. when a push says a leader posted a notice. */
+    suspend fun syncSettings() {
+        val a = active ?: return
+        syncForm(a.handle)
+    }
+
     /**
      * Shares this device's position if the user enabled it. Throttled to one
      * message per 5 s unless the device moved more than 20 m.

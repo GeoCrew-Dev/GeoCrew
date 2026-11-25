@@ -101,6 +101,7 @@ class TeamPush @Inject constructor(
             "alert" -> "组员发出了紧急消息"
             "rollcall" -> "组长在点名，请报平安"
             "overdue" -> if (n.from == link.memberId) "你的外出已超过预计返回时间，回来了请报返回" else "有组员外出超时未返回"
+            "notice" -> "组长发布了新公告"
             else -> return
         }
         // Fetch what the notice announces when it concerns the open project.
@@ -137,6 +138,13 @@ class TeamPush @Inject constructor(
                 else -> "${o.nickname}外出（${o.body}）超过预计返回时间仍未报返回，请设法联系"
             }
             notify(projectId, "外出超时 · ${link.workspaceName}", detail, id = (projectId + "overdue" + n.seq).hashCode(), urgent = true)
+            return
+        }
+        if (n.type == "notice") {
+            // Fetch the shared settings so the notice itself can be shown.
+            if (current) runCatching { session.syncSettings() }
+            val notice = if (current) projects.get(projectId)?.config?.teamNotice else null
+            notify(projectId, "公告 · ${link.workspaceName}", notice?.let { listOfNotNull(it.by, it.text).joinToString("：") } ?: text, id = (projectId + "notice").hashCode())
             return
         }
         notify(projectId, link.workspaceName, text, id = (projectId + n.type).hashCode())
