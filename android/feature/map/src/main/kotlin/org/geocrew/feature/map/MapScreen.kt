@@ -84,6 +84,7 @@ fun MapScreen(
     val baseMap by viewModel.baseMap.collectAsStateWithLifecycle()
     val overlays by viewModel.overlays.collectAsStateWithLifecycle()
     val mode by viewModel.mode.collectAsStateWithLifecycle()
+    val measureWalk by viewModel.measureWalk.collectAsStateWithLifecycle()
     val selected by viewModel.selected.collectAsStateWithLifecycle()
     val fix by viewModel.fix.collectAsStateWithLifecycle()
     val recording by viewModel.isRecording.collectAsStateWithLifecycle()
@@ -440,6 +441,7 @@ fun MapScreen(
                     onCancel = viewModel::cancelDraw,
                     onToggleKind = viewModel::toggleMeasureKind,
                     onRemovePicked = viewModel::removePicked,
+                    walk = measureWalk,
                 )
                 is AlignMode -> AlignBar(
                     m,

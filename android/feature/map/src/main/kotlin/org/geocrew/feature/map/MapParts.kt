@@ -108,6 +108,8 @@ internal fun DrawBar(
     onCancel: () -> Unit,
     onToggleKind: () -> Unit = {},
     onRemovePicked: () -> Unit = {},
+    /** Estimated walking time for a distance being measured. */
+    walk: String? = null,
 ) {
     Surface(shape = MaterialTheme.shapes.large, tonalElevation = 3.dp, shadowElevation = 3.dp) {
         Column(Modifier.fillMaxWidth().padding(8.dp)) {
@@ -141,6 +143,9 @@ internal fun DrawBar(
             }
             val count = if (mode.single) "" else "${v.size} 个节点 · "
             Text("$title：$count$measure", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 8.dp))
+            if (walk != null && mode.measureOnly && !mode.closed) {
+                Text(walk, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp))
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 val moves = mode.single || mode.picked != null
                 Tool(Icons.Default.Place, if (moves) "移到中心" else "中心加节点", onClick = onAddCenter)

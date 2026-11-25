@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -143,6 +144,7 @@ class MapViewModel @Inject constructor(
     private val overlayImages: org.geocrew.core.data.repo.OverlayImages,
     private val rollCalls: org.geocrew.core.sensors.RollCallActions,
     private val outingActions: org.geocrew.core.sensors.OutingActions,
+    private val terrain: org.geocrew.core.data.repo.TerrainTiles,
 ) : ViewModel() {
 
     /** Downloading an area of the base map for offline use; survives leaving the screen. */
@@ -341,6 +343,33 @@ class MapViewModel @Inject constructor(
 
     private val _mode = MutableStateFlow<MapMode>(MapMode.Browse)
     val mode: StateFlow<MapMode> = _mode.asStateFlow()
+
+    /**
+     * Walking time there and back along the distance being measured, from
+     * the public DEM (cached, so it works again offline); null unless a
+     * line is being measured.
+     */
+    val measureWalk: StateFlow<String?> = _mode
+        .map { m -> (m as? MapMode.Draw)?.takeIf { it.measureOnly && !it.closed && it.vertices.size >= 2 }?.vertices }
+        .distinctUntilChanged()
+        .mapLatest { v ->
+            if (v == null) return@mapLatest null
+            kotlinx.coroutines.delay(400) // wait for the user to stop adding vertices
+            walkText(v)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private suspend fun walkText(v: List<LngLat>): String = withContext(Dispatchers.IO) {
+        val length = Geometry.LineString(v).lengthMeters()
+        // Some 800 samples at most: a long line needs no 30 m detail for a time estimate.
+        val pts = org.geocrew.core.model.Hiking.densify(v, maxOf(org.geocrew.core.model.Hiking.STEP_M, length / 800))
+        val heights = runCatching { terrain.elevation().at(pts) }.getOrElse { List(pts.size) { null } }
+        val go = org.geocrew.core.model.Hiking.estimate(pts, heights)
+        if (heights.all { it == null }) return@withContext "步行${org.geocrew.core.model.Hiking.format(go.hours)}（取不到地形，按平路估算）"
+        val back = org.geocrew.core.model.Hiking.estimate(pts.asReversed(), heights.asReversed())
+        "步行：去${org.geocrew.core.model.Hiking.format(go.hours)}，回${org.geocrew.core.model.Hiking.format(back.hours)} · " +
+            "爬升 ${go.ascent.roundToInt()} m，下降 ${go.descent.roundToInt()} m"
+    }
 
     private val _selected = MutableStateFlow<String?>(null)
     val selectedId: StateFlow<String?> = _selected.asStateFlow()
