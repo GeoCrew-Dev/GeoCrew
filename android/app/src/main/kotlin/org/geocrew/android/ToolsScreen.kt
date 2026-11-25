@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material.icons.filled.NearMe
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material.icons.filled.Hiking
 import androidx.compose.material.icons.filled.Layers
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 data class ToolEntry(val title: String, val description: String, val icon: ImageVector, val route: String)
 
 val builtInTools = listOf(
+    ToolEntry("助手", "说或打「定点」「开始轨迹」「产状 120∠35」，配上模型后也能听懂别的话", Icons.Default.Mic, Routes.ASSISTANT),
     ToolEntry("罗盘 · 产状", "测量方位和岩层产状，保存为地质点", Icons.Default.Explore, "compass"),
     ToolEntry("地层厚度", "按产状和导线（方位、坡角、斜距）算真厚度和铅直厚度", Icons.Default.Straighten, Routes.THICKNESS),
     ToolEntry("地质路线", "按顺序串起当天的地质点，写点间描述和路线小结，导出路线记录表", Icons.Default.Hiking, Routes.ROUTE_ANY),

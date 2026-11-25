@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Layers
@@ -74,6 +75,8 @@ fun MapScreen(
     onOpenTeam: () -> Unit = {},
     onOpenProjects: () -> Unit = {},
     onOpenChat: () -> Unit = {},
+    /** Opens the assistant (voice commands, guided entry, AI). */
+    onOpenAssistant: (() -> Unit)? = null,
     /** A feature another screen asked to show; consumed once. */
     focusFeatureId: String? = null,
     /** A position another screen asked to show (e.g. a team message's); consumed once. */
@@ -394,6 +397,7 @@ fun MapScreen(
             }) { Icon(Icons.Default.MyLocation, "定位") }
             SmallFloatingActionButton(onClick = onOpenRecords) { Icon(Icons.AutoMirrored.Filled.List, "记录") }
             SmallFloatingActionButton(onClick = onOpenTools) { Icon(Icons.Default.Build, "工具") }
+            onOpenAssistant?.let { SmallFloatingActionButton(onClick = it) { Icon(Icons.Default.Mic, "助手") } }
             if (team.linked) {
                 SmallFloatingActionButton(onClick = onOpenChat) {
                     androidx.compose.material3.BadgedBox(

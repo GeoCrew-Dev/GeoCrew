@@ -91,6 +91,8 @@ dependencies {
     implementation(project(":feature:team"))
     implementation(project(":feature:projects"))
     implementation(project(":feature:analysis"))
+    implementation(project(":feature:assistant"))
+    implementation(project(":core:actions"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

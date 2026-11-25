@@ -31,6 +31,8 @@ include(":core:network")
 include(":core:gis")
 include(":core:scan")
 include(":core:speech")
+include(":core:actions")
+include(":feature:assistant")
 
 // One module per screen or flow.
 include(":feature:map")

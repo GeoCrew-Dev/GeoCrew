@@ -1,12 +1,23 @@
 package org.geocrew.android
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.ViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import org.geocrew.core.actions.ActionHost
+import org.geocrew.core.actions.UiEffect
+import org.geocrew.core.model.action.ActionCatalog
+import org.geocrew.feature.assistant.AssistantScreen
+import org.geocrew.feature.assistant.AssistantSettingsScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
@@ -74,6 +85,8 @@ object Routes {
     const val ROUTE_ANY = "route"
     fun geoRoute(featureId: String) = "route?$ROUTE_FEATURE_ARG=$featureId"
     const val COORDINATES = "coordinates"
+    const val ASSISTANT = "assistant"
+    const val ASSISTANT_SETTINGS = "assistant/settings"
     const val SUN = "sun"
     const val SEEK = "seek?$SEEK_FEATURE_ARG={$SEEK_FEATURE_ARG}"
     const val SEEK_ANY = "seek"
@@ -104,9 +117,54 @@ private fun NavHostController.showOnMap(at: org.geocrew.core.model.LngLat) {
     popBackStack(Routes.MAP, inclusive = false)
 }
 
+/** Gives the navigation shell the action host, so actions can open pages and the camera. */
+@HiltViewModel
+class ShellViewModel @Inject constructor(val host: ActionHost) : ViewModel()
+
+/** Saved-state key on a record page: open the camera once. */
+private const val OPEN_CAMERA = "open_camera"
+
+/** Tells actions where the user is; the assistant's own pages keep the page they were opened from. */
+private fun pageOf(route: String?): String? = when {
+    route == null -> null
+    route.startsWith("assistant") -> null
+    route == Routes.MAP -> ActionCatalog.PAGE_MAP
+    route == Routes.RECORDS -> ActionCatalog.PAGE_RECORDS
+    route == Routes.FEATURE -> ActionCatalog.PAGE_RECORD
+    route.startsWith("team") -> ActionCatalog.PAGE_TEAM
+    else -> ""
+}
+
 @Composable
-fun GeoCrewNavHost() {
+fun GeoCrewNavHost(shell: ShellViewModel = hiltViewModel()) {
     val nav = rememberNavController()
+    val current by nav.currentBackStackEntryAsState()
+    LaunchedEffect(current) {
+        val e = current ?: return@LaunchedEffect
+        val page = pageOf(e.destination.route) ?: return@LaunchedEffect
+        shell.host.at(page, if (page == ActionCatalog.PAGE_RECORD) e.arguments?.getString(FEATURE_ID_ARG) else null)
+    }
+    LaunchedEffect(Unit) {
+        shell.host.effects.collect { fx ->
+            when (fx) {
+                is UiEffect.Open -> when (fx.page) {
+                    ActionCatalog.PAGE_MAP -> runCatching { val id = fx.id; if (id != null) nav.showOnMap(id) else nav.popBackStack(Routes.MAP, inclusive = false) }
+                    ActionCatalog.PAGE_RECORDS -> nav.navigate(Routes.RECORDS) { launchSingleTop = true }
+                    ActionCatalog.PAGE_RECORD -> fx.id?.let { nav.navigate(Routes.feature(it)) }
+                    ActionCatalog.PAGE_TEAM -> nav.navigate(Routes.TEAM_PLAIN) { launchSingleTop = true }
+                }
+                is UiEffect.TakePhoto -> {
+                    val here = nav.currentBackStackEntry
+                    if (here?.destination?.route == Routes.FEATURE && here.arguments?.getString(FEATURE_ID_ARG) == fx.recordId) {
+                        here.savedStateHandle[OPEN_CAMERA] = true
+                    } else {
+                        nav.navigate(Routes.feature(fx.recordId))
+                        nav.currentBackStackEntry?.savedStateHandle?.set(OPEN_CAMERA, true)
+                    }
+                }
+            }
+        }
+    }
     // Everything happens inside a project, so the app starts at the project list.
     NavHost(navController = nav, startDestination = Routes.PROJECTS) {
         composable(Routes.MAP) { entry ->
@@ -122,6 +180,7 @@ fun GeoCrewNavHost() {
                 onOpenTeam = { nav.navigate(Routes.TEAM_PLAIN) { launchSingleTop = true } },
                 onOpenProjects = { nav.toProjects() },
                 onOpenChat = { nav.navigate(Routes.TEAM_CHAT) { launchSingleTop = true } },
+                onOpenAssistant = { nav.navigate(Routes.ASSISTANT) { launchSingleTop = true } },
                 focusFeatureId = focus,
                 focusPosition = focusAt?.takeIf { it.size == 2 }?.let { runCatching { org.geocrew.core.model.LngLat(it[0], it[1]) }.getOrNull() },
                 onFocusHandled = {
@@ -185,8 +244,11 @@ fun GeoCrewNavHost() {
                 onInviteLink = { link -> runCatching { nav.navigate(android.net.Uri.parse(link)) } },
             )
         }
-        composable(Routes.FEATURE, arguments = listOf(navArgument(FEATURE_ID_ARG) { type = NavType.StringType })) {
+        composable(Routes.FEATURE, arguments = listOf(navArgument(FEATURE_ID_ARG) { type = NavType.StringType })) { entry ->
+            val camera by entry.savedStateHandle.getStateFlow(OPEN_CAMERA, false).collectAsStateWithLifecycle()
             FeatureDetailScreen(
+                openCamera = camera,
+                onCameraOpened = { entry.savedStateHandle[OPEN_CAMERA] = false },
                 onBack = { nav.popBackStack() },
                 onShowOnMap = { nav.showOnMap(it) },
                 onMeasureAttitude = { nav.navigate(Routes.compassFor(it)) },
@@ -235,6 +297,12 @@ fun GeoCrewNavHost() {
             arguments = listOf(navArgument(SEEK_FEATURE_ARG) { type = NavType.StringType; nullable = true; defaultValue = null }),
         ) {
             SeekScreen(onBack = { nav.popBackStack() }, onOpenRecord = { nav.navigate(Routes.feature(it)) })
+        }
+        composable(Routes.ASSISTANT) {
+            AssistantScreen(onBack = { nav.popBackStack() }, onOpenSettings = { nav.navigate(Routes.ASSISTANT_SETTINGS) { launchSingleTop = true } })
+        }
+        composable(Routes.ASSISTANT_SETTINGS) {
+            AssistantSettingsScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.TOOLS) {
             ToolsScreen(builtInTools, onBack = { nav.popBackStack() }, onOpen = { nav.navigate(it) })

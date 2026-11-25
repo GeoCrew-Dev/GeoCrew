@@ -136,6 +136,9 @@ fun FeatureDetailScreen(
     onOpenMeasuredSection: ((String) -> Unit)? = null,
     onOpenRoute: ((String) -> Unit)? = null,
     onOpenBorehole: ((String) -> Unit)? = null,
+    /** Open the camera once when the page shows, e.g. after the assistant placed a point. */
+    openCamera: Boolean = false,
+    onCameraOpened: () -> Unit = {},
     viewModel: FeatureDetailViewModel = hiltViewModel(),
 ) {
     val feature by viewModel.feature.collectAsStateWithLifecycle()
@@ -230,7 +233,7 @@ fun FeatureDetailScreen(
             SectionHeader(if (fields.isEmpty()) "属性" else "其他属性")
             Attributes(f, form.map { it.key }.toSet(), viewModel::setAttribute, viewModel::removeAttribute)
             SectionHeader("照片")
-            Photos(f, viewModel)
+            Photos(f, viewModel, openCamera, onCameraOpened)
             val samples = f.samples
             SectionHeader(if (samples.isEmpty()) "样品" else "样品（${samples.size}）")
             Samples(f, samples, viewModel)
@@ -553,7 +556,7 @@ private fun AttitudeEditor(current: Attitude?, onSave: (Attitude?) -> Unit, onMe
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
+private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel, openCamera: Boolean = false, onCameraOpened: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<File?>(null) }
@@ -585,6 +588,14 @@ private fun Photos(f: GeoFeature, vm: FeatureDetailViewModel) {
     // The app declares CAMERA for in-app scanning, so the system camera app needs it granted too.
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) shoot() else Toast.makeText(context, "拍照需要相机权限", Toast.LENGTH_SHORT).show()
+    }
+    LaunchedEffect(openCamera) {
+        if (openCamera) {
+            onCameraOpened()
+            val has = context.checkSelfPermission(android.Manifest.permission.CAMERA) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (has) shoot() else cameraPermission.launch(android.Manifest.permission.CAMERA)
+        }
     }
     val info = f.photoInfo
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
