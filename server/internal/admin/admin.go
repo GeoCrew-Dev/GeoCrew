@@ -40,6 +40,7 @@ const Usage = `用法：geocrew-server [参数] admin <命令>
                                    .workload.csv 结尾为工作量统计（每天每人的记录、样品、照片、轨迹，按本机时区），
                                    .routes.csv 结尾为地质路线记录表（按点序每点一行，含点间描述），
                                    .kml 结尾为 KML（奥维、Google Earth 可打开，按共享图例着色），
+                                   .gpx 结尾为 GPX（点、线和带逐点时间的轨迹，导入 GPS 和户外软件），
                                    .gpkg 结尾为 GeoPackage（QGIS、ArcGIS 可打开，点线面分表）
 
   files <工作组> [prune]             统计附件：占用空间、被记录引用的、没有任何记录引用的、缺失的；
@@ -184,6 +185,10 @@ func RunWith(ctx context.Context, st store.Store, opt Options, args []string, ou
 		} else if strings.HasSuffix(lower, ".kml") {
 			var n int
 			n, err = export.KML(ctx, st, ws.ID, f)
+			msg = fmt.Sprintf("已把「%s」的 %d 条记录导出到 %s", ws.Name, n, rest[1])
+		} else if strings.HasSuffix(lower, ".gpx") {
+			var n int
+			n, err = export.GPX(ctx, st, ws.ID, f)
 			msg = fmt.Sprintf("已把「%s」的 %d 条记录导出到 %s", ws.Name, n, rest[1])
 		} else if strings.HasSuffix(lower, ".routes.csv") {
 			var n int

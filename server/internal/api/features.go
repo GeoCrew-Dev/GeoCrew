@@ -323,6 +323,22 @@ func (s *Server) exportKML(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// exportGPX downloads the workspace's points, lines and tracks as GPX, with
+// per-fix times on tracks that carry them (protocol v0 §6.13).
+func (s *Server) exportGPX(w http.ResponseWriter, r *http.Request) {
+	ws := r.PathValue("ws")
+	if _, err := s.Store.Workspace(r.Context(), ws); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/gpx+xml")
+	w.Header().Set("Content-Disposition", `attachment; filename="geocrew-export.gpx"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := export.GPX(r.Context(), s.Store, ws, w); err != nil {
+		s.logger().Error("export gpx", "workspace", ws, "err", err)
+	}
+}
+
 // exportGeoPackage downloads the workspace's records as a GeoPackage for
 // desktop GIS. SQLite needs a real file, so it is built in a temporary
 // directory and removed once sent.

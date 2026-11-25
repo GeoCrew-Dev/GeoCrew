@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
@@ -138,6 +139,9 @@ func KML(ctx context.Context, st store.Store, workspaceID string, out io.Writer)
 			xmlText(w, t)
 			w.WriteString("</description>")
 		}
+		if str(p["kind"]) == "track" {
+			timeSpan(w, p)
+		}
 		if c := lg.colorOf(p); c != "" {
 			w.WriteString("<styleUrl>#c" + c[1:] + "</styleUrl>")
 		}
@@ -161,10 +165,25 @@ func kmlColor(hex, alpha string) string {
 
 func xmlText(w *bufio.Writer, s string) { xml.EscapeText(w, []byte(s)) }
 
+// timeSpan writes a track's started_at and ended_at as a KML TimeSpan, so
+// Google Earth's time slider can show it; nothing when the start is missing.
+func timeSpan(w *bufio.Writer, p map[string]any) {
+	begin, err := time.Parse(time.RFC3339, str(p["started_at"]))
+	if err != nil {
+		return
+	}
+	w.WriteString("<TimeSpan><begin>" + begin.UTC().Format(time.RFC3339) + "</begin>")
+	if end, err := time.Parse(time.RFC3339, str(p["ended_at"])); err == nil && !end.Before(begin) {
+		w.WriteString("<end>" + end.UTC().Format(time.RFC3339) + "</end>")
+	}
+	w.WriteString("</TimeSpan>")
+}
+
 func extendedData(w *bufio.Writer, id string, p map[string]any) {
 	keys := make([]string, 0, len(p))
 	for k := range p {
-		if k != "title" && k != "note" {
+		// Per-fix times (protocol v0 §6.13) go out as the TimeSpan instead.
+		if k != "title" && k != "note" && k != "times_s" {
 			keys = append(keys, k)
 		}
 	}
