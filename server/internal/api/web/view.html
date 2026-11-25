@@ -41,6 +41,10 @@
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
   .mate { background: #1565c0; color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 10px; border: 2px solid #fff; white-space: nowrap; box-shadow: 0 1px 3px #0006; }
   .mate.old { background: #78909c; }
+  .mate.replay { background: #00897b; }
+  #replay { position: absolute; left: 50%; transform: translateX(-50%); bottom: 30px; z-index: 1; display: flex; gap: 8px; align-items: center; background: color-mix(in srgb, var(--bg) 92%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font-size: 12px; }
+  #replay[hidden] { display: none; }
+  #replay input { width: min(320px, 40vw); }
   .maplibregl-popup-content { color: #1c1b1f; max-width: 320px; }
   .pop h3 { margin: 0 0 4px; font-size: 15px; }
   .pop dl { margin: 6px 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
@@ -86,7 +90,9 @@
     </div>
     <ul id="list"></ul>
   </aside>
-  <div id="mapwrap"><div id="map"></div><div id="legend" hidden></div></div>
+  <div id="mapwrap"><div id="map"></div><div id="legend" hidden></div>
+    <div id="replay" hidden title="按轨迹逐点时间回放组员当时的位置"><button id="rplay" type="button">回放轨迹</button><input id="rt" type="range" min="0" max="1000" value="0"><span id="rtl"></span></div>
+  </div>
 </div>
 <div id="gate" hidden>
   <h1>同勘 GeoCrew</h1>
@@ -522,7 +528,67 @@
     renderList();
     renderToday();
     renderBanner();
+    renderReplay();
     if (ready && !fitted && features.size) { fitted = true; fitAll(); }
+  }
+
+  // Track replay (protocol v0 §6.13): the shown tracks that carry times_s
+  // can be played back, each walker as a marker where they were at the time.
+  function timedTracks() {
+    const out = [];
+    for (const f of features.values()) {
+      const p = f.properties || {};
+      if (p.kind !== "track" || !shown(f) || !f.geometry || f.geometry.type !== "LineString") continue;
+      const cs = f.geometry.coordinates, ts = p.times_s, t0 = Date.parse(p.started_at);
+      if (!Array.isArray(ts) || ts.length !== cs.length || cs.length < 2 || isNaN(t0)) continue;
+      let ok = true, last = -Infinity;
+      const ms = ts.map((x) => { if (!Number.isInteger(x) || x < last) ok = false; last = x; return t0 + x * 1000; });
+      if (ok) out.push({ id: f.id, cs, ms, name: members.get(by(f)) || p.title || "轨迹" });
+    }
+    return out;
+  }
+  let replay = [], rmin = 0, rmax = 0, rtimer = null, ractive = false;
+  const rmarks = new Map();
+  const replayTime = () => rmin + (rmax - rmin) * Number($("rt").value) / 1000;
+  function renderReplay() {
+    replay = timedTracks();
+    $("replay").hidden = !replay.length;
+    if (!replay.length) { stopReplay(); ractive = false; drawReplay(); return; }
+    rmin = Math.min(...replay.map((r) => r.ms[0]));
+    rmax = Math.max(...replay.map((r) => r.ms[r.ms.length - 1]));
+    drawReplay();
+  }
+  // Where a track was at t, or null outside it or inside a gap of over 10 minutes.
+  function replayAt(r, t) {
+    const ms = r.ms;
+    if (t < ms[0] || t > ms[ms.length - 1]) return null;
+    let lo = 0, hi = ms.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (ms[mid] <= t) lo = mid; else hi = mid; }
+    const span = ms[hi] - ms[lo];
+    if (span > 10 * 60 * 1000) return null;
+    const k = span ? (t - ms[lo]) / span : 0, a = r.cs[lo], b = r.cs[hi];
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+  }
+  function drawReplay() {
+    const t = ractive && ready ? replayTime() : null;
+    const seen = new Set();
+    if (t != null) for (const r of replay) {
+      const c = replayAt(r, t);
+      if (!c) continue;
+      seen.add(r.id);
+      const m = rmarks.get(r.id);
+      if (m) { m.setLngLat(c); continue; }
+      const el = document.createElement("div");
+      el.className = "mate replay";
+      el.textContent = r.name;
+      rmarks.set(r.id, new maplibregl.Marker({ element: el }).setLngLat(c).addTo(map));
+    }
+    for (const [id, m] of rmarks) if (!seen.has(id)) { m.remove(); rmarks.delete(id); }
+    $("rtl").textContent = t == null ? replay.length + " 条轨迹带逐点时间" : when(t) + " · " + seen.size + " 条轨迹在走";
+  }
+  function stopReplay() {
+    if (rtimer) { clearInterval(rtimer); rtimer = null; }
+    $("rplay").textContent = "回放轨迹";
   }
 
   function renderList() {
@@ -974,6 +1040,20 @@
     $("who").onchange = render;
     $("day").onchange = render;
     $("fit").onclick = fitAll;
+    $("rt").oninput = () => { ractive = true; drawReplay(); };
+    $("rplay").onclick = () => {
+      if (rtimer) { stopReplay(); return; }
+      ractive = true;
+      if (Number($("rt").value) >= 1000) $("rt").value = 0;
+      $("rplay").textContent = "暂停";
+      // About half a minute from the first fix to the last.
+      rtimer = setInterval(() => {
+        const v = Math.min(1000, Number($("rt").value) + 2);
+        $("rt").value = v;
+        drawReplay();
+        if (v >= 1000) stopReplay();
+      }, 60);
+    };
     $("check").onclick = () => { checking = !checking; messaging = false; $("msgs").classList.remove("on"); $("check").classList.toggle("on", checking); renderList(); };
     $("msgs").onclick = () => { messaging = !messaging; checking = false; $("check").classList.remove("on"); $("msgs").classList.toggle("on", messaging); renderList(); };
     $("geojson").onclick = () => download("/export.geojson", "geocrew-" + WS + ".geojson");
