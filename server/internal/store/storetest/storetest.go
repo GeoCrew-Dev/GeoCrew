@@ -32,6 +32,7 @@ func Run(t *testing.T, open Opener) {
 		{"ViewLinks", viewLinks},
 		{"ConcurrentPushes", concurrentPushes},
 		{"LockedProps", lockedProps},
+		{"Outings", outings},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -415,5 +416,83 @@ func lockedProps(t *testing.T, open Opener) {
 	h, _ := d.FeatureHistory(ctx, ws.ID, "f1")
 	if len(h) != 2 || string(h[1].Properties) != `{"title":"D1"}` {
 		t.Fatalf("history: %+v", h)
+	}
+}
+
+func outings(t *testing.T, open Opener) {
+	ctx := context.Background()
+	d := open(t)
+	ws, a, _, _ := d.CreateWorkspace(ctx, "w", "组长")
+	_, b, _, _ := d.Join(ctx, ws.InviteCode, "组员")
+	ws2, c, _, _ := d.CreateWorkspace(ctx, "w2", "别组")
+	now := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+	at := func(h int) *time.Time { t := now.Add(time.Duration(h) * time.Hour); return &t }
+
+	o1, err := d.AddComment(ctx, ws.ID, b.ID, store.Comment{ID: "o1", Body: "去北沟，下午三点回", BackBy: at(5)})
+	if err != nil || o1.BackBy == nil || !o1.BackBy.Equal(*at(5)) {
+		t.Fatalf("outing: %v %+v", err, o1)
+	}
+	if again, err := d.AddComment(ctx, ws.ID, b.ID, store.Comment{ID: "o1", Body: "去北沟，下午三点回", BackBy: at(5)}); err != nil || again.Seq != o1.Seq {
+		t.Fatalf("retry: %v %+v", err, again)
+	}
+	if _, err := d.AddComment(ctx, ws.ID, b.ID, store.Comment{ID: "o1", Body: "去北沟，下午三点回", BackBy: at(6)}); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("retry with another time: %v", err)
+	}
+	if _, err := d.AddComment(ctx, ws.ID, a.ID, store.Comment{ID: "o2", Body: "去南坡", BackBy: at(2)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.AddComment(ctx, ws2.ID, c.ID, store.Comment{ID: "o3", Body: "别组外出", BackBy: at(1)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.AddComment(ctx, ws.ID, b.ID, store.Comment{ID: "m1", Body: "普通消息"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.AddComment(ctx, ws.ID, b.ID, store.Comment{ID: "x", Body: "回来了", BackFrom: "m1"}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("back from a plain message: %v", err)
+	}
+	if _, err := d.AddComment(ctx, ws.ID, b.ID, store.Comment{ID: "x", Body: "回来了", BackFrom: "o3"}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("back from another workspace's outing: %v", err)
+	}
+
+	ids := func(due []store.DueOuting) (out []string) {
+		for _, o := range due {
+			out = append(out, o.WorkspaceID+"/"+o.Comment.ID)
+		}
+		return out
+	}
+	if due, err := d.DueOutings(ctx, now.Add(90*time.Minute), 10); err != nil || len(due) != 1 || due[0].Comment.ID != "o3" || due[0].WorkspaceID != ws2.ID {
+		t.Fatalf("due at 11:30: %v %v", err, ids(due))
+	}
+	due, err := d.DueOutings(ctx, now.Add(6*time.Hour), 10)
+	if err != nil || len(due) != 3 || due[0].Comment.ID != "o3" || due[1].Comment.ID != "o2" || due[2].Comment.ID != "o1" || due[2].Comment.Nickname != "组员" {
+		t.Fatalf("due at 16:00: %v %v", err, ids(due))
+	}
+	// Reported back, or already notified: no longer due.
+	back, err := d.AddComment(ctx, ws.ID, b.ID, store.Comment{ID: "b1", Body: "回营地了", BackFrom: "o1"})
+	if err != nil || back.BackFrom != "o1" {
+		t.Fatalf("back: %v %+v", err, back)
+	}
+	if err := d.MarkOverdue(ctx, ws2.ID, "o3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.MarkOverdue(ctx, ws.ID, "nope"); err != nil {
+		t.Fatalf("mark unknown: %v", err)
+	}
+	if due, _ := d.DueOutings(ctx, now.Add(6*time.Hour), 10); len(due) != 1 || due[0].Comment.ID != "o2" {
+		t.Fatalf("after back and mark: %v", ids(due))
+	}
+	// Deleting the report back makes the outing due again; deleting the outing clears it.
+	if _, err := d.DeleteComment(ctx, ws.ID, "b1", b.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if due, _ := d.DueOutings(ctx, now.Add(6*time.Hour), 10); len(due) != 2 {
+		t.Fatalf("after deleting the report back: %v", ids(due))
+	}
+	del, err := d.DeleteComment(ctx, ws.ID, "o2", a.ID, true)
+	if err != nil || del.BackBy != nil {
+		t.Fatalf("delete outing: %v %+v", err, del)
+	}
+	if due, _ := d.DueOutings(ctx, now.Add(6*time.Hour), 1); len(due) != 1 || due[0].Comment.ID != "o1" {
+		t.Fatalf("after deleting an outing: %v", ids(due))
 	}
 }

@@ -5,20 +5,28 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
 )
 
 const commentSelect = `SELECT c.id, c.seq, c.feature_id, c.body, c.at_lng, c.at_lat, c.author_id,
-	COALESCE(m.nickname, ''), c.created_at, c.deleted, c.urgent, c.roll_call, c.answer_to
+	COALESCE(m.nickname, ''), c.created_at, c.deleted, c.urgent, c.roll_call, c.answer_to,
+	c.back_by_unix, c.back_from
 	FROM comments c LEFT JOIN members m ON m.id = c.author_id`
 
 func scanComment(r rowScanner) (store.Comment, error) {
 	var c store.Comment
 	var lng, lat sql.NullFloat64
 	var created string
-	err := r.Scan(&c.ID, &c.Seq, &c.FeatureID, &c.Body, &lng, &lat, &c.AuthorID, &c.Nickname, &created, &c.Deleted, &c.Urgent, &c.RollCall, &c.AnswerTo)
+	var backBy int64
+	err := r.Scan(&c.ID, &c.Seq, &c.FeatureID, &c.Body, &lng, &lat, &c.AuthorID, &c.Nickname, &created, &c.Deleted, &c.Urgent, &c.RollCall, &c.AnswerTo,
+		&backBy, &c.BackFrom)
+	if backBy > 0 {
+		t := time.Unix(backBy, 0).UTC()
+		c.BackBy = &t
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, store.ErrNotFound
 	}
@@ -62,6 +70,7 @@ func (d *DB) AddComment(ctx context.Context, workspaceID, authorID string, c sto
 	case err == nil:
 		if cur.AuthorID == authorID && cur.FeatureID == c.FeatureID && cur.Body == c.Body &&
 			!cur.Deleted && cur.Urgent == c.Urgent && cur.RollCall == c.RollCall && cur.AnswerTo == c.AnswerTo &&
+			unixOf(cur.BackBy) == unixOf(c.BackBy) && cur.BackFrom == c.BackFrom &&
 			slices.Equal(cur.At, c.At) {
 			return cur, nil
 		}
@@ -79,6 +88,16 @@ func (d *DB) AddComment(ctx context.Context, workspaceID, authorID string, c sto
 			return c, err
 		}
 	}
+	if c.BackFrom != "" {
+		// A report back must point at a live outing of this workspace.
+		target, err := d.comment(ctx, tx, workspaceID, c.BackFrom)
+		if errors.Is(err, store.ErrNotFound) || err == nil && (target.Deleted || target.BackBy == nil) {
+			return c, store.ErrInvalid
+		}
+		if err != nil {
+			return c, err
+		}
+	}
 	seq, err := nextCommentSeq(ctx, tx, workspaceID)
 	if err != nil {
 		return c, err
@@ -88,9 +107,11 @@ func (d *DB) AddComment(ctx context.Context, workspaceID, authorID string, c sto
 		lng, lat = c.At[0], c.At[1]
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO comments (workspace_id, id, seq, feature_id, body, at_lng, at_lat, author_id, created_at, urgent, roll_call, answer_to)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		workspaceID, c.ID, seq, c.FeatureID, c.Body, lng, lat, authorID, fmtTime(time.Now()), b2i(c.Urgent), b2i(c.RollCall), c.AnswerTo); err != nil {
+		`INSERT INTO comments (workspace_id, id, seq, feature_id, body, at_lng, at_lat, author_id, created_at, urgent, roll_call, answer_to,
+		 back_by_unix, back_from)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		workspaceID, c.ID, seq, c.FeatureID, c.Body, lng, lat, authorID, fmtTime(time.Now()), b2i(c.Urgent), b2i(c.RollCall), c.AnswerTo,
+		unixOf(c.BackBy), c.BackFrom); err != nil {
 		return c, err
 	}
 	out, err := d.comment(ctx, tx, workspaceID, c.ID)
@@ -146,7 +167,8 @@ func (d *DB) DeleteComment(ctx context.Context, workspaceID, commentID, memberID
 		return cur, err
 	}
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE comments SET body = '', at_lng = NULL, at_lat = NULL, deleted = 1, urgent = 0, roll_call = 0, answer_to = '', seq = ? WHERE workspace_id = ? AND id = ?`,
+		`UPDATE comments SET body = '', at_lng = NULL, at_lat = NULL, deleted = 1, urgent = 0, roll_call = 0, answer_to = '',
+		 back_by_unix = 0, back_from = '', seq = ? WHERE workspace_id = ? AND id = ?`,
 		seq, workspaceID, commentID); err != nil {
 		return cur, err
 	}
@@ -156,3 +178,45 @@ func (d *DB) DeleteComment(ctx context.Context, workspaceID, commentID, memberID
 	}
 	return out, tx.Commit()
 }
+
+func unixOf(t *time.Time) int64 {
+	if t == nil {
+		return 0
+	}
+	return t.Unix()
+}
+
+func (d *DB) DueOutings(ctx context.Context, now time.Time, limit int) ([]store.DueOuting, error) {
+	rows, err := d.db.QueryContext(ctx,
+		`SELECT c.workspace_id, `+strings.TrimPrefix(commentSelect, "SELECT ")+`
+		 WHERE c.back_by_unix > 0 AND c.back_by_unix <= ? AND c.overdue_sent = 0 AND c.deleted = 0
+		 AND NOT EXISTS (SELECT 1 FROM comments r WHERE r.workspace_id = c.workspace_id AND r.back_from = c.id AND r.deleted = 0)
+		 ORDER BY c.back_by_unix LIMIT ?`, now.Unix(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.DueOuting
+	for rows.Next() {
+		var ws string
+		c, err := scanComment(prefixed{rows, &ws})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, store.DueOuting{WorkspaceID: ws, Comment: c})
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) MarkOverdue(ctx context.Context, workspaceID, commentID string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE comments SET overdue_sent = 1 WHERE workspace_id = ? AND id = ?`, workspaceID, commentID)
+	return err
+}
+
+// prefixed scans one leading column into first, then the rest as usual.
+type prefixed struct {
+	r     rowScanner
+	first *string
+}
+
+func (p prefixed) Scan(dest ...any) error { return p.r.Scan(append([]any{p.first}, dest...)...) }

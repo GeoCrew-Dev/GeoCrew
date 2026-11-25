@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store"
@@ -16,18 +17,42 @@ import (
 var commentID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
 type addCommentReq struct {
-	ID        string    `json:"id"`
-	FeatureID string    `json:"feature_id"`
-	Body      string    `json:"body"`
-	At        []float64 `json:"at"`
-	Urgent    bool      `json:"urgent"`
-	RollCall  bool      `json:"roll_call"`
-	AnswerTo  string    `json:"answer_to"`
+	ID        string     `json:"id"`
+	FeatureID string     `json:"feature_id"`
+	Body      string     `json:"body"`
+	At        []float64  `json:"at"`
+	Urgent    bool       `json:"urgent"`
+	RollCall  bool       `json:"roll_call"`
+	AnswerTo  string     `json:"answer_to"`
+	BackBy    *time.Time `json:"back_by"`
+	BackFrom  string     `json:"back_from"`
 }
 
+// An outing's back_by may lie a little in the past (a slow upload) and at most a week ahead.
+const (
+	outingPast   = time.Hour
+	outingFuture = 7 * 24 * time.Hour
+)
+
 func (q addCommentReq) validate() (store.Comment, error) {
-	c := store.Comment{ID: q.ID, FeatureID: q.FeatureID, Body: strings.TrimSpace(q.Body), At: q.At, Urgent: q.Urgent, RollCall: q.RollCall, AnswerTo: q.AnswerTo}
+	c := store.Comment{ID: q.ID, FeatureID: q.FeatureID, Body: strings.TrimSpace(q.Body), At: q.At, Urgent: q.Urgent, RollCall: q.RollCall, AnswerTo: q.AnswerTo,
+		BackBy: q.BackBy, BackFrom: q.BackFrom}
+	if c.BackBy != nil {
+		t := c.BackBy.UTC().Truncate(time.Second)
+		c.BackBy = &t
+	}
+	outing := c.BackBy != nil || c.BackFrom != ""
 	switch {
+	case outing && c.FeatureID != "":
+		return c, fmt.Errorf("outings and reports back are workspace messages, not comments on a record")
+	case c.BackBy != nil && c.BackFrom != "":
+		return c, fmt.Errorf("a message is either an outing or a report back")
+	case outing && (c.Urgent || c.RollCall || c.AnswerTo != ""):
+		return c, fmt.Errorf("an outing or report back cannot also be urgent, a roll call or an answer")
+	case c.BackFrom != "" && !commentID.MatchString(c.BackFrom):
+		return c, fmt.Errorf("back_from must be the id of an outing")
+	case c.BackBy != nil && (c.BackBy.Before(time.Now().Add(-outingPast)) || c.BackBy.After(time.Now().Add(outingFuture))):
+		return c, fmt.Errorf("back_by must be from an hour ago to a week ahead")
 	case c.Urgent && c.FeatureID != "":
 		return c, fmt.Errorf("urgent is only for workspace messages, not comments on a record")
 	case (c.RollCall || c.AnswerTo != "") && c.FeatureID != "":
@@ -76,15 +101,23 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "forbidden", "only leaders can call the roll")
 		return
 	}
-	// Read-only members may still call for help (protocol §8.1) and report in (§8.2).
-	if !member(r).Role.CanWrite() && !c.Urgent && c.AnswerTo == "" {
-		writeErr(w, http.StatusForbidden, "forbidden", "read-only members can only send urgent messages and roll call answers")
+	// Read-only members may still call for help (protocol §8.1), report in (§8.2) and check out and back (§8.3).
+	if !member(r).Role.CanWrite() && !c.Urgent && c.AnswerTo == "" && c.BackBy == nil && c.BackFrom == "" {
+		writeErr(w, http.StatusForbidden, "forbidden", "read-only members can only send urgent messages, roll call answers and outings")
 		return
 	}
 	ws := r.PathValue("ws")
+	if c.BackFrom != "" {
+		// The one who went out reports back; a leader may close it for them, e.g. after a phone call.
+		target, err := s.Store.Comment(r.Context(), ws, c.BackFrom)
+		if err == nil && !target.Deleted && target.BackBy != nil && target.AuthorID != member(r).ID && member(r).Role != store.RoleLeader {
+			writeErr(w, http.StatusForbidden, "forbidden", "only the member who went out, or a leader, can report back")
+			return
+		}
+	}
 	out, err := s.Store.AddComment(r.Context(), ws, member(r).ID, c)
 	if errors.Is(err, store.ErrInvalid) {
-		writeErr(w, http.StatusBadRequest, "invalid_comment", "answer_to must be the id of a roll call in this workspace")
+		writeErr(w, http.StatusBadRequest, "invalid_comment", "answer_to must be the id of a roll call, and back_from of an outing, in this workspace")
 		return
 	}
 	if err != nil {

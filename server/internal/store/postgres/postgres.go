@@ -184,4 +184,8 @@ var migrations = []string{
 	CREATE INDEX view_links_member ON view_links(member_id, expires_unix);`,
 	`ALTER TABLE comments ADD COLUMN roll_call BIGINT NOT NULL DEFAULT 0;
 	ALTER TABLE comments ADD COLUMN answer_to TEXT NOT NULL DEFAULT '';`,
+	`ALTER TABLE comments ADD COLUMN back_by_unix BIGINT NOT NULL DEFAULT 0;
+	ALTER TABLE comments ADD COLUMN back_from TEXT NOT NULL DEFAULT '';
+	ALTER TABLE comments ADD COLUMN overdue_sent BIGINT NOT NULL DEFAULT 0;
+	CREATE INDEX comments_outing ON comments(back_by_unix) WHERE back_by_unix > 0 AND overdue_sent = 0;`,
 }

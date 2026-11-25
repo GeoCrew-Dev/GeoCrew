@@ -238,6 +238,17 @@ type Comment struct {
 	RollCall bool `json:"roll_call,omitempty"`
 	// AnswerTo is the roll call this workspace message reports in to.
 	AnswerTo string `json:"answer_to,omitempty"`
+	// BackBy marks a workspace message as an outing: its author expects to
+	// be back, or to report in, by then (protocol §8.3).
+	BackBy *time.Time `json:"back_by,omitempty"`
+	// BackFrom is the outing this workspace message reports back from.
+	BackFrom string `json:"back_from,omitempty"`
+}
+
+// DueOuting is an outing past its back_by with no report back yet.
+type DueOuting struct {
+	WorkspaceID string
+	Comment     Comment
 }
 
 // MaxCommentRunes bounds a comment body.
@@ -329,6 +340,13 @@ type Store interface {
 	DeleteComment(ctx context.Context, workspaceID, commentID, memberID string, byLeader bool) (Comment, error)
 	// Comment returns one comment, deleted ones included.
 	Comment(ctx context.Context, workspaceID, commentID string) (Comment, error)
+	// DueOutings returns, across workspaces and oldest first, live outings
+	// whose back_by is at or before now, that have no live report back and
+	// have not been marked overdue yet.
+	DueOutings(ctx context.Context, now time.Time, limit int) ([]DueOuting, error)
+	// MarkOverdue records that an outing's overdue notice went out, so it
+	// goes out once. Unknown ids are ignored.
+	MarkOverdue(ctx context.Context, workspaceID, commentID string) error
 
 	// SetPushTarget stores (replacing) the member's push endpoint.
 	SetPushTarget(ctx context.Context, workspaceID string, t PushTarget) error

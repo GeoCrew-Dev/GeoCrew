@@ -284,6 +284,17 @@
       (r.help.length ? "，求助：" + r.help.map((a) => a.nickname || "组员").join("、") : "") +
       (r.silent.length ? "；未回应：" + r.silent.slice(0, 12).join("、") + (r.silent.length > 12 ? " 等" : "") : "");
   }
+  // Check-outs (§8.3): an outing with back_by and no live back_from pointing at it. Overdue first.
+  function outings() {
+    const back = new Set(team().filter((c) => c.back_from).map((c) => c.back_from));
+    return team().filter((c) => c.back_by && !back.has(c.id) && ago(c.created_at, 7 * 24))
+      .map((c) => ({ c, at: new Date(c.back_by) })).filter((o) => !isNaN(o.at))
+      .sort((a, b) => a.at - b.at);
+  }
+  function outingLine(o) {
+    const late = o.at < Date.now();
+    return "外出：" + (o.c.nickname || "组员") + " 预计 " + when(o.c.back_by) + " 回 · " + (late ? "已超时，" + countdown(o.at).replace("已过 ", "超过 ") : countdown(o.at)) + (o.c.body ? " · " + o.c.body : "");
+  }
   function renderBanner() {
     const box = $("banner"); box.replaceChildren();
     const open = () => { messaging = true; checking = false; $("check").classList.remove("on"); $("msgs").classList.add("on"); renderList(); };
@@ -291,6 +302,12 @@
     if (alert) box.append(Object.assign(document.createElement("div"), { className: "urgent", textContent: "紧急：" + (alert.nickname || "组员") + " " + when(alert.created_at) + " · " + alert.body, onclick: open }));
     const r = rollCall();
     if (r) box.append(Object.assign(document.createElement("div"), { className: r.help.length ? "urgent" : "call", textContent: rollLine(r), onclick: open }));
+    for (const o of outings().slice(0, 4)) {
+      box.append(Object.assign(document.createElement("div"), {
+        className: o.at < Date.now() ? "urgent" : "call", textContent: outingLine(o),
+        onclick: () => { if (Array.isArray(o.c.at) && o.c.at.length === 2) map.flyTo({ center: o.c.at, zoom: Math.max(map.getZoom(), 14) }); else open(); },
+      }));
+    }
     const m = nextMeeting();
     if (m) box.append(Object.assign(document.createElement("div"), {
       className: "call", textContent: "集合：" + (text(m.f.properties, "title") || "集合点") + " " + when(m.at.toISOString()) + " · " + countdown(m.at),
@@ -308,9 +325,10 @@
     for (const c of list) {
       const li = document.createElement("li"); li.className = "msg" + (c.urgent ? " urgent" : "");
       const head = document.createElement("div"); head.className = "sub";
-      const tag = c.roll_call ? "点名" : c.answer_to ? (c.urgent ? "求助" : "报平安") : c.urgent ? "紧急" : "";
+      const tag = c.roll_call ? "点名" : c.answer_to ? (c.urgent ? "求助" : "报平安") : c.urgent ? "紧急" : c.back_by ? "外出" : c.back_from ? "已返回" : "";
       if (tag) head.append(Object.assign(document.createElement("span"), { className: "tag", textContent: tag }));
       head.append(document.createTextNode((c.nickname || "组员") + " · " + when(c.created_at) + (Array.isArray(c.at) && c.at.length === 2 ? " · 有位置" : "")));
+      if (c.back_by) head.append(document.createTextNode(" · 预计 " + when(c.back_by) + " 回"));
       li.append(head, Object.assign(document.createElement("div"), { className: "body", textContent: c.body }));
       if (Array.isArray(c.at) && c.at.length === 2 && c.at.every((v) => typeof v === "number")) {
         li.onclick = () => map.flyTo({ center: c.at, zoom: Math.max(map.getZoom(), 15) });

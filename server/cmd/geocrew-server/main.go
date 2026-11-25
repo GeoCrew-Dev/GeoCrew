@@ -89,6 +89,9 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if sender != nil {
+		go srv.WatchOutings(ctx, time.Minute)
+	}
 	errc := make(chan error, 1)
 	go func() {
 		log.Info("geocrew-server listening", "addr", cfg.Addr, "protocol", api.ProtocolVersion,

@@ -836,3 +836,87 @@ func TestOnlyLeadersReview(t *testing.T) {
 		t.Fatalf("review should stay the leader's: %s", pull.Features[0].Properties)
 	}
 }
+
+func TestOutings(t *testing.T) {
+	var mu sync.Mutex
+	got := map[string][]push.Notice{}
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var n push.Notice
+		_ = json.NewDecoder(r.Body).Decode(&n)
+		mu.Lock()
+		got[r.URL.Path] = append(got[r.URL.Path], n)
+		mu.Unlock()
+	}))
+	defer sink.Close()
+	var sender *push.Sender
+	var srv *Server
+	e := newEnvWith(t, func(s *Server) {
+		sender = push.New(s.Store, push.Options{AllowPrivate: true, Log: s.Log})
+		s.Push = sender
+		srv = s
+	})
+	var leader, a, b joinResp
+	e.call("POST", "/api/v0/workspaces", "", map[string]string{"name": "组", "nickname": "组长"}, &leader)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "A"}, &a)
+	e.call("POST", "/api/v0/workspaces/join", "", map[string]string{"invite_code": leader.InviteCode, "nickname": "B"}, &b)
+	base := "/api/v0/workspaces/" + leader.WorkspaceID
+	var info infoResp
+	e.call("GET", "/api/v0/info", "", nil, &info)
+	if !slices.Contains(info.Capabilities, "outing") {
+		t.Fatalf("outing capability missing: %v", info.Capabilities)
+	}
+	// Everyone follows tasks only; overdue notices get through regardless.
+	for _, m := range []joinResp{leader, a, b} {
+		e.call("PUT", base+"/push", m.Token, map[string]any{"endpoint": sink.URL + "/" + m.MemberID, "events": []string{"task"}}, nil)
+	}
+	post := func(token string, body map[string]any) (int, store.Comment) {
+		var c store.Comment
+		code := e.call("POST", base+"/comments", token, body, &c)
+		return code, c
+	}
+	soon := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
+	for _, bad := range []map[string]any{
+		{"id": "x1", "body": "x", "back_by": soon, "feature_id": "f1"},
+		{"id": "x2", "body": "x", "back_by": soon, "back_from": "o1"},
+		{"id": "x3", "body": "x", "back_by": soon, "urgent": true},
+		{"id": "x4", "body": "x", "back_by": time.Now().Add(-2 * time.Hour)},
+		{"id": "x5", "body": "x", "back_by": time.Now().Add(8 * 24 * time.Hour)},
+		{"id": "x6", "body": "x", "back_from": "bad id"},
+		{"id": "x7", "body": "x", "back_from": "nope"},
+	} {
+		if code, _ := post(b.Token, bad); code != 400 {
+			t.Fatalf("invalid %v: %d", bad, code)
+		}
+	}
+	// A read-only member checks out like anyone else.
+	e.call("PATCH", base+"/members/"+b.MemberID, leader.Token, map[string]string{"role": "readonly"}, nil)
+	code, out := post(b.Token, map[string]any{"id": "o1", "body": "去北沟，三点前回", "back_by": soon, "at": []float64{116.2, 40.0}})
+	if code != 200 || out.BackBy == nil || !out.BackBy.Equal(soon) {
+		t.Fatalf("outing: %d %+v", code, out)
+	}
+	if code, _ := post(a.Token, map[string]any{"id": "r1", "body": "替 B 报平安", "back_from": "o1"}); code != 403 {
+		t.Fatalf("someone else reports back: %d", code)
+	}
+
+	// Not due yet; then due once, to everyone.
+	if n := srv.notifyOverdue(context.Background(), time.Now()); n != 0 {
+		t.Fatalf("due early: %d", n)
+	}
+	if n := srv.notifyOverdue(context.Background(), soon.Add(time.Minute)); n != 1 {
+		t.Fatalf("due: %d", n)
+	}
+	if n := srv.notifyOverdue(context.Background(), soon.Add(2*time.Minute)); n != 0 {
+		t.Fatalf("notified twice: %d", n)
+	}
+	// The leader may close it for B, e.g. after a phone call.
+	if code, back := post(leader.Token, map[string]any{"id": "r2", "body": "电话联系上了，在回来的路上", "back_from": "o1"}); code != 200 || back.BackFrom != "o1" {
+		t.Fatalf("leader reports back: %d %+v", code, back)
+	}
+	sender.Close()
+	for _, m := range []joinResp{leader, a, b} {
+		l := got["/"+m.MemberID]
+		if len(l) != 1 || l[0].Type != "overdue" || l[0].From != b.MemberID || l[0].Seq != out.Seq {
+			t.Fatalf("%s got %+v", m.MemberID, l)
+		}
+	}
+}

@@ -35,10 +35,16 @@ const (
 	// EventRollCall is a leader's roll call (to everyone) or an answer to it
 	// (to the leader who called it); cannot be unsubscribed.
 	EventRollCall = "rollcall"
+	// EventOverdue is an outing past its back_by with no report back
+	// (protocol §8.3), to everyone; cannot be unsubscribed.
+	EventOverdue = "overdue"
 )
 
 // Events lists every known event type.
-var Events = []string{EventMessage, EventComment, EventTask, EventAlert, EventRollCall}
+var Events = []string{EventMessage, EventComment, EventTask, EventAlert, EventRollCall, EventOverdue}
+
+// always lists events every member gets whatever they subscribed to.
+var always = []string{EventAlert, EventRollCall, EventOverdue}
 
 // Notice is the JSON body POSTed to an endpoint.
 type Notice struct {
@@ -182,7 +188,7 @@ func (s *Sender) deliver(j job) {
 	}
 	body, _ := json.Marshal(j.notice)
 	for _, t := range targets {
-		wanted := j.notice.Type == EventAlert || j.notice.Type == EventRollCall || slices.Contains(t.Events, j.notice.Type)
+		wanted := slices.Contains(always, j.notice.Type) || slices.Contains(t.Events, j.notice.Type)
 		if !j.audience.includes(t.MemberID) || !wanted {
 			continue
 		}
