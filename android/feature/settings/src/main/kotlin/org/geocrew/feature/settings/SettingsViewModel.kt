@@ -31,12 +31,23 @@ data class CustomSourceForm(
     val maxZoom: String = "18",
     val tms: Boolean = false,
     val attribution: String = "",
+    /** The address is a WMS service; [url] is then built from [wmsService] and [wmsLayers]. */
+    val wms: Boolean = false,
+    val wmsService: String = "",
+    val wmsLayers: String = "",
+    val wmsJpeg: Boolean = false,
+    val wmsOld: Boolean = false,
 ) {
+    /** The tile address that will be saved. */
+    val template: String
+        get() = if (!wms) url.trim() else TileTemplates.wms(wmsService, wmsLayers, png = !wmsJpeg, version = if (wmsOld) "1.1.1" else "1.3.0").orEmpty()
+
     fun error(): String? {
         if (name.isBlank()) return "请填写名称"
         val z = maxZoom.toIntOrNull()
         if (z == null || z !in 1..24) return "最大级别应为 1 到 24"
-        return TileTemplates.validate(url, TileTemplates.parseSubdomains(subdomains))
+        if (wms && template.isEmpty()) return "请填写以 http:// 或 https:// 开头的服务地址和图层名"
+        return TileTemplates.validate(template, if (wms) emptyList() else TileTemplates.parseSubdomains(subdomains))
     }
 
     fun toSource(id: String = "custom-" + UUID.randomUUID().toString().take(8)) = TileSource(
@@ -44,10 +55,10 @@ data class CustomSourceForm(
         name = name.trim(),
         layers = listOf(
             TileLayer(
-                url = url.trim(),
-                subdomains = TileTemplates.parseSubdomains(subdomains),
+                url = template,
+                subdomains = if (wms) emptyList() else TileTemplates.parseSubdomains(subdomains),
                 maxZoom = maxZoom.toInt(),
-                tms = tms,
+                tms = tms && !wms,
             ),
         ),
         attribution = attribution.trim(),

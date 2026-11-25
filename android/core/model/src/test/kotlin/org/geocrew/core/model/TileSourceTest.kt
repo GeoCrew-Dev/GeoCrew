@@ -55,4 +55,33 @@ class TileSourceTest {
         val json = Json.encodeToString(TileSource.serializer(), s)
         assertEquals(s, Json.decodeFromString(TileSource.serializer(), json))
     }
+
+    @Test
+    fun fillsTileNumbersAndWmsExtents() {
+        assertEquals("https://t/3/2/5.png", TileTemplates.fill("https://t/{z}/{x}/{y}.png", 3, 2, 5))
+        assertEquals("https://t/3/2/2.png", TileTemplates.fill("https://t/{z}/{x}/{y}.png", 3, 2, 5, tms = true))
+        val b = TileTemplates.bbox(0, 0, 0)
+        assertEquals(-20037508.34, b[0], 0.01)
+        assertEquals(20037508.34, b[3], 0.01)
+        val q = TileTemplates.bbox(1, 1, 0) // top right quarter
+        assertEquals(0.0, q[0], 1e-6)
+        assertEquals(0.0, q[1], 1e-6)
+        assertEquals(
+            "https://w?BBOX=0.000000,0.000000,20037508.342789,20037508.342789",
+            TileTemplates.fill("https://w?BBOX={bbox-epsg-3857}", 1, 1, 0),
+        )
+    }
+
+    @Test
+    fun buildsWmsAddresses() {
+        val u = TileTemplates.wms("https://maps.example.org/wms?map=geo&request=GetCapabilities&service=WMS", "geo:units, faults")
+        assertNotNull(u)
+        assertTrue(u!!.startsWith("https://maps.example.org/wms?map=geo&SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=geo%3Aunits,faults&"))
+        assertTrue("CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256" in u)
+        assertNull(TileTemplates.validate(u))
+        assertTrue("SRS=EPSG:3857" in TileTemplates.wms("http://h/ows", "a", version = "1.1.1")!!)
+        assertNull(TileTemplates.wms("ftp://h/ows", "a"))
+        assertNull(TileTemplates.wms("https://h/ows", " , "))
+        assertNotNull(TileTemplates.validate("https://h/ows?BBOX={bbox}"))
+    }
 }

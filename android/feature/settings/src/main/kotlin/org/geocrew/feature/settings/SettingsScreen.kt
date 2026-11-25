@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -123,7 +125,7 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
             item { SectionHeader("自定义图源") }
             item {
                 Text(
-                    "可以添加任何 XYZ 瓦片或 WMTS（KVP）图源，地址里用 {z}/{x}/{y} 表示级别和行列，{s} 表示子域名，{-y} 表示 TMS 行号。",
+                    "可以添加任何 XYZ 瓦片、WMTS（KVP）或 WMS 图源。瓦片地址里用 {z}/{x}/{y} 表示级别和行列，{s} 表示子域名，{-y} 表示 TMS 行号；WMS 只要填服务地址和图层名，比如各地发布的地质图服务。",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
@@ -383,15 +385,41 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onAdd: (CustomSourceForm) -> 
         onDismissRequest = onDismiss,
         title = { Text("添加图源") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(form.name, { form = form.copy(name = it) }, label = { Text("名称") }, singleLine = true)
-                OutlinedTextField(
-                    form.url,
-                    { form = form.copy(url = it.trim()) },
-                    label = { Text("瓦片地址") },
-                    placeholder = { Text("https://{s}.example.com/{z}/{x}/{y}.png") },
-                )
-                OutlinedTextField(form.subdomains, { form = form.copy(subdomains = it) }, label = { Text("子域名（如 a,b,c 或 0-7，可空）") }, singleLine = true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(form.wms, { form = form.copy(wms = it) })
+                    Text("这是 WMS 服务")
+                }
+                if (form.wms) {
+                    OutlinedTextField(
+                        form.wmsService,
+                        { form = form.copy(wmsService = it.trim()) },
+                        label = { Text("服务地址") },
+                        placeholder = { Text("https://example.org/geoserver/wms") },
+                    )
+                    OutlinedTextField(form.wmsLayers, { form = form.copy(wmsLayers = it) }, label = { Text("图层名（多个用逗号隔开）") }, singleLine = true)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(form.wmsJpeg, { form = form.copy(wmsJpeg = it) })
+                        Text("要 JPEG 图片（影像类更小，但不透明）")
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(form.wmsOld, { form = form.copy(wmsOld = it) })
+                        Text("旧版服务（WMS 1.1.1）")
+                    }
+                    Text(
+                        "图片按 Web 墨卡托（EPSG:3857）请求，服务需要支持这个坐标系。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    OutlinedTextField(
+                        form.url,
+                        { form = form.copy(url = it.trim()) },
+                        label = { Text("瓦片地址") },
+                        placeholder = { Text("https://{s}.example.com/{z}/{x}/{y}.png") },
+                    )
+                    OutlinedTextField(form.subdomains, { form = form.copy(subdomains = it) }, label = { Text("子域名（如 a,b,c 或 0-7，可空）") }, singleLine = true)
+                }
                 OutlinedTextField(
                     form.maxZoom,
                     { form = form.copy(maxZoom = it.filter(Char::isDigit)) },
@@ -400,9 +428,11 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onAdd: (CustomSourceForm) -> 
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
                 OutlinedTextField(form.attribution, { form = form.copy(attribution = it) }, label = { Text("版权说明（可空）") }, singleLine = true)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(form.tms, { form = form.copy(tms = it) })
-                    Text("TMS 行号（y 轴向上）")
+                if (!form.wms) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(form.tms, { form = form.copy(tms = it) })
+                        Text("TMS 行号（y 轴向上）")
+                    }
                 }
                 if (tried && error != null) Text(error, color = MaterialTheme.colorScheme.error)
             }

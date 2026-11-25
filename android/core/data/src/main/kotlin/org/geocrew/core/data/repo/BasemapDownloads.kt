@@ -296,7 +296,6 @@ class BasemapDownloads @Inject constructor(
                 for ((z, x, y) in queue) {
                     for ((i, layer) in layers.withIndex()) {
                         if (z < layer.minZoom || z > layer.maxZoom) { tick(missing = true, dir, descriptor); continue }
-                        val row = if (layer.tms) (1 shl z) - 1 - y else y
                         val known = ext.get(i)
                         if (known != null && File(dir, "$i/" + MbTiles.relativePath(z, x, y, known)).isFile) {
                             // Fetched on an earlier run.
@@ -304,8 +303,7 @@ class BasemapDownloads @Inject constructor(
                             tick(missing = false, dir, descriptor)
                             continue
                         }
-                        val url = layer.urls[(x + y).mod(layer.urls.size)]
-                            .replace("{z}", z.toString()).replace("{x}", x.toString()).replace("{y}", row.toString())
+                        val url = TileTemplates.fill(layer.urls[(x + y).mod(layer.urls.size)], z, x, y, layer.tms)
                         val r = fetch(url)
                         if (r == Fetch.Unreachable) {
                             // Many in a row: the network is gone, so stop and keep what we have.
