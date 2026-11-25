@@ -260,6 +260,8 @@ go run ./cmd/geocrew-server -data /tmp/geocrew-check &
 go run github.com/GeoCrew-Dev/GeoCrew-Protocol/conformance@latest -server http://localhost:8080
 ```
 
+部署到服务器后想快速确认它能用，跑 `scripts/smoke.sh https://你的域名`（要 curl 和 jq）：查版本、建一个临时工作组、推一条记录再拉回来、生成查看链接、调 MCP 工具，每步打一行 ok。它会留下一个名为 smoke-test-… 的工作组，最后一行给出删除它的命令。
+
 ## 许可
 
 Apache-2.0
