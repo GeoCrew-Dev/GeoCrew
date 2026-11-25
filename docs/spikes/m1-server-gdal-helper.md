@@ -14,7 +14,7 @@
 ## 做法
 
 - **程序** `geocrew-gdal-helper`：参数和 `gdal` 命令行一样，内部走 GDAL 3.12 的算法接口；PROJ 和 GDAL 的数据文件放在程序旁边的 `data/`。服务端以后作为子进程调用它，GDAL 出问题不会拖垮同步服务。
-- **静态构建**：x64-linux、arm64-linux、x64-osx、arm64-osx 和 x64-windows-static 五个 vcpkg 三元组，全部静态库，只编 Release。Windows 的 C 运行库也静态链接；Linux 静态链接 libstdc++ 和 libgcc；macOS 的最低系统版本是 12。
+- **静态构建**：x64-linux、arm64-linux、x64-osx、arm64-osx 和 x64-windows-static 五个 vcpkg 三元组，全部静态库，只编 Release。Windows 的 C 运行库也静态链接；Linux 静态链接 libstdc++ 和 libgcc；macOS 的最低系统版本设为 12，但只在 macOS 15 的运行器上跑过，12 到 14 没有实测。
 - **检查**（`scripts/check-helper.sh`）：在 CI 里用五种 GitHub 运行器各编一份，在各自的机器上实际运行：
   - 读出版本；
   - 把一个带中文属性的 GeoJSON 点重投影到 EPSG:4547，写成 GeoPackage 再读回，核对坐标和属性；
@@ -51,4 +51,4 @@ ADR 0013 本来就留了退路：某个平台编不出来时，同步服务照�
 已记入[待办](../backlog.md)：
 
 - Linux 版改用 glibc 较老的环境或 musl 完全静态编译，让 Debian 12、Ubuntu 22.04、RHEL 9 也能用。
-- 发布时剥离符号；把辅助程序和 `data/` 一起打进服务端的发布包和 Docker 镜像，服务端按 `gdal` 能力声明（协议 3.3）（M3）。
+- M3：发布时剥离符号；把辅助程序和 `data/` 一起打进服务端的发布包和 Docker 镜像，服务端按 `gdal` 能力声明（协议 3.3）。
