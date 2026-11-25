@@ -42,6 +42,8 @@ internal fun OfflineDownloadDialog(
     zoom: Double,
     onStart: (TilePlan, String) -> String?,
     onDismiss: () -> Unit,
+    /** The map sheet being saved, e.g. "1:5万 J50E004003"; null for the current view. */
+    sheet: String? = null,
 ) {
     val policy = BulkDownload.of(source)
     val layers = source.layers.size
@@ -49,14 +51,14 @@ internal fun OfflineDownloadDialog(
     val first = floor(zoom).toInt().coerceIn(0, sourceMax)
     val deepest = TilePlan.deepestWithin(bounds, first, sourceMax, layers)
     var range by remember { mutableStateOf(first.toFloat()..(deepest ?: first).coerceAtMost(first + 4).toFloat()) }
-    var name by remember { mutableStateOf(source.name + "（离线）") }
+    var name by remember { mutableStateOf(source.name + (sheet?.let { "（$it）" } ?: "（离线）")) }
     var error by remember { mutableStateOf<String?>(null) }
     val plan = TilePlan(bounds, range.start.toInt(), range.endInclusive.toInt(), layers)
     val fits = plan.requests <= TilePlan.MAX_REQUESTS
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("下载当前范围") },
+        title = { Text(sheet?.let { "下载图幅 $it" } ?: "下载当前范围") },
         text = {
             Column {
                 when (policy) {

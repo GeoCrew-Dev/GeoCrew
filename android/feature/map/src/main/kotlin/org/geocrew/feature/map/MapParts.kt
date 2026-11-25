@@ -397,6 +397,8 @@ internal fun GoToDialog(
     onGo: (org.geocrew.core.model.LngLat, addPoint: Boolean) -> Unit,
     /** Show a map sheet typed by its code, e.g. J50E004003. */
     onSheet: (org.geocrew.core.model.MapSheet.Sheet) -> Unit = {},
+    /** Save that sheet's extent as an offline base map. */
+    onSheetDownload: ((org.geocrew.core.model.MapSheet.Sheet) -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     var text by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf("") }
@@ -433,6 +435,9 @@ internal fun GoToDialog(
         confirmButton = {
             androidx.compose.foundation.layout.Row {
                 if (sheet != null) {
+                    if (onSheetDownload != null) {
+                        androidx.compose.material3.TextButton(onClick = { onSheetDownload(sheet) }) { androidx.compose.material3.Text("下载这幅底图") }
+                    }
                     androidx.compose.material3.TextButton(onClick = { onSheet(sheet) }) { androidx.compose.material3.Text("前往图幅") }
                 } else {
                     androidx.compose.material3.TextButton(enabled = parsed != null, onClick = { parsed?.let { onGo(it, true) } }) {

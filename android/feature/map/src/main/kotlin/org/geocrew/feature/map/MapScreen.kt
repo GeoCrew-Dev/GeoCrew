@@ -108,6 +108,9 @@ fun MapScreen(
 
     var showLayers by rememberSaveable { mutableStateOf(false) }
     var downloadArea by remember { mutableStateOf<org.geocrew.core.model.Bounds?>(null) }
+    // Set when the area is a map sheet rather than the view.
+    var downloadTitle by remember { mutableStateOf<String?>(null) }
+    var downloadZoom by remember { mutableStateOf<Double?>(null) }
     var printTitle by remember { mutableStateOf<String?>(null) }
     var pendingPrint by remember { mutableStateOf<Pair<org.geocrew.core.map.MapCapture, MapPrintSpec>?>(null) }
     val printTarget = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
@@ -501,6 +504,14 @@ fun MapScreen(
                     goneLabel = s.scale.label + " " + s.code
                     camera.fit(s.bounds)
                 },
+                onSheetDownload = { s ->
+                    showGoTo = false
+                    camera.fit(s.bounds)
+                    downloadTitle = s.scale.label + " " + s.code
+                    // Start where the whole sheet spans a few tiles across.
+                    downloadZoom = kotlin.math.floor(kotlin.math.ln(360.0 / (s.bounds.east - s.bounds.west)) / kotlin.math.ln(2.0)) + 2
+                    downloadArea = s.bounds
+                },
                 onDismiss = { showGoTo = false },
             )
         }
@@ -525,7 +536,7 @@ fun MapScreen(
                 },
                 onManage = { showLayers = false; onOpenSettings() },
                 onShare = viewModel::toggleSharedBasemap,
-                onDownload = { showLayers = false; downloadArea = camera.visibleBounds() },
+                onDownload = { showLayers = false; downloadTitle = null; downloadZoom = null; downloadArea = camera.visibleBounds() },
                 onPrint = { showLayers = false; printTitle = project?.name.orEmpty() },
                 overlays = overlayItems,
                 overlayActions = remember(viewModel, camera) {
@@ -543,7 +554,7 @@ fun MapScreen(
             )
         }
         downloadArea?.let { area ->
-            OfflineDownloadDialog(bm.source, area, camera.zoom, onStart = viewModel::startDownload, onDismiss = { downloadArea = null })
+            OfflineDownloadDialog(bm.source, area, downloadZoom ?: camera.zoom, onStart = viewModel::startDownload, onDismiss = { downloadArea = null }, sheet = downloadTitle)
         }
         printTitle?.let { initial ->
             PrintDialog(initial, onDismiss = { printTitle = null }) { title ->
