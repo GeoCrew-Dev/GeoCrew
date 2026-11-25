@@ -54,7 +54,9 @@
 - [x] GeoPackage 放在 /sdcard 上：测 10 万要素写入、崩溃后能否恢复、外置存储卡上的表现。用 WAL 时可行，见[验证报告](spikes/m1-gpkg-sdcard.md)，ADR 0004 已采纳。
   - [ ] 手机再连上后，在真机的 /sdcard 和私有目录上跑一遍 `geocrew_storage`。
   - [ ] 找一张 exFAT 的大容量存储卡，在带卡槽的手机上测。
-- [ ] 用 CustomGeometrySource 出图：测 10 万要素，以及编辑后的局部刷新。
+- [x] 用 CustomGeometrySource 出图：测 10 万要素，以及编辑后的局部刷新。可行，见[验证报告](spikes/m1-map-customgeometry.md)。
+  - [ ] 真机上跑 `mapspike`，量帧率，并试 MapLibre 的 Vulkan 后端（模拟器上会崩溃）。
+  - [ ] M2：低缩放级别抽稀或聚合（8 级时一个瓦片装下全部 10 万点，首屏要几秒）。
 - [ ] 非 Web 墨卡托栅格的显示，比如天地图经纬度瓦片、高斯投影的 GeoTIFF。
 - [ ] 服务端 GDAL 辅助程序在五个平台上的静态构建。
 - [ ] 天地图 Key 该用哪种类型，地图上有没有水印。
