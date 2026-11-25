@@ -28,6 +28,8 @@ const Usage = `用法：geocrew-server [参数] admin <命令>
   invite <工作组>                   更换邀请码并显示新码
   role <工作组> <成员> <角色>        修改角色：leader / member / readonly
   revoke <工作组> <成员>            移出成员，令牌立即失效
+  archive <工作组>                  归档：只能查看和导出，不能修改或加入
+  reopen <工作组>                   重新打开已归档的工作组
   backup <目标文件>                 在线备份数据库（附件目录另行复制）
   copy <目标数据库>                  把全部数据复制到另一个空库：postgres://… 或 .db 文件，
                                    用于从 SQLite 换到 PostgreSQL（或反过来）；附件目录不变
@@ -136,6 +138,24 @@ func RunWith(ctx context.Context, st store.Store, opt Options, args []string, ou
 			return explain(err)
 		}
 		fmt.Fprintf(out, "已将 %s 移出「%s」。已连接的实时通道会在下次重连时断开。\n", m.Nickname, ws.Name)
+		return nil
+	case "archive", "reopen":
+		if err := need(1); err != nil {
+			return err
+		}
+		ws, err := findWorkspace(ctx, st, rest[0])
+		if err != nil {
+			return err
+		}
+		archived := cmd == "archive"
+		if _, err := st.UpdateWorkspace(ctx, ws.ID, store.WorkspaceUpdate{Archived: &archived}); err != nil {
+			return explain(err)
+		}
+		if archived {
+			fmt.Fprintf(out, "已归档「%s」：组员只能查看和导出，邀请码暂停使用。组员手机上没上传的修改会留在本机，重新打开后上传。\n", ws.Name)
+		} else {
+			fmt.Fprintf(out, "已重新打开「%s」。\n", ws.Name)
+		}
 		return nil
 	case "copy":
 		if err := need(1); err != nil {

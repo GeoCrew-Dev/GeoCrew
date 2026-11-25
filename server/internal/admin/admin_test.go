@@ -306,3 +306,27 @@ func TestDeleteWorkspace(t *testing.T) {
 		t.Fatal("deleting a missing workspace should fail")
 	}
 }
+
+func TestArchiveAndReopen(t *testing.T) {
+	ctx := context.Background()
+	db := open(t)
+	ws, _, _, err := db.CreateWorkspace(ctx, "北山填图", "老王")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run(t, db, "archive", ws.ID[:6]); err != nil || !strings.Contains(out, "已归档") {
+		t.Fatalf("archive: %v\n%s", err, out)
+	}
+	if out, err := run(t, db, "workspaces"); err != nil || !strings.Contains(out, "北山填图（已归档）") {
+		t.Fatalf("workspaces after archive: %v\n%s", err, out)
+	}
+	if _, _, _, err := db.Join(ctx, ws.InviteCode, "新人"); err == nil {
+		t.Fatal("joined an archived workspace")
+	}
+	if out, err := run(t, db, "reopen", ws.ID); err != nil || !strings.Contains(out, "重新打开") {
+		t.Fatalf("reopen: %v\n%s", err, out)
+	}
+	if got, _ := db.Workspace(ctx, ws.ID); got.ArchivedAt != nil {
+		t.Fatalf("still archived: %+v", got)
+	}
+}

@@ -84,6 +84,7 @@ geocrew-server -data /var/lib/geocrew admin members 3f9a        # 成员与当�
 geocrew-server -data /var/lib/geocrew admin invite 3f9a         # 更换邀请码
 geocrew-server -data /var/lib/geocrew admin role 3f9a 7c21 leader
 geocrew-server -data /var/lib/geocrew admin revoke 3f9a 7c21
+geocrew-server -data /var/lib/geocrew admin archive 3f9a        # 归档（reopen 重新打开）
 # Docker：docker compose exec geocrew geocrew-server admin workspaces
 ```
 
@@ -127,7 +128,7 @@ geocrew-server -data /var/lib/geocrew admin delete 3f9a           # 只列出将
 geocrew-server -data /var/lib/geocrew admin delete 3f9a confirm   # 真的删除
 ```
 
-项目结束但数据还要留着看时，先让组长在应用里「归档」工作组（`PATCH /api/v0/workspaces/{id}`，`{"archived": true}`，也可以顺便改名）：归档后记录、设置、讨论和附件都只能读不能改，邀请码不能再加入，`admin list` 在名称后标「已归档」，组长随时可以重新打开。确实不再需要时，`delete` 永久删除整个工作组：成员和令牌（查看链接一并失效）、全部记录和修改历史、讨论、推送登记和附件目录。不加 `confirm` 只显示工作组名称、成员数、记录数和附件占用的空间。删除不可恢复，请先 `backup`；组员手机上的数据不受影响，仍可以导出。定时备份的快照里还会留着它，按保留份数逐渐淘汰，备份目录里的附件需要手动删除。
+项目结束但数据还要留着看时，先让组长在应用里「归档」工作组（`PATCH /api/v0/workspaces/{id}`，`{"archived": true}`，也可以顺便改名）：归档后记录、设置、讨论和附件都只能读不能改，邀请码不能再加入，`admin workspaces` 在名称后标「已归档」，组长随时可以重新打开；运维也可以用 `admin archive` / `admin reopen`。确实不再需要时，`delete` 永久删除整个工作组：成员和令牌（查看链接一并失效）、全部记录和修改历史、讨论、推送登记和附件目录。不加 `confirm` 只显示工作组名称、成员数、记录数和附件占用的空间。删除不可恢复，请先 `backup`；组员手机上的数据不受影响，仍可以导出。定时备份的快照里还会留着它，按保留份数逐渐淘汰，备份目录里的附件需要手动删除。
 
 ## 导出数据
 
