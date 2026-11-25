@@ -44,6 +44,8 @@ object MapColors {
     const val SECTION = "#795548"
     /** Geological routes: the line joining their points. */
     const val ROUTE = "#00838F"
+    /** Boreholes and pits: the collar. */
+    const val BOREHOLE = "#4E342E"
     const val SELECTED = "#00E5FF"
     /** Geological contacts and faults (line_style), as on a printed geological map. */
     const val CONTACT = "#212121"

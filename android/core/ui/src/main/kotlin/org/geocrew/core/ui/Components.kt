@@ -15,6 +15,7 @@ import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.Timeline
+import androidx.compose.material.icons.outlined.VerticalAlignBottom
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +36,7 @@ object KindUi {
         FeatureKind.PHOTO -> "照片点"
         FeatureKind.SECTION -> "实测剖面"
         FeatureKind.ROUTE -> "地质路线"
+        FeatureKind.BOREHOLE -> "钻孔"
         else -> kind.id
     }
 
@@ -47,6 +49,7 @@ object KindUi {
         FeatureKind.PHOTO -> Icons.Outlined.PhotoCamera
         FeatureKind.SECTION -> Icons.Outlined.Layers
         FeatureKind.ROUTE -> Icons.Outlined.Hiking
+        FeatureKind.BOREHOLE -> Icons.Outlined.VerticalAlignBottom
         else -> Icons.Outlined.Category
     }
 }

@@ -34,6 +34,8 @@ internal class StratColumnPdf {
     private val smallPaint = text(7f, color = GREY)
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 0.6f; color = Color.BLACK }
     private val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 0.5f; color = Color.BLACK }
+    private val water = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1f; color = Color.rgb(21, 101, 192) }
+    private val waterFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.rgb(21, 101, 192) }
     private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.BLACK }
 
     // Table columns, left to right: 层号, 柱状图, 累计厚度, 厚度, 岩性及描述.
@@ -52,16 +54,16 @@ internal class StratColumnPdf {
         try {
             var page = doc.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, ++pageNo).create())
             var y = titleBlock(page.canvas, c)
-            y = header(page.canvas, y)
+            y = header(page.canvas, y, c)
             for (r in c.rows) {
                 val h = (r.heightMm * PT_PER_MM).toFloat()
                 if (y + h > pageHeight - margin - 30f && y > margin + headHeight + 1f) {
                     footer(page.canvas, c, pageNo)
                     doc.finishPage(page)
                     page = doc.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, ++pageNo).create())
-                    y = header(page.canvas, margin)
+                    y = header(page.canvas, margin, c)
                 }
-                row(page.canvas, r, y, h)
+                row(page.canvas, r, y, h, c)
                 y += h
             }
             legend(page.canvas, c, y + 14f)
@@ -76,33 +78,40 @@ internal class StratColumnPdf {
 
     private fun titleBlock(canvas: Canvas, c: StratColumn): Float {
         var y = margin + 16f
-        canvas.drawText("${c.title} 实测剖面柱状图", margin, y, titlePaint)
+        val hole = c.kind == StratColumn.Kind.BOREHOLE
+        canvas.drawText("${c.title} " + if (hole) "钻孔柱状图" else "实测剖面柱状图", margin, y, titlePaint)
         y += 16f
         val facts = buildList {
             add("比例尺 1:${c.scale}")
-            add("总厚 ${m(c.total)} m")
-            add("${c.rows.size} 层")
-            add(if (c.startIsBase) "导线自下而上测" else "导线自上而下测")
-            if (c.unknown > 0) add("${c.unknown} 层缺产状，厚度未知")
+            if (hole) {
+                add("孔深 ${m(c.total)} m")
+                add("${c.rows.size} 层")
+                add(c.water?.let { "地下水位 ${m(it)} m" } ?: "未见地下水")
+            } else {
+                add("总厚 ${m(c.total)} m")
+                add("${c.rows.size} 层")
+                add(if (c.startIsBase) "导线自下而上测" else "导线自上而下测")
+                if (c.unknown > 0) add("${c.unknown} 层缺产状，厚度未知")
+            }
         }
         canvas.drawText(facts.joinToString("  ·  "), margin, y, subPaint)
         return y + 12f
     }
 
-    private fun header(canvas: Canvas, top: Float): Float {
+    private fun header(canvas: Canvas, top: Float, c: StratColumn): Float {
         val r = RectF(xNo, top, xEnd, top + headHeight)
         canvas.drawRect(r, line)
         listOf(xColumn, xCum, xThick, xText).forEach { canvas.drawLine(it, r.top, it, r.bottom, line) }
         val base = top + headHeight / 2 + 3f
         centered(canvas, "层号", xNo, xColumn, base, headPaint)
         centered(canvas, "柱状图", xColumn, xCum, base, headPaint)
-        centered(canvas, "累计厚(m)", xCum, xThick, base, headPaint)
+        centered(canvas, if (c.kind == StratColumn.Kind.BOREHOLE) "层底深(m)" else "累计厚(m)", xCum, xThick, base, headPaint)
         centered(canvas, "厚度(m)", xThick, xText, base, headPaint)
         canvas.drawText("岩性及描述", xText + 4f, base, headPaint)
         return top + headHeight
     }
 
-    private fun row(canvas: Canvas, r: StratColumn.Row, top: Float, h: Float) {
+    private fun row(canvas: Canvas, r: StratColumn.Row, top: Float, h: Float, c: StratColumn) {
         val bottom = top + h
         canvas.drawRect(xNo, top, xEnd, bottom, line)
         listOf(xColumn, xCum, xThick, xText).forEach { canvas.drawLine(it, top, it, bottom, line) }
@@ -113,8 +122,19 @@ internal class StratColumnPdf {
         val p = if (small) smallPaint else cellPaint
         val mid = top + h / 2 + p.textSize / 3
         centered(canvas, r.no, xNo, xColumn, mid, p)
-        // Cumulative thickness at the top of the layer, as on printed columns.
-        canvas.drawText(m(r.top), xCum + 3f, top + p.textSize + 1f, p)
+        if (c.kind == StratColumn.Kind.BOREHOLE) {
+            // Depth of the layer's bottom, at the bottom of the cell, as on borehole logs.
+            canvas.drawText(m(r.top), xCum + 3f, bottom - 2f, p)
+            c.water?.takeIf { it >= r.base && it < r.top }?.let { w ->
+                val y = top + (h * ((w - r.base) / (r.top - r.base))).toFloat()
+                canvas.drawLine(xColumn, y, xCum, y, water)
+                val tri = Path().apply { moveTo(xCum - 14f, y - 6f); lineTo(xCum - 6f, y - 6f); lineTo(xCum - 10f, y); close() }
+                canvas.drawPath(tri, waterFill)
+            }
+        } else {
+            // Cumulative thickness at the top of the layer, as on printed columns.
+            canvas.drawText(m(r.top), xCum + 3f, top + p.textSize + 1f, p)
+        }
         centered(canvas, r.thickness?.let(::m) ?: "—", xThick, xText, mid, p)
 
         val text = buildString {

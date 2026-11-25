@@ -72,4 +72,24 @@ class StratColumnTest {
         assertEquals(LithoPattern.SANDSTONE, LithoPattern.of("Sandstone"))
         assertEquals(LithoPattern.BLANK, LithoPattern.of("第四系"))
     }
+
+    @Test
+    fun boreholeIsDrawnByDepthFromTheCollar() {
+        val hole = org.geocrew.core.model.Borehole(
+            listOf(
+                org.geocrew.core.model.BoreLayer("1", 0.5, "杂填土"),
+                org.geocrew.core.model.BoreLayer("2", 6.0, "粉砂岩"),
+                org.geocrew.core.model.BoreLayer("3", 20.0, "花岗岩"),
+            ),
+            water = 2.0,
+        )
+        val c = StratColumn.borehole("ZK01", hole)
+        org.junit.Assert.assertEquals(StratColumn.Kind.BOREHOLE, c.kind)
+        org.junit.Assert.assertEquals(listOf("1", "2", "3"), c.rows.map { it.no })
+        org.junit.Assert.assertEquals(6.0, c.rows[1].top, 0.0)
+        org.junit.Assert.assertEquals(0.5, c.rows[1].base, 0.0)
+        org.junit.Assert.assertEquals(100, c.scale) // 20 m at 1:100 is 200 mm
+        org.junit.Assert.assertEquals(5.0, c.rows[0].heightMm, 1e-9)
+        org.junit.Assert.assertEquals(2.0, c.water!!, 0.0)
+    }
 }

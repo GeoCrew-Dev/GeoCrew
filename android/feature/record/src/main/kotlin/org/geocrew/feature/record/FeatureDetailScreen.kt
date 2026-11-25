@@ -133,6 +133,7 @@ fun FeatureDetailScreen(
     /** Opens a measured-section record in the section editor. */
     onOpenMeasuredSection: ((String) -> Unit)? = null,
     onOpenRoute: ((String) -> Unit)? = null,
+    onOpenBorehole: ((String) -> Unit)? = null,
     viewModel: FeatureDetailViewModel = hiltViewModel(),
 ) {
     val feature by viewModel.feature.collectAsStateWithLifecycle()
@@ -220,6 +221,9 @@ fun FeatureDetailScreen(
             }
             if (onOpenMeasuredSection != null && f.kind == FeatureKind.SECTION) {
                 OutlinedButton(onClick = { onOpenMeasuredSection(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("打开实测剖面（导线、分层与厚度）") }
+            }
+            if (onOpenBorehole != null && f.kind == FeatureKind.BOREHOLE) {
+                OutlinedButton(onClick = { onOpenBorehole(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("打开钻孔编录（分层、深度与水位）") }
             }
             if (onSection != null && f.kind != FeatureKind.SECTION && f.kind != FeatureKind.ROUTE && (f.geometry is Geometry.LineString || f.geometry is Geometry.MultiLineString) && f.kind != FeatureKind.TRACK) {
                 OutlinedButton(onClick = { onSection(f.id) }, modifier = Modifier.padding(horizontal = 16.dp)) { Text("作为剖面线，投影产状算视倾角") }

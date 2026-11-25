@@ -132,6 +132,7 @@ object DxfFormat : FeatureFormat {
         FeatureKind.TRACK -> "轨迹"
         FeatureKind.SECTION -> "实测剖面"
         FeatureKind.ROUTE -> "地质路线"
+        FeatureKind.BOREHOLE -> "钻孔"
         else -> k.id
     }
 

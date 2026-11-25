@@ -27,8 +27,10 @@ value class FeatureKind(val id: String) {
         val SECTION = FeatureKind("section")
         /** A geological route (§6.6); its line joins the observation points it lists. */
         val ROUTE = FeatureKind("route")
+        /** A borehole or pit logged by depth (§6.11); its point is the collar. */
+        val BOREHOLE = FeatureKind("borehole")
 
-        val builtIn = listOf(POINT, GEO_POINT, LINE, POLYGON, TRACK, PHOTO, SECTION, ROUTE)
+        val builtIn = listOf(POINT, GEO_POINT, LINE, POLYGON, TRACK, PHOTO, SECTION, ROUTE, BOREHOLE)
     }
 }
 
@@ -97,6 +99,8 @@ object Props {
     const val SECTION = "section"
     /** Stops, descriptions and summary of a geological route (§6.6). */
     const val ROUTE = "route"
+    /** Depth log of a borehole or pit (§6.11). */
+    const val BOREHOLE = "borehole"
     const val LITHOLOGY = "lithology"
     /** What a line stands for: contact or fault, observed or inferred (see [LineStyle]). */
     const val LINE_STYLE = "line_style"
@@ -126,7 +130,7 @@ object Props {
 
     /** Keys with their own editors or set by the app; free attributes and form fields never use them. */
     val MANAGED: Set<String> = setOf(
-        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, LITHOLOGY, LINE_STYLE, MEET_AT, REVIEW, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
+        KIND, TITLE, NOTE, PHOTOS, PHOTO_INFO, AUDIO, AUDIO_INFO, SAMPLES, SECTION, ROUTE, BOREHOLE, LITHOLOGY, LINE_STYLE, MEET_AT, REVIEW, STRIKE, DIP_DIRECTION, DIP, AZIMUTH,
         STARTED_AT, ENDED_AT, ACCURACY_M, GPS_SAMPLES, GPS_SPREAD_M, LENGTH_M, AREA_M2,
         ASSIGNEE, ASSIGNEE_NAME, TASK_STATUS, ALT_SOURCE,
     )

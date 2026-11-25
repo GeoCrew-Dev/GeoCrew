@@ -26,10 +26,10 @@ object RecordCheck {
     data class Issue(val featureId: String, val code: Code, val message: String)
 
     /** Kinds that are meant to have a place on the map. */
-    private val located = setOf(FeatureKind.POINT, FeatureKind.GEO_POINT, FeatureKind.LINE, FeatureKind.POLYGON, FeatureKind.TRACK, FeatureKind.PHOTO)
+    private val located = setOf(FeatureKind.POINT, FeatureKind.GEO_POINT, FeatureKind.LINE, FeatureKind.POLYGON, FeatureKind.TRACK, FeatureKind.PHOTO, FeatureKind.BOREHOLE)
 
     /** Kinds numbered like D001 in the field book. */
-    private val numbered = setOf(FeatureKind.POINT, FeatureKind.GEO_POINT, FeatureKind.PHOTO, FeatureKind.SECTION, FeatureKind.ROUTE)
+    private val numbered = setOf(FeatureKind.POINT, FeatureKind.GEO_POINT, FeatureKind.PHOTO, FeatureKind.SECTION, FeatureKind.ROUTE, FeatureKind.BOREHOLE)
 
     /** Least records before an outlier means anything. */
     private const val MIN_FOR_OUTLIER = 5

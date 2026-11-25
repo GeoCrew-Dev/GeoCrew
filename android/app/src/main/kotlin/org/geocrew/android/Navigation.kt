@@ -16,6 +16,7 @@ import org.geocrew.feature.analysis.ANALYSIS_TOOL_ARG
 import org.geocrew.feature.analysis.AnalysisScreen
 import org.geocrew.core.gis.SectionTool
 import org.geocrew.feature.analysis.StereonetScreen
+import org.geocrew.feature.compass.BOREHOLE_FEATURE_ARG
 import org.geocrew.feature.compass.CompassScreen
 import org.geocrew.feature.compass.CoordinatesScreen
 import org.geocrew.feature.compass.ROUTE_FEATURE_ARG
@@ -66,6 +67,9 @@ object Routes {
     const val SECTION = "section?$SECTION_FEATURE_ARG={$SECTION_FEATURE_ARG}"
     const val SECTION_ANY = "section"
     fun measuredSection(featureId: String) = "section?$SECTION_FEATURE_ARG=$featureId"
+    const val BOREHOLE = "borehole?$BOREHOLE_FEATURE_ARG={$BOREHOLE_FEATURE_ARG}"
+    const val BOREHOLE_ANY = "borehole"
+    fun borehole(featureId: String) = "borehole?$BOREHOLE_FEATURE_ARG=$featureId"
     const val ROUTE = "route?$ROUTE_FEATURE_ARG={$ROUTE_FEATURE_ARG}"
     const val ROUTE_ANY = "route"
     fun geoRoute(featureId: String) = "route?$ROUTE_FEATURE_ARG=$featureId"
@@ -188,6 +192,7 @@ fun GeoCrewNavHost() {
                 onSeek = { nav.navigate(Routes.seek(it)) },
                 onOpenMeasuredSection = { nav.navigate(Routes.measuredSection(it)) },
                 onOpenRoute = { nav.navigate(Routes.geoRoute(it)) },
+                onOpenBorehole = { nav.navigate(Routes.borehole(it)) },
             )
         }
         composable(Routes.THICKNESS) {
@@ -204,6 +209,12 @@ fun GeoCrewNavHost() {
             arguments = listOf(navArgument(SECTION_FEATURE_ARG) { type = NavType.StringType; nullable = true; defaultValue = null }),
         ) {
             org.geocrew.feature.compass.SectionScreen(onBack = { nav.popBackStack() })
+        }
+        composable(
+            Routes.BOREHOLE,
+            arguments = listOf(navArgument(BOREHOLE_FEATURE_ARG) { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) {
+            org.geocrew.feature.compass.BoreholeScreen(onBack = { nav.popBackStack() })
         }
         composable(
             Routes.ROUTE,

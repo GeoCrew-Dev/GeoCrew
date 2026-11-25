@@ -102,6 +102,7 @@ internal object MapLayers {
             stop("track", MapColors.TRACK),
             stop("section", MapColors.SECTION),
             stop("route", MapColors.ROUTE),
+            stop("borehole", MapColors.BOREHOLE),
         ),
     )
 

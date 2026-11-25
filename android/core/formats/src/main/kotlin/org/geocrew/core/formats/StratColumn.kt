@@ -78,14 +78,24 @@ data class StratColumn(
     val startIsBase: Boolean,
     /** Layers whose thickness couldn't be worked out (no attitude anywhere). */
     val unknown: Int,
+    /** A measured section stacked by thickness, or a borehole drawn by depth. */
+    val kind: Kind = Kind.SECTION,
+    /** Depth of the water table in a borehole (m below the collar). */
+    val water: Double? = null,
 ) {
+    enum class Kind { SECTION, BOREHOLE }
+
     data class Row(
         val no: String,
         val lithology: String,
         val pattern: LithoPattern,
         /** True thickness (m); null when unknown. */
         val thickness: Double?,
-        /** Height from the column's base to this row's base and top (m), by known thicknesses. */
+        /**
+         * Height from the column's base to this row's base and top (m), by
+         * known thicknesses. In a borehole they are depths instead: [base] is
+         * the depth of the layer's top and [top] the depth of its bottom.
+         */
         val base: Double,
         val top: Double,
         /** Drawn height on paper (mm). */
@@ -102,6 +112,37 @@ data class StratColumn(
     val heightMm: Double get() = rows.sumOf { it.heightMm }
 
     companion object {
+        /**
+         * Lays a borehole log out as a column, collar at the top, at the finest
+         * scale that fits about [maxHeightMm]; the hole is drawn to its final
+         * depth, so a stretch below the last layer stays blank.
+         */
+        fun borehole(title: String, hole: org.geocrew.core.model.Borehole, maxHeightMm: Double = 230.0, minRowMm: Double = 3.0): StratColumn {
+            val iv = hole.intervals()
+            fun heights(scale: Int) = iv.map { i ->
+                val h = i.thickness * 1000 / scale
+                maxOf(h, minRowMm) to (h < minRowMm)
+            }
+            val scale = SCALES.firstOrNull { sc -> heights(sc).sumOf { it.first } <= maxHeightMm } ?: SCALES.last()
+            val hs = heights(scale)
+            val rows = iv.mapIndexed { k, i ->
+                Row(
+                    no = i.layer.no,
+                    lithology = i.layer.lithology.trim(),
+                    pattern = LithoPattern.of(i.layer.lithology),
+                    thickness = i.thickness,
+                    base = i.top,
+                    top = i.bottom,
+                    heightMm = hs[k].first,
+                    attitude = null,
+                    borrowed = false,
+                    note = i.layer.note.trim(),
+                    stretched = hs[k].second,
+                )
+            }
+            return StratColumn(title, rows, hole.total, scale, startIsBase = false, unknown = 0, kind = Kind.BOREHOLE, water = hole.water)
+        }
+
         /** Scales a chart is usually drawn at, finest first. */
         val SCALES = listOf(50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000)
 

@@ -388,7 +388,7 @@ private fun ProfileSketch(section: MeasuredSection, result: MeasuredSection.Resu
 }
 
 @Composable
-private fun Num(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier, signed: Boolean = false) {
+internal fun Num(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier, signed: Boolean = false) {
     OutlinedTextField(
         value = value,
         onValueChange = { t -> if (t.all { it.isDigit() || it == '.' || (signed && it == '-') }) onChange(t) },
@@ -400,7 +400,7 @@ private fun Num(value: String, onChange: (String) -> Unit, label: String, modifi
 }
 
 @Composable
-private fun PickList(
+internal fun PickList(
     title: String,
     items: List<SectionPick>,
     detail: (SectionPick) -> String,
@@ -429,8 +429,8 @@ private fun PickList(
     )
 }
 
-private fun <T> List<T>.with(i: Int, v: T): List<T> = toMutableList().also { if (i in it.indices) it[i] = v }
-private fun <T> List<T>.without(i: Int): List<T> = filterIndexed { j, _ -> j != i }
+internal fun <T> List<T>.with(i: Int, v: T): List<T> = toMutableList().also { if (i in it.indices) it[i] = v }
+internal fun <T> List<T>.without(i: Int): List<T> = filterIndexed { j, _ -> j != i }
 
 /** Asks which end of the traverse is the base of the sequence before drawing the column. */
 @Composable
