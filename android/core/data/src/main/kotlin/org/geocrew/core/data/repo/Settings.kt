@@ -28,7 +28,13 @@ import javax.inject.Singleton
  * user brings their own key. Debug builds may carry a developer key so the map
  * works out of the box while developing.
  */
-data class BuildDefaults(val tiandituKey: String = "", val userAgent: String = "GeoCrew")
+data class BuildDefaults(
+    val tiandituKey: String = "",
+    val userAgent: String = "GeoCrew",
+    /** Release feed for in-app updates (GitHub API format); empty in builds that are updated elsewhere (app stores, F-Droid, debug). */
+    val updateFeed: String = "",
+    val versionName: String = "",
+)
 
 data class AppSettings(
     /** Tianditu key entered by the user on this device. */

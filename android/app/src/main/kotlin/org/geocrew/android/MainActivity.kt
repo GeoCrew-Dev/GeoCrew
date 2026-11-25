@@ -15,6 +15,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             GeoCrewTheme {
                 GeoCrewNavHost()
+                org.geocrew.feature.settings.UpdatePrompt()
             }
         }
     }

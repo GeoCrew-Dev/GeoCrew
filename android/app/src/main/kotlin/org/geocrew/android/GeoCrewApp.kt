@@ -53,5 +53,10 @@ internal fun userAgent() = "GeoCrew/${BuildConfig.VERSION_NAME} (Android ${andro
 object AppModule {
     @Provides
     @Singleton
-    fun buildDefaults() = BuildDefaults(tiandituKey = BuildConfig.DEV_TIANDITU_KEY, userAgent = userAgent())
+    fun buildDefaults() = BuildDefaults(
+        tiandituKey = BuildConfig.DEV_TIANDITU_KEY,
+        userAgent = userAgent(),
+        updateFeed = BuildConfig.UPDATE_FEED,
+        versionName = BuildConfig.VERSION_NAME,
+    )
 }
