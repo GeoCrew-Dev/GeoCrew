@@ -4,7 +4,8 @@
 
 本目录存放：
 
-- **协同协议**：客户端与自部署服务端之间的数据格式、接口和鉴权约定（`docs/protocol-v0.md`），以及机器可读的 OpenAPI 描述（`docs/openapi.yaml`）。
+- **协同协议**：客户端与自部署服务端之间的数据格式、接口和鉴权约定。v1 正在写（`docs/protocol-v1.md`，草案，不兼容 v0）；现行实现仍是 v0（`docs/protocol-v0.md`），以及机器可读的 OpenAPI 描述（`docs/openapi.yaml`）。
+- **共用测试样例**（`testdata/`）：合并等规则的 JSON 样例，服务端和安卓客户端都必须通过。
 - **分析插件接口**：其他安卓应用如何给同勘提供空间分析工具（`docs/plugins.md`），只交换 GeoJSON 文件。
 - **一致性检查**：从外部跑一遍、确认某个服务端按协议工作的命令行工具（`conformance/`），主仓库的 CI 用它检查 `server/`。
 - **版本与发布**：版本号规则、发布附带的文件和 `SHA256SUMS`、客户端与服务端怎样检查和安装更新（`docs/releases.md`）。

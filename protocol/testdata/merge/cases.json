@@ -1,0 +1,252 @@
+{
+  "about": "Protocol v1 merge rules (protocol/docs/protocol-v1.md, 合并规则). Each case applies one change to a row. Shared by the Go server and the Android client; both must produce exactly `expect`. Defaults: server_now 2026-11-25T12:00:00Z, seq 9, live fields f1, f2, geom.",
+  "defaults": {
+    "server_now": "2026-11-25T12:00:00Z",
+    "seq": 9,
+    "live": ["f1", "f2", "geom"]
+  },
+  "cases": [
+    {
+      "name": "a new row takes every field",
+      "row": null,
+      "change": {
+        "by": "m2", "base_seq": 0, "client_now": "2026-11-25T12:00:00Z",
+        "set": {
+          "f1": { "value": "D001", "edited_at": "2026-11-25T11:50:00Z" },
+          "geom": { "value": { "type": "Point", "coordinates": [114.0, 30.0] }, "edited_at": "2026-11-25T11:50:00Z" }
+        }
+      },
+      "expect": {
+        "row": { "fields": {
+          "f1": { "value": "D001", "by": "m2", "at": "2026-11-25T11:50:00Z", "seq": 9 },
+          "geom": { "value": { "type": "Point", "coordinates": [114.0, 30.0] }, "by": "m2", "at": "2026-11-25T11:50:00Z", "seq": 9 }
+        } },
+        "conflicts": []
+      }
+    },
+    {
+      "name": "an edit on top of the latest version simply applies",
+      "row": { "fields": { "f1": { "value": "old", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 } } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "set": { "f1": { "value": "new", "edited_at": "2026-11-25T11:00:00Z" } }
+      },
+      "expect": {
+        "row": { "fields": { "f1": { "value": "new", "by": "m2", "at": "2026-11-25T11:00:00Z", "seq": 9 } } },
+        "conflicts": []
+      }
+    },
+    {
+      "name": "edits to different fields are both kept",
+      "row": { "fields": {
+        "f1": { "value": "a", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 },
+        "f2": { "value": "x", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 }
+      } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "set": { "f2": { "value": "y", "edited_at": "2026-11-25T10:30:00Z" } }
+      },
+      "expect": {
+        "row": { "fields": {
+          "f1": { "value": "a", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 },
+          "f2": { "value": "y", "by": "m2", "at": "2026-11-25T10:30:00Z", "seq": 9 }
+        } },
+        "conflicts": []
+      }
+    },
+    {
+      "name": "the same field: the later edit wins and the other value is recorded",
+      "row": { "fields": { "f1": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "set": { "f1": { "value": "from m2", "edited_at": "2026-11-25T11:30:00Z" } }
+      },
+      "expect": {
+        "row": { "fields": { "f1": { "value": "from m2", "by": "m2", "at": "2026-11-25T11:30:00Z", "seq": 9 } } },
+        "conflicts": [
+          { "kind": "value", "field": "f1",
+            "kept": { "value": "from m2", "by": "m2", "at": "2026-11-25T11:30:00Z", "seq": 9 },
+            "lost": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } }
+        ]
+      }
+    },
+    {
+      "name": "the same field: an earlier edit loses and is recorded",
+      "row": { "fields": { "f1": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "set": { "f1": { "value": "from m2", "edited_at": "2026-11-25T10:30:00Z" } }
+      },
+      "expect": {
+        "row": { "fields": { "f1": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+        "conflicts": [
+          { "kind": "value", "field": "f1",
+            "kept": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 },
+            "lost": { "value": "from m2", "by": "m2", "at": "2026-11-25T10:30:00Z", "seq": 9 } }
+        ]
+      }
+    },
+    {
+      "name": "both set the same value: no conflict",
+      "row": { "fields": { "f1": { "value": "same", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "set": { "f1": { "value": "same", "edited_at": "2026-11-25T11:30:00Z" } }
+      },
+      "expect": {
+        "row": { "fields": { "f1": { "value": "same", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+        "conflicts": []
+      }
+    },
+    {
+      "name": "edit times are moved onto the server's clock: a phone an hour fast does not win",
+      "row": { "fields": { "f1": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T13:00:00Z",
+        "set": { "f1": { "value": "from m2", "edited_at": "2026-11-25T11:45:00Z" } }
+      },
+      "expect": {
+        "row": { "fields": { "f1": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+        "conflicts": [
+          { "kind": "value", "field": "f1",
+            "kept": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 },
+            "lost": { "value": "from m2", "by": "m2", "at": "2026-11-25T10:45:00Z", "seq": 9 } }
+        ]
+      }
+    },
+    {
+      "name": "an edit time after the client's own clock counts as now",
+      "row": null,
+      "change": {
+        "by": "m2", "base_seq": 0, "client_now": "2026-11-25T12:00:00Z",
+        "set": { "f1": { "value": "D002", "edited_at": "2026-11-25T12:10:00Z" } }
+      },
+      "expect": {
+        "row": { "fields": { "f1": { "value": "D002", "by": "m2", "at": "2026-11-25T12:00:00Z", "seq": 9 } } },
+        "conflicts": []
+      }
+    },
+    {
+      "name": "equal edit times: the change that arrives later wins",
+      "row": { "fields": { "f1": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "set": { "f1": { "value": "from m2", "edited_at": "2026-11-25T11:00:00Z" } }
+      },
+      "expect": {
+        "row": { "fields": { "f1": { "value": "from m2", "by": "m2", "at": "2026-11-25T11:00:00Z", "seq": 9 } } },
+        "conflicts": [
+          { "kind": "value", "field": "f1",
+            "kept": { "value": "from m2", "by": "m2", "at": "2026-11-25T11:00:00Z", "seq": 9 },
+            "lost": { "value": "from m1", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } }
+        ]
+      }
+    },
+    {
+      "name": "an edit to a field removed from the layer is recorded, the rest applies",
+      "live": ["f1", "geom"],
+      "row": { "fields": {
+        "f1": { "value": "a", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 },
+        "f2": { "value": "x", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 }
+      } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "set": {
+          "f1": { "value": "b", "edited_at": "2026-11-25T11:00:00Z" },
+          "f2": { "value": "y", "edited_at": "2026-11-25T11:00:00Z" }
+        }
+      },
+      "expect": {
+        "row": { "fields": {
+          "f1": { "value": "b", "by": "m2", "at": "2026-11-25T11:00:00Z", "seq": 9 },
+          "f2": { "value": "x", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 }
+        } },
+        "conflicts": [
+          { "kind": "deleted_field", "field": "f2",
+            "lost": { "value": "y", "by": "m2", "at": "2026-11-25T11:00:00Z", "seq": 9 } }
+        ]
+      }
+    },
+    {
+      "name": "a delete with no edits since the base deletes the row",
+      "row": { "fields": { "f1": { "value": "a", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 } } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "delete": { "value": true, "edited_at": "2026-11-25T11:00:00Z" }
+      },
+      "expect": {
+        "row": {
+          "fields": { "f1": { "value": "a", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 } },
+          "deleted": { "value": true, "by": "m2", "at": "2026-11-25T11:00:00Z", "seq": 9 }
+        },
+        "conflicts": []
+      }
+    },
+    {
+      "name": "a delete against someone else's newer edit is refused and recorded",
+      "row": { "fields": { "f1": { "value": "edited", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "delete": { "value": true, "edited_at": "2026-11-25T11:30:00Z" }
+      },
+      "expect": {
+        "row": { "fields": { "f1": { "value": "edited", "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+        "conflicts": [
+          { "kind": "delete_rejected",
+            "lost": { "value": true, "by": "m2", "at": "2026-11-25T11:30:00Z", "seq": 9 } }
+        ]
+      }
+    },
+    {
+      "name": "an edit to a row someone else deleted meanwhile restores it, and the deletion is recorded",
+      "row": {
+        "fields": { "f1": { "value": "a", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 } },
+        "deleted": { "value": true, "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 }
+      },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "set": { "f1": { "value": "kept", "edited_at": "2026-11-25T11:30:00Z" } }
+      },
+      "expect": {
+        "row": {
+          "fields": { "f1": { "value": "kept", "by": "m2", "at": "2026-11-25T11:30:00Z", "seq": 9 } },
+          "deleted": { "value": false, "by": "m2", "at": "2026-11-25T12:00:00Z", "seq": 9 }
+        },
+        "conflicts": [
+          { "kind": "delete_overridden",
+            "lost": { "value": true, "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } }
+        ]
+      }
+    },
+    {
+      "name": "restoring a deleted row",
+      "row": {
+        "fields": { "f1": { "value": "a", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 } },
+        "deleted": { "value": true, "by": "m2", "at": "2026-11-25T10:30:00Z", "seq": 6 }
+      },
+      "change": {
+        "by": "m2", "base_seq": 6, "client_now": "2026-11-25T12:00:00Z",
+        "delete": { "value": false, "edited_at": "2026-11-25T11:00:00Z" }
+      },
+      "expect": {
+        "row": {
+          "fields": { "f1": { "value": "a", "by": "m1", "at": "2026-11-25T10:00:00Z", "seq": 5 } },
+          "deleted": { "value": false, "by": "m2", "at": "2026-11-25T11:00:00Z", "seq": 9 }
+        },
+        "conflicts": []
+      }
+    },
+    {
+      "name": "the geometry is one field, and key order does not make values differ",
+      "row": { "fields": { "geom": { "value": { "type": "Point", "coordinates": [114.0, 30.0] }, "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+      "change": {
+        "by": "m2", "base_seq": 5, "client_now": "2026-11-25T12:00:00Z",
+        "set": { "geom": { "value": { "coordinates": [114.0, 30.0], "type": "Point" }, "edited_at": "2026-11-25T11:30:00Z" } }
+      },
+      "expect": {
+        "row": { "fields": { "geom": { "value": { "type": "Point", "coordinates": [114.0, 30.0] }, "by": "m1", "at": "2026-11-25T11:00:00Z", "seq": 7 } } },
+        "conflicts": []
+      }
+    }
+  ]
+}
