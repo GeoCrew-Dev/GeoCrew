@@ -68,6 +68,8 @@ fun RecordListScreen(
     var scanning by remember { mutableStateOf(false) }
     var tidying by remember { mutableStateOf(false) }
     if (tidying) AttributeTidyDialog(viewModel, onDismiss = { tidying = false })
+    var binOpen by remember { mutableStateOf(false) }
+    if (binOpen) RecycleBinDialog(viewModel, onOpen = { binOpen = false; onOpen(it) }, onDismiss = { binOpen = false })
     val context = androidx.compose.ui.platform.LocalContext.current
     if (scanning) {
         org.geocrew.core.scan.QrScannerDialog(
@@ -96,6 +98,7 @@ fun RecordListScreen(
     val taskCounts by viewModel.taskCounts.collectAsStateWithLifecycle()
     val me by viewModel.me.collectAsStateWithLifecycle()
     val issues by viewModel.issues.collectAsStateWithLifecycle()
+    val deleted by viewModel.deleted.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -167,6 +170,9 @@ fun RecordListScreen(
                         onClick = { viewModel.kindFilter.value = if (kind == k) null else k },
                         label = { Text("${KindUi.label(k)} ${counts[k]}") },
                     )
+                }
+                if (deleted.isNotEmpty()) {
+                    FilterChip(selected = false, onClick = { binOpen = true }, label = { Text("最近删除 ${deleted.size}") })
                 }
             }
             if (items.isEmpty()) {

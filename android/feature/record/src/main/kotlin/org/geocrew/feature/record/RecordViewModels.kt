@@ -101,6 +101,19 @@ class RecordListViewModel @Inject constructor(
 
     val projectName: StateFlow<String> = projects.current.map { it.name }.stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
+    /** The project's recycle bin: deleted records, newest deletion first. */
+    val deleted: StateFlow<List<GeoFeature>> = projects.current
+        .map { it.id }
+        .distinctUntilChanged()
+        .flatMapLatest { features.observeDeleted(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Brings deleted records back; each comes back as a new revision and syncs to the team. */
+    fun undelete(ids: Collection<String>) = viewModelScope.launch {
+        if (!canEdit.value) return@launch
+        ids.forEach { features.undelete(it) }
+    }
+
     /** Whether this device may change records: not as a read-only member. */
     val canEdit: StateFlow<Boolean> = projects.current.map { it.team?.role != TeamRepository.ROLE_READONLY }
         .distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, true)

@@ -27,6 +27,14 @@ class FeatureRepository @Inject constructor(
     /** Live feature count per project id. */
     fun observeCounts(): Flow<Map<String, Int>> = dao.observeCounts().map { l -> l.associate { it.projectId to it.count } }
 
+    /**
+     * Records deleted in the project, here or by a team mate, newest first.
+     * A deletion keeps the record's content (protocol v0 §6), so each one
+     * can be brought back with [undelete] until tombstones are purged.
+     */
+    fun observeDeleted(projectId: String, limit: Int = 300): Flow<List<GeoFeature>> =
+        dao.observeDeleted(projectId, limit).map { list -> list.map { it.toModel() } }
+
     fun observe(id: String): Flow<GeoFeature?> = dao.observe(id).map { it?.toModel() }
 
     suspend fun get(id: String): GeoFeature? = dao.get(id)?.toModel()
@@ -85,6 +93,13 @@ class FeatureRepository @Inject constructor(
             .let { it.copy(sync = it.sync.bumped(clock.instant()).copy(deleted = false)) }
         dao.upsert(next.toEntity())
         return next
+    }
+
+    /** Brings a deleted record back as it was when deleted; the undeletion syncs as a new revision. */
+    suspend fun undelete(id: String): GeoFeature? {
+        val cur = get(id) ?: return null
+        if (!cur.deleted) return cur
+        return restore(id, cur)
     }
 
     suspend fun delete(id: String) {

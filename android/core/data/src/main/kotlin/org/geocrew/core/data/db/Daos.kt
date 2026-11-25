@@ -47,6 +47,10 @@ interface FeatureDao {
     @Query("SELECT * FROM features WHERE projectId = :projectId AND deleted = 0 ORDER BY createdAt DESC")
     fun observeLive(projectId: String): Flow<List<FeatureEntity>>
 
+    /** Deleted records, most recently deleted first: the project's recycle bin. */
+    @Query("SELECT * FROM features WHERE projectId = :projectId AND deleted = 1 ORDER BY updatedAt DESC LIMIT :limit")
+    fun observeDeleted(projectId: String, limit: Int): Flow<List<FeatureEntity>>
+
     @Query("SELECT * FROM features WHERE id = :id")
     fun observe(id: String): Flow<FeatureEntity?>
 
