@@ -18,7 +18,8 @@ const (
 )
 
 type viewLinkReq struct {
-	Hours int `json:"hours"`
+	// Hours is a pointer so an explicit 0 is out of range rather than "absent".
+	Hours *int `json:"hours"`
 }
 
 type viewLinkResp struct {
@@ -35,16 +36,17 @@ func (s *Server) createViewLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_json", "body must be JSON")
 		return
 	}
-	if req.Hours == 0 {
-		req.Hours = defaultViewHours
+	hours := defaultViewHours
+	if req.Hours != nil {
+		hours = *req.Hours
 	}
-	if req.Hours < 1 || req.Hours > maxViewHours {
+	if hours < 1 || hours > maxViewHours {
 		writeErr(w, http.StatusBadRequest, "bad_hours", "hours must be between 1 and 168")
 		return
 	}
 	m := member(r)
 	ws := r.PathValue("ws")
-	expires := time.Now().UTC().Add(time.Duration(req.Hours) * time.Hour).Truncate(time.Second)
+	expires := time.Now().UTC().Add(time.Duration(hours) * time.Hour).Truncate(time.Second)
 	tok, err := s.Store.CreateViewLink(r.Context(), ws, m.ID, expires)
 	if err != nil {
 		s.fail(w, r, err)

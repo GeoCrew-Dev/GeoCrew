@@ -731,6 +731,9 @@ func TestViewLinks(t *testing.T) {
 	if c := e.call("GET", base+"/export.samples.csv?tz_offset=9999", a.Token, nil, nil); c != 400 {
 		t.Fatalf("bad tz_offset: %d", c)
 	}
+	if c := e.call("POST", base+"/view-links", a.Token, map[string]int{"hours": 0}, nil); c != 400 {
+		t.Fatalf("zero hours: %d", c)
+	}
 	if c := e.call("POST", base+"/view-links", a.Token, map[string]int{"hours": 500}, nil); c != 400 {
 		t.Fatalf("bad hours: %d", c)
 	}
