@@ -11,7 +11,7 @@
 ```bash
 git clone https://github.com/GeoCrew-Dev/GeoCrew-Server.git
 cd geocrew-server
-docker compose up -d
+docker compose up -d          # 拉取已发布的镜像；还没有发布版本时加 --build 在本机构建
 curl http://localhost:8080/api/v0/info
 ```
 
@@ -29,10 +29,41 @@ Caddy 会自动申请证书，并原样转发 WebSocket。放在反向代理后�
 
 ## 不用 Docker
 
+从 [Releases](https://github.com/GeoCrew-Dev/GeoCrew-Server/releases) 下载对应平台的程序（`geocrew-server-linux-amd64` 等），先核对 `SHA256SUMS`：
+
 ```bash
-go build -o geocrew-server ./cmd/geocrew-server
-./geocrew-server -addr :8080 -data /var/lib/geocrew
+sha256sum -c SHA256SUMS --ignore-missing
+chmod +x geocrew-server-linux-amd64 && mv geocrew-server-linux-amd64 /usr/local/bin/geocrew-server
+geocrew-server -addr :8080 -data /var/lib/geocrew
 ```
+
+或者自己编译：`go build -o geocrew-server ./cmd/geocrew-server`。用 systemd 托管时建议 `Restart=on-failure`，程序文件所在目录要让服务用户可写，才能在管理页一键更新。
+
+## 更新
+
+每次发布都附带各平台程序、`SHA256SUMS` 和更新说明（按提交记录自动生成）。服务端每天查一次有没有新版本，有就在日志里提示一行；不想联网检查可以设 `GEOCREW_UPDATE_CHECK=false`，用自己的镜像源可以设 `GEOCREW_UPDATE_URL`（GitHub 接口格式）。
+
+**管理页**：设 `GEOCREW_ADMIN_ADDR=127.0.0.1:9181` 后，在这个地址另开一个管理页，显示当前版本、数据库、最新版本和更新说明。令牌用 `GEOCREW_ADMIN_TOKEN` 指定（至少 16 位），不指定就在数据目录生成 `admin-token` 文件（只有服务用户可读）。管理页能替换程序，请只监听本机，用 `ssh -L 9181:127.0.0.1:9181 服务器` 访问，不要通过反向代理公开。
+
+**一键更新（单文件部署）**：在管理页点「更新到 x.y.z」，或者运行 `geocrew-server -data /var/lib/geocrew admin update apply`。过程是：
+
+1. 下载本平台程序，按 `SHA256SUMS` 校验，校验不符直接丢弃；
+2. SQLite 先备份数据库到 `数据目录/update/`（保留最近 3 份），再用新程序在副本上跑一遍数据库升级，失败就不换；PostgreSQL 不会自动备份，请先 `pg_dump`；
+3. 旧程序改名为 `geocrew-server.prev`，新程序放到原位置；
+4. 管理页触发的更新会自动重启进新版本（Linux、macOS）；命令行更新需要再 `systemctl restart geocrew-server`；
+5. 新版本启动后 60 秒内要通过自己的健康检查，否则自动换回旧程序、恢复更新前的数据库并重启（这一分钟里收到的改动会丢失，所以尽量挑没人同步的时候更新）。启动后崩溃退出的，下次启动直接回滚。
+
+`admin update` 只查看、`admin update status` 看上次更新结果、`admin update rollback` 在更新成功之后手动换回旧程序（不动数据库）。开发版本（自己编译、版本号是 dev）不会被更新替换。
+
+**Docker**：容器里的程序随镜像更新，管理页会给出命令：
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+想全自动的话可以加 [Watchtower](https://containrrr.dev/watchtower/) 这类工具定时拉新镜像。数据在数据卷里，换镜像不影响；建议先 `admin backup` 一份。固定版本用 `GEOCREW_TAG=0.2.0 docker compose up -d`。
+
+**发布新版本**（维护者）：打 `v0.2.0` 这样的标签并推送，`Release` 工作流会跑测试、编译 linux/amd64、linux/arm64、linux/arm（ARMv7）、darwin、windows 程序，生成 `SHA256SUMS` 和更新说明，推送 `ghcr.io/geocrew-dev/geocrew-server` 多架构镜像（`0.2.0` 和 `latest`）。带 `-rc.1` 这类后缀的标签发成预发布，不会推 `latest`。
 
 ## 配置
 
@@ -56,6 +87,10 @@ go build -o geocrew-server ./cmd/geocrew-server
 | `-backup-every` | `GEOCREW_BACKUP_EVERY` | `24h` | 定时备份间隔，至少 `10m` |
 | `-backup-keep` | `GEOCREW_BACKUP_KEEP` | `7` | 保留最近几份数据库快照 |
 | `-metrics-addr` | `GEOCREW_METRICS_ADDR` | 空 | 在这个地址另开一个端口提供 `/metrics`（Prometheus 文本格式），如 `127.0.0.1:9180`；空表示不提供 |
+| `-admin-addr` | `GEOCREW_ADMIN_ADDR` | 空 | 管理页地址（版本、更新说明、一键更新），如 `127.0.0.1:9181`；空表示不开 |
+| `-admin-token` | `GEOCREW_ADMIN_TOKEN` | 空 | 管理页令牌，至少 16 位；空则生成在数据目录的 `admin-token` |
+| `-update-check` | `GEOCREW_UPDATE_CHECK` | `true` | 每天检查一次新版本并写日志 |
+| `-update-url` | `GEOCREW_UPDATE_URL` | GitHub Releases | 版本检查地址（GitHub 接口格式，自建镜像或分叉时改） |
 
 ### 使用 PostgreSQL
 
@@ -85,6 +120,7 @@ geocrew-server -data /var/lib/geocrew admin invite 3f9a         # 更换邀请�
 geocrew-server -data /var/lib/geocrew admin role 3f9a 7c21 leader
 geocrew-server -data /var/lib/geocrew admin revoke 3f9a 7c21
 geocrew-server -data /var/lib/geocrew admin archive 3f9a        # 归档（reopen 重新打开）
+geocrew-server -data /var/lib/geocrew admin update              # 有没有新版本（apply 安装，见「更新」）
 # Docker：docker compose exec geocrew geocrew-server admin workspaces
 ```
 

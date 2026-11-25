@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,18 +20,25 @@ import (
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/backup"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/blob"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/config"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/console"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/push"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/realtime"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/postgres"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqldb"
 	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/store/sqlite"
+	"github.com/GeoCrew-Dev/GeoCrew-Server/internal/update"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
 func main() {
-	if err := run(); err != nil {
+	err := run()
+	var re restartError
+	if errors.As(err, &re) {
+		err = update.Exec(re.bin) // returns only if the new process could not start
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "geocrew-server:", err)
 		os.Exit(1)
 	}
@@ -39,6 +48,21 @@ func run() error {
 	cfg, err := config.Load(os.Args[1:])
 	if err != nil {
 		return err
+	}
+	if cfg.ShowVersion {
+		fmt.Println("geocrew-server", version)
+		return nil
+	}
+	if cfg.SelfCheck != "" {
+		db, err := sqlite.Open(cfg.SelfCheck)
+		if err != nil {
+			return err
+		}
+		if err := db.Close(); err != nil {
+			return err
+		}
+		fmt.Println("selfcheck ok", version)
+		return nil
 	}
 	if cfg.HealthcheckURL != "" {
 		return healthcheck(cfg.HealthcheckURL)
@@ -51,6 +75,58 @@ func run() error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return err
 	}
+	if len(cfg.Args) > 0 {
+		return adminCommand(cfg)
+	}
+
+	// After an update the first start is a trial: if the new version fails
+	// before it is healthy, the old program and database go back.
+	st, trial, rollbackNow, err := update.Begin(cfg.DataDir, log)
+	if err != nil {
+		log.Warn("update state unreadable", "err", err)
+	}
+	if rollbackNow {
+		return rollback(cfg, st, errors.New("新版本上次启动后没有通过健康检查就退出了"), log)
+	}
+	if !trial {
+		return serve(cfg, log, nil)
+	}
+	var confirmed atomic.Bool
+	err = serve(cfg, log, &trialRun{State: st, confirmed: &confirmed})
+	var re restartError
+	switch {
+	case confirmed.Load() || errors.As(err, &re):
+		return err
+	case err != nil:
+		return rollback(cfg, st, err, log)
+	default:
+		// Stopped on purpose before the check finished: the next start
+		// is still the first try.
+		st.Starts = 0
+		update.Save(cfg.DataDir, st)
+		return nil
+	}
+}
+
+type trialRun struct {
+	update.State
+	confirmed *atomic.Bool
+}
+
+func adminCommand(cfg config.Config) error {
+	db, err := openStore(cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if len(cfg.Args) > 1 && cfg.Args[1] == "update" {
+		return updateCommand(context.Background(), cfg, db, cfg.Args[2:], os.Stdout)
+	}
+	files := &blob.Disk{Root: filepath.Join(cfg.DataDir, "files"), MaxSize: cfg.MaxUploadMB << 20}
+	return admin.RunWith(context.Background(), db, admin.Options{Files: files, OpenDatabase: openTarget}, cfg.Args[1:], os.Stdout)
+}
+
+func serve(cfg config.Config, log *slog.Logger, trial *trialRun) error {
 	db, err := openStore(cfg)
 	if err != nil {
 		return err
@@ -58,9 +134,6 @@ func run() error {
 	defer db.Close()
 	log.Info("database", "engine", db.Dialect())
 	files := &blob.Disk{Root: filepath.Join(cfg.DataDir, "files"), MaxSize: cfg.MaxUploadMB << 20}
-	if len(cfg.Args) > 0 {
-		return admin.RunWith(context.Background(), db, admin.Options{Files: files, OpenDatabase: openTarget}, cfg.Args[1:], os.Stdout)
-	}
 
 	var sender *push.Sender
 	if cfg.Push {
@@ -106,7 +179,43 @@ func run() error {
 			go backup.Run(ctx, db, backup.Options{Dir: cfg.BackupDir, Every: cfg.BackupEvery, Keep: cfg.BackupKeep, Files: files.Root, Log: log})
 		}
 	}
-	errc := make(chan error, 2)
+	errc := make(chan error, 4)
+	restart := make(chan string, 1)
+	checker := &update.Checker{URL: cfg.UpdateURL}
+	if cfg.UpdateCheck {
+		go watchReleases(ctx, checker, log)
+	}
+	if cfg.AdminAddr != "" {
+		token, err := adminToken(cfg, log)
+		if err != nil {
+			return fmt.Errorf("admin token: %w", err)
+		}
+		self, err := program()
+		if err != nil {
+			return err
+		}
+		opts := console.Options{
+			Version: version, Engine: db.Dialect(), DataDir: cfg.DataDir, Token: token,
+			Checker: checker, Docker: update.InDocker(), Log: log,
+			Restart: func() {
+				select {
+				case restart <- self:
+				default:
+				}
+			},
+		}
+		if !opts.Docker {
+			opts.Apply = installer(cfg, db, self)
+		}
+		adminSrv := &http.Server{Addr: cfg.AdminAddr, Handler: console.Handler(opts), ReadHeaderTimeout: 10 * time.Second}
+		go func() {
+			log.Info("operator console listening", "addr", cfg.AdminAddr)
+			if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errc <- fmt.Errorf("admin console: %w", err)
+			}
+		}()
+		defer adminSrv.Close()
+	}
 	if metricsSrv != nil {
 		go func() {
 			log.Info("metrics listening", "addr", cfg.MetricsAddr)
@@ -121,9 +230,21 @@ func run() error {
 			"version", version, "data", cfg.DataDir)
 		errc <- httpSrv.ListenAndServe()
 	}()
+	if trial != nil {
+		tctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		go func() {
+			if confirmTrial(tctx, cfg, trial.State, log, errc) {
+				trial.confirmed.Store(true)
+			}
+		}()
+	}
+	var next string
 	select {
 	case err := <-errc:
 		return err
+	case next = <-restart:
+		log.Info("restarting into the installed version")
 	case <-ctx.Done():
 	}
 	log.Info("shutting down")
@@ -131,6 +252,9 @@ func run() error {
 	defer cancel()
 	if err := httpSrv.Shutdown(sctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
+	}
+	if next != "" {
+		return restartError{next}
 	}
 	return nil
 }

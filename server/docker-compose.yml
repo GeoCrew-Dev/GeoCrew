@@ -1,7 +1,9 @@
 services:
   geocrew:
+    # Released images; "docker compose pull && docker compose up -d" updates.
+    # To run your own build instead: docker compose up -d --build
+    image: ghcr.io/geocrew-dev/geocrew-server:${GEOCREW_TAG:-latest}
     build: .
-    image: geocrew-server:local
     restart: unless-stopped
     ports:
       - "8080:8080"

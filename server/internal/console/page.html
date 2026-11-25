@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{if .Refresh}}<meta http-equiv="refresh" content="8; url=/">{{end}}
+<title>同勘服务端管理</title>
+<style>
+:root { color-scheme: light dark; --fg:#1f2328; --muted:#59636e; --line:#d1d9e0; --bg:#fff; --card:#f6f8fa; --accent:#0969da; --bad:#cf222e; --good:#1a7f37; }
+@media (prefers-color-scheme: dark) { :root { --fg:#e6edf3; --muted:#9198a1; --line:#3d444d; --bg:#0d1117; --card:#151b23; --accent:#4493f8; --bad:#f85149; --good:#3fb950; } }
+body { margin:0; font:15px/1.6 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; background:var(--bg); color:var(--fg); }
+main { max-width:720px; margin:0 auto; padding:24px 16px 48px; }
+h1 { font-size:20px; margin:0 0 16px; }
+h2 { font-size:16px; margin:0 0 8px; }
+section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin:0 0 16px; }
+dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 16px; margin:0; }
+dt { color:var(--muted); }
+dd { margin:0; }
+pre { white-space:pre-wrap; word-break:break-word; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:12px; margin:8px 0; font:13px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+.muted { color:var(--muted); font-size:13px; }
+.bad { color:var(--bad); }
+.good { color:var(--good); }
+button, input { font:inherit; }
+input[type=password] { padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:100%; box-sizing:border-box; margin:8px 0; }
+button { padding:6px 16px; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
+a.button { display:inline-block; padding:5px 14px; border:1px solid var(--line); border-radius:6px; color:var(--fg); text-decoration:none; }
+.notice { border-color:var(--good); }
+.error { border-color:var(--bad); }
+</style>
+</head>
+<body><main>
+<h1>同勘服务端管理</h1>
+{{if .Login}}
+<section>
+  <form method="post" action="/login">
+    <label>管理令牌<input type="password" name="token" autocomplete="current-password" autofocus></label>
+    <div class="muted">令牌在启动参数 -admin-token 或数据目录的 admin-token 文件里。</div>
+    {{if .Error}}<p class="bad">{{.Error}}</p>{{end}}
+    <p><button type="submit">进入</button></p>
+  </form>
+</section>
+{{else}}
+{{if .Notice}}<section class="notice"><p class="good">{{.Notice}}</p></section>{{end}}
+{{if .Error}}<section class="error"><p class="bad">{{.Error}}</p></section>{{end}}
+<section>
+  <h2>本机</h2>
+  <dl>
+    <dt>当前版本</dt><dd>{{.Version}}</dd>
+    <dt>数据库</dt><dd>{{if eq .Engine "postgres"}}PostgreSQL{{else}}SQLite{{end}}</dd>
+    <dt>运行方式</dt><dd>{{if .Docker}}Docker 容器{{else}}单文件程序（{{.Platform}}）{{end}}</dd>
+  </dl>
+  {{with .Last}}
+  <p class="muted">上次更新：{{.From}} → {{.To}}，{{when .At}}，
+    {{if eq .Status "done"}}<span class="good">成功</span>{{else if eq .Status "trial"}}正在试运行{{else}}<span class="bad">已退回 {{.From}}</span>{{end}}
+    {{if .Error}}（{{.Error}}）{{end}}</p>
+  {{end}}
+</section>
+<section>
+  <h2>新版本</h2>
+  {{if .CheckErr}}<p class="bad">{{.CheckErr}}</p>
+  {{else if .Latest}}
+    {{if .Newer}}<p><strong>有新版本 {{.Latest.Version}}</strong>，发布于 {{when .Latest.PublishedAt}}{{with .Latest.URL}}，<a href="{{.}}" rel="noreferrer">发布页</a>{{end}}</p>
+    {{else}}<p class="good">已是最新版本（最新发布 {{.Latest.Version}}，{{when .Latest.PublishedAt}}）</p>{{end}}
+    {{if .Latest.Notes}}<pre>{{.Latest.Notes}}</pre>{{end}}
+    {{if .Newer}}
+      {{if .Docker}}
+        <p>容器里的程序随镜像更新。在 docker-compose.yml 所在目录运行：</p>
+        <pre>docker compose pull
+docker compose up -d</pre>
+        <p class="muted">镜像 ghcr.io/geocrew-dev/geocrew-server:{{.Latest.Version}}。数据在挂载的数据卷里，更新不受影响；建议先 admin backup 一份。</p>
+      {{else if .CanApply}}
+        {{if .Applying}}<p>正在下载和安装，请稍候…</p>{{else}}
+        <form method="post" action="/update">
+          <input type="hidden" name="version" value="{{.Latest.Version}}">
+          <p class="muted">会下载 {{.Platform}} 的程序并按发布附带的 SHA256SUMS 校验，
+          {{if eq .Engine "postgres"}}<span class="bad">PostgreSQL 不会自动备份，请先 pg_dump</span>，{{else}}先备份数据库，{{end}}
+          再替换程序并重启。新版本启动后通过健康检查才算成功，否则自动退回当前版本{{if ne .Engine "postgres"}}和更新前的数据库{{end}}。</p>
+          <button type="submit">更新到 {{.Latest.Version}}</button>
+        </form>{{end}}
+      {{end}}
+    {{end}}
+  {{end}}
+  <p class="muted">{{if not .CheckedAt.IsZero}}{{when .CheckedAt}} 检查 · {{end}}<a href="/?check" class="button">重新检查</a></p>
+</section>
+{{end}}
+</main></body>
+</html>
