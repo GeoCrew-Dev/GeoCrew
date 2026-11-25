@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -117,6 +118,70 @@ func TestLatestAndDownload(t *testing.T) {
 	r3.Version = "9.9.9"
 	if _, err := Download(context.Background(), nil, r3, runtime.GOOS, runtime.GOARCH, dest); err == nil || !strings.Contains(err.Error(), "版本") {
 		t.Fatalf("a binary reporting another version must be refused, got %v", err)
+	}
+}
+
+// serveJSON answers every request with body.
+func serveJSON(t *testing.T, body string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func TestLatestPicksServerReleaseFromMonorepoList(t *testing.T) {
+	// GitHub lists the monorepo's releases newest first, every component mixed.
+	url := serveJSON(t, `[
+	  {"tag_name":"android-v1.0.0","draft":false,"prerelease":false},
+	  {"tag_name":"server-v0.12.0","draft":true,"prerelease":false},
+	  {"tag_name":"server-v0.11.0-rc.1","draft":false,"prerelease":true},
+	  {"tag_name":"server-v0.9.0","draft":false,"prerelease":false},
+	  {"tag_name":"server-v0.10.0","name":"同勘服务端 0.10.0","body":"notes","html_url":"https://example.org/r",
+	   "draft":false,"prerelease":false,"assets":[{"name":"SHA256SUMS","browser_download_url":"https://example.org/sums"}]},
+	  {"tag_name":"nightly","draft":false,"prerelease":false}
+	]`)
+	r, err := (&Checker{URL: url}).Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Version != "0.10.0" || r.Tag != "server-v0.10.0" || r.Notes != "notes" || r.Assets["SHA256SUMS"] == "" {
+		t.Fatalf("want the highest published server release, got %+v", r)
+	}
+}
+
+func TestLatestWithoutServerRelease(t *testing.T) {
+	for _, body := range []string{
+		`[]`,
+		`[{"tag_name":"android-v0.3.0","draft":false,"prerelease":false}]`,
+		`[{"tag_name":"server-v0.3.0","draft":true}]`,
+		`{"tag_name":"android-v0.3.0"}`,
+		`{"tag_name":""}`,
+	} {
+		if _, err := (&Checker{URL: serveJSON(t, body)}).Latest(context.Background()); !errors.Is(err, ErrNoRelease) {
+			t.Fatalf("%s: want ErrNoRelease, got %v", body, err)
+		}
+	}
+	if _, err := (&Checker{URL: serveJSON(t, `[{"tag_name":`)}).Latest(context.Background()); err == nil || errors.Is(err, ErrNoRelease) {
+		t.Fatalf("a broken feed must be an error, got %v", err)
+	}
+}
+
+func TestServerVersion(t *testing.T) {
+	for _, c := range []struct{ tag, want string }{
+		{"server-v0.3.0", "0.3.0"},
+		{"server-v1.0.0-rc.1", "1.0.0-rc.1"},
+		{"v1.2.3", "1.2.3"},
+	} {
+		if got, ok := ServerVersion(c.tag); !ok || got != c.want {
+			t.Fatalf("%s: got %q %v, want %q", c.tag, got, ok, c.want)
+		}
+	}
+	for _, tag := range []string{"android-v0.3.0", "", "nightly", "server-vdev", "v", "server-0.3.0"} {
+		if got, ok := ServerVersion(tag); ok {
+			t.Fatalf("%s: not a server release tag, got %q", tag, got)
+		}
 	}
 }
 

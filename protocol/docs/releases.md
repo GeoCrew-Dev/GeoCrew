@@ -4,14 +4,14 @@
 
 ## 1. 版本号
 
-- 采用语义化版本 `主.次.修订`，标签前加 `v`，如 `v0.3.0`；预发布加后缀，如 `v0.3.0-rc.1`，排在 `v0.3.0` 之前。
-- 比较时去掉开头的 `v`，按主、次、修订逐位比较数字；数字相同时，有后缀的比没后缀的旧，两个后缀按字符串比较。
+- 采用语义化版本 `主.次.修订`。所有组件都在主仓库发布，标签用"组件名 + `-v` + 版本号"：`server-v0.3.0`、`android-v0.3.0`。预发布加后缀，如 `server-v0.3.0-rc.1`，排在 `server-v0.3.0` 之前。
+- 比较时去掉组件前缀和 `v`，按主、次、修订逐位比较数字；数字相同时，有后缀的比没后缀的旧，两个后缀按字符串比较。
 - 解析不了的版本（`dev`、提交哈希）是开发构建：可以显示最新版本，但**不提示、不执行更新**，以免替换掉开发者自己编译的程序。
 - 服务端在 `GET /api/v0/info` 的 `version` 字段报告自己的版本，客户端可以据此提示组长「服务端有新版本」，但不能替服务端做决定。
 
 ## 2. 发布内容
 
-每个组件在自己的仓库发布（GitHub Releases 或兼容的接口），一个版本包含：
+所有组件都在主仓库 `GeoCrew-Dev/GeoCrew` 发布（GitHub Releases 或兼容的接口），用标签前缀区分是哪个组件。一个版本包含：
 
 | 文件 | 说明 |
 |---|---|
@@ -22,31 +22,42 @@
 | 组件 | 安装文件 |
 |---|---|
 | 安卓客户端 | `geocrew-android-<版本>.apk`，正式签名；未签名的包必须另起名字（如加 `-unsigned`），客户端不会提示它 |
-| 服务端 | `geocrew-server-<系统>-<架构>`，系统和架构按 Go 的 `GOOS`/`GOARCH`（`linux-amd64`、`linux-arm64`、`linux-arm`、`darwin-arm64`……），Windows 加 `.exe` |
+| 服务端 | `geocrew-server-<系统>-<架构>`，系统和架构按 Go 的 `GOOS`/`GOARCH`（`linux-amd64`、`linux-arm64`、`darwin-amd64`、`darwin-arm64`、`windows-amd64`），Windows 加 `.exe`；不再提供 32 位版本 |
 | 服务端镜像 | `ghcr.io/<组织>/geocrew-server:<版本>`，正式版同时打 `latest` |
 
 **没有 `SHA256SUMS` 或其中没有对应文件的版本，一律不自动安装**，只给出发布页链接。
 
 ## 3. 发现新版本
 
-更新源是一个返回「最新正式版本」的地址，格式与 GitHub 的 `GET /repos/{owner}/{repo}/releases/latest` 相同。实现只需读这几个字段：
+更新源是一个返回发布列表的地址，格式与 GitHub 的 `GET /repos/{owner}/{repo}/releases` 相同。默认地址是 `https://api.github.com/repos/GeoCrew-Dev/GeoCrew/releases?per_page=100`。列表里混着各个组件的版本，每个组件按下面的规则挑出自己的最新版本：
+
+1. 跳过 `draft` 为真的、`prerelease` 为真的；
+2. 只看标签带自己前缀的（服务端 `server-v`，安卓 `android-v`）；
+3. 在剩下的里面取版本号最高的。一个都没有，就当作还没有发布过。
+
+实现只需读每一项的这几个字段：
 
 ```json
-{
-  "tag_name": "v0.3.0",
-  "name": "同勘 v0.3.0",
-  "draft": false,
-  "body": "### 新功能\n\n- ……",
-  "html_url": "https://github.com/GeoCrew-Dev/GeoCrew-Android/releases/tag/v0.3.0",
-  "published_at": "2026-11-25T03:00:00Z",
-  "assets": [
-    { "name": "geocrew-android-0.3.0.apk", "browser_download_url": "https://…" },
-    { "name": "SHA256SUMS", "browser_download_url": "https://…" }
-  ]
-}
+[
+  {
+    "tag_name": "server-v0.3.0",
+    "name": "同勘服务端 0.3.0",
+    "draft": false,
+    "prerelease": false,
+    "body": "### 新功能\n\n- ……",
+    "html_url": "https://github.com/GeoCrew-Dev/GeoCrew/releases/tag/server-v0.3.0",
+    "published_at": "2026-11-25T03:00:00Z",
+    "assets": [
+      { "name": "geocrew-server-linux-amd64", "browser_download_url": "https://…" },
+      { "name": "SHA256SUMS", "browser_download_url": "https://…" }
+    ]
+  }
+]
 ```
 
-返回 404 表示还没有发布过版本。`draft` 为真的忽略。自建镜像只要提供同样格式的地址，再把客户端或服务端的更新源指过去即可（安卓编译参数 `-Pgeocrew.updateFeed`，服务端 `GEOCREW_UPDATE_URL`）。
+返回 404 也表示还没有发布过版本。
+
+为了兼容自建镜像和单独发布某个组件的分叉项目，更新源也可以只返回一个版本（GitHub `releases/latest` 的格式，一个对象而不是列表）；这时标签可以带组件前缀，也可以只有 `v`，比如 `v0.3.0`。自建镜像只要提供这两种格式之一的地址，再把客户端或服务端的更新源指过去即可（安卓编译参数 `-Pgeocrew.updateFeed`，服务端 `GEOCREW_UPDATE_URL`）。
 
 检查频率：安卓每天最多一次（打开应用时），服务端每天一次；没有网络时静默失败，野外和内网部署是常态。
 
