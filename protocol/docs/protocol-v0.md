@@ -357,6 +357,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | `duration_s` | 时长，秒 |
 | `recorded_at` | 开始录制的时间，RFC 3339 |
 | `lon`、`lat`、`alt` | 录制时所在位置，可省略 |
+| `transcript` | 这段录音说了什么：语音识别转写或手工整理的文字，可省略；转写结果不自动写进 `note`，由用户决定是否加入描述 |
 
 官方客户端录成 AAC 音频（MP4 容器，上传时 `Content-Type: audio/mp4`，导出文件扩展名 `.m4a`）；读取方应按文件内容而不是扩展名判断格式。服务端把 `audio` 引用的附件与照片同样对待：工程包里放在 `audio/<sha256>.m4a`，清理无引用附件时不会删除。
 
