@@ -39,7 +39,7 @@
 已采纳（2026-11-25）。M1 要验证两项：
 
 - 用 CustomGeometrySource 显示 10 万要素和编辑后的刷新：在模拟器上验证可行，低缩放级别要抽稀或聚合，见[验证报告](../spikes/m1-map-customgeometry.md)；
-- 非 Web 墨卡托栅格的显示：还没做。
+- 非 Web 墨卡托栅格的显示：在模拟器上验证可行，GDAL 按请求现场重投影成瓦片，经 OkHttp 拦截器交给 MapLibre，见[验证报告](../spikes/m1-raster-reprojection.md)。
 
 ## 相关
 
