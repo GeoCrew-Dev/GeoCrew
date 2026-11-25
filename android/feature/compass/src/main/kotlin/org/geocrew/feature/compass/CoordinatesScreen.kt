@@ -82,6 +82,9 @@ fun CoordinatesScreen(onBack: () -> Unit, viewModel: CoordinatesViewModel = hilt
     var width by rememberSaveable { mutableStateOf(3) }
     var ellipsoid by rememberSaveable { mutableStateOf(Ellipsoid.CGCS2000) }
     var picking by remember { mutableStateOf(false) }
+    val grid by viewModel.grid.collectAsStateWithLifecycle()
+    var useGrid by rememberSaveable { mutableStateOf(true) }
+    val active = grid?.takeIf { useGrid }
 
     var geoText by rememberSaveable { mutableStateOf("") }
     var geoNote by rememberSaveable { mutableStateOf<String?>(null) }
@@ -92,7 +95,7 @@ fun CoordinatesScreen(onBack: () -> Unit, viewModel: CoordinatesViewModel = hilt
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
-        if (uri != null) viewModel.export(context.applicationContext, uri, width, ellipsoid)
+        if (uri != null) viewModel.export(context.applicationContext, uri, width, ellipsoid, active)
     }
 
     Scaffold(
@@ -109,21 +112,37 @@ fun CoordinatesScreen(onBack: () -> Unit, viewModel: CoordinatesViewModel = hilt
                 TabRow(selectedTabIndex = tab) {
                     Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("经纬度 → 平面") })
                     Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("平面 → 经纬度") })
+                    Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("本地坐标系") })
                 }
                 if (locating) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
-            item {
+            if (tab != 2) item {
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    for (w in GaussKruger.WIDTHS) {
-                        FilterChip(selected = width == w, onClick = { width = w }, label = { Text("$w° 带") })
+                    grid?.let { g ->
+                        FilterChip(selected = useGrid, onClick = { useGrid = !useGrid }, label = { Text(if (useGrid) g.name else "本地坐标系") })
                     }
-                    EllipsoidMenu(ellipsoid) { ellipsoid = it }
+                    if (active == null) {
+                        for (w in GaussKruger.WIDTHS) {
+                            FilterChip(selected = width == w, onClick = { width = w }, label = { Text("$w° 带") })
+                        }
+                        EllipsoidMenu(ellipsoid) { ellipsoid = it }
+                    }
                 }
             }
-            if (tab == 0) {
+            if (tab == 2) {
+                item {
+                    LocalGridEditor(
+                        saved = grid,
+                        onSave = { viewModel.saveGrid(it); useGrid = true },
+                        onClear = { viewModel.saveGrid(null) },
+                        onLocate = { done -> viewModel.locate { p, _ -> done(p) } },
+                        locating = locating,
+                    )
+                }
+            } else if (tab == 0) {
                 item {
                     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
@@ -144,7 +163,7 @@ fun CoordinatesScreen(onBack: () -> Unit, viewModel: CoordinatesViewModel = hilt
                             if (points.isNotEmpty()) OutlinedButton(onClick = { picking = true }) { Text("选记录点") }
                         }
                         geoNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                        ZoneField(zoneText, { zoneText = it }, width, "带号（留空按经度自动选；跨带时可指定相邻带）")
+                        if (active == null) ZoneField(zoneText, { zoneText = it }, width, "带号（留空按经度自动选；跨带时可指定相邻带）")
                     }
                 }
                 item {
@@ -154,6 +173,23 @@ fun CoordinatesScreen(onBack: () -> Unit, viewModel: CoordinatesViewModel = hilt
                     when {
                         geoText.isBlank() -> Unit
                         p == null -> Problem("看不懂这个经纬度，请写成「经度, 纬度」或带东经北纬的度分秒")
+                        active != null -> {
+                            val (x, y) = active.toGrid(org.geocrew.core.model.Geodetic(p, p.alt ?: 0.0))
+                            val yz = active.zone * 1_000_000.0 + y
+                            val cm = GaussKruger.centralMeridian(active.zone, active.width)
+                            val offset = kotlin.math.abs(org.geocrew.core.model.Geodesy.wrapLongitude(p.lng - cm))
+                            ResultCard(
+                                rows = listOf(
+                                    "X（北）" to "%.3f m".format(Locale.ROOT, x),
+                                    "Y（东）" to "%.3f m".format(Locale.ROOT, y),
+                                    "Y（含带号）" to "%.3f".format(Locale.ROOT, yz),
+                                    "坐标系" to active.name,
+                                    "转换" to active.shift.describe(),
+                                ),
+                                warning = if (offset > active.width / 2.0 + 0.01) "这个点离中央子午线 %.2f°，已在本带之外".format(Locale.ROOT, offset) else null,
+                                onCopy = { clipboard.setText(AnnotatedString("X=%.3f Y=%.3f".format(Locale.ROOT, x, yz))) },
+                            )
+                        }
                         !zoneOk -> Problem("${width}° 带的带号是 1 到 ${GaussKruger.maxZone(width)}")
                         else -> {
                             val r = GaussKruger.project(p, width, ellipsoid, zone)
@@ -177,14 +213,19 @@ fun CoordinatesScreen(onBack: () -> Unit, viewModel: CoordinatesViewModel = hilt
                     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         DecimalField(xText, { xText = it }, "X（北）m")
                         DecimalField(yText, { yText = it }, "Y（东）m，可带带号，如 39447924.48")
-                        if ((yText.toDoubleOrNull() ?: 0.0) < 1_000_000) ZoneField(zoneText, { zoneText = it }, width, "带号（Y 不带带号时必填）")
+                        if (active == null && (yText.toDoubleOrNull() ?: 0.0) < 1_000_000) ZoneField(zoneText, { zoneText = it }, width, "带号（Y 不带带号时必填）")
                     }
                 }
                 item {
                     val x = xText.toDoubleOrNull()
                     val y = yText.toDoubleOrNull()
                     if (x != null && y != null) {
-                        val r = runCatching { GaussKruger.unproject(x, y, width, ellipsoid, zoneText.toIntOrNull()) }
+                        val r = runCatching {
+                            active?.let { g ->
+                                if (y >= 1_000_000 && kotlin.math.floor(y / 1_000_000).toInt() != g.zone) error("Y 前面的带号与本地坐标系（第 ${g.zone} 带）不一致")
+                                g.fromGrid(x, y)
+                            } ?: GaussKruger.unproject(x, y, width, ellipsoid, zoneText.toIntOrNull())
+                        }
                         r.onSuccess { p -> GeoResult(p) { clipboard.setText(AnnotatedString("%.8f, %.8f".format(Locale.ROOT, p.lng, p.lat))) } }
                         r.onFailure { Problem(it.message ?: "无法换算") }
                     }
@@ -192,8 +233,12 @@ fun CoordinatesScreen(onBack: () -> Unit, viewModel: CoordinatesViewModel = hilt
             }
             item {
                 Text(
-                    "北京 54、西安 80 只换用对应椭球做投影，不做坐标系之间的基准转换（那需要当地的转换参数）；" +
-                        "手机定位得到的经纬度可直接按 CGCS2000 换算，差别在野外精度以内。",
+                    if (active != null) {
+                        "按本工程的本地坐标系换算：${active.shift.describe()}。手机定位的经纬度按 CGCS2000 处理，差别在野外精度以内。"
+                    } else {
+                        "直接选北京 54、西安 80 只换用对应椭球做投影，不做基准转换，与真实旧坐标可差上百米；" +
+                            "要得到旧坐标，请在「本地坐标系」里填转换参数或用公共点求解。手机定位得到的经纬度可直接按 CGCS2000 换算。"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(16.dp),
                 )

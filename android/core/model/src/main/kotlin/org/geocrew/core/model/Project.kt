@@ -57,6 +57,8 @@ data class ProjectConfig(
     val display: MapDisplay = MapDisplay(),
     /** Pictures laid over the map (scanned maps, sketch plans), bottom first. Kept per device. */
     val overlays: List<ImageOverlay> = emptyList(),
+    /** A local map grid (Beijing 54, Xi'an 80...) with its datum shift, for coordinate tables. Kept per device. */
+    val localGrid: LocalGrid? = null,
 ) {
     fun fieldsFor(kind: FeatureKind) = fields.filter { it.appliesTo(kind) }
 

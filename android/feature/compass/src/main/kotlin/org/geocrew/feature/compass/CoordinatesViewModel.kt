@@ -23,7 +23,9 @@ import org.geocrew.core.data.repo.ProjectRepository
 import org.geocrew.core.model.Ellipsoid
 import org.geocrew.core.model.GaussKruger
 import org.geocrew.core.model.Geometry
+import org.geocrew.core.model.Geodetic
 import org.geocrew.core.model.LngLat
+import org.geocrew.core.model.LocalGrid
 import org.geocrew.core.sensors.LocationSource
 import javax.inject.Inject
 
@@ -37,7 +39,7 @@ data class PointPick(val id: String, val title: String, val position: LngLat)
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class CoordinatesViewModel @Inject constructor(
-    projects: ProjectRepository,
+    private val projects: ProjectRepository,
     features: FeatureRepository,
     private val location: LocationSource,
 ) : ViewModel() {
@@ -49,6 +51,16 @@ class CoordinatesViewModel @Inject constructor(
             }.sortedBy { it.title }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** The project's local map grid (Beijing 54, Xi'an 80...), if one is set up. */
+    val grid: StateFlow<LocalGrid?> = projects.current.map { it.config.localGrid }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun saveGrid(g: LocalGrid?) = viewModelScope.launch {
+        val id = projects.current.first().id
+        projects.updateConfig(id) { it.copy(localGrid = g) }
+        _message.value = if (g == null) "已不再使用本地坐标系" else "已保存：${g.name}"
+    }
 
     private val _locating = MutableStateFlow(false)
     val locating: StateFlow<Boolean> = _locating.asStateFlow()
@@ -79,9 +91,10 @@ class CoordinatesViewModel @Inject constructor(
      * points go into one zone (the one most of them fall in), so distances
      * between rows stay comparable; the zone is repeated on each row.
      */
-    fun export(context: Context, uri: Uri, width: Int, ellipsoid: Ellipsoid) {
+    fun export(context: Context, uri: Uri, width: Int, ellipsoid: Ellipsoid, grid: LocalGrid? = null) {
         val list = points.value
         if (list.isEmpty()) { _message.value = "当前工程没有点记录"; return }
+        if (grid != null) return exportGrid(context, uri, list, grid)
         viewModelScope.launch {
             val zone = list.groupingBy { GaussKruger.zone(it.position.lng, width) }.eachCount().maxBy { it.value }.key
             val text = buildString {
@@ -95,17 +108,38 @@ class CoordinatesViewModel @Inject constructor(
                     append(csv(ellipsoid.label)).append('\n')
                 }
             }
-            val ok = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openOutputStream(uri, "w")?.use { out ->
-                        // BOM so spreadsheet programs read the Chinese headers right.
-                        out.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
-                        out.write(text.toByteArray())
-                    } != null
-                }.getOrDefault(false)
-            }
+            val ok = write(context, uri, text)
             _message.value = if (ok) "已导出 ${list.size} 个点（${width}° 带第 $zone 带）" else "无法写入所选文件"
         }
+    }
+
+    /** The same table on the project's local grid, through its datum shift. */
+    private fun exportGrid(context: Context, uri: Uri, list: List<PointPick>, grid: LocalGrid) {
+        viewModelScope.launch {
+            val text = buildString {
+                append("名称,经度,纬度,高程,X(北),Y(东),Y(含带号),坐标系,转换\n")
+                for (p in list) {
+                    val (x, y) = grid.toGrid(Geodetic(p.position, p.position.alt ?: 0.0))
+                    append(csv(p.title)).append(',')
+                    append("%.8f,%.8f,".format(java.util.Locale.ROOT, p.position.lng, p.position.lat))
+                    append(p.position.alt?.let { "%.2f".format(java.util.Locale.ROOT, it) } ?: "").append(',')
+                    append("%.3f,%.3f,%.3f,".format(java.util.Locale.ROOT, x, y, grid.zone * 1_000_000.0 + y))
+                    append(csv(grid.name)).append(',').append(csv(grid.shift.describe())).append('\n')
+                }
+            }
+            val ok = write(context, uri, text)
+            _message.value = if (ok) "已导出 ${list.size} 个点（${grid.name}）" else "无法写入所选文件"
+        }
+    }
+
+    private suspend fun write(context: Context, uri: Uri, text: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.openOutputStream(uri, "w")?.use { out ->
+                // BOM so spreadsheet programs read the Chinese headers right.
+                out.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+                out.write(text.toByteArray())
+            } != null
+        }.getOrDefault(false)
     }
 
     private fun csv(s: String) = if (s.any { it == ',' || it == '"' || it == '\n' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
