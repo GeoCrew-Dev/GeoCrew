@@ -140,7 +140,8 @@ func TestLatestPicksServerReleaseFromMonorepoList(t *testing.T) {
 	  {"tag_name":"server-v0.9.0","draft":false,"prerelease":false},
 	  {"tag_name":"server-v0.10.0","name":"同勘服务端 0.10.0","body":"notes","html_url":"https://example.org/r",
 	   "draft":false,"prerelease":false,"assets":[{"name":"SHA256SUMS","browser_download_url":"https://example.org/sums"}]},
-	  {"tag_name":"nightly","draft":false,"prerelease":false}
+	  {"tag_name":"nightly","draft":false,"prerelease":false},
+	  {"tag_name":"v9.0.0","draft":false,"prerelease":false}
 	]`)
 	r, err := (&Checker{URL: url}).Latest(context.Background())
 	if err != nil {
@@ -168,20 +169,44 @@ func TestLatestWithoutServerRelease(t *testing.T) {
 	}
 }
 
+func TestLatestFollowsNextPage(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			fmt.Fprint(w, `[{"tag_name":"server-v0.4.0","draft":false,"prerelease":false}]`)
+			return
+		}
+		w.Header().Set("Link", fmt.Sprintf(`<%s/releases?page=2>; rel="next", <%s/releases?page=2>; rel="last"`, srv.URL, srv.URL))
+		fmt.Fprint(w, `[{"tag_name":"android-v2.0.0","draft":false,"prerelease":false}]`)
+	}))
+	t.Cleanup(srv.Close)
+	r, err := (&Checker{URL: srv.URL + "/releases"}).Latest(context.Background())
+	if err != nil || r.Version != "0.4.0" {
+		t.Fatalf("want the server release on page 2, got %+v %v", r, err)
+	}
+}
+
 func TestServerVersion(t *testing.T) {
-	for _, c := range []struct{ tag, want string }{
-		{"server-v0.3.0", "0.3.0"},
-		{"server-v1.0.0-rc.1", "1.0.0-rc.1"},
-		{"v1.2.3", "1.2.3"},
+	for _, c := range []struct {
+		tag   string
+		alone bool
+		want  string
+	}{
+		{"server-v0.3.0", false, "0.3.0"},
+		{"server-v1.0.0-rc.1", false, "1.0.0-rc.1"},
+		{"v1.2.3", true, "1.2.3"},
 	} {
-		if got, ok := ServerVersion(c.tag); !ok || got != c.want {
+		if got, ok := ServerVersion(c.tag, c.alone); !ok || got != c.want {
 			t.Fatalf("%s: got %q %v, want %q", c.tag, got, ok, c.want)
 		}
 	}
 	for _, tag := range []string{"android-v0.3.0", "", "nightly", "server-vdev", "v", "server-0.3.0"} {
-		if got, ok := ServerVersion(tag); ok {
+		if got, ok := ServerVersion(tag, true); ok {
 			t.Fatalf("%s: not a server release tag, got %q", tag, got)
 		}
+	}
+	if got, ok := ServerVersion("v1.2.3", false); ok {
+		t.Fatalf("a bare v tag in the monorepo list is not a server release, got %q", got)
 	}
 }
 
