@@ -1,0 +1,100 @@
+name: Server release
+
+# Push a tag like server-v0.3.0 to publish: one binary per platform,
+# SHA256SUMS, release notes from the Conventional Commits under server/
+# since the previous server tag, and a multi-arch image on ghcr.io. The
+# server's update check reads exactly these files (protocol/docs/releases.md).
+on:
+  push:
+    tags: ["server-v*.*.*"]
+
+permissions:
+  contents: write
+  packages: write
+
+defaults:
+  run:
+    working-directory: server
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - id: meta
+        run: |
+          version="${GITHUB_REF_NAME#server-v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Only the version part decides: every server-v… tag contains "-".
+          if [[ "$version" == *-* ]]; then echo "prerelease=true"; else echo "prerelease=false"; fi >> "$GITHUB_OUTPUT"
+      - name: Build binaries
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          mkdir dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%/*}"; arch="${target#*/}"
+            name="geocrew-server-$os-$arch"; [ "$os" = windows ] && name="$name.exe"
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath \
+              -ldflags="-s -w -X main.version=$VERSION" -o "dist/$name" ./cmd/geocrew-server
+          done
+          (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+          ./dist/geocrew-server-linux-amd64 -version | grep -F "$VERSION"
+      - name: Release notes
+        working-directory: .
+        run: .github/scripts/changelog.sh "$GITHUB_REF_NAME" server > notes.md && cat notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: 同勘服务端 ${{ steps.meta.outputs.version }}
+          body_path: notes.md
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          files: server/dist/*
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        run: |
+          version="${GITHUB_REF_NAME#server-v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/geocrew-server" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then echo "prerelease=true"; else echo "prerelease=false"; fi >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.prerelease == 'false' && format('{0}:latest', steps.meta.outputs.image) || '' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
