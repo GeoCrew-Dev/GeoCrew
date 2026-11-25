@@ -17,6 +17,7 @@ import org.geocrew.core.model.task
 import org.geocrew.core.model.audio
 import org.geocrew.core.model.audioInfo
 import org.geocrew.core.model.geoRoute
+import org.geocrew.core.model.borehole
 import org.geocrew.core.model.measuredSection
 import org.geocrew.core.model.samples
 import java.time.Instant
@@ -137,6 +138,15 @@ data class FieldReport(
                             },
                         )
                         add("总厚度" to "%.1f m".format(java.util.Locale.ROOT, r.total))
+                    }
+                }
+                if (f.kind == FeatureKind.BOREHOLE) {
+                    val h = f.borehole
+                    fun m(v: Double) = "%.2f".format(java.util.Locale.ROOT, v).trimEnd('0').trimEnd('.') + " m"
+                    if (h.total > 0) add("孔深" to m(h.total))
+                    add("水位" to (h.water?.let(::m) ?: "未见"))
+                    h.intervals().takeIf { it.isNotEmpty() }?.let { list ->
+                        add("分层" to list.joinToString("；") { iv -> listOf(iv.layer.no, iv.layer.lithology, "${m(iv.top)}–${m(iv.bottom)}").filter { it.isNotBlank() }.joinToString(" ") })
                     }
                 }
                 if (f.kind == FeatureKind.ROUTE) routeFacts(f.geoRoute, byId)

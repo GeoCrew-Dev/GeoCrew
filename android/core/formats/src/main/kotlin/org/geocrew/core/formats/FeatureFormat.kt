@@ -73,7 +73,7 @@ interface FeatureFormat {
 
 object FeatureFormats {
     private val builtIn: List<FeatureFormat> =
-        listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat, DxfFormat, CsvFormat, SampleListFormat, SectionTableFormat, RouteTableFormat)
+        listOf(GeoJsonFormat, KmlFormat, GpxFormat, ShapefileFormat, DxfFormat, CsvFormat, SampleListFormat, SectionTableFormat, BoreholeTableFormat, RouteTableFormat)
 
     @Volatile private var extra: List<FeatureFormat> = emptyList()
 
