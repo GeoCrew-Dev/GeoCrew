@@ -686,7 +686,7 @@ GET /api/v0/workspaces/{id}/features?since=17&limit=500
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
 | `workspace_summary` | 无 | 名称、是否归档、成员（昵称、角色、最近活动）、记录总数和按 `kind` 计数、样品数、最近修改时间 |
-| `search_records` | `query`（空格分隔、都要出现，在名称、岩性、描述、样品号里找，不分大小写）、`kind`、`member`（最近修改者昵称）、`since`（日期或 RFC 3339 时间）、`limit`（默认 20，最多 100） | `matched` 总数和按修改时间从新到旧的记录摘要（id、kind、名称、岩性、描述前 160 字、样品号、首个坐标、修改时间与修改人） |
+| `search_records` | `query`（空格分隔、都要出现，在名称、岩性、描述、样品号里找，不分大小写）、`kind`、`member`（最近修改者昵称）、`since`（日期或 RFC 3339 时间）、`near_record`（某条记录的 id）或 `near_lon` 与 `near_lat`、`radius_m`（默认 1000，最多 100000）、`limit`（默认 20，最多 100） | `matched` 总数和记录摘要（id、kind、名称、岩性、描述前 160 字、样品号、首个坐标、修改时间与修改人）；按修改时间从新到旧，给了位置时按首个坐标的距离从近到远并带 `distance_m`，不含作为中心的那条记录 |
 | `get_record` | `id` | 完整要素（与拉取接口同格式）、最近修改人昵称、历史里较早版本的个数 |
 | `review_issues` | 无 | 与 `GET …/checks` 相同的待核对清单 |
 | `workload` | `from`、`to`（日期，含两端）、`tz_offset_minutes`（默认 480，即北京时间） | 与工作量统计表相同的列，每天每人一行；不限日期时带每人的合计行 |
