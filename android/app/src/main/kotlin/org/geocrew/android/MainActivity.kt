@@ -107,7 +107,10 @@ private fun App(graph: AppGraph, resumed: Int) {
                 onLayers = { push(Screen.Layers(screen.name)) },
             )
             is Screen.ProjectSettings -> ProjectSettingsScreen(graph, screen.name, onBack = ::pop)
-            is Screen.Layers -> LayersScreen(graph, screen.name, onBack = ::pop)
+            is Screen.Layers -> LayersScreen(graph, screen.name, onBack = ::pop, onZoom = { layer ->
+                graph.zoomTo = layer
+                pop()
+            })
         }
     }
 }

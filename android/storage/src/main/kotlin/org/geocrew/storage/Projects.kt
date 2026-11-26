@@ -158,9 +158,11 @@ private fun readLayers(ds: VectorDataset): List<Project.Layer> {
     val present = ds.layers.toSet()
     val geometry = rows(ds, "SELECT table_name, geometry_type_name FROM gpkg_geometry_columns").associate { it["table_name"] to it["geometry_type_name"] }
     val display = readDisplay(ds)
-    return rows(ds, "SELECT table_name, id, template FROM ${ProjectFormat.LAYERS_TABLE} ORDER BY rowid")
+    // Rows of GeoCrew's layer table keep their number when a layer before them is deleted: colours stay too.
+    return rows(ds, "SELECT rowid - 1 AS made, table_name, id, template FROM ${ProjectFormat.LAYERS_TABLE} ORDER BY rowid")
         .filter { it["table_name"] in present }
-        .mapIndexed { made, it ->
+        .map {
+            val made = it["made"]?.toIntOrNull() ?: 0
             val name = it.getValue("table_name")!!
             val srs = (Json.parseToJsonElement(ds.layerInfo(name)).jsonObject["srs"] as? JsonPrimitive)?.contentOrNull
             val id = it.getValue("id")!!
@@ -327,6 +329,34 @@ class Project internal constructor(
         layers = readLayers(dataset)
         putOnTop(name)
         return layers.single { it.name == name }
+    }
+
+    /**
+     * Renames layer [layer] to [to] in the file (GDAL keeps GeoPackage's own tables
+     * in step) and in GeoCrew's; its id, fields' ids and display stay. Open the
+     * project again afterwards, see [Projects.reopen].
+     */
+    fun renameLayer(layer: String, to: String) {
+        require(layers.any { it.name == layer }) { "there is no layer $layer" }
+        checkNewName(to)
+        dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} RENAME TO ${ProjectFormat.identifier(to)}")
+        dataset.sql("UPDATE ${ProjectFormat.LAYERS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
+        dataset.sql("UPDATE ${ProjectFormat.FIELDS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
+    }
+
+    /**
+     * Deletes layer [layer] with all its features, from the file and from
+     * GeoCrew's tables, and its journal. It cannot be undone. Open the project
+     * again afterwards, see [Projects.reopen].
+     */
+    fun deleteLayer(layer: String) {
+        val found = layers.firstOrNull { it.name == layer } ?: throw IllegalArgumentException("there is no layer $layer")
+        dataset.sql("DROP TABLE ${ProjectFormat.identifier(layer)}")
+        dataset.sql("DELETE FROM ${ProjectFormat.FIELDS_TABLE} WHERE table_name = ${quote(layer)}")
+        dataset.sql("DELETE FROM ${ProjectFormat.LAYERS_TABLE} WHERE table_name = ${quote(layer)}")
+        dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
+        dataset.sql("DELETE FROM ${ProjectFormat.DISPLAY_TABLE} WHERE layer_id = ${quote(found.id)}")
+        File(journals, "${found.id}.jsonl").delete()
     }
 
     // A new layer goes on top of a list that has been put in order, as in QGIS; an unordered list keeps the order layers were made.

@@ -17,6 +17,8 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Numbers
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +38,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -73,11 +77,13 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.add
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
+import org.geocrew.core.project.ProjectFormat
 import org.geocrew.storage.Workspace
 
 /** A layer of the open project, in its colour on the map, with its fields and how many features it has once read. */
 data class LayerInfo(
     val name: String,
+    val srs: String? = null,
     val id: String,
     val point: Boolean,
     val color: Color,
@@ -93,6 +99,7 @@ fun listedLayers(about: JsonObject): List<LayerInfo> = about["layers"]?.jsonArra
     val name = (listed["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
     LayerInfo(
         name,
+        (listed["srs"] as? JsonPrimitive)?.contentOrNull,
         (listed["id"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
         (listed["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT",
         layerColor(madeIndex(listed)),
@@ -120,13 +127,15 @@ private data class NewField(val layer: String, val name: String, val type: Strin
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
+fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (String) -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var layers by remember { mutableStateOf<List<LayerInfo>>(emptyList()) }
     var basemaps by remember { mutableStateOf<List<BasemapInfo>>(emptyList()) }
     val open = remember { mutableStateMapOf<String, Boolean>() }
     var naming by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<LayerInfo?>(null) }
+    var deleting by remember { mutableStateOf<LayerInfo?>(null) }
     var adding by remember { mutableStateOf<LayerInfo?>(null) }
     var saveFirst by remember { mutableStateOf<NewField?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
@@ -267,10 +276,39 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
                         )
                     }
                     item(key = "add:${layer.name}") {
-                        FilledTonalButton(onClick = { adding = layer }, modifier = Modifier.animateItem().padding(start = 40.dp, top = 4.dp, bottom = 12.dp)) {
+                        FilledTonalButton(onClick = { adding = layer }, modifier = Modifier.animateItem().padding(start = 40.dp, top = 4.dp, bottom = 4.dp)) {
                             Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.field_add))
+                        }
+                    }
+                    item(key = "about:${layer.name}") {
+                        Column(Modifier.animateItem().padding(start = 40.dp, end = 16.dp, bottom = 12.dp)) {
+                            layer.srs?.let {
+                                Text(
+                                    stringResource(R.string.layer_crs_value, it),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                            }
+                            Row {
+                                TextButton(onClick = { onZoom(layer.name) }) {
+                                    Icon(Icons.Rounded.ZoomIn, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.zoom_to_layer))
+                                }
+                                TextButton(onClick = { renaming = layer }) {
+                                    Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.layer_rename))
+                                }
+                                TextButton(onClick = { deleting = layer }) {
+                                    Icon(Icons.Rounded.DeleteOutline, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                                }
+                            }
                         }
                     }
                 }
@@ -329,6 +367,33 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
             },
         )
     }
+    renaming?.let { layer ->
+        RenameLayerDialog(
+            current = layer.name,
+            existing = layers.map { it.name },
+            onDismiss = { renaming = null },
+            onRename = { to ->
+                renaming = null
+                open.remove(layer.name)?.let { open[to] = it }
+                display(Workspace.LAYER_RENAME, buildJsonObject { put("layer", layer.name); put("to", to) })
+            },
+        )
+    }
+    deleting?.let { layer ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            icon = { Icon(Icons.Rounded.DeleteOutline, null) },
+            title = { Text(stringResource(R.string.layer_delete_title, layer.name)) },
+            text = { Text(pluralStringResource(R.plurals.layer_delete_body, layer.count, layer.count)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleting = null
+                    display(Workspace.LAYER_DELETE, buildJsonObject { put("layer", layer.name) })
+                }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
     adding?.let { layer ->
         AddFieldDialog(
             existing = layer.fields.map { it.name },
@@ -366,6 +431,37 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
             text = { Text(message) },
         )
     }
+}
+
+/** A layer's new name, checked like a new layer's. */
+@Composable
+private fun RenameLayerDialog(current: String, existing: List<String>, onDismiss: () -> Unit, onRename: (String) -> Unit) {
+    var name by remember { mutableStateOf(current) }
+    val trimmed = name.trim()
+    val taken = existing.any { it.equals(trimmed, ignoreCase = true) && !it.equals(current, ignoreCase = true) }
+    val reserved = listOf("gpkg_", "rtree_", "sqlite_", "geocrew_").any { trimmed.startsWith(it, ignoreCase = true) }
+    val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && trimmed != current && !taken && !reserved
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.layer_rename)) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(stringResource(R.string.layer_name)) },
+                singleLine = true,
+                isError = taken || reserved,
+                supportingText = {
+                    when {
+                        taken -> Text(stringResource(R.string.layer_name_taken))
+                        reserved -> Text(stringResource(R.string.layer_name_reserved))
+                    }
+                },
+            )
+        },
+        confirmButton = { TextButton(onClick = { onRename(trimmed) }, enabled = valid) { Text(stringResource(R.string.save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 // The layer list with the layer at [from] moved to [to], for layer.order.

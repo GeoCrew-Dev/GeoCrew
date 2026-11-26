@@ -122,6 +122,13 @@
     <string name="coord_xy">X/Y</string>
     <string name="northing">X（北）</string>
     <string name="easting">Y（东）</string>
+    <string name="layer_crs_value">坐标系 %1$s</string>
+    <string name="zoom_to_layer">缩放到图层</string>
+    <string name="layer_rename">改名</string>
+    <string name="layer_delete_title">删除「%1$s」？</string>
+    <plurals name="layer_delete_body">
+        <item quantity="other">图层和它的 %d 个要素都会删掉，不能撤销。</item>
+    </plurals>
     <string name="layer_show">显示</string>
     <string name="layer_hide">隐藏</string>
     <string name="layer_opacity">不透明度 %1$d%%</string>
