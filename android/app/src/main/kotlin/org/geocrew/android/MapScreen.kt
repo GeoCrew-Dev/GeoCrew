@@ -641,8 +641,9 @@ fun MapScreen(
     // The drawn vertices in the layer's CRS, as GeoJSON; null (and said) when they don't convert.
     suspend fun shapeInLayer(d: Drawing): JsonObject? {
         val own = layers.firstOrNull { it.name() == d.layer }?.text("srs") ?: Crs.LONGITUDE_LATITUDE
-        val degrees = d.vertices.map { round7(it.longitude) to round7(it.latitude) }
-        if (Crs.same(own, Crs.LONGITUDE_LATITUDE)) return shapeGeoJson(degrees, d.area)
+        // Degrees are kept to the seventh decimal; converted ones keep full precision, so a projected layer's vertices come back as they were.
+        if (Crs.same(own, Crs.LONGITUDE_LATITUDE)) return shapeGeoJson(d.vertices.map { round7(it.longitude) to round7(it.latitude) }, d.area)
+        val degrees = d.vertices.map { it.longitude to it.latitude }
         val moved = graph.invoke(
             Workspace.CRS_TRANSFORM,
             buildJsonObject {
@@ -661,6 +662,10 @@ fun MapScreen(
 
     fun reshape(d: Drawing) = once {
         val fid = d.fid ?: return@once
+        // The feature may have gone while it was reshaped (an undone addition, say): then there is nothing to change.
+        val there = (collections[d.layer]?.get("features") as? JsonArray).orEmpty()
+            .any { ((it as? JsonObject)?.get("id") as? JsonPrimitive)?.contentOrNull?.toLongOrNull() == fid }
+        if (!there) return@once
         if (!startEditing(d.layer)) return@once
         val geometry = shapeInLayer(d) ?: return@once
         act(Editing.GEOMETRY, buildJsonObject { put("layer", d.layer); put("fid", fid); put("geometry", geometry) })
