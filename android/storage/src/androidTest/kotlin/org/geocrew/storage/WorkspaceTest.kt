@@ -58,7 +58,13 @@ class WorkspaceTest {
         assertIs<Outcome.Done>(run(Workspace.CLOSE))
         assertNull(workspace.current)
 
-        assertEquals(listOf("测区"), output(run(Workspace.LIST)).getValue("projects").jsonArray.map { it.jsonPrimitive.content })
+        val listed = output(run(Workspace.LIST)).getValue("projects").jsonArray.single().jsonObject
+        assertEquals("测区", listed.getValue("name").jsonPrimitive.content)
+        assertTrue(listed.getValue("modified").jsonPrimitive.content.toLong() > 0)
+        assertEquals(1, listed.getValue("layers").jsonPrimitive.content.toInt())
+        assertEquals(1L, listed.getValue("features").jsonPrimitive.content.toLong(), "the saved point")
+        assertTrue(listed.getValue("bytes").jsonPrimitive.content.toLong() > 0)
+        assertTrue(listed.containsKey("created"))
         assertIs<Outcome.Done>(run(Workspace.OPEN, """{"name": "测区"}"""))
         val target = workspace.current!!.target("地质点")
         assertEquals(1, target.store.features().size)

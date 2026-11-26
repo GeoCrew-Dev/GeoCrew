@@ -35,6 +35,29 @@ class Projects(private val root: File, private val journals: File) {
     fun list(): List<String> =
         dir.listFiles().orEmpty().filter { it.isDirectory && gpkg(it.name).isFile }.map { it.name }.sorted()
 
+    /** When project [name] last changed, in milliseconds since 1970: its file or the log written ahead of it. */
+    fun modified(name: String): Long =
+        maxOf(gpkg(name).lastModified(), File(gpkg(name).path + "-wal").lastModified())
+
+    /** What the project list shows of a project; null when its file cannot be read. */
+    data class Summary(val layers: Int, val features: Long, val bytes: Long, val created: String?)
+
+    /**
+     * Reads project [name] without opening it for editing: its layers, their
+     * features (GeoPackage keeps the counts), its size and when it was made.
+     */
+    fun summary(name: String): Summary? = runCatching {
+        VectorDataset.open(gpkg(name).path).use { ds ->
+            val present = ds.layers.toSet()
+            val layers = rows(ds, "SELECT table_name FROM ${ProjectFormat.LAYERS_TABLE}").mapNotNull { it["table_name"] }.filter { it in present }
+            val features = layers.sumOf {
+                Json.parseToJsonElement(ds.layerInfo(it)).jsonObject["count"]?.let { c -> (c as? JsonPrimitive)?.contentOrNull?.toLongOrNull() } ?: 0L
+            }
+            val created = rows(ds, "SELECT value FROM ${ProjectFormat.PROJECT_TABLE} WHERE key = 'created'").firstOrNull()?.get("value")
+            Summary(layers.size, features, gpkg(name).length() + File(gpkg(name).path + "-wal").length(), created)
+        }
+    }.getOrNull()
+
     /** Makes project [name] with a layer for each of [templates], and opens it. */
     fun create(name: String, templates: List<LayerTemplate> = Templates.all): Project {
         ProjectFormat.nameProblem(name)?.let { throw IllegalArgumentException(it.message) }

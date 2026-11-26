@@ -6,7 +6,12 @@
 
 - **技术栈与模块**按 ADR 0016：Kotlin、Jetpack Compose、Material 3，一个 Activity。`core:*` 是不用安卓 API 的纯 Kotlin 模块，规则和协议放在那里，在电脑上测。
 - **所有界面操作都走动作注册表**（ADR 0010），界面只读状态、发起动作，不直接改数据。
-- **界面文字放进资源文件**（`res/values/strings.xml`），不写死在代码里。
+- **界面文字放进资源文件**，不写死在代码里。中英双语：默认的 `res/values/strings.xml` 是英文（系统是中文以外的语言时都用英文），中文放在 `res/values-zh/`；两边一起改。数量用 plurals。
+- **界面设计**（负责人 2026-11-26 定）：Material Design 3，用动态取色，支持浅色、深色和跟随系统。按钮多用带波纹的圆形图标按钮。
+  - 打开工程直接进地图；"加点"是主按钮。
+  - 地图上的按钮都半透明，只有菜单和 AI 两个按钮不透明、一直在。
+  - 需要的权限放在专门的权限页，都授权了就跳过。
+  - 每个页面在 S24 上用浅色、深色、中文、英文都看过再算做完。
 - **新依赖**：先写 ADR，更新 [docs/licenses.md](../docs/licenses.md)，版本写进 `gradle/libs.versions.toml`。Gradle、AGP、Kotlin 的版本和 GeoCrew-Native 一起升。
 - **合并和权限规则**要通过 `protocol/testdata/` 下和服务端共用的样例。
 - **不提交** `local.properties`、签名密钥和本机的代理设置。

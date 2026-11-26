@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">同勘</string>
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="back">返回</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="close">关闭</string>
+    <string name="start_failed">同勘没能启动：%1$s</string>
+    <string name="action_failed">没有成功：%1$s</string>
+    <string name="failure_unsaved">先保存或放弃图层里的修改。</string>
+    <string name="failure_editing">先停止编辑图层。</string>
+
+    <!-- 权限 -->
+    <string name="permissions_title">需要几项权限</string>
+    <string name="permissions_body">同勘在野外离线工作。下面这些权限用来妥善保存工程、记录你所在的位置。</string>
+    <string name="permission_storage">文件</string>
+    <string name="permission_storage_body">把工程放在手机存储的 GeoCrew 文件夹里：卸载应用也不会删除，电脑和文件管理器都能直接拿到。</string>
+    <string name="permission_location">位置</string>
+    <string name="permission_location_body">在你所在的位置定点，记下海拔和定位精度。</string>
+    <string name="permission_grant">授权</string>
+    <string name="permission_granted">已授权</string>
+    <string name="permissions_continue">继续</string>
+    <string name="permissions_own_folder">暂不授权，工程先放在应用内</string>
+    <string name="permissions_own_folder_warning">放在应用内的工程，卸载同勘时会一起被删除，别的应用也打不开。</string>
+
+    <!-- 工程 -->
+    <string name="projects_title">工程</string>
+    <string name="projects_empty_title">还没有工程</string>
+    <string name="projects_empty_body">新建一个工程，开始野外记录。</string>
+    <string name="project_new">新建工程</string>
+    <string name="project_name">工程名称</string>
+    <string name="project_create">创建</string>
+    <string name="project_modified">修改于 %1$s</string>
+    <string name="project_created">创建于 %1$s</string>
+    <plurals name="points_count">
+        <item quantity="other">%d 个点</item>
+    </plurals>
+    <plurals name="layers_count">
+        <item quantity="other">%d 个图层</item>
+    </plurals>
+    <string name="project_close">关闭工程</string>
+    <string name="name_taken">已经有叫这个名字的工程了</string>
+    <string name="name_empty">给工程起个名字</string>
+    <string name="name_space">名称前后不能有空格</string>
+    <plurals name="name_too_long">
+        <item quantity="other">名称最长 %d 个字</item>
+    </plurals>
+    <string name="name_dot">名称不能以点结尾</string>
+    <string name="name_character">名称里不能有这些字符：\\ / : * ? \" &lt; &gt; |</string>
+
+    <!-- 设置 -->
+    <string name="settings">设置</string>
+    <string name="settings_appearance">外观</string>
+    <string name="settings_theme">主题</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="settings_dynamic_color">动态取色</string>
+    <string name="settings_dynamic_color_body">按壁纸生成界面配色</string>
+    <string name="settings_language">语言</string>
+    <string name="language_system">跟随系统</string>
+    <string name="settings_language_unavailable">这个安卓版本上跟随系统</string>
+    <string name="settings_map">地图</string>
+    <string name="settings_tianditu_key">天地图 Key</string>
+    <string name="key_set">已填写</string>
+    <string name="key_not_set">未填写，底图不显示</string>
+    <string name="key_title">天地图 Key</string>
+    <string name="key_hint">在天地图官网申请的 Key</string>
+    <string name="key_invalid">Key 是 32 位的数字和字母 a–f</string>
+    <string name="settings_storage">存储</string>
+    <string name="settings_projects_folder">工程文件夹</string>
+
+    <!-- 关于 -->
+    <string name="about">关于</string>
+    <string name="about_tagline">开源的野外调查与 GIS 工具，服务地质、水文地质等野外工作。</string>
+    <string name="about_version">版本 %1$s</string>
+    <string name="about_source">源代码</string>
+    <string name="about_licenses">开源许可</string>
+    <string name="about_licenses_body">GDAL、PROJ、GEOS、SQLite、MapLibre Native、Kotlin、Jetpack Compose 等库，各自按其开源许可使用。</string>
+    <string name="about_map_data">地图数据</string>
+    <string name="about_map_data_body">底图 © 天地图（国家地理信息公共服务平台）。</string>
+
+    <!-- 地图 -->
+    <string name="map_menu">菜单</string>
+    <string name="map_ai">AI 助手</string>
+    <string name="map_ai_coming">AI 助手会在后续版本加入。</string>
+    <string name="map_layers">图层</string>
+    <string name="map_add_point">加点</string>
+    <string name="map_undo">撤销</string>
+    <string name="map_redo">重做</string>
+    <string name="map_save">保存修改</string>
+    <string name="map_discard">放弃修改</string>
+    <string name="map_editing">编辑中</string>
+    <string name="map_unsaved_short">未保存</string>
+    <string name="map_no_key">还没有填天地图 Key，底图不显示。</string>
+    <string name="map_set_key">去填写</string>
+    <string name="attribution_tianditu">© 天地图</string>
+    <string name="unsaved_title">有未保存的修改</string>
+    <string name="unsaved_body">“%1$s”图层有没保存的修改。</string>
+    <string name="export_gpkg">导出 GeoPackage</string>
+    <string name="export_kml">导出 KML</string>
+    <string name="exported">已导出到：%1$s</string>
+    <string name="share">分享</string>
+    <string name="share_title">分享导出的文件</string>
+
+    <!-- 要素表单 -->
+    <string name="feature_untitled">点 %1$d</string>
+    <string name="feature_delete">删除这个点</string>
+    <string name="feature_delete_title">删除这个点？</string>
+    <string name="feature_delete_body">保存修改之前还能撤销。</string>
+    <string name="field_not_a_number">要填数字</string>
+    <string name="field_not_a_whole_number">要填整数</string>
+    <string name="field_add">添加字段</string>
+    <string name="field_name">字段名称</string>
+    <string name="field_type">类型</string>
+    <string name="field_name_taken">图层里已经有这个字段了</string>
+    <string name="type_string">文字</string>
+    <string name="type_real">数字</string>
+    <string name="type_integer">整数</string>
+    <string name="type_date">日期</string>
+    <string name="type_datetime">日期和时间</string>
+    <string name="type_boolean">是 / 否</string>
+</resources>
