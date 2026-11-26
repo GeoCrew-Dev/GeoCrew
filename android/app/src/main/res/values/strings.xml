@@ -125,6 +125,13 @@
     <string name="crs_common">Common</string>
     <string name="crs_none">Nothing found</string>
     <string name="crs_custom">Custom</string>
+    <string name="menu_analysis">Analysis</string>
+    <string name="tool_convert">Convert coordinates</string>
+    <string name="convert_from">From</string>
+    <string name="convert_to">To</string>
+    <string name="convert_swap">Swap</string>
+    <string name="convert_map_centre">Map centre</string>
+    <string name="convert_show">Show on map</string>
     <string name="go_to_outside">These coordinates don\'t convert</string>
     <string name="coordinates_in">Coordinates (%1$s)</string>
     <string name="coord_degrees">Lon/Lat</string>

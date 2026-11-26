@@ -118,6 +118,13 @@
     <string name="crs_common">常用</string>
     <string name="crs_none">没有找到</string>
     <string name="crs_custom">自定义</string>
+    <string name="menu_analysis">分析</string>
+    <string name="tool_convert">坐标换算</string>
+    <string name="convert_from">原坐标系</string>
+    <string name="convert_to">目标坐标系</string>
+    <string name="convert_swap">互换</string>
+    <string name="convert_map_centre">地图中心</string>
+    <string name="convert_show">在地图上定位</string>
     <string name="go_to_outside">这个坐标换算不出来</string>
     <string name="coordinates_in">坐标（%1$s）</string>
     <string name="coord_degrees">经纬度</string>
