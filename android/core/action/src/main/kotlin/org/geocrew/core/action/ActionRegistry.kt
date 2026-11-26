@@ -3,9 +3,13 @@ package org.geocrew.core.action
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 
 /**
  * Decides whether a caller may run an action with these parameters: the
@@ -32,16 +36,27 @@ data class LogEntry(val caller: Caller, val action: String, val params: JsonObje
  * The one registry every action goes through (ADR 0010): the interface's
  * buttons, built-in features, GDAL algorithms, plugins, the AI and MCP alike.
  * Parameter checks, permissions, the operation log and undo happen here and
- * nowhere else.
+ * nowhere else. Undo and redo are actions too, [UNDO] and [REDO], each for
+ * one scope of undo history (see [Undo]).
  */
 class ActionRegistry(
     private val gate: Gate = Gate { _, _, _ -> null },
     private val log: (LogEntry) -> Unit = {},
 ) {
+    private class History {
+        val undos = ArrayDeque<Undo>()
+        val redos = ArrayDeque<Undo>()
+    }
+
     private val actions = LinkedHashMap<String, Action>()
     private val names = HashMap<String, Action>() // ids and aliases
-    private val undos = ArrayDeque<Undo>()
+    private val histories = HashMap<String?, History>()
     private val lock = Mutex()
+
+    init {
+        register(HistoryAction(UNDO, "Undo", "Takes back the latest run in a scope of undo history") { undoLocked(it) })
+        register(HistoryAction(REDO, "Redo", "Makes the latest undone run in a scope again") { redoLocked(it) })
+    }
 
     /** Adds an action. Its id and aliases must be new. */
     fun register(action: Action) {
@@ -60,8 +75,11 @@ class ActionRegistry(
     /** Every action, in the order they were registered. */
     fun specs(): List<ActionSpec> = actions.values.map { it.spec }
 
-    /** Whether the latest undoable run can be taken back. */
-    val canUndo: Boolean get() = undos.isNotEmpty()
+    /** Whether [UNDO] has something to take back in [scope]. */
+    suspend fun canUndo(scope: String? = null): Boolean = lock.withLock { histories[scope]?.undos?.isNotEmpty() == true }
+
+    /** Whether [REDO] has something to make again in [scope]. */
+    suspend fun canRedo(scope: String? = null): Boolean = lock.withLock { histories[scope]?.redos?.isNotEmpty() == true }
 
     /** Runs an action for a caller, after checking who may and with what. */
     suspend fun invoke(caller: Caller, name: String, params: JsonObject = JsonObject(emptyMap())): Outcome = lock.withLock {
@@ -88,9 +106,11 @@ class ActionRegistry(
         }
         return when (result) {
             is ActionResult.Done -> {
-                result.undo?.let {
-                    undos.addLast(it)
-                    if (undos.size > MAX_UNDO) undos.removeFirst()
+                result.endsUndo?.let { histories.remove(it) }
+                result.undo?.let { undo ->
+                    val history = histories.getOrPut(undo.scope) { History() }
+                    history.undos.push(undo)
+                    history.redos.clear() // a new run starts a new line of history
                 }
                 Outcome.Done(result.output)
             }
@@ -98,16 +118,55 @@ class ActionRegistry(
         }
     }
 
-    /** Takes back the latest undoable run; false when there is none. */
-    suspend fun undo(): Boolean = lock.withLock {
-        val last = undos.removeLastOrNull() ?: return@withLock false
+    // Called inside invoke, which holds the lock. A step that throws leaves the history.
+    private suspend fun undoLocked(scope: String?): Boolean {
+        val history = histories[scope] ?: return false
+        val last = history.undos.removeLastOrNull() ?: return false
         last.undo()
-        true
+        if (last.redo != null) history.redos.push(last)
+        return true
+    }
+
+    private suspend fun redoLocked(scope: String?): Boolean {
+        val history = histories[scope] ?: return false
+        val last = history.redos.removeLastOrNull() ?: return false
+        checkNotNull(last.redo)()
+        history.undos.push(last)
+        return true
+    }
+
+    private fun ArrayDeque<Undo>.push(undo: Undo) {
+        addLast(undo)
+        if (size > MAX_UNDO) removeFirst()
     }
 
     companion object {
-        /** How many runs back undo reaches; older ones are let go. */
+        /** How many runs back undo reaches in each scope; older ones are let go. */
         const val MAX_UNDO = 100
+
+        /** Takes back the latest run in the scope given as `scope` (none for the general one). */
+        const val UNDO = "app.undo"
+
+        /** Makes the latest undone run in the scope given as `scope` again. */
+        const val REDO = "app.redo"
+
+        private val HISTORY_PARAMS = Json.parseToJsonElement(
+            """{"type": "object", "additionalProperties": false, "properties": {"scope": {"type": "string"}}}""",
+        ).jsonObject
+    }
+
+    private class HistoryAction(
+        id: String,
+        name: String,
+        description: String,
+        private val step: suspend (String?) -> Boolean,
+    ) : Action {
+        override val spec = ActionSpec(id, name, description, HISTORY_PARAMS, Risk.EDIT, Stability.PREVIEW)
+
+        override suspend fun run(caller: Caller, params: JsonObject): ActionResult {
+            val scope = (params["scope"] as? JsonPrimitive)?.contentOrNull
+            return if (step(scope)) ActionResult.Done() else ActionResult.Failed("nothing", "there is nothing to ${spec.name.lowercase()}")
+        }
     }
 
     private fun opensTo(stability: Stability, caller: Caller): Boolean = when (stability) {
