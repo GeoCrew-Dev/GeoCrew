@@ -183,6 +183,8 @@
     <string name="basemap_vec">Tianditu map</string>
     <string name="basemap_ter">Tianditu terrain</string>
     <string name="tool_basemap">Basemap</string>
+    <string name="tool_screenshot">Screenshot</string>
+    <string name="map_screenshot_failed">Screenshot failed</string>
     <string name="basemap_kind_img">Imagery</string>
     <string name="basemap_kind_vec">Map</string>
     <string name="basemap_kind_ter">Terrain</string>

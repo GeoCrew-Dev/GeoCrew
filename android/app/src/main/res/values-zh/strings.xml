@@ -173,6 +173,8 @@
     <string name="basemap_vec">天地图矢量</string>
     <string name="basemap_ter">天地图地形</string>
     <string name="tool_basemap">底图</string>
+    <string name="tool_screenshot">截图</string>
+    <string name="map_screenshot_failed">截图没有成功</string>
     <string name="basemap_kind_img">影像</string>
     <string name="basemap_kind_vec">矢量</string>
     <string name="basemap_kind_ter">地形</string>

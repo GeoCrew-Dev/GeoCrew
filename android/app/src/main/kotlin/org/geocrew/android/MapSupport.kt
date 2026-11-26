@@ -136,9 +136,34 @@ internal fun fit(map: MapLibreMap, features: JsonArray, density: Float) {
 /** Hands an exported file to another app through the system's share sheet. */
 internal fun share(context: Context, file: File, title: String) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-    val type = if (file.extension == "gpkg") "application/geopackage+sqlite3" else "application/vnd.google-earth.kml+xml"
+    val type = when (file.extension) {
+        "gpkg" -> "application/geopackage+sqlite3"
+        "png" -> "image/png"
+        else -> "application/vnd.google-earth.kml+xml"
+    }
     val send = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(Intent.createChooser(send, title))
+}
+
+/**
+ * The map as it is now, at full size, as a PNG in [dir] named after [project]
+ * and the time, like the exports; null when MapLibre gives no picture.
+ */
+internal suspend fun saveScreenshot(map: MapLibreMap, dir: File, project: String): File? {
+    val shot = suspendCancellableCoroutine<Bitmap?> { continuation ->
+        map.snapshot { if (continuation.isActive) continuation.resume(it) }
+    } ?: return null
+    return withContext(Dispatchers.IO) {
+        dir.mkdirs()
+        val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+        var out = File(dir, "$project-$stamp.png")
+        var n = 2
+        while (out.exists()) out = File(dir, "$project-$stamp-${n++}.png")
+        // Written under another name first: a picture cut short never looks finished.
+        val part = File(out.path + ".part")
+        part.outputStream().use { shot.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        if (part.renameTo(out)) out else null
+    }
 }
 
 /** Keeps a small picture of the map as it is, for the project's card on the home screen. */

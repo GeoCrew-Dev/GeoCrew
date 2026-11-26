@@ -141,7 +141,8 @@ class Projects(private val root: File, private val journals: File) {
         return open(project.name)
     }
 
-    private companion object {
+    companion object {
+        /** The folder in the GeoCrew folder where exports (and map screenshots) go. */
         const val EXPORTS = "导出"
     }
 

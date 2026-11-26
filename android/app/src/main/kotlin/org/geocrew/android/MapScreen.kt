@@ -1,5 +1,7 @@
 package org.geocrew.android
 
+import org.geocrew.storage.Projects
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Satellite
 import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.EditLocationAlt
@@ -219,6 +221,7 @@ fun MapScreen(
     // The phone's position: the system asks for permission the first time; no fix is said plainly.
     val noFixText = stringResource(R.string.no_fix)
     val goToOutsideText = stringResource(R.string.go_to_outside)
+    val screenshotFailedText = stringResource(R.string.map_screenshot_failed)
     // Whether the map may show where the phone is; granted later, it shows from then on.
     var located by remember { mutableStateOf(mayLocate(context)) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) located = true }
@@ -1060,6 +1063,13 @@ fun MapScreen(
                         // A locked map is always north up.
                         MenuTool(stringResource(R.string.tool_north_up), Icons.Rounded.Explore, ::northUp).takeUnless { graph.settings.rotationLocked },
                         MenuTool(stringResource(R.string.tool_basemap), Icons.Rounded.Satellite) { choosingBasemap = true },
+                        MenuTool(stringResource(R.string.tool_screenshot), Icons.Rounded.PhotoCamera) {
+                            scope.launch {
+                                // The map alone, without the buttons; saved with the exports, then offered to share.
+                                val file = saveScreenshot(mapView.awaitMap(), File(graph.root, Projects.EXPORTS), project)
+                                if (file != null) exported = file else failure = screenshotFailedText
+                            }
+                        },
                         MenuTool(stringResource(R.string.tool_bookmarks), Icons.Rounded.Bookmarks) { bookmarkAction(Workspace.BOOKMARKS) },
                         if (graph.settings.rotationLocked) {
                             MenuTool(stringResource(R.string.tool_unlock_rotation), Icons.Rounded.ScreenRotation) { graph.settings.lockRotation(false) }
