@@ -134,6 +134,7 @@ class WorkspaceTest {
         assertEquals(3.25, saved.getValue("properties").jsonObject.getValue("水位埋深").jsonPrimitive.content.toDouble())
 
         assertIs<Outcome.Failed>(run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "点号", "type": "string"}"""), "names are unique")
+        assertIs<Outcome.Failed>(run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "GEOM", "type": "string"}"""), "the geometry column")
         assertIs<Outcome.Invalid>(run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "x", "type": "blob"}"""))
     }
 
