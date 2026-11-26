@@ -123,6 +123,14 @@ fun countOf(geometry: String?): Int = when {
     else -> R.plurals.points_count
 }
 
+/** A basemap row's name: the labels (cia), or the base of the Tianditu map [kind] (img, vec, ter). */
+fun basemapName(id: String, kind: String): Int = when {
+    id == "cia" -> R.string.basemap_cia
+    kind == "vec" -> R.string.basemap_vec
+    kind == "ter" -> R.string.basemap_ter
+    else -> R.string.basemap_img
+}
+
 /** A basemap under the layers, as project.current lists it. */
 data class BasemapInfo(val id: String, val visible: Boolean, val opacity: Float)
 
@@ -147,6 +155,8 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
     val context = LocalContext.current
     var layers by remember { mutableStateOf<List<LayerInfo>>(emptyList()) }
     var basemaps by remember { mutableStateOf<List<BasemapInfo>>(emptyList()) }
+    // Which Tianditu map the base row is: imagery, vector or terrain.
+    var kind by remember { mutableStateOf("img") }
     val open = remember { mutableStateMapOf<String, Boolean>() }
     var naming by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<LayerInfo?>(null) }
@@ -169,6 +179,7 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
             return@LaunchedEffect
         }
         basemaps = listedBasemaps(opened.output.jsonObject)
+        kind = (opened.output.jsonObject["id"] as? JsonPrimitive)?.contentOrNull?.let(graph.settings::basemapKind) ?: "img"
         layers = listedLayers(opened.output.jsonObject).mapNotNull { layer ->
             when (val info = graph.invoke(Workspace.LAYER_INFO, buildJsonObject { put("layer", layer.name) })) {
                 is Outcome.Done -> {
@@ -350,7 +361,7 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
                     item(key = "basemap:${basemap.id}") {
                         Column(Modifier.animateItem()) {
                             ListItem(
-                                headlineContent = { Text(stringResource(if (basemap.id == "cia") R.string.basemap_cia else R.string.basemap_img)) },
+                                headlineContent = { Text(stringResource(basemapName(basemap.id, kind))) },
                                 leadingContent = { Icon(Icons.Rounded.Public, null) },
                                 trailingContent = {
                                     IconButton(onClick = { display(Workspace.BASEMAP_DISPLAY, buildJsonObject { put("basemap", basemap.id); put("visible", !basemap.visible) }) }) {

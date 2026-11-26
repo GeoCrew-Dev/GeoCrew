@@ -1,5 +1,6 @@
 package org.geocrew.android
 
+import androidx.compose.material.icons.rounded.Satellite
 import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.EditLocationAlt
 import android.Manifest
@@ -244,6 +245,10 @@ fun MapScreen(
     var measured by remember { mutableStateOf(emptyList<LatLng>()) }
     var goingTo by remember { mutableStateOf(false) }
     var converting by remember { mutableStateOf(false) }
+    var choosingBasemap by remember { mutableStateOf(false) }
+    // Which Tianditu map shows: imagery, the vector map or terrain, kept per project on this phone.
+    var basemapKind by remember { mutableStateOf("img") }
+    LaunchedEffect(projectId) { projectId?.let { basemapKind = graph.settings.basemapKind(it) } }
     // The bookmarks sheet: shown with the project's saved views once read.
     var bookmarks by remember { mutableStateOf<List<MapBookmark>?>(null) }
     var ai by remember { mutableStateOf(false) }
@@ -392,7 +397,7 @@ fun MapScreen(
         mapView.addOnDidBecomeIdleListener { drawn = true }
         // While a point is being placed, where the crosshair is.
         map.addOnCameraMoveListener { if (placing || drawing != null) center = map.cameraPosition.target?.wrap() }
-        map.setStyle(Style.Builder().fromJson(key?.let(MapStyles::tiandituImagery) ?: MapStyles.BLANK)) { style ->
+        map.setStyle(Style.Builder().fromJson(key?.let(MapStyles::tianditu) ?: MapStyles.BLANK)) { style ->
             style.addSource(GeoJsonSource(POINT_SOURCE))
             // Areas under lines under points, each in its layer's colour.
             style.addLayer(
@@ -500,15 +505,21 @@ fun MapScreen(
         if (graph.settings.rotationLocked) map.resetNorth()
     }
 
-    // Each basemap as the project says: shown or not, and how opaque (Tianditu's imagery is "base", its annotation "labels").
-    LaunchedEffect(styleLoads, basemaps) {
+    // The chosen Tianditu map, its base and labels as the project says: shown or not, and how opaque
+    // (the base is the img row of the display, the labels the cia row, whichever map is chosen).
+    LaunchedEffect(styleLoads, basemaps, basemapKind) {
         val style = mapView.awaitMap().style ?: return@LaunchedEffect
-        for (b in basemaps) {
-            val layer = style.getLayer(if (b.id == "cia") "labels" else "base") ?: continue
-            layer.setProperties(
-                PropertyFactory.visibility(if (b.visible) Property.VISIBLE else Property.NONE),
-                PropertyFactory.rasterOpacity(b.opacity),
-            )
+        val display = basemaps.associateBy { it.id }
+        for (t in MapStyles.Tianditu.entries) {
+            for ((layerId, row) in listOf("base-${t.base}" to "img", "labels-${t.base}" to "cia")) {
+                val layer = style.getLayer(layerId) ?: continue
+                val d = display[row]
+                val shown = t.base == basemapKind && (d?.visible ?: true)
+                layer.setProperties(
+                    PropertyFactory.visibility(if (shown) Property.VISIBLE else Property.NONE),
+                    PropertyFactory.rasterOpacity(d?.opacity ?: 1f),
+                )
+            }
         }
     }
 
@@ -1047,6 +1058,7 @@ fun MapScreen(
                         MenuTool(stringResource(R.string.tool_go_to), Icons.Rounded.NearMe) { goingTo = true },
                         // A locked map is always north up.
                         MenuTool(stringResource(R.string.tool_north_up), Icons.Rounded.Explore, ::northUp).takeUnless { graph.settings.rotationLocked },
+                        MenuTool(stringResource(R.string.tool_basemap), Icons.Rounded.Satellite) { choosingBasemap = true },
                         MenuTool(stringResource(R.string.tool_bookmarks), Icons.Rounded.Bookmarks) { bookmarkAction(Workspace.BOOKMARKS) },
                         if (graph.settings.rotationLocked) {
                             MenuTool(stringResource(R.string.tool_unlock_rotation), Icons.Rounded.ScreenRotation) { graph.settings.lockRotation(false) }
@@ -1086,6 +1098,17 @@ fun MapScreen(
                 ),
             ),
             onDismiss = { menu = false },
+        )
+    }
+    if (choosingBasemap) {
+        BasemapSheet(
+            chosen = basemapKind,
+            onPick = { kind ->
+                choosingBasemap = false
+                basemapKind = kind
+                projectId?.let { graph.settings.setBasemapKind(it, kind) }
+            },
+            onDismiss = { choosingBasemap = false },
         )
     }
     if (converting) {

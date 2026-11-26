@@ -37,13 +37,35 @@ object MapStyles {
     private fun tiles(layer: String, key: String) =
         (0..7).joinToString(",") { "\"" + TILE.replace("@N@", "$it").replace("@L@", layer).replace("@TK@", key) + "\"" }
 
-    /** Tianditu imagery with its labels. */
-    fun tiandituImagery(key: String): String =
-        """{"version":8,"sources":{""" +
-            """"base":{"type":"raster","tiles":[${tiles("img", key)}],"tileSize":256,"maxzoom":18},""" +
-            """"labels":{"type":"raster","tiles":[${tiles("cia", key)}],"tileSize":256,"maxzoom":18}},""" +
-            """"layers":[{"id":"bg","type":"background","paint":{"background-color":"#f2efe9"}},""" +
-            """{"id":"base","type":"raster","source":"base"},{"id":"labels","type":"raster","source":"labels"}]}"""
+    /**
+     * The Tianditu maps a project can show under its layers, each a base and
+     * its labels: imagery (img, cia), the vector map (vec, cva) and terrain
+     * (ter, cta). Tianditu's terrain goes to zoom 14.
+     */
+    enum class Tianditu(val base: String, val labels: String, val maxZoom: Int) {
+        IMAGERY("img", "cia", 18),
+        VECTOR("vec", "cva", 18),
+        TERRAIN("ter", "cta", 14),
+        ;
+
+        companion object {
+            fun of(id: String?): Tianditu = entries.firstOrNull { it.base == id } ?: IMAGERY
+        }
+    }
+
+    /** Every Tianditu map with its labels, all hidden: the map shows the chosen one (layers base-img, labels-img, ...). */
+    fun tianditu(key: String): String {
+        val sources = Tianditu.entries.flatMap { t ->
+            listOf(
+                """"base-${t.base}":{"type":"raster","tiles":[${tiles(t.base, key)}],"tileSize":256,"maxzoom":${t.maxZoom}}""",
+                """"labels-${t.base}":{"type":"raster","tiles":[${tiles(t.labels, key)}],"tileSize":256,"maxzoom":${t.maxZoom}}""",
+            )
+        }
+        val layers = Tianditu.entries.map { t -> """{"id":"base-${t.base}","type":"raster","source":"base-${t.base}","layout":{"visibility":"none"}}""" } +
+            Tianditu.entries.map { t -> """{"id":"labels-${t.base}","type":"raster","source":"labels-${t.base}","layout":{"visibility":"none"}}""" }
+        return """{"version":8,"sources":{${sources.joinToString(",")}},""" +
+            """"layers":[{"id":"bg","type":"background","paint":{"background-color":"#f2efe9"}},${layers.joinToString(",")}]}"""
+    }
 
     /** No basemap: until a key is entered. */
     const val BLANK = """{"version":8,"sources":{},"layers":[{"id":"bg","type":"background","paint":{"background-color":"#f2efe9"}}]}"""
