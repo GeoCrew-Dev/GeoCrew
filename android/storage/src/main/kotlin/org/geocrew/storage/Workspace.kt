@@ -3,6 +3,8 @@ package org.geocrew.storage
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -16,6 +18,8 @@ import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Risk
 import org.geocrew.core.action.Stability
 import org.geocrew.core.edit.Editing
+import org.geocrew.core.edit.FieldType
+import org.geocrew.core.project.ProjectFormat
 
 /**
  * The project the app has open, with the actions that list, create, open and
@@ -56,8 +60,12 @@ class Workspace(private val projects: Projects) {
                 },
             )
         },
-        WorkspaceAction(CREATE, "Create project", "Makes a project with the built-in layers and opens it", Risk.EDIT, NAME_PARAMS, """{"name": "测区一号"}""") { p ->
-            switchTo { projects.create(p.name()) }
+        WorkspaceAction(
+            CREATE, "Create project", "Makes a project with the built-in layers, named in the language given (zh or en), and opens it",
+            Risk.EDIT, CREATE_PARAMS, """{"name": "测区一号", "language": "zh"}""",
+        ) { p ->
+            val language = (p["language"] as? JsonPrimitive)?.contentOrNull ?: "en"
+            switchTo { projects.create(p.name(), language = language) }
         },
         WorkspaceAction(OPEN, "Open project", "Opens a project, closing the one that is open", Risk.VIEW, NAME_PARAMS, """{"name": "测区一号"}""") { p ->
             switchTo { projects.open(p.name()) }
@@ -67,7 +75,7 @@ class Workspace(private val projects: Projects) {
         },
         WorkspaceAction(
             FEATURES, "Layer features", "A layer of the open project as GeoJSON, as edited, with its fields and whether it is being edited",
-            Risk.VIEW, LAYER_PARAMS, """{"layer": "地质点"}""",
+            Risk.VIEW, LAYER_PARAMS, """{"layer": "野外点"}""",
         ) { p ->
             val layer = p.getValue("layer").jsonPrimitive.content
             val project = checkNotNull(current) { "no project is open" }
@@ -107,6 +115,27 @@ class Workspace(private val projects: Projects) {
                 else -> exports.kml(project)
             }
             ActionResult.Done(buildJsonObject { put("path", file.path) })
+        },
+        WorkspaceAction(
+            FIELD_ADD, "Add field", "Adds a field to a layer of the open project; no layer may have unsaved edits",
+            Risk.EDIT, FIELD_PARAMS, """{"layer": "野外点", "name": "水位埋深", "type": "real"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            val layer = p.getValue("layer").jsonPrimitive.content
+            val name = p.getValue("name").jsonPrimitive.content.trim()
+            val type = FieldType.of(p.getValue("type").jsonPrimitive.content)
+            val unsaved = editing.layersBeingEdited.filter(editing::isModified)
+            if (unsaved.isNotEmpty()) return@WorkspaceAction ActionResult.Failed("unsaved", "save or discard the edits of ${unsaved.joinToString()} first")
+            val existing = project.target(layer).store.fields.map { it.name }
+            require(name.isNotEmpty() && name.length <= ProjectFormat.MAX_NAME) { "a field name has 1 to ${ProjectFormat.MAX_NAME} characters" }
+            require(existing.none { it.equals(name, ignoreCase = true) } && !name.equals("fid", ignoreCase = true)) {
+                "the layer already has a field $name"
+            }
+            // The layer's file is opened again, so nothing of the project may stay open for editing.
+            editing.layersBeingEdited.forEach(editing::release)
+            project.addField(layer, name, type)
+            current = projects.reopen(project)
+            ActionResult.Done(buildJsonObject { put("layer", layer); put("field", name) }, endsUndo = Editing.scope(layer))
         },
         WorkspaceAction(CLOSE, "Close project", "Closes the open project", Risk.VIEW, NO_PARAMS, "{}") {
             busy() ?: ActionResult.Done().also {
@@ -160,12 +189,22 @@ class Workspace(private val projects: Projects) {
         const val CURRENT = "project.current"
         const val FEATURES = "layer.features"
         const val EXPORT = "project.export"
+        const val FIELD_ADD = "layer.field.add"
 
         private fun schema(s: String) = Json.parseToJsonElement(s).jsonObject
 
         private val NO_PARAMS = schema("""{"type": "object", "additionalProperties": false}""")
         private val LAYER_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer"], "properties": {"layer": {"type": "string"}}}""",
+        )
+        private val CREATE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["name"],
+                "properties": {"name": {"type": "string"}, "language": {"enum": ["zh", "en"]}}}""",
+        )
+        private val FIELD_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "name", "type"],
+                "properties": {"layer": {"type": "string"}, "name": {"type": "string"},
+                               "type": {"enum": ["string", "real", "integer", "date", "datetime", "boolean"]}}}""",
         )
         private val EXPORT_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"enum": ["gpkg", "kml"]}}}""",

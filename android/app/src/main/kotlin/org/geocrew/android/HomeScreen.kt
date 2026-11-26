@@ -96,6 +96,7 @@ private data class ProjectEntry(
 @Composable
 fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit, onAbout: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var projects by remember { mutableStateOf<List<ProjectEntry>?>(null) }
     var creating by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
@@ -169,7 +170,8 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
             onCreate = { name ->
                 creating = false
                 scope.launch {
-                    when (val created = graph.invoke(Workspace.CREATE, buildJsonObject { put("name", name) })) {
+                    val language = AppLanguage.speaking(context)
+                    when (val created = graph.invoke(Workspace.CREATE, buildJsonObject { put("name", name); put("language", language) })) {
                         is Outcome.Done -> onOpen(name)
                         is Outcome.Failed -> failure = failedText.format(created.message)
                         else -> failure = failedText.format(created.toString())

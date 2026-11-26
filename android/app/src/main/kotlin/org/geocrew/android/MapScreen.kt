@@ -24,12 +24,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
@@ -37,17 +40,20 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -105,6 +111,7 @@ import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
 import org.geocrew.core.project.PointNumbers
+import org.geocrew.core.project.Templates
 import org.geocrew.storage.Workspace
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
@@ -148,6 +155,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
     var layerSheet by remember { mutableStateOf(false) }
     var ai by remember { mutableStateOf(false) }
     var exported by remember { mutableStateOf<File?>(null) }
+    var addingField by remember { mutableStateOf(false) }
     val editing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
     val modified = (collection?.get("modified") as? JsonPrimitive)?.booleanOrNull == true
     val texts = FailureTexts(
@@ -248,7 +256,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         val style = map.style ?: return@LaunchedEffect
         val geoJson = buildJsonObject {
             put("type", "FeatureCollection")
-            put("features", MapLabels.label(features, numberField(collection), style, density))
+            put("features", numberField(collection)?.let { MapLabels.label(features, it, style, density) } ?: features)
         }
         style.getSourceAs<GeoJsonSource>(SOURCE)?.setGeoJson(geoJson.toString())
         // The first visit shows the points there are.
@@ -265,7 +273,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         if (!isEditing && !act(Editing.START)) return@once
         val numberField = numberField(collection)
         val numbers = collection?.get("features")?.jsonArray.orEmpty().map {
-            (it.jsonObject["properties"]?.jsonObject?.get(numberField) as? JsonPrimitive)?.contentOrNull
+            numberField?.let { field -> (it.jsonObject["properties"]?.jsonObject?.get(field) as? JsonPrimitive)?.contentOrNull }
         }
         act(
             Editing.ADD,
@@ -277,7 +285,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
                     putJsonArray("coordinates") { add(round7(center.longitude)); add(round7(center.latitude)) }
                 }
                 putJsonObject("properties") {
-                    if (numberField in fieldNames(collection)) put(numberField, PointNumbers.next(numbers))
+                    numberField?.let { put(it, PointNumbers.next(numbers)) }
                     timeField(collection)?.let { put(it, Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()) }
                 }
             },
@@ -431,7 +439,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
     }
 
     if (menu) {
-        ModalBottomSheet(onDismissRequest = { menu = false }) {
+        ModalBottomSheet(onDismissRequest = { menu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Text(project, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
             SheetItem(Icons.Rounded.Layers, stringResource(R.string.map_layers)) { menu = false; layerSheet = true }
             SheetItem(Icons.Rounded.SaveAlt, stringResource(R.string.export_gpkg)) { menu = false; export("gpkg") }
@@ -442,7 +450,9 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         }
     }
     if (layerSheet) {
-        ModalBottomSheet(onDismissRequest = { layerSheet = false }) {
+        // Fully open at once: a half-open sheet dragged open ignored the back gesture afterwards.
+        ModalBottomSheet(onDismissRequest = { layerSheet = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
             Text(
                 stringResource(R.string.map_layers),
                 style = MaterialTheme.typography.titleLarge,
@@ -457,8 +467,34 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
                     leadingContent = { Icon(Icons.Rounded.Place, null, tint = Color(0xFFE53935)) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 )
+                if (name == layer) {
+                    // The layer's fields: the template's few, and whatever the user added.
+                    for (field in formFields(collection)) {
+                        ListItem(
+                            headlineContent = { Text(field.name) },
+                            trailingContent = { Text(typeName(field.type), style = MaterialTheme.typography.labelMedium) },
+                            leadingContent = { Icon(Icons.Rounded.Notes, null, modifier = Modifier.size(20.dp)) },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            modifier = Modifier.padding(start = 24.dp).height(48.dp),
+                        )
+                    }
+                    FilledTonalButton(
+                        // The sheet steps aside for the dialog: a dialog over a sheet leaves the
+                        // sheet without focus afterwards, deaf to the back key.
+                        onClick = {
+                            layerSheet = false
+                            addingField = true
+                        },
+                        modifier = Modifier.padding(start = 40.dp, top = 4.dp, bottom = 8.dp),
+                    ) {
+                        Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.field_add))
+                    }
+                }
             }
             Spacer(Modifier.height(16.dp))
+            }
         }
     }
     selected?.let { fid ->
@@ -467,7 +503,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
             ?.firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() == fid }
         if (feature != null) {
             val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
-            val number = (properties[numberField(collection)] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+            val number = numberField(collection)?.let { (properties[it] as? JsonPrimitive)?.contentOrNull }?.takeIf { it.isNotBlank() }
             FeatureForm(
                 title = number ?: stringResource(R.string.feature_untitled, fid),
                 fields = formFields(collection),
@@ -504,6 +540,19 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
                         leaving = false
                         once { if (act(Editing.DISCARD)) close() }
                     }) { Text(stringResource(R.string.map_discard), color = MaterialTheme.colorScheme.error) }
+                }
+            },
+        )
+    }
+    if (addingField) {
+        AddFieldDialog(
+            existing = fieldNames(collection),
+            onDismiss = { addingField = false },
+            onAdd = { name, type ->
+                addingField = false
+                once {
+                    act(Workspace.FIELD_ADD, buildJsonObject { put("layer", layer.orEmpty()); put("name", name); put("type", type) })
+                    layerSheet = true // back to the fields, the new one among them
                 }
             },
         )
@@ -575,13 +624,10 @@ private val POINT_TEMPLATES = setOf("field-point", "geo-point")
 private fun fieldNames(collection: JsonObject?): List<String> =
     collection?.get("fields")?.jsonArray.orEmpty().mapNotNull { (it.jsonObject["name"] as? JsonPrimitive)?.contentOrNull }
 
-/** The field that numbers points, as the template named it in the project's language. */
-private fun numberField(collection: JsonObject?): String = fieldNames(collection).firstOrNull { it in NUMBER_FIELDS } ?: "点号"
+/** The field that numbers points, under the name the template gave it in the project's language. */
+private fun numberField(collection: JsonObject?): String? = Templates.FIELD_POINT.column(Templates.NUMBER, fieldNames(collection))
 
-private fun timeField(collection: JsonObject?): String? = fieldNames(collection).firstOrNull { it in TIME_FIELDS }
-
-private val NUMBER_FIELDS = setOf("点号", "Number")
-private val TIME_FIELDS = setOf("记录时间", "Time")
+private fun timeField(collection: JsonObject?): String? = Templates.FIELD_POINT.column(Templates.TIME, fieldNames(collection))
 
 private fun formFields(collection: JsonObject?): List<FormField> = collection?.get("fields")?.jsonArray.orEmpty().map {
     val f = it.jsonObject
