@@ -53,6 +53,10 @@ class ActionRegistry(
     private val histories = HashMap<String?, History>()
     private val lock = Mutex()
 
+    // How many undos and redos each scope has, for reading without the lock:
+    // invoke holds it for a whole run, and it is not reentrant.
+    @Volatile private var sizes: Map<String?, Pair<Int, Int>> = emptyMap()
+
     init {
         register(HistoryAction(UNDO, "Undo", "Takes back the latest run in a scope of undo history") { undoLocked(it) })
         register(HistoryAction(REDO, "Redo", "Makes the latest undone run in a scope again") { redoLocked(it) })
@@ -76,10 +80,10 @@ class ActionRegistry(
     fun specs(): List<ActionSpec> = actions.values.map { it.spec }
 
     /** Whether [UNDO] has something to take back in [scope]. */
-    suspend fun canUndo(scope: String? = null): Boolean = lock.withLock { histories[scope]?.undos?.isNotEmpty() == true }
+    fun canUndo(scope: String? = null): Boolean = (sizes[scope]?.first ?: 0) > 0
 
     /** Whether [REDO] has something to make again in [scope]. */
-    suspend fun canRedo(scope: String? = null): Boolean = lock.withLock { histories[scope]?.redos?.isNotEmpty() == true }
+    fun canRedo(scope: String? = null): Boolean = (sizes[scope]?.second ?: 0) > 0
 
     /** Runs an action for a caller, after checking who may and with what. */
     suspend fun invoke(caller: Caller, name: String, params: JsonObject = JsonObject(emptyMap())): Outcome = lock.withLock {
@@ -112,6 +116,7 @@ class ActionRegistry(
                     history.undos.push(undo)
                     history.redos.clear() // a new run starts a new line of history
                 }
+                if (result.endsUndo != null || result.undo != null) publish()
                 Outcome.Done(result.output)
             }
             is ActionResult.Failed -> Outcome.Failed(result.code, result.message)
@@ -122,17 +127,29 @@ class ActionRegistry(
     private suspend fun undoLocked(scope: String?): Boolean {
         val history = histories[scope] ?: return false
         val last = history.undos.removeLastOrNull() ?: return false
-        last.undo()
-        if (last.redo != null) history.redos.push(last)
+        try {
+            last.undo()
+            if (last.redo != null) history.redos.push(last)
+        } finally {
+            publish()
+        }
         return true
     }
 
     private suspend fun redoLocked(scope: String?): Boolean {
         val history = histories[scope] ?: return false
         val last = history.redos.removeLastOrNull() ?: return false
-        checkNotNull(last.redo)()
-        history.undos.push(last)
+        try {
+            checkNotNull(last.redo)()
+            history.undos.push(last)
+        } finally {
+            publish()
+        }
         return true
+    }
+
+    private fun publish() {
+        sizes = histories.mapValues { it.value.undos.size to it.value.redos.size }
     }
 
     private fun ArrayDeque<Undo>.push(undo: Undo) {
