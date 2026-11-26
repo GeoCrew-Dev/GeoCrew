@@ -37,3 +37,5 @@
 ## 状态
 
 已采纳。构建方式已由 M1 验证确认，见[验证报告](../spikes/m1-gdal-android.md)。
+
+2026-11-26 补充：选坐标系时直接用 Android 自带的 SQLite 只读打开 PROJ 的 proj.db，按名称、代码和适用范围查（EPSG、ESRI、IGNF 等约 1.4 万个，去掉作废的和其他天体的），一次查询二十毫秒以内，不用改原生库。proj.db 的表结构不是 PROJ 承诺的接口，用的是 PROJ 6 起就有的 `crs_view`、`usage`、`extent`；升级 PROJ 时 `crsSearchFindsByCodeNameChineseAndPlace` 测试会发现变化。

@@ -13,6 +13,11 @@ object NativeData {
     private const val ASSETS = "geocrew-native"
     private var ready = false
 
+    /** Where the data files are, once [setup] has run: proj.db is there. */
+    @Volatile
+    var dir: File? = null
+        private set
+
     @Synchronized
     fun setup(context: Context) {
         if (ready) return
@@ -28,6 +33,7 @@ object NativeData {
             stamp.writeText(installed) // last, so a cut-short unpacking is done again
         }
         GeoCrewNative.setup(dir.path)
+        this.dir = dir
         ready = true
     }
 }

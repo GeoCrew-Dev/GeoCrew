@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -26,16 +25,14 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,13 +40,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlin.math.floor
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import org.geocrew.core.project.ProjectFormat
+import org.geocrew.storage.Crs
 
 /** A layer of the open project as the map knows it: its name, id, colour on the map, how many points it has and whether it shows. */
 data class MapLayer(val name: String, val id: String, val color: Color, val count: Int, val visible: Boolean = true)
@@ -141,10 +138,9 @@ fun LayerDot(color: Color) {
 
 /**
  * A new point layer: its name, [suggested] to start with (野外点, numbered when
- * taken), and its CRS. With [describe], which names a CRS or says null for one
- * GDAL does not know, the CRS can be chosen: CGCS2000 longitude and latitude,
- * CGCS2000 Gauss-Kruger in 3 or 6 degree zones (the zone where the map is,
- * [centerLongitude]), WGS84, or any EPSG code. Without it the layer gets the
+ * taken), and, with [graph], its CRS: CGCS2000 longitude and latitude to start
+ * with, or any CRS PROJ knows, picked in [CrsField] ([near] is where the map is,
+ * for the zones that apply there). Without [graph] the layer gets the
  * template's CRS.
  */
 @Composable
@@ -153,35 +149,17 @@ fun NewLayerDialog(
     suggested: String,
     onDismiss: () -> Unit,
     onCreate: (name: String, srs: String?) -> Unit,
-    centerLongitude: Double? = null,
-    describe: (suspend (String) -> String?)? = null,
+    graph: AppGraph? = null,
+    near: Pair<Double, Double>? = null,
 ) {
     val start = remember(existing, suggested) { generateSequence(1) { it + 1 }.map { if (it == 1) suggested else "$suggested $it" }.first { n -> existing.none { it.equals(n, ignoreCase = true) } } }
     var name by remember { mutableStateOf(start) }
-    var kind by remember { mutableStateOf(CrsKind.CGCS2000) }
-    var zonePrefix by remember { mutableStateOf(false) }
-    var code by remember { mutableStateOf("") }
-    var checked by remember { mutableStateOf<Pair<String, String?>?>(null) } // an EPSG code and its name, null when unknown
+    var srs by remember { mutableStateOf(Crs.LONGITUDE_LATITUDE) }
     val trimmed = name.trim()
     val taken = existing.any { it.equals(trimmed, ignoreCase = true) }
     // Names of GeoPackage's, SQLite's and GeoCrew's own tables.
     val reserved = listOf("gpkg_", "rtree_", "sqlite_", "geocrew_").any { trimmed.startsWith(it, ignoreCase = true) }
-    val gk3 = centerLongitude?.let { gaussKruger3(it, zonePrefix) }
-    val gk6 = centerLongitude?.let { gaussKruger6(it, zonePrefix) }
-    if (describe != null) {
-        LaunchedEffect(code) {
-            val typed = code.trim()
-            checked = if (typed.isEmpty()) null else typed to describe("EPSG:$typed")
-        }
-    }
-    val srs = when (kind) {
-        CrsKind.CGCS2000 -> "EPSG:4490"
-        CrsKind.GK3 -> gk3?.let { "EPSG:${it.first}" }
-        CrsKind.GK6 -> gk6?.let { "EPSG:${it.first}" }
-        CrsKind.WGS84 -> "EPSG:4326"
-        CrsKind.EPSG -> checked?.takeIf { it.first == code.trim() && it.second != null }?.let { "EPSG:${it.first}" }
-    }
-    val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && !taken && !reserved && (describe == null || srs != null)
+    val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && !taken && !reserved
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.AddLocationAlt, null) },
@@ -201,57 +179,12 @@ fun NewLayerDialog(
                         }
                     },
                 )
-                if (describe != null) {
-                    Text(stringResource(R.string.layer_crs), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
-                    CrsChoice(kind == CrsKind.CGCS2000, stringResource(R.string.crs_cgcs2000)) { kind = CrsKind.CGCS2000 }
-                    gk3?.let { CrsChoice(kind == CrsKind.GK3, stringResource(R.string.crs_gk3, it.second)) { kind = CrsKind.GK3 } }
-                    gk6?.let { CrsChoice(kind == CrsKind.GK6, stringResource(R.string.crs_gk6, it.second)) { kind = CrsKind.GK6 } }
-                    if (kind == CrsKind.GK3 || kind == CrsKind.GK6) {
-                        Row(
-                            Modifier.fillMaxWidth().clickable { zonePrefix = !zonePrefix }.padding(start = 36.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(checked = zonePrefix, onCheckedChange = { zonePrefix = it })
-                            Text(stringResource(R.string.crs_zone_prefix), style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                    CrsChoice(kind == CrsKind.WGS84, stringResource(R.string.crs_wgs84)) { kind = CrsKind.WGS84 }
-                    CrsChoice(kind == CrsKind.EPSG, stringResource(R.string.crs_epsg)) { kind = CrsKind.EPSG }
-                    if (kind == CrsKind.EPSG) {
-                        val known = checked?.takeIf { it.first == code.trim() }
-                        OutlinedTextField(
-                            value = code,
-                            onValueChange = { typed -> code = typed.filter(Char::isDigit) },
-                            label = { Text(stringResource(R.string.crs_epsg)) },
-                            singleLine = true,
-                            isError = known != null && known.second == null,
-                            supportingText = {
-                                when {
-                                    known == null -> Unit
-                                    known.second == null -> Text(stringResource(R.string.crs_unknown))
-                                    else -> Text(known.second.orEmpty())
-                                }
-                            },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.padding(start = 36.dp),
-                        )
-                    }
-                }
+                if (graph != null) CrsField(graph, srs, onPick = { srs = it }, near = near)
             }
         },
-        confirmButton = { TextButton(onClick = { onCreate(trimmed, if (describe == null) null else srs) }, enabled = valid) { Text(stringResource(R.string.project_create)) } },
+        confirmButton = { TextButton(onClick = { onCreate(trimmed, if (graph == null) null else srs) }, enabled = valid) { Text(stringResource(R.string.project_create)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
-}
-
-private enum class CrsKind { CGCS2000, GK3, GK6, WGS84, EPSG }
-
-@Composable
-private fun CrsChoice(selected: Boolean, label: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = selected, onClick = null, modifier = Modifier.padding(end = 12.dp))
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-    }
 }
 
 /**

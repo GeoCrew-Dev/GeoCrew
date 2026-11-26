@@ -1,5 +1,11 @@
 package org.geocrew.android
 
+import org.geocrew.storage.Crs
+import org.geocrew.storage.Workspace
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.geocrew.core.action.Outcome
+import kotlinx.serialization.json.jsonObject
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -359,25 +365,65 @@ private fun FormHeader(text: String) {
     )
 }
 
-/** Coordinates to move the map to, in CGCS2000 degrees, checked like the form's. */
+/**
+ * Coordinates to move the map to, in any CRS ([CrsField], CGCS2000 longitude
+ * and latitude to start with): degrees for a geographic CRS, 114°18′18.5″ too;
+ * X (north) and Y (east) in metres for a projected one. Checked like the form's.
+ */
 @Composable
-fun GoToDialog(onDismiss: () -> Unit, onGo: (longitude: Double, latitude: Double) -> Unit) {
+fun GoToDialog(graph: AppGraph, near: Pair<Double, Double>?, onDismiss: () -> Unit, onGo: (Position) -> Unit) {
+    var srs by remember { mutableStateOf(Crs.LONGITUDE_LATITUDE) }
+    var projected by remember { mutableStateOf<Boolean?>(false) }
     var longitude by remember { mutableStateOf("") }
     var latitude by remember { mutableStateOf("") }
+    var north by remember { mutableStateOf("") }
+    var east by remember { mutableStateOf("") }
+    LaunchedEffect(srs) {
+        projected = null
+        val described = graph.invoke(Workspace.CRS_DESCRIBE, buildJsonObject { put("srs", srs) })
+        projected = ((described as? Outcome.Done)?.output?.jsonObject?.get("projected") as? JsonPrimitive)?.contentOrNull == "true"
+    }
     val longitudeProblem = if (longitude.isEmpty()) null else coordinateProblem(longitude, 180.0, R.string.longitude_range)
     val latitudeProblem = if (latitude.isEmpty()) null else coordinateProblem(latitude, 90.0, R.string.latitude_range)
-    val ready = longitude.isNotBlank() && latitude.isNotBlank() && longitudeProblem == null && latitudeProblem == null
+    val northProblem = if (north.isEmpty()) null else numberProblem(north)
+    val eastProblem = if (east.isEmpty()) null else numberProblem(east)
+    val ready = when (projected) {
+        true -> north.isNotBlank() && east.isNotBlank() && northProblem == null && eastProblem == null
+        false -> longitude.isNotBlank() && latitude.isNotBlank() && longitudeProblem == null && latitudeProblem == null
+        null -> false
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.tool_go_to)) },
         text = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f), degrees = true)
-                CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f), degrees = true)
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                CrsField(graph, srs, onPick = { srs = it }, near = near)
+                if (projected == true) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CoordinateField(north, { north = it }, stringResource(R.string.northing), northProblem, Modifier.weight(1f))
+                        CoordinateField(east, { east = it }, stringResource(R.string.easting), eastProblem, Modifier.weight(1f))
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f), degrees = true)
+                        CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f), degrees = true)
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onGo(Degrees.parse(longitude, Degrees.Axis.LONGITUDE)!!, Degrees.parse(latitude, Degrees.Axis.LATITUDE)!!) }, enabled = ready) {
+            TextButton(
+                onClick = {
+                    onGo(
+                        if (projected == true) {
+                            Position(east.trim().toDouble(), north.trim().toDouble(), srs)
+                        } else {
+                            Position(Degrees.parse(longitude, Degrees.Axis.LONGITUDE)!!, Degrees.parse(latitude, Degrees.Axis.LATITUDE)!!, srs)
+                        },
+                    )
+                },
+                enabled = ready,
+            ) {
                 Text(stringResource(R.string.go))
             }
         },
