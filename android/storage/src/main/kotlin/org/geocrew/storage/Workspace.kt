@@ -190,6 +190,29 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
+            LAYER_RENAME, "Rename layer", "Renames a layer of the open project; no layer may have unsaved edits",
+            Risk.EDIT, RENAME_PARAMS, """{"layer": "野外点", "to": "泉点"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            unsaved()?.let { return@WorkspaceAction it }
+            // The file is opened again: every layer stops being edited, with nothing unsaved.
+            val ended = stopEditing() + editing.scopeOf(p.getValue("layer").jsonPrimitive.content)
+            project.renameLayer(p.getValue("layer").jsonPrimitive.content, p.getValue("to").jsonPrimitive.content)
+            current = reopen(project)
+            ActionResult.Done(about(current!!), endsUndo = ended.distinct())
+        },
+        WorkspaceAction(
+            LAYER_DELETE, "Delete layer", "Deletes a layer of the open project with all its features; it cannot be undone. No layer may have unsaved edits",
+            Risk.DELETE, LAYER_PARAMS, """{"layer": "泉点"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            unsaved()?.let { return@WorkspaceAction it }
+            val ended = stopEditing() + editing.scopeOf(p.getValue("layer").jsonPrimitive.content)
+            project.deleteLayer(p.getValue("layer").jsonPrimitive.content)
+            current = reopen(project)
+            ActionResult.Done(about(current!!), endsUndo = ended.distinct())
+        },
+        WorkspaceAction(
             LAYER_DISPLAY, "Layer display", "Shows or hides a layer of the open project and sets its opacity (0 to 1); saved in the project at once, not undone",
             Risk.EDIT, DISPLAY_PARAMS, """{"layer": "野外点", "visible": false}""",
         ) { p ->
@@ -238,6 +261,12 @@ class Workspace(private val projects: Projects) {
             }
         },
     ) + editing.actions
+
+    // The project's file opened again, as GDAL learns of changed tables when it opens the file; closed if that fails.
+    private fun reopen(project: Project): Project = runCatching { projects.reopen(project) }.getOrElse {
+        current = null
+        throw it
+    }
 
     // The open project stays open until the next one is: a failure leaves it as it was.
     private fun switchTo(open: () -> Project): ActionResult {
@@ -318,6 +347,8 @@ class Workspace(private val projects: Projects) {
         const val LAYER_CREATE = "layer.create"
         const val CRS_DESCRIBE = "crs.describe"
         const val LAYER_DISPLAY = "layer.display"
+        const val LAYER_RENAME = "layer.rename"
+        const val LAYER_DELETE = "layer.delete"
         const val BASEMAP_DISPLAY = "basemap.display"
         const val LAYER_ORDER = "layer.order"
         const val CRS_TRANSFORM = "crs.transform"
@@ -353,6 +384,9 @@ class Workspace(private val projects: Projects) {
         )
         private val FEATURES_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer"], "properties": {"layer": {"type": "string"}, "srs": {"type": "string"}}}""",
+        )
+        private val RENAME_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "to"], "properties": {"layer": {"type": "string"}, "to": {"type": "string"}}}""",
         )
         private val DISPLAY_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer"],

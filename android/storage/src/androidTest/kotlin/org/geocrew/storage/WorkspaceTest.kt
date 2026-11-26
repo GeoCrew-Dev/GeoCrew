@@ -241,6 +241,37 @@ class WorkspaceTest {
         assertEquals("false", basemaps.getValue("cia").getValue("visible").jsonPrimitive.content)
     }
 
+    // GeoPackage's own tables must follow, or QGIS sees a broken file.
+    @Test
+    fun layersAreRenamedAndDeletedCleanly() {
+        run(Workspace.CREATE, """{"name": "改名", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "临时", "language": "zh"}""")
+        run(Workspace.LAYER_DISPLAY, """{"layer": "野外点", "opacity": 0.4}""")
+        run(Editing.START, """{"layer": "野外点"}""")
+        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "D001"}}""")
+        assertEquals("unsaved", (run(Workspace.LAYER_RENAME, """{"layer": "野外点", "to": "泉点"}""") as Outcome.Failed).code)
+        run(Editing.SAVE_ALL)
+
+        val renamed = output(run(Workspace.LAYER_RENAME, """{"layer": "野外点", "to": "泉点"}"""))
+        val springs = renamed.getValue("layers").jsonArray.map { it.jsonObject }.single { it.getValue("name").jsonPrimitive.content == "泉点" }
+        assertEquals(0.4, springs.getValue("opacity").jsonPrimitive.content.toDouble(), "the display stays with the layer")
+        assertEquals("D001", workspace.current!!.target("泉点").store.features().single().properties.getValue("点名").jsonPrimitive.content)
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_RENAME, """{"layer": "泉点", "to": "临时"}"""), "the name is taken")
+
+        val deleted = output(run(Workspace.LAYER_DELETE, """{"layer": "临时"}"""))
+        assertEquals(listOf("泉点"), deleted.getValue("layers").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content })
+        run(Workspace.CLOSE)
+        val path = File(root, "工程/改名/改名.gpkg").path
+        val contents = VectorDataset.open(path).use { ds ->
+            Json.parseToJsonElement(ds.sql("SELECT table_name FROM gpkg_contents ORDER BY table_name")).jsonArray
+                .map { it.jsonObject.getValue("properties").jsonObject.getValue("table_name").jsonPrimitive.content }
+        }
+        assertEquals(listOf("泉点"), contents.filter { !it.startsWith("geocrew_") }, "GeoPackage's register follows: $contents")
+        assertIs<Outcome.Done>(run(Workspace.OPEN, """{"name": "改名"}"""))
+        assertIs<Outcome.Done>(run(Workspace.EXPORT, """{"format": "kml"}"""))
+    }
+
     @Test
     fun theOpenProjectCanBeAskedFor() {
         assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))

@@ -315,6 +315,11 @@ fun MapScreen(
                     if (started !is Outcome.Done) failure = texts.of(started)
                 }
                 if (closed.isNotEmpty()) reload()
+                // Back from the layers page with a layer to show in full.
+                graph.zoomTo?.let { layer ->
+                    graph.zoomTo = null
+                    (collections[layer]?.get("features") as? JsonArray)?.let { fit(mapView.awaitMap(), it, density) }
+                }
             }
             else -> failure = texts.of(opened)
         }

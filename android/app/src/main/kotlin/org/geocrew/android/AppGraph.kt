@@ -37,6 +37,9 @@ class AppGraph(private val app: Application) {
 
     /** Where each project's map was looking, for the next visit in this session. */
     val cameras = HashMap<String, CameraPosition>()
+
+    /** A layer the map shows in full when it comes back, as asked from the layers page; it is taken once. */
+    var zoomTo: String? = null
     private var workspace: Workspace? = null
     private var workspaceRoot: File? = null
 

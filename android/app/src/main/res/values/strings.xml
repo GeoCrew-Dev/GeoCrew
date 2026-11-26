@@ -129,6 +129,14 @@
     <string name="coord_xy">X/Y</string>
     <string name="northing">Northing (X)</string>
     <string name="easting">Easting (Y)</string>
+    <string name="layer_crs_value">Coordinate system %1$s</string>
+    <string name="zoom_to_layer">Zoom to layer</string>
+    <string name="layer_rename">Rename</string>
+    <string name="layer_delete_title">Delete “%1$s”?</string>
+    <plurals name="layer_delete_body">
+        <item quantity="one">The layer and its %d feature are deleted. This can\'t be undone.</item>
+        <item quantity="other">The layer and its %d features are deleted. This can\'t be undone.</item>
+    </plurals>
     <string name="layer_show">Show</string>
     <string name="layer_hide">Hide</string>
     <string name="layer_opacity">Opacity %1$d%%</string>
