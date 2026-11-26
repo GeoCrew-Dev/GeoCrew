@@ -23,6 +23,13 @@
     <string name="layer_template">模板：%1$s</string>
     <string name="project_close">关闭工程</string>
     <string name="map_open">打开地图</string>
+    <string name="export_gpkg">导出 GPKG</string>
+    <string name="export_kml">导出 KML</string>
+    <string name="exported">已导出到：%1$s</string>
+    <string name="share">分享</string>
+    <string name="share_title">分享导出的文件</string>
+    <string name="failure_unsaved">先保存或放弃图层里的修改。</string>
+    <string name="failure_editing">先停止编辑图层。</string>
     <string name="back">返回</string>
 
     <string name="map_key">图源 Key</string>

@@ -1,9 +1,12 @@
 package org.geocrew.android
 
+import android.content.Context
+import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -30,8 +33,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,18 +82,27 @@ fun ProjectsRoute(graph: AppGraph) {
     var failure by remember { mutableStateOf<String?>(null) }
     var startFailure by remember { mutableStateOf<String?>(null) }
     var mapLayer by remember { mutableStateOf<String?>(null) }
+    var exported by remember { mutableStateOf<File?>(null) }
 
     suspend fun refresh() {
         val listed = graph.invoke(Workspace.LIST)
         if (listed is Outcome.Done) projects = listed.output.jsonObject.getValue("projects").jsonArray.map { it.jsonPrimitive.content }
     }
 
+    val unsavedText = stringResource(R.string.failure_unsaved)
+    val editingText = stringResource(R.string.failure_editing)
+    val failedText = stringResource(R.string.action_failed)
+
     fun run(action: String, params: JsonObject, then: suspend (JsonObject) -> Unit) {
         scope.launch {
             when (val outcome = graph.invoke(action, params)) {
                 is Outcome.Done -> then(outcome.output as? JsonObject ?: JsonObject(emptyMap()))
-                is Outcome.Failed -> failure = outcome.message
-                else -> failure = outcome.toString()
+                is Outcome.Failed -> failure = when (outcome.code) {
+                    "unsaved" -> unsavedText
+                    "editing" -> editingText
+                    else -> failedText.format(outcome.message)
+                }
+                else -> failure = failedText.format(outcome.toString())
             }
         }
     }
@@ -112,7 +127,9 @@ fun ProjectsRoute(graph: AppGraph) {
         }
         !ready -> Scaffold { padding -> Text(stringResource(R.string.starting), Modifier.padding(padding).padding(24.dp)) }
         shown != null && mapLayer != null -> MapScreen(graph, shown.getValue("name").jsonPrimitive.content, mapLayer!!, onBack = { mapLayer = null })
-        shown != null -> ProjectScreen(shown, onMap = { mapLayer = it }, onClose = {
+        shown != null -> ProjectScreen(shown, onMap = { mapLayer = it }, onExport = { format ->
+            run(Workspace.EXPORT, buildJsonObject { put("format", format) }) { exported = File(it.getValue("path").jsonPrimitive.content) }
+        }, onClose = {
             run(Workspace.CLOSE, JsonObject(emptyMap())) {
                 open = null
                 refresh()
@@ -125,16 +142,39 @@ fun ProjectsRoute(graph: AppGraph) {
             onCreate = { name -> run(Workspace.CREATE, nameParams(name)) { open = it } },
         )
     }
+    exported?.let { file ->
+        val context = LocalContext.current
+        val title = stringResource(R.string.share_title)
+        AlertDialog(
+            onDismissRequest = { exported = null },
+            text = { Text(stringResource(R.string.exported, file.path)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    exported = null
+                    share(context, file, title)
+                }) { Text(stringResource(R.string.share)) }
+            },
+            dismissButton = { TextButton(onClick = { exported = null }) { Text(stringResource(R.string.ok)) } },
+        )
+    }
     failure?.let { message ->
         AlertDialog(
             onDismissRequest = { failure = null },
             confirmButton = { TextButton(onClick = { failure = null }) { Text(stringResource(R.string.ok)) } },
-            text = { Text(stringResource(R.string.action_failed, message)) },
+            text = { Text(message) },
         )
     }
 }
 
 private fun nameParams(name: String) = buildJsonObject { put("name", name) }
+
+/** Hands an exported file to another app through the system's share sheet. */
+private fun share(context: Context, file: File, title: String) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    val type = if (file.extension == "gpkg") "application/geopackage+sqlite3" else "application/vnd.google-earth.kml+xml"
+    val send = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    context.startActivity(Intent.createChooser(send, title))
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -210,7 +250,7 @@ private fun nameProblemText(problem: NameProblem): String = when (problem) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProjectScreen(project: JsonObject, onMap: (String) -> Unit, onClose: () -> Unit) {
+private fun ProjectScreen(project: JsonObject, onMap: (String) -> Unit, onExport: (String) -> Unit, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
     val name = project.getValue("name").jsonPrimitive.content
     val layers = project.getValue("layers").jsonArray.map { it.jsonObject }
@@ -234,6 +274,10 @@ private fun ProjectScreen(project: JsonObject, onMap: (String) -> Unit, onClose:
                 Button(onClick = { onMap(p.getValue("name").jsonPrimitive.content) }, modifier = Modifier.padding(horizontal = 16.dp)) {
                     Text(stringResource(R.string.map_open))
                 }
+            }
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { onExport("gpkg") }) { Text(stringResource(R.string.export_gpkg)) }
+                OutlinedButton(onClick = { onExport("kml") }) { Text(stringResource(R.string.export_kml)) }
             }
             OutlinedButton(onClick = onClose, modifier = Modifier.padding(16.dp)) { Text(stringResource(R.string.project_close)) }
         }
