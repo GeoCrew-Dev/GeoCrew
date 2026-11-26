@@ -73,7 +73,7 @@
 ## M2 单机骨架
 
 - [x] 新客户端的工程骨架（2026-11-26）：Gradle 工程、Compose 外壳、CI，见 ADR 0016。
-- [ ] 两个仓库一起升到 AGP 9（现在的稳定版是 9.5）和 compileSdk 37，GeoCrew-Native 先升：Compose 1.12 和 androidx.core 1.18 起都需要，客户端暂时停在 Compose 1.11。
+- [ ] 两个仓库一起升到 AGP 9（现在的稳定版是 9.5）和 compileSdk 37，GeoCrew-Native 先升：实测 Compose 1.12 起和 androidx.core 1.19 都需要它，客户端暂时停在 Compose 1.11。
 - [ ] 工程、GPKG、图层模型、编辑缓冲与撤销。
 - [ ] 动作注册表：所有界面操作从第一天起都走它。
 - [ ] 天地图底图和工程图层的显示。
