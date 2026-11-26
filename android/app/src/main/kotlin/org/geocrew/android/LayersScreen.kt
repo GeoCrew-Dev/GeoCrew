@@ -124,8 +124,8 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
         }
     }
 
-    fun createLayer(name: String) = scope.launch {
-        val params = buildJsonObject { put("name", name); put("language", AppLanguage.speaking(context)) }
+    fun createLayer(name: String, srs: String?) = scope.launch {
+        val params = buildJsonObject { put("name", name); put("language", AppLanguage.speaking(context)); if (srs != null) put("srs", srs) }
         when (val made = graph.invoke(Workspace.LAYER_CREATE, params)) {
             is Outcome.Done -> loads++
             else -> failure = texts.of(made)
@@ -218,9 +218,14 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
             existing = layers.map { it.name },
             suggested = stringResource(R.string.layer_default_name),
             onDismiss = { naming = false },
-            onCreate = { name ->
+            onCreate = { name, srs ->
                 naming = false
-                createLayer(name)
+                createLayer(name, srs)
+            },
+            // The Gauss-Kruger zone follows where the map was last.
+            centerLongitude = graph.cameras[project]?.target?.longitude,
+            describe = { srs ->
+                ((graph.invoke(Workspace.CRS_DESCRIBE, buildJsonObject { put("srs", srs) }) as? Outcome.Done)?.output?.jsonObject?.get("name") as? JsonPrimitive)?.contentOrNull
             },
         )
     }

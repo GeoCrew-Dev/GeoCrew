@@ -5,7 +5,10 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -76,22 +79,28 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(current?.let(::about) ?: JsonObject(emptyMap()))
         },
         WorkspaceAction(
-            FEATURES, "Layer features", "A layer of the open project as GeoJSON, as edited, with its fields and whether it is being edited",
-            Risk.VIEW, LAYER_PARAMS, """{"layer": "野外点"}""",
+            FEATURES, "Layer features",
+            "A layer of the open project as GeoJSON, as edited, with its fields and whether it is being edited; " +
+                "geometries in the layer's CRS, or in srs when given (as the map wants EPSG:4490)",
+            Risk.VIEW, FEATURES_PARAMS, """{"layer": "野外点", "srs": "EPSG:4490"}""",
         ) { p ->
             val layer = p.getValue("layer").jsonPrimitive.content
             val project = checkNotNull(current) { "no project is open" }
             val store = project.target(layer).store
             val features = editing.features(layer) ?: store.features()
+            val own = project.layers.firstOrNull { it.name == layer }?.srs
+            val wanted = (p["srs"] as? JsonPrimitive)?.contentOrNull
+            val geometries = if (wanted == null || own == null) features.map { it.geometry } else Crs.transform(features.map { it.geometry }, own, wanted)
             ActionResult.Done(
                 buildJsonObject {
                     put("type", "FeatureCollection")
+                    put("srs", wanted ?: own)
                     putJsonArray("features") {
-                        for (f in features) {
+                        for ((f, geometry) in features.zip(geometries)) {
                             addJsonObject {
                                 put("type", "Feature")
                                 put("id", f.fid)
-                                put("geometry", f.geometry ?: JsonNull)
+                                put("geometry", geometry ?: JsonNull)
                                 put("properties", f.properties)
                             }
                         }
@@ -175,9 +184,26 @@ class Workspace(private val projects: Projects) {
             } else {
                 val id = (p["template"] as? JsonPrimitive)?.contentOrNull ?: Templates.FIELD_POINT.id
                 val template = requireNotNull(Templates.all.firstOrNull { it.id == id }) { "there is no template $id" }
-                project.createLayer(p.name(), template, (p["language"] as? JsonPrimitive)?.contentOrNull ?: "en")
+                val srs = (p["srs"] as? JsonPrimitive)?.contentOrNull
+                project.createLayer(p.name(), template, (p["language"] as? JsonPrimitive)?.contentOrNull ?: "en", srs)
             }
             ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
+            CRS_DESCRIBE, "Describe CRS", "What a CRS (EPSG:4549, WKT, a PROJ string) is: its name, id, whether geographic or projected, and unit",
+            Risk.VIEW, CRS_PARAMS, """{"srs": "EPSG:4547"}""",
+        ) { p ->
+            ActionResult.Done(Crs.describe(p.getValue("srs").jsonPrimitive.content))
+        },
+        WorkspaceAction(
+            CRS_TRANSFORM, "Transform coordinates",
+            "x, y pairs (longitude or easting first) from one CRS to another; a pair that cannot be transformed comes back as null",
+            Risk.VIEW, TRANSFORM_PARAMS, """{"from": "EPSG:4490", "to": "EPSG:4547", "xy": [114.0, 30.0]}""",
+        ) { p ->
+            val xy = p.getValue("xy").jsonArray.map { it.jsonPrimitive.double }.toDoubleArray()
+            require(xy.size % 2 == 0) { "coordinates come in x, y pairs" }
+            val moved = Crs.transform(p.getValue("from").jsonPrimitive.content, p.getValue("to").jsonPrimitive.content, xy)
+            ActionResult.Done(buildJsonObject { putJsonArray("xy") { for (v in moved) if (v.isFinite()) add(v) else add(JsonNull) } })
         },
         WorkspaceAction(CLOSE, "Close project", "Closes the open project, once no layer has unsaved edits", Risk.VIEW, NO_PARAMS, "{}") {
             unsaved() ?: run {
@@ -254,6 +280,8 @@ class Workspace(private val projects: Projects) {
         const val FIELD_ADD = "layer.field.add"
         const val LAYER_INFO = "layer.info"
         const val LAYER_CREATE = "layer.create"
+        const val CRS_DESCRIBE = "crs.describe"
+        const val CRS_TRANSFORM = "crs.transform"
 
         /** The registry scope of a project's undo history: one for all its layers. */
         const val PROJECT_SCOPE = "project"
@@ -281,7 +309,18 @@ class Workspace(private val projects: Projects) {
         )
         private val LAYER_CREATE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"],
-                "properties": {"name": {"type": "string"}, "like": {"type": "string"}, "template": {"enum": ["field-point"]}, "language": {"enum": ["zh", "en"]}}}""",
+                "properties": {"name": {"type": "string"}, "like": {"type": "string"}, "template": {"enum": ["field-point"]},
+                               "language": {"enum": ["zh", "en"]}, "srs": {"type": "string"}}}""",
+        )
+        private val FEATURES_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer"], "properties": {"layer": {"type": "string"}, "srs": {"type": "string"}}}""",
+        )
+        private val CRS_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["srs"], "properties": {"srs": {"type": "string"}}}""",
+        )
+        private val TRANSFORM_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["from", "to", "xy"],
+                "properties": {"from": {"type": "string"}, "to": {"type": "string"}, "xy": {"type": "array", "items": {"type": "number"}}}}""",
         )
         private val NAME_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string"}}}""",
