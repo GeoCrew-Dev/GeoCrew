@@ -46,6 +46,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlin.math.roundToLong
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -96,6 +97,18 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
     val editing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
     val modified = (collection?.get("modified") as? JsonPrimitive)?.booleanOrNull == true
 
+    // One operation at a time: a tap while one runs is ignored, so a quick
+    // double tap cannot start editing twice or add two points.
+    val busy = remember { Mutex() }
+    fun once(block: suspend () -> Unit) = scope.launch {
+        if (!busy.tryLock()) return@launch
+        try {
+            block()
+        } finally {
+            busy.unlock()
+        }
+    }
+
     suspend fun act(action: String, params: JsonObject = layerParams): Boolean {
         val outcome = graph.invoke(action, params)
         if (outcome !is Outcome.Done) failure = (outcome as? Outcome.Failed)?.message ?: outcome.toString()
@@ -139,9 +152,10 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
         mapView.awaitMap().style?.getSourceAs<GeoJsonSource>(SOURCE)?.setGeoJson(geoJson.toString())
     }
 
-    fun addPoint() = scope.launch {
-        val center = mapView.awaitMap().cameraPosition.target ?: return@launch
-        if (!editing && !act(Editing.START)) return@launch
+    fun addPoint() = once {
+        val center = mapView.awaitMap().cameraPosition.target ?: return@once
+        val isEditing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
+        if (!isEditing && !act(Editing.START)) return@once
         val numbers = collection?.get("features")?.jsonArray.orEmpty().map {
             (it.jsonObject["properties"]?.jsonObject?.get(NUMBER) as? JsonPrimitive)?.contentOrNull
         }
@@ -162,8 +176,9 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
         )
     }
 
-    fun leave() = scope.launch {
-        if (!editing || act(Editing.STOP)) onBack()
+    fun leave() = once {
+        val isEditing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
+        if (!isEditing || act(Editing.STOP)) onBack()
     }
 
     BackHandler {
@@ -193,14 +208,14 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
                 }
                 if (editing) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(onClick = { scope.launch { act(ActionRegistry.UNDO, scopeParams(scopeName)) } }, enabled = history.first) {
+                        FilledTonalButton(onClick = { once { act(ActionRegistry.UNDO, scopeParams(scopeName)) } }, enabled = history.first) {
                             Text(stringResource(R.string.map_undo))
                         }
-                        FilledTonalButton(onClick = { scope.launch { act(ActionRegistry.REDO, scopeParams(scopeName)) } }, enabled = history.second) {
+                        FilledTonalButton(onClick = { once { act(ActionRegistry.REDO, scopeParams(scopeName)) } }, enabled = history.second) {
                             Text(stringResource(R.string.map_redo))
                         }
-                        FilledTonalButton(onClick = { scope.launch { act(Editing.SAVE) } }, enabled = modified) { Text(stringResource(R.string.map_save)) }
-                        FilledTonalButton(onClick = { scope.launch { act(Editing.DISCARD) } }, enabled = modified) {
+                        FilledTonalButton(onClick = { once { act(Editing.SAVE) } }, enabled = modified) { Text(stringResource(R.string.map_save)) }
+                        FilledTonalButton(onClick = { once { act(Editing.DISCARD) } }, enabled = modified) {
                             Text(stringResource(R.string.map_discard))
                         }
                     }
@@ -229,12 +244,14 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
             title = { Text(stringResource(R.string.unsaved_title)) },
             text = { Text(stringResource(R.string.unsaved_body, layer)) },
             confirmButton = {
-                TextButton(onClick = { leaving = false; scope.launch { if (act(Editing.SAVE)) leave() } }) { Text(stringResource(R.string.map_save)) }
+                TextButton(onClick = { leaving = false; once { if (act(Editing.SAVE)) act(Editing.STOP).also { if (it) onBack() } } }) {
+                    Text(stringResource(R.string.map_save))
+                }
             },
             dismissButton = {
                 Row {
                     TextButton(onClick = { leaving = false }) { Text(stringResource(R.string.cancel)) }
-                    TextButton(onClick = { leaving = false; scope.launch { if (act(Editing.DISCARD)) leave() } }) {
+                    TextButton(onClick = { leaving = false; once { if (act(Editing.DISCARD)) act(Editing.STOP).also { if (it) onBack() } } }) {
                         Text(stringResource(R.string.map_discard))
                     }
                 }
