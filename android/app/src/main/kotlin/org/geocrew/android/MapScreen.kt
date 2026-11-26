@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.PinDrop
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.NearMe
@@ -338,7 +339,7 @@ fun MapScreen(
             if (placing) return@addOnMapClickListener false
             // While measuring, a tap adds a point to the measurement.
             if (measuring != null) {
-                measured = measured + point.wrap()
+                measured = withPoint(measuring ?: return@addOnMapClickListener true, measured, point.wrap())
                 return@addOnMapClickListener true
             }
             val at = map.projection.toScreenLocation(point)
@@ -797,6 +798,8 @@ fun MapScreen(
                     listOf(
                         MenuTool(stringResource(R.string.tool_measure_distance), Icons.Rounded.Straighten) { measure(MeasureMode.DISTANCE) },
                         MenuTool(stringResource(R.string.tool_measure_area), Icons.Rounded.SquareFoot) { measure(MeasureMode.AREA) },
+                        MenuTool(stringResource(R.string.tool_azimuth), Icons.Rounded.Explore) { measure(MeasureMode.AZIMUTH) },
+                        MenuTool(stringResource(R.string.tool_pick), Icons.Rounded.PinDrop) { measure(MeasureMode.PICK) },
                     ),
                 ),
                 MenuGroup(
