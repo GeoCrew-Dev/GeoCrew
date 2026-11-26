@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!--
-      Declaring CAMERA means the system camera app (photo capture) also needs it
-      granted; the record screen asks for it before taking a photo.
-    -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-</manifest>

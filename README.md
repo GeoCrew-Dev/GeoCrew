@@ -7,7 +7,7 @@
 - 多人实时工作区；
 - 能直接操作应用的内置 AI，即同勘灵宝（GeoCrew Nugget）。
 
-> 状态：安卓客户端正在按新架构重写，`android/` 下是旧代码，留作参考。计划、待办和评审都在 `docs/`。
+> 状态：安卓客户端正在 `android/` 里按新架构重写；旧版的代码在标签 [`android-legacy`](https://github.com/GeoCrew-Dev/GeoCrew/tree/android-legacy/android)。计划、待办和评审都在 `docs/`。
 
 ## 目录
 
@@ -15,7 +15,7 @@
 | --- | --- |
 | `protocol/` | 协同协议、OpenAPI 描述、插件规范与一致性检查工具（原 GeoCrew-Protocol） |
 | `server/` | Go 自部署服务端（原 GeoCrew-Server） |
-| `android/` | 安卓客户端（原 GeoCrew-Android，旧代码，待重写） |
+| `android/` | 安卓客户端（重写中；旧版见标签 `android-legacy`） |
 | `manual/` | 用户手册与教程，用来生成网站文档和应用内的离线帮助 |
 | `docs/` | 项目文档：[章程](docs/charter.md)、[架构决策](docs/adr/README.md)、[待办](docs/backlog.md)、合规清单、威胁模型、许可证清单、性能预算、[计划评审](docs/reviews/2026-11-25-plan-review.md) |
 
