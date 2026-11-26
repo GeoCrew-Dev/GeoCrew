@@ -1627,6 +1627,10 @@ func uploads(t *testing.T, open Opener) {
 	}
 
 	// Uploading needs edit_rows somewhere, and an open workspace.
+	pending, _, err := s.StartUpload(ctx, tm.ws, a, other, 3, "audio/mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
 	none := map[string]perm.Level{}
 	for p, lv := range v1.DefaultBasePermissions {
 		none[p] = lv
@@ -1644,5 +1648,8 @@ func uploads(t *testing.T, open Opener) {
 	}
 	if _, _, err := s.StartUpload(ctx, tm.ws, l, other, 3, "audio/mp4"); !errors.Is(err, store.ErrArchived) {
 		t.Fatalf("upload to an archived workspace: %v", err)
+	}
+	if _, err := s.Received(ctx, tm.ws, a, pending.ID, 0, 3); !errors.Is(err, store.ErrArchived) {
+		t.Fatalf("a chunk after archiving: %v", err)
 	}
 }
