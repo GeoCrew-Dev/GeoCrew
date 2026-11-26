@@ -163,6 +163,23 @@ class ActionRegistryTest {
     }
 
     @Test
+    fun historyCanBeReadDuringARun() = runTest {
+        lateinit var registry: ActionRegistry
+        var seen: Boolean? = null
+        val peek = object : Action {
+            override val spec = ActionSpec("peek", "Peek", "", json("""{"type": "object"}"""), Risk.VIEW, Stability.STABLE)
+            override suspend fun run(caller: Caller, params: JsonObject): ActionResult {
+                seen = registry.canUndo()
+                return ActionResult.Done()
+            }
+        }
+        registry = ActionRegistry().apply { register(Counter()); register(peek) }
+        registry.invoke(Caller.USER, "counter.add", ok)
+        assertIs<Outcome.Done>(registry.invoke(Caller.USER, "peek"))
+        assertEquals(true, seen)
+    }
+
+    @Test
     fun undoReachesBackALimitedWay() = runTest {
         val counter = Counter()
         val registry = ActionRegistry().apply { register(counter) }
