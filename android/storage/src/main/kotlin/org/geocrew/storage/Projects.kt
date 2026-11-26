@@ -1,6 +1,7 @@
 package org.geocrew.storage
 
 import java.io.File
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.json.Json
@@ -77,7 +78,8 @@ class Projects(private val root: File, private val journals: File) {
             val layers = rows(ds, "SELECT table_name, id, template FROM ${ProjectFormat.LAYERS_TABLE} ORDER BY rowid")
                 .map { Project.Layer(it.getValue("table_name")!!, it.getValue("id")!!, it["template"]) }
                 .filter { it.name in present }
-            return Project(name, File(dir, name), ds, about.getValue("id")!!, layers, File(journals, about.getValue("id")!!))
+            val id = about.getValue("id")!!
+            return Project(name, File(dir, name), ds, id, layers, File(journals, "$id-${pathKey(file)}"))
         } catch (e: Exception) {
             ds.close()
             throw e
@@ -85,6 +87,11 @@ class Projects(private val root: File, private val journals: File) {
     }
 
     private fun gpkg(name: String) = File(File(dir, name), "$name.gpkg")
+
+    // A copied project folder keeps the project's id; its path tells the copies'
+    // journals apart, so one copy's unsaved edits never turn up in another.
+    private fun pathKey(file: File): String =
+        MessageDigest.getInstance("SHA-256").digest(file.canonicalPath.toByteArray()).take(6).joinToString("") { "%02x".format(it) }
 
     private fun addLayer(ds: VectorDataset, template: LayerTemplate) {
         val fields = buildJsonArray {

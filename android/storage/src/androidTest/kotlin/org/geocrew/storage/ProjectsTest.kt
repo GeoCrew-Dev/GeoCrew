@@ -74,7 +74,7 @@ class ProjectsTest {
                 Json.parseToJsonElement("""{"type": "Point", "coordinates": [114.305, 30.5928]}""").jsonObject,
                 Json.parseToJsonElement("""{"点号": "D001", "岩性": "花岗岩", "倾向": 135, "倾角": 42}""").jsonObject,
             )
-            assertTrue(File(journals, "${p.id}/${p.layers.single().id}.jsonl").exists(), "the journal is in the app's own files")
+            assertTrue(journals.walkTopDown().any { it.name == "${p.layers.single().id}.jsonl" }, "the journal is in the app's own files")
             buffer.save()
         }
         projects.open("编辑").use { p ->
@@ -83,6 +83,24 @@ class ProjectsTest {
             assertEquals(JsonPrimitive(42), saved.properties["倾角"])
         }
         assertFailsWith<IllegalArgumentException> { projects.open("编辑").use { it.target("路线") } }
+    }
+
+    @Test
+    fun aCopiedProjectHasItsOwnJournal() {
+        projects.create("原件").use { p ->
+            val target = p.target("地质点")
+            EditBuffer(target.store, target.journal).add(null) // unsaved when the app is killed
+        }
+        File(root, "工程/原件").copyRecursively(File(root, "工程/副本"))
+        File(root, "工程/副本/原件.gpkg").renameTo(File(root, "工程/副本/副本.gpkg"))
+        projects.open("副本").use { copy ->
+            val target = copy.target("地质点")
+            assertEquals(org.geocrew.core.edit.Recovery.NOTHING, EditBuffer(target.store, target.journal).recover())
+        }
+        projects.open("原件").use { p ->
+            val target = p.target("地质点")
+            assertEquals(org.geocrew.core.edit.Recovery.RESTORED, EditBuffer(target.store, target.journal).recover())
+        }
     }
 
     @Test
