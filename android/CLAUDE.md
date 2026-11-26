@@ -14,5 +14,6 @@
 ## 怎么构建和测试
 
 - 需要 JDK 17 或以上，以及装了 platform 36 的 Android SDK（设好 `ANDROID_HOME`）。
+- 先取 GeoCrew-Native 的 AAR：`android/scripts/fetch-native.sh`（要装好并登录 `gh`）。它按 `android/native.properties` 里写的 CI 运行编号下载，并核对 SHA-256。要试 GeoCrew-Native 的改动，把环境变量 `GEOCREW_NATIVE_AAR` 设成本地编出的 AAR 再运行。换版本就改 `native.properties`。
 - `cd android && ./gradlew assembleDebug test lintDebug`
 - CI 是根目录的 `.github/workflows/android.yml`，改了 `android/` 或 `protocol/testdata/` 时运行。

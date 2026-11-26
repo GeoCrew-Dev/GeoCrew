@@ -32,7 +32,15 @@ kotlin {
     compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
 
+// GeoCrew-Native's AAR (GDAL, PROJ, GEOS), put there by scripts/fetch-native.sh (ADR 0016).
+val nativeAar = rootProject.file("native/geocrew-native.aar")
+
+tasks.named("preBuild") {
+    doFirst { check(nativeAar.exists()) { "${nativeAar.path} is missing: run android/scripts/fetch-native.sh" } }
+}
+
 dependencies {
+    implementation(files(nativeAar))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)

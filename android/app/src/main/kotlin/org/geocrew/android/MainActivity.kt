@@ -5,7 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -14,10 +15,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import org.geocrew.nativelib.GeoCrewNative
 
 /** The app's only activity (ADR 0016): every screen is a Compose destination inside it. */
 class MainActivity : ComponentActivity() {
@@ -41,9 +44,16 @@ fun GeoCrewTheme(content: @Composable () -> Unit) {
 
 @Composable
 private fun Skeleton() {
+    // Loading GeoCrew-Native here shows the AAR works on the phone.
+    val versions = remember { runCatching { GeoCrewNative.versions() }.getOrElse { it.toString() } }
     Scaffold { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.fillMaxSize().padding(padding),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(stringResource(R.string.skeleton_status), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.native_versions, versions), style = MaterialTheme.typography.bodySmall)
         }
     }
 }

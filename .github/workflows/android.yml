@@ -22,6 +22,10 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
+      - name: Fetch GeoCrew-Native's AAR (its CI artifact until it publishes releases)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch-native.sh
       - name: Build the debug APK, run the unit tests and lint
         run: ./gradlew assembleDebug test lintDebug --continue
       - uses: actions/upload-artifact@v4
