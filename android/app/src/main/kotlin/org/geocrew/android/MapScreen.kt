@@ -1,6 +1,7 @@
 package org.geocrew.android
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -31,11 +33,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -43,9 +45,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 import kotlin.math.roundToLong
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -153,7 +155,7 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
     }
 
     fun addPoint() = once {
-        val center = mapView.awaitMap().cameraPosition.target ?: return@once
+        val center = mapView.awaitMap().cameraPosition.target?.wrap() ?: return@once
         val isEditing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
         if (!isEditing && !act(Editing.START)) return@once
         val numbers = collection?.get("features")?.jsonArray.orEmpty().map {
@@ -199,7 +201,7 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
-            Text("+", color = Color(0xFFE53935), fontSize = 32.sp, modifier = Modifier.align(Alignment.Center))
+            Crosshair(Modifier.align(Alignment.Center))
             Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (key == null) {
                     Surface(tonalElevation = 3.dp, shape = MaterialTheme.shapes.medium) {
@@ -289,6 +291,17 @@ private fun KeyDialog(current: String, onDismiss: () -> Unit, onSave: (String) -
     )
 }
 
+/** Where a new point goes: the middle of the map. */
+@Composable
+private fun Crosshair(modifier: Modifier) {
+    Canvas(modifier.size(28.dp)) {
+        val red = Color(0xFFE53935)
+        val stroke = 3.dp.toPx()
+        drawLine(red, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), stroke)
+        drawLine(red, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), stroke)
+    }
+}
+
 /** A MapView that follows the screen's lifecycle. */
 @Composable
 private fun rememberMapView(): MapView {
@@ -320,7 +333,8 @@ private fun rememberMapView(): MapView {
     return mapView
 }
 
-private suspend fun MapView.awaitMap(): MapLibreMap = suspendCoroutine { continuation -> getMapAsync { continuation.resume(it) } }
+private suspend fun MapView.awaitMap(): MapLibreMap =
+    suspendCancellableCoroutine { continuation -> getMapAsync { if (continuation.isActive) continuation.resume(it) } }
 
 private fun scopeParams(scope: String) = buildJsonObject { put("scope", scope) }
 
