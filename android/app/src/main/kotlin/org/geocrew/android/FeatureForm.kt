@@ -365,74 +365,8 @@ private fun FormHeader(text: String) {
     )
 }
 
-/**
- * Coordinates to move the map to, in any CRS ([CrsField], CGCS2000 longitude
- * and latitude to start with): degrees for a geographic CRS, 114°18′18.5″ too;
- * X (north) and Y (east) in metres for a projected one. Checked like the form's.
- */
 @Composable
-fun GoToDialog(graph: AppGraph, near: Pair<Double, Double>?, onDismiss: () -> Unit, onGo: (Position) -> Unit) {
-    var srs by remember { mutableStateOf(Crs.LONGITUDE_LATITUDE) }
-    var projected by remember { mutableStateOf<Boolean?>(false) }
-    var longitude by remember { mutableStateOf("") }
-    var latitude by remember { mutableStateOf("") }
-    var north by remember { mutableStateOf("") }
-    var east by remember { mutableStateOf("") }
-    LaunchedEffect(srs) {
-        projected = null
-        val described = graph.invoke(Workspace.CRS_DESCRIBE, buildJsonObject { put("srs", srs) })
-        projected = ((described as? Outcome.Done)?.output?.jsonObject?.get("projected") as? JsonPrimitive)?.contentOrNull == "true"
-    }
-    val longitudeProblem = if (longitude.isEmpty()) null else coordinateProblem(longitude, 180.0, R.string.longitude_range)
-    val latitudeProblem = if (latitude.isEmpty()) null else coordinateProblem(latitude, 90.0, R.string.latitude_range)
-    val northProblem = if (north.isEmpty()) null else numberProblem(north)
-    val eastProblem = if (east.isEmpty()) null else numberProblem(east)
-    val ready = when (projected) {
-        true -> north.isNotBlank() && east.isNotBlank() && northProblem == null && eastProblem == null
-        false -> longitude.isNotBlank() && latitude.isNotBlank() && longitudeProblem == null && latitudeProblem == null
-        null -> false
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.tool_go_to)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                CrsField(graph, srs, onPick = { srs = it }, near = near)
-                if (projected == true) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CoordinateField(north, { north = it }, stringResource(R.string.northing), northProblem, Modifier.weight(1f))
-                        CoordinateField(east, { east = it }, stringResource(R.string.easting), eastProblem, Modifier.weight(1f))
-                    }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f), degrees = true)
-                        CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f), degrees = true)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    onGo(
-                        if (projected == true) {
-                            Position(east.trim().toDouble(), north.trim().toDouble(), srs)
-                        } else {
-                            Position(Degrees.parse(longitude, Degrees.Axis.LONGITUDE)!!, Degrees.parse(latitude, Degrees.Axis.LATITUDE)!!, srs)
-                        },
-                    )
-                },
-                enabled = ready,
-            ) {
-                Text(stringResource(R.string.go))
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-    )
-}
-
-@Composable
-private fun CoordinateField(value: String, onChange: (String) -> Unit, label: String, problem: Int?, modifier: Modifier, degrees: Boolean = false) {
+internal fun CoordinateField(value: String, onChange: (String) -> Unit, label: String, problem: Int?, modifier: Modifier, degrees: Boolean = false) {
     // Degrees may come as 114°18′18.5″: the full keyboard has the marks, and the decimal value shows below.
     val decimal = if (degrees && problem == null && Degrees.isSexagesimal(value)) Degrees.parse(value) else null
     OutlinedTextField(
@@ -471,7 +405,7 @@ private fun keyboard(type: String) = when (type) {
 private fun metres(value: Double): String = BigDecimal.valueOf(value).setScale(3, RoundingMode.HALF_UP).toPlainString()
 
 // What is wrong with a projected coordinate, as a string resource.
-private fun numberProblem(text: String): Int? = when {
+internal fun numberProblem(text: String): Int? = when {
     text.isBlank() -> R.string.coordinate_missing
     text.trim().toDoubleOrNull()?.isFinite() != true -> R.string.field_not_a_number
     else -> null
@@ -495,7 +429,7 @@ private fun problem(type: String, text: String): Int? {
 }
 
 // What is wrong with a coordinate, as a string resource: a point always has both.
-private fun coordinateProblem(text: String, limit: Double, outOfRange: Int): Int? {
+internal fun coordinateProblem(text: String, limit: Double, outOfRange: Int): Int? {
     val degrees = Degrees.parse(text, if (limit > 90) Degrees.Axis.LONGITUDE else Degrees.Axis.LATITUDE)
     return when {
         text.isBlank() -> R.string.coordinate_missing

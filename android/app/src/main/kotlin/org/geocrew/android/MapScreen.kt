@@ -38,7 +38,9 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Transform
 import androidx.compose.material.icons.rounded.ScreenLockRotation
 import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.Close
@@ -235,6 +237,7 @@ fun MapScreen(
     var measuring by remember { mutableStateOf<MeasureMode?>(null) }
     var measured by remember { mutableStateOf(emptyList<LatLng>()) }
     var goingTo by remember { mutableStateOf(false) }
+    var converting by remember { mutableStateOf(false) }
     // The bookmarks sheet: shown with the project's saved views once read.
     var bookmarks by remember { mutableStateOf<List<MapBookmark>?>(null) }
     var ai by remember { mutableStateOf(false) }
@@ -898,6 +901,12 @@ fun MapScreen(
                     ),
                 ),
                 MenuGroup(
+                    stringResource(R.string.menu_analysis), Icons.Rounded.Calculate,
+                    listOf(
+                        MenuTool(stringResource(R.string.tool_convert), Icons.Rounded.Transform) { converting = true },
+                    ),
+                ),
+                MenuGroup(
                     stringResource(R.string.menu_data), Icons.Rounded.Storage,
                     listOf(
                         MenuTool(stringResource(R.string.export_gpkg), Icons.Rounded.SaveAlt) { export("gpkg") },
@@ -913,6 +922,17 @@ fun MapScreen(
                 ),
             ),
             onDismiss = { menu = false },
+        )
+    }
+    if (converting) {
+        CoordinateConvertDialog(
+            graph = graph,
+            near = mapCenter?.let { it.longitude to it.latitude },
+            onDismiss = { converting = false },
+            onShow = { longitude, latitude ->
+                converting = false
+                goTo(longitude, latitude)
+            },
         )
     }
     if (goingTo) {
