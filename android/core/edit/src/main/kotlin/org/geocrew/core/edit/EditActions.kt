@@ -25,7 +25,9 @@ data class EditTarget(val store: LayerStore, val journal: Journal)
  * Layer editing as actions, the QGIS way (ADR 0005, 0010): start editing a
  * layer, change its features, then save or discard. Undo and redo work in the
  * registry scope [scopeOf] gives: one per layer, or with [sharedScope] one for
- * all of them, as a project wants. [open] finds a layer by its id.
+ * all of them, as a project wants. A shared history ends as a whole: saving,
+ * discarding or stopping any one layer ends it for all, so a project saves and
+ * discards all its layers together. [open] finds a layer by its id.
  */
 class Editing(private val sharedScope: String? = null, private val open: (String) -> EditTarget) {
     private val buffers = HashMap<String, EditBuffer>()
