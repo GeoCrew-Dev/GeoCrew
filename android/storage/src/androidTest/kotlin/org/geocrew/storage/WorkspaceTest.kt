@@ -214,6 +214,30 @@ class WorkspaceTest {
         assertEquals("CGCS2000 / Gauss-Kruger CM 111E", name(4508))
     }
 
+    // As in QGIS's layer panel: shown or not, how opaque, and which is on top; kept in the project.
+    @Test
+    fun layersShowAsSetAndKeepIt() {
+        run(Workspace.CREATE, """{"name": "显示", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "泉点", "language": "zh"}""")
+        run(Workspace.LAYER_DISPLAY, """{"layer": "野外点", "visible": false, "opacity": 0.5}""")
+        run(Workspace.BASEMAP_DISPLAY, """{"basemap": "cia", "visible": false}""")
+        val ordered = output(run(Workspace.LAYER_ORDER, """{"layers": ["泉点", "野外点"]}"""))
+        assertEquals(listOf("泉点", "野外点"), ordered.getValue("layers").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content })
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_ORDER, """{"layers": ["泉点"]}"""), "every layer once")
+        assertFalse(run(Workspace.LAYER_DISPLAY, """{"layer": "泉点", "opacity": 2}""") is Outcome.Done, "opacity goes from 0 to 1")
+        run(Workspace.CLOSE)
+
+        val again = output(run(Workspace.OPEN, """{"name": "显示"}"""))
+        val layers = again.getValue("layers").jsonArray.map { it.jsonObject }
+        assertEquals(listOf("泉点", "野外点"), layers.map { it.getValue("name").jsonPrimitive.content })
+        assertEquals("false", layers[1].getValue("visible").jsonPrimitive.content)
+        assertEquals(0.5, layers[1].getValue("opacity").jsonPrimitive.content.toDouble())
+        val basemaps = again.getValue("basemaps").jsonArray.map { it.jsonObject }.associateBy { it.getValue("id").jsonPrimitive.content }
+        assertEquals("true", basemaps.getValue("img").getValue("visible").jsonPrimitive.content)
+        assertEquals("false", basemaps.getValue("cia").getValue("visible").jsonPrimitive.content)
+    }
+
     @Test
     fun theOpenProjectCanBeAskedFor() {
         assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))

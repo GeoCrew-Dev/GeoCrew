@@ -190,6 +190,30 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
+            LAYER_DISPLAY, "Layer display", "Shows or hides a layer of the open project and sets its opacity (0 to 1); saved in the project at once, not undone",
+            Risk.EDIT, DISPLAY_PARAMS, """{"layer": "野外点", "visible": false}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.setDisplay(layer = p.getValue("layer").jsonPrimitive.content, visible = p.flag("visible"), opacity = p.number("opacity"))
+            ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
+            BASEMAP_DISPLAY, "Basemap display", "Shows or hides a basemap under the layers (img: imagery, cia: its annotation) and sets its opacity",
+            Risk.EDIT, BASEMAP_PARAMS, """{"basemap": "img", "opacity": 0.6}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.setDisplay(basemap = p.getValue("basemap").jsonPrimitive.content, visible = p.flag("visible"), opacity = p.number("opacity"))
+            ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
+            LAYER_ORDER, "Layer order", "Puts the open project's layers in the order given, every layer once, the first drawn on top",
+            Risk.EDIT, ORDER_PARAMS, """{"layers": ["泉点", "野外点"]}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.setOrder(p.getValue("layers").jsonArray.map { it.jsonPrimitive.content })
+            ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
             CRS_DESCRIBE, "Describe CRS", "What a CRS (EPSG:4549, WKT, a PROJ string) is: its name, id, whether geographic or projected, and unit",
             Risk.VIEW, CRS_PARAMS, """{"srs": "EPSG:4547"}""",
         ) { p ->
@@ -250,6 +274,18 @@ class Workspace(private val projects: Projects) {
                     put("template", layer.template)
                     put("geometry", layer.geometry)
                     put("srs", layer.srs)
+                    put("made", layer.made)
+                    put("visible", layer.display.visible)
+                    put("opacity", layer.display.opacity)
+                }
+            }
+        }
+        putJsonArray("basemaps") {
+            for ((id, display) in project.basemaps) {
+                addJsonObject {
+                    put("id", id)
+                    put("visible", display.visible)
+                    put("opacity", display.opacity)
                 }
             }
         }
@@ -281,6 +317,9 @@ class Workspace(private val projects: Projects) {
         const val LAYER_INFO = "layer.info"
         const val LAYER_CREATE = "layer.create"
         const val CRS_DESCRIBE = "crs.describe"
+        const val LAYER_DISPLAY = "layer.display"
+        const val BASEMAP_DISPLAY = "basemap.display"
+        const val LAYER_ORDER = "layer.order"
         const val CRS_TRANSFORM = "crs.transform"
 
         /** The registry scope of a project's undo history: one for all its layers. */
@@ -315,6 +354,17 @@ class Workspace(private val projects: Projects) {
         private val FEATURES_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer"], "properties": {"layer": {"type": "string"}, "srs": {"type": "string"}}}""",
         )
+        private val DISPLAY_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer"],
+                "properties": {"layer": {"type": "string"}, "visible": {"type": "boolean"}, "opacity": {"type": "number", "minimum": 0, "maximum": 1}}}""",
+        )
+        private val BASEMAP_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["basemap"],
+                "properties": {"basemap": {"enum": ["img", "cia"]}, "visible": {"type": "boolean"}, "opacity": {"type": "number", "minimum": 0, "maximum": 1}}}""",
+        )
+        private val ORDER_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layers"], "properties": {"layers": {"type": "array", "items": {"type": "string"}}}}""",
+        )
         private val CRS_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["srs"], "properties": {"srs": {"type": "string"}}}""",
         )
@@ -327,5 +377,9 @@ class Workspace(private val projects: Projects) {
         )
 
         private fun JsonObject.name(): String = getValue("name").jsonPrimitive.content
+
+        private fun JsonObject.flag(key: String): Boolean? = (this[key] as? JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull()
+
+        private fun JsonObject.number(key: String): Double? = (this[key] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()
     }
 }

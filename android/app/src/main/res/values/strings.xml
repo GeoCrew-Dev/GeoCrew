@@ -129,6 +129,14 @@
     <string name="coord_xy">X/Y</string>
     <string name="northing">Northing (X)</string>
     <string name="easting">Easting (Y)</string>
+    <string name="layer_show">Show</string>
+    <string name="layer_hide">Hide</string>
+    <string name="layer_opacity">Opacity %1$d%%</string>
+    <string name="move_up">Move up</string>
+    <string name="move_down">Move down</string>
+    <string name="basemap_section">Basemaps</string>
+    <string name="basemap_img">Tianditu imagery</string>
+    <string name="basemap_cia">Tianditu labels</string>
     <string name="my_position">My position</string>
     <string name="position_accuracy">Accuracy ±%1$s m</string>
     <string name="no_fix">No position from the phone</string>

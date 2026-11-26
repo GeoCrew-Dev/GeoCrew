@@ -18,6 +18,16 @@ object ProjectFormat {
     const val LAYERS_TABLE = "geocrew_layers"
     const val FIELDS_TABLE = "geocrew_fields"
 
+    /**
+     * How each layer shows on the map: its place in the layer list (the first
+     * drawn on top), whether it shows and how opaque it is. Basemaps have rows
+     * too, as basemap:<id>. Made when first needed, so older projects open
+     * without being written to.
+     */
+    const val DISPLAY_TABLE = "geocrew_layer_display"
+    const val DISPLAY_SCHEMA = "CREATE TABLE IF NOT EXISTS $DISPLAY_TABLE " +
+        "(layer_id TEXT PRIMARY KEY NOT NULL, sort INTEGER, visible INTEGER NOT NULL DEFAULT 1, opacity REAL NOT NULL DEFAULT 1)"
+
     /** The statements that make GeoCrew's own tables in a new project. */
     val SCHEMA = listOf(
         "CREATE TABLE $PROJECT_TABLE (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",

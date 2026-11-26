@@ -122,6 +122,14 @@
     <string name="coord_xy">X/Y</string>
     <string name="northing">X（北）</string>
     <string name="easting">Y（东）</string>
+    <string name="layer_show">显示</string>
+    <string name="layer_hide">隐藏</string>
+    <string name="layer_opacity">不透明度 %1$d%%</string>
+    <string name="move_up">上移</string>
+    <string name="move_down">下移</string>
+    <string name="basemap_section">底图</string>
+    <string name="basemap_img">天地图影像</string>
+    <string name="basemap_cia">天地图注记</string>
     <string name="my_position">我的位置</string>
     <string name="position_accuracy">精度 ±%1$s m</string>
     <string name="no_fix">没有定到位置</string>
