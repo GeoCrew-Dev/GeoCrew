@@ -23,7 +23,12 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -31,10 +36,34 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.maplibre.android.geometry.LatLng
 
-/** A line or an area being drawn into [layer]: its vertices so far, in CGCS2000 degrees. */
-data class Drawing(val layer: String, val area: Boolean, val vertices: List<LatLng> = emptyList()) {
+/**
+ * A line or an area being drawn into [layer]: its vertices so far, in CGCS2000
+ * degrees. With [fid] it is a feature of the layer being reshaped.
+ */
+data class Drawing(val layer: String, val area: Boolean, val vertices: List<LatLng> = emptyList(), val fid: Long? = null) {
     /** Whether it has enough vertices to be saved: two for a line, three for an area. */
     val complete: Boolean get() = vertices.size >= if (area) 3 else 2
+}
+
+/**
+ * A feature's shape to reshape: a line's vertices, or an area's outer ring
+ * without its closing vertex; null for points, multi-part shapes and areas
+ * with holes, which drawing does not keep.
+ */
+fun reshapeVertices(feature: JsonObject): Pair<Boolean, List<LatLng>>? {
+    val geometry = feature["geometry"] as? JsonObject ?: return null
+    val coordinates = geometry["coordinates"] as? JsonArray ?: return null
+    fun vertex(e: JsonElement): LatLng? {
+        val xy = e as? JsonArray ?: return null
+        val x = (xy.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return null
+        val y = (xy.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return null
+        return LatLng(y, x)
+    }
+    return when ((geometry["type"] as? JsonPrimitive)?.contentOrNull) {
+        "LineString" -> false to coordinates.mapNotNull(::vertex)
+        "Polygon" -> if (coordinates.size != 1) null else true to (coordinates.single() as? JsonArray).orEmpty().mapNotNull(::vertex).dropLast(1)
+        else -> null
+    }
 }
 
 /** Whether a layer of [geometry] (an OGC name such as MULTIPOLYGON) holds areas. */
