@@ -35,6 +35,14 @@ import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.NearMe
+import androidx.compose.material.icons.rounded.SquareFoot
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Straighten
+import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Menu
@@ -112,10 +120,13 @@ import org.geocrew.core.edit.FieldType
 import org.geocrew.core.project.PointNumbers
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.FillLayer
+import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.SymbolLayer
@@ -169,6 +180,10 @@ fun MapScreen(
     var failure by remember { mutableStateOf<String?>(null) }
     var leaving by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    // The measuring tool: what it measures and the points tapped so far.
+    var measuring by remember { mutableStateOf<MeasureMode?>(null) }
+    var measured by remember { mutableStateOf(emptyList<LatLng>()) }
+    var goingTo by remember { mutableStateOf(false) }
     var ai by remember { mutableStateOf(false) }
     var exported by remember { mutableStateOf<File?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -255,6 +270,11 @@ fun MapScreen(
         map.cameraPosition = graph.cameras[project] ?: CameraPosition.Builder().target(LatLng(35.0, 105.0)).zoom(3.5).build()
         map.addOnMapClickListener { point ->
             if (placing) return@addOnMapClickListener false
+            // While measuring, a tap adds a point to the measurement.
+            if (measuring != null) {
+                measured = measured + point.wrap()
+                return@addOnMapClickListener true
+            }
             val at = map.projection.toScreenLocation(point)
             val reach = 24 * density
             val hit = map.queryRenderedFeatures(RectF(at.x - reach, at.y - reach, at.x + reach, at.y + reach), POINT_SOURCE).firstOrNull()
@@ -286,6 +306,28 @@ fun MapScreen(
                     PropertyFactory.iconOffset(arrayOf(8f, 0f)),
                 ).withFilter(Expression.has(MapLabels.PROPERTY)),
             )
+            // The measurement on top of everything: its line or polygon, and its points.
+            style.addSource(GeoJsonSource(MEASURE_SOURCE))
+            style.addLayer(
+                FillLayer("$MEASURE_SOURCE-fill", MEASURE_SOURCE).withProperties(
+                    PropertyFactory.fillColor(MEASURE_COLOR),
+                    PropertyFactory.fillOpacity(0.2f),
+                ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Polygon"))),
+            )
+            style.addLayer(
+                LineLayer("$MEASURE_SOURCE-line", MEASURE_SOURCE).withProperties(
+                    PropertyFactory.lineColor(MEASURE_COLOR),
+                    PropertyFactory.lineWidth(3f),
+                ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("LineString"))),
+            )
+            style.addLayer(
+                CircleLayer("$MEASURE_SOURCE-points", MEASURE_SOURCE).withProperties(
+                    PropertyFactory.circleRadius(5f),
+                    PropertyFactory.circleColor(MEASURE_COLOR),
+                    PropertyFactory.circleStrokeColor("#ffffff"),
+                    PropertyFactory.circleStrokeWidth(2f),
+                ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Point"))),
+            )
             styleLoads++
         }
     }
@@ -304,6 +346,13 @@ fun MapScreen(
     // Where the map was is kept for the next visit.
     DisposableEffect(mapView) {
         onDispose { mapView.getMapAsync { graph.cameras[project] = it.cameraPosition } }
+    }
+
+    LaunchedEffect(styleLoads, measuring, measured) {
+        val style = mapView.awaitMap().style ?: return@LaunchedEffect
+        val mode = measuring
+        val shown = if (mode == null) measureGeoJson(MeasureMode.DISTANCE, emptyList()) else measureGeoJson(mode, measured)
+        style.getSourceAs<GeoJsonSource>(MEASURE_SOURCE)?.setGeoJson(shown.toString())
     }
 
     var fitted by remember { mutableStateOf(graph.cameras.containsKey(project)) }
@@ -468,6 +517,25 @@ fun MapScreen(
         if (modified) leaving = true else once { close() }
     }
 
+    // Every point of every layer in view.
+    fun showAll() = scope.launch {
+        val all = JsonArray(collections.values.flatMap { (it["features"] as? JsonArray).orEmpty() })
+        fit(mapView.awaitMap(), all, density)
+    }
+
+    fun northUp() = scope.launch { mapView.awaitMap().resetNorth() }
+
+    fun goTo(longitude: Double, latitude: Double) = scope.launch {
+        val map = mapView.awaitMap()
+        map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(latitude, longitude), maxOf(map.cameraPosition.zoom, 15.0)))
+    }
+
+    fun measure(mode: MeasureMode) {
+        placing = false
+        measuring = mode
+        measured = emptyList()
+    }
+
     fun export(format: String) = once {
         when (val outcome = graph.invoke(Workspace.EXPORT, buildJsonObject { put("format", format) })) {
             is Outcome.Done -> exported = File(outcome.output.jsonObject.getValue("path").jsonPrimitive.content)
@@ -516,6 +584,18 @@ fun MapScreen(
                 if (placing) {
                     Spacer(Modifier.height(8.dp))
                     PlacingHint(layer = target.orEmpty(), center = { center }, onChangeLayer = { picking = true })
+                } else if (measuring != null) {
+                    Spacer(Modifier.height(8.dp))
+                    MeasurePanel(
+                        mode = measuring ?: MeasureMode.DISTANCE,
+                        points = measured,
+                        onUndo = { measured = measured.dropLast(1) },
+                        onClear = { measured = emptyList() },
+                        onClose = {
+                            measuring = null
+                            measured = emptyList()
+                        },
+                    )
                 } else if (key == null) {
                     Spacer(Modifier.height(8.dp))
                     NoKey(onSettings)
@@ -584,17 +664,52 @@ fun MapScreen(
     }
 
     if (menu) {
-        ModalBottomSheet(onDismissRequest = { menu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(project, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-                SheetItem(Icons.Rounded.Layers, stringResource(R.string.map_layers)) { menu = false; onLayers() }
-                SheetItem(Icons.Rounded.Tune, stringResource(R.string.project_settings)) { menu = false; onProjectSettings() }
-                SheetItem(Icons.Rounded.SaveAlt, stringResource(R.string.export_gpkg)) { menu = false; export("gpkg") }
-                SheetItem(Icons.Rounded.Public, stringResource(R.string.export_kml)) { menu = false; export("kml") }
-                SheetItem(Icons.AutoMirrored.Rounded.Logout, stringResource(R.string.project_close)) { menu = false; requestLeave() }
-                Spacer(Modifier.height(16.dp))
-            }
-        }
+        // The menu in levels (backlog: tiered menus of GIS and map tools); groups fill up tool by tool.
+        MenuSheet(
+            title = project,
+            entries = listOf(
+                MenuTool(stringResource(R.string.map_layers), Icons.Rounded.Layers, onLayers),
+                MenuGroup(
+                    stringResource(R.string.menu_map), Icons.Rounded.Map,
+                    listOf(
+                        MenuTool(stringResource(R.string.tool_show_all), Icons.Rounded.ZoomOutMap, ::showAll),
+                        MenuTool(stringResource(R.string.tool_go_to), Icons.Rounded.NearMe) { goingTo = true },
+                        MenuTool(stringResource(R.string.tool_north_up), Icons.Rounded.Explore, ::northUp),
+                    ),
+                ),
+                MenuGroup(
+                    stringResource(R.string.menu_measure), Icons.Rounded.Straighten,
+                    listOf(
+                        MenuTool(stringResource(R.string.tool_measure_distance), Icons.Rounded.Straighten) { measure(MeasureMode.DISTANCE) },
+                        MenuTool(stringResource(R.string.tool_measure_area), Icons.Rounded.SquareFoot) { measure(MeasureMode.AREA) },
+                    ),
+                ),
+                MenuGroup(
+                    stringResource(R.string.menu_data), Icons.Rounded.Storage,
+                    listOf(
+                        MenuTool(stringResource(R.string.export_gpkg), Icons.Rounded.SaveAlt) { export("gpkg") },
+                        MenuTool(stringResource(R.string.export_kml), Icons.Rounded.Public) { export("kml") },
+                    ),
+                ),
+                MenuGroup(
+                    stringResource(R.string.project_section), Icons.Rounded.Folder,
+                    listOf(
+                        MenuTool(stringResource(R.string.project_settings), Icons.Rounded.Tune, onProjectSettings),
+                        MenuTool(stringResource(R.string.project_close), Icons.AutoMirrored.Rounded.Logout, ::requestLeave),
+                    ),
+                ),
+            ),
+            onDismiss = { menu = false },
+        )
+    }
+    if (goingTo) {
+        GoToDialog(
+            onDismiss = { goingTo = false },
+            onGo = { longitude, latitude ->
+                goingTo = false
+                goTo(longitude, latitude)
+            },
+        )
     }
     if (picking) {
         LayerPicker(
@@ -770,6 +885,10 @@ private data class Move(val layer: String, val fid: Long, val to: String, val lo
 
 /** A point about to be added: its layer, where it goes and its first values. The form's save adds it. */
 private data class Draft(val layer: String, val longitude: Double, val latitude: Double, val values: JsonObject)
+
+// The measuring tool's source on the map, and its colour.
+private const val MEASURE_SOURCE = "geocrew-measure"
+private const val MEASURE_COLOR = "#ff6d00"
 
 // Feature properties the map reads: the colour of the point's layer.
 private const val COLOR = "_color"

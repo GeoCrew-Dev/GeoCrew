@@ -235,6 +235,32 @@ private fun FormHeader(text: String) {
     )
 }
 
+/** Coordinates to move the map to, in CGCS2000 degrees, checked like the form's. */
+@Composable
+fun GoToDialog(onDismiss: () -> Unit, onGo: (longitude: Double, latitude: Double) -> Unit) {
+    var longitude by remember { mutableStateOf("") }
+    var latitude by remember { mutableStateOf("") }
+    val longitudeProblem = if (longitude.isEmpty()) null else coordinateProblem(longitude, 180.0, R.string.longitude_range)
+    val latitudeProblem = if (latitude.isEmpty()) null else coordinateProblem(latitude, 90.0, R.string.latitude_range)
+    val ready = longitude.isNotBlank() && latitude.isNotBlank() && longitudeProblem == null && latitudeProblem == null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.tool_go_to)) },
+        text = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f))
+                CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onGo(longitude.trim().toDouble(), latitude.trim().toDouble()) }, enabled = ready) {
+                Text(stringResource(R.string.go))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
 @Composable
 private fun CoordinateField(value: String, onChange: (String) -> Unit, label: String, problem: Int?, modifier: Modifier) {
     OutlinedTextField(
