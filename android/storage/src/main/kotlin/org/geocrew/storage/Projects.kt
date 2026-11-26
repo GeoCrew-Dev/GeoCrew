@@ -153,17 +153,29 @@ private fun addLayer(ds: VectorDataset, layer: String, geometry: String, crs: St
     }
 }
 
-// The project's layers, in the order they were made, with their geometry type and CRS.
+// The project's layers in their list order (made order where none was set), with geometry type, CRS and display.
 private fun readLayers(ds: VectorDataset): List<Project.Layer> {
     val present = ds.layers.toSet()
     val geometry = rows(ds, "SELECT table_name, geometry_type_name FROM gpkg_geometry_columns").associate { it["table_name"] to it["geometry_type_name"] }
+    val display = readDisplay(ds)
     return rows(ds, "SELECT table_name, id, template FROM ${ProjectFormat.LAYERS_TABLE} ORDER BY rowid")
         .filter { it["table_name"] in present }
-        .map {
+        .mapIndexed { made, it ->
             val name = it.getValue("table_name")!!
             val srs = (Json.parseToJsonElement(ds.layerInfo(name)).jsonObject["srs"] as? JsonPrimitive)?.contentOrNull
-            Project.Layer(name, it.getValue("id")!!, it["template"], geometry[name], srs)
+            val id = it.getValue("id")!!
+            Project.Layer(name, id, it["template"], geometry[name], srs, display[id] ?: Project.Display(), made)
         }
+        .sortedWith(compareBy({ it.display.sort ?: Int.MAX_VALUE }, { it.made }))
+}
+
+// Each layer's and basemap's display by id; nothing for a project whose table was never made.
+private fun readDisplay(ds: VectorDataset): Map<String, Project.Display> {
+    val made = rows(ds, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${ProjectFormat.DISPLAY_TABLE}'").isNotEmpty()
+    if (!made) return emptyMap()
+    return rows(ds, "SELECT layer_id, sort, visible, opacity FROM ${ProjectFormat.DISPLAY_TABLE}").associate {
+        it.getValue("layer_id")!! to Project.Display(it["sort"]?.toIntOrNull(), it["visible"] != "0", it["opacity"]?.toDoubleOrNull() ?: 1.0)
+    }
 }
 
 // The rows of a query, as column name to text.
@@ -196,9 +208,59 @@ class Project internal constructor(
 ) : AutoCloseable {
     /**
      * A layer of the project: its table [name], stable [id], the template it was
-     * made from, its [geometry] type (such as POINT) and its CRS (such as EPSG:4490).
+     * made from, its [geometry] type (such as POINT), its CRS (such as EPSG:4490),
+     * how it shows on the map, and when it was [made] among the layers (0 first).
      */
-    data class Layer(val name: String, val id: String, val template: String?, val geometry: String?, val srs: String?)
+    data class Layer(
+        val name: String,
+        val id: String,
+        val template: String?,
+        val geometry: String?,
+        val srs: String?,
+        val display: Display = Display(),
+        val made: Int = 0,
+    )
+
+    /** How a layer or basemap shows: its place in the list when set, whether it shows, and its opacity from 0 to 1. */
+    data class Display(val sort: Int? = null, val visible: Boolean = true, val opacity: Double = 1.0)
+
+    /** The basemaps a project can show, under the layers: imagery, and its annotation above it. */
+    val basemaps: Map<String, Display>
+        get() {
+            val display = readDisplay(dataset)
+            return BASEMAPS.associateWith { display["basemap:$it"] ?: Display() }
+        }
+
+    /**
+     * Shows or hides layer [layer] or basemap [basemap] (one of [BASEMAPS]) and sets
+     * its opacity; saved in the project at once. Not part of editing: it is not
+     * undone and needs no save.
+     */
+    fun setDisplay(layer: String? = null, basemap: String? = null, visible: Boolean? = null, opacity: Double? = null) {
+        val id = when {
+            layer != null -> layers.firstOrNull { it.name == layer }?.id ?: throw IllegalArgumentException("there is no layer $layer")
+            basemap != null -> basemap.takeIf { it in BASEMAPS }?.let { "basemap:$it" } ?: throw IllegalArgumentException("there is no basemap $basemap")
+            else -> throw IllegalArgumentException("a layer or a basemap")
+        }
+        require(opacity == null || opacity in 0.0..1.0) { "opacity goes from 0 to 1" }
+        dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
+        dataset.sql("INSERT OR IGNORE INTO ${ProjectFormat.DISPLAY_TABLE} (layer_id) VALUES (${quote(id)})")
+        if (visible != null) dataset.sql("UPDATE ${ProjectFormat.DISPLAY_TABLE} SET visible = ${if (visible) 1 else 0} WHERE layer_id = ${quote(id)}")
+        if (opacity != null) dataset.sql("UPDATE ${ProjectFormat.DISPLAY_TABLE} SET opacity = $opacity WHERE layer_id = ${quote(id)}")
+        layers = readLayers(dataset)
+    }
+
+    /** Puts the layers in the order of [names], every layer once, the first drawn on top; saved at once. */
+    fun setOrder(names: List<String>) {
+        require(names.size == layers.size && names.toSet() == layers.map { it.name }.toSet()) { "name every layer once" }
+        dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
+        for ((index, name) in names.withIndex()) {
+            val id = quote(layers.single { it.name == name }.id)
+            dataset.sql("INSERT OR IGNORE INTO ${ProjectFormat.DISPLAY_TABLE} (layer_id) VALUES ($id)")
+            dataset.sql("UPDATE ${ProjectFormat.DISPLAY_TABLE} SET sort = $index WHERE layer_id = $id")
+        }
+        layers = readLayers(dataset)
+    }
 
     /** The layers, in the order they were made. */
     var layers: List<Layer> = layers
@@ -285,8 +347,11 @@ class Project internal constructor(
 
     override fun close() = dataset.close()
 
-    private companion object {
+    companion object {
         // Tables of GeoPackage, its spatial indexes, SQLite and GeoCrew itself.
         val RESERVED_PREFIXES = listOf("gpkg_", "rtree_", "sqlite_", "geocrew_")
+
+        /** Tianditu imagery and its annotation (ADR 0015). */
+        val BASEMAPS = listOf("img", "cia")
     }
 }

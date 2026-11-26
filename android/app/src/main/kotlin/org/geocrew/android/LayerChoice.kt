@@ -51,15 +51,18 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import org.geocrew.core.project.ProjectFormat
 
-/** A layer of the open project as the map knows it: its name, id, colour on the map and how many points it has. */
-data class MapLayer(val name: String, val id: String, val color: Color, val count: Int)
+/** A layer of the open project as the map knows it: its name, id, colour on the map, how many points it has and whether it shows. */
+data class MapLayer(val name: String, val id: String, val color: Color, val count: Int, val visible: Boolean = true)
 
 /** The project's point layers, from the layers project.current lists, each in its colour. */
-fun pointLayers(layers: List<JsonObject>, counts: (String) -> Int): List<MapLayer> = layers.mapIndexedNotNull { index, l ->
-    val name = l.text("name") ?: return@mapIndexedNotNull null
-    if (l.text("geometry") != "POINT") return@mapIndexedNotNull null
-    MapLayer(name, l.text("id").orEmpty(), layerColor(index), counts(name))
+fun pointLayers(layers: List<JsonObject>, counts: (String) -> Int): List<MapLayer> = layers.mapNotNull { l ->
+    val name = l.text("name") ?: return@mapNotNull null
+    if (l.text("geometry") != "POINT") return@mapNotNull null
+    MapLayer(name, l.text("id").orEmpty(), layerColor(madeIndex(l)), counts(name), l.text("visible") != "false")
 }
+
+/** When a layer listed by project.current was made among the layers: its colour stays when the list is reordered. */
+fun madeIndex(layer: JsonObject): Int = layer.text("made")?.toIntOrNull() ?: 0
 
 /** A layer's colour on the map, by its place in the project, until layers have styles of their own (ADR 0006). */
 fun layerColor(index: Int): Color = LAYER_COLORS[index % LAYER_COLORS.size]

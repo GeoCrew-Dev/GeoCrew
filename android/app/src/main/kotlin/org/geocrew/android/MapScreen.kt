@@ -187,6 +187,7 @@ fun MapScreen(
     var selected by remember { mutableStateOf<Pair<String, Long>?>(null) }
     // Layers in a projected CRS, by name: their points can be entered as X and Y.
     var projected by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var basemaps by remember { mutableStateOf<List<BasemapInfo>>(emptyList()) }
     // Where the map looks, as it settles: the Gauss-Kruger zone of a new layer follows it.
     var mapCenter by remember { mutableStateOf<LatLng?>(null) }
     val convert: suspend (String, String, Double, Double) -> Pair<Double, Double>? = { from, to, x, y ->
@@ -264,10 +265,11 @@ fun MapScreen(
         history = graph.registry.canUndo(Workspace.PROJECT_SCOPE) to graph.registry.canRedo(Workspace.PROJECT_SCOPE)
     }
 
-    // The project as project.current describes it: its id and layers, and which layers are in a projected CRS.
+    // The project as project.current describes it: its id, layers and basemaps, and which layers are in a projected CRS.
     suspend fun show(about: JsonObject) {
         projectId = (about["id"] as? JsonPrimitive)?.contentOrNull
         layers = about["layers"]?.jsonArray.orEmpty().map { it.jsonObject }
+        basemaps = listedBasemaps(about)
         val kinds = HashMap<String, String>()
         for (l in layers) {
             val name = l.name() ?: continue
@@ -351,6 +353,8 @@ fun MapScreen(
                 CircleLayer(POINT_SOURCE, POINT_SOURCE).withProperties(
                     PropertyFactory.circleRadius(6f),
                     PropertyFactory.circleColor(Expression.get(COLOR)),
+                    PropertyFactory.circleOpacity(Expression.get(OPACITY)),
+                    PropertyFactory.circleStrokeOpacity(Expression.get(OPACITY)),
                     PropertyFactory.circleStrokeColor("#ffffff"),
                     PropertyFactory.circleStrokeWidth(2f),
                 ),
@@ -361,6 +365,7 @@ fun MapScreen(
                     PropertyFactory.iconImage(Expression.get(MapLabels.PROPERTY)),
                     PropertyFactory.iconAnchor(Property.ICON_ANCHOR_LEFT),
                     PropertyFactory.iconOffset(arrayOf(8f, 0f)),
+                    PropertyFactory.iconOpacity(Expression.get(OPACITY)),
                 ).withFilter(Expression.has(MapLabels.PROPERTY)),
             )
             // The measurement on top of everything: its line or polygon, and its points.
@@ -412,19 +417,34 @@ fun MapScreen(
         style.getSourceAs<GeoJsonSource>(MEASURE_SOURCE)?.setGeoJson(shown.toString())
     }
 
+    // Each basemap as the project says: shown or not, and how opaque (Tianditu's imagery is "base", its annotation "labels").
+    LaunchedEffect(styleLoads, basemaps) {
+        val style = mapView.awaitMap().style ?: return@LaunchedEffect
+        for (b in basemaps) {
+            val layer = style.getLayer(if (b.id == "cia") "labels" else "base") ?: continue
+            layer.setProperties(
+                PropertyFactory.visibility(if (b.visible) Property.VISIBLE else Property.NONE),
+                PropertyFactory.rasterOpacity(b.opacity),
+            )
+        }
+    }
+
     var fitted by remember { mutableStateOf(graph.cameras.containsKey(project)) }
     LaunchedEffect(styleLoads, collections) {
         if (collections.isEmpty()) return@LaunchedEffect
         val map = mapView.awaitMap()
         val style = map.style ?: return@LaunchedEffect
         // Every point layer in one source, each point with its layer's colour and an id that names its layer.
+        // Bottom of the list first, so the first layer is drawn on top; hidden layers stay off the map.
         val features = JsonArray(
-            layers.flatMapIndexed { index, l ->
-                val collection = collections[l.name()] ?: return@flatMapIndexed emptyList()
-                if ((l["geometry"] as? JsonPrimitive)?.contentOrNull != "POINT") return@flatMapIndexed emptyList()
-                val own = collection["features"] as? JsonArray ?: return@flatMapIndexed emptyList()
+            layers.mapIndexed { index, l -> index to l }.reversed().flatMap { (index, l) ->
+                if ((l["visible"] as? JsonPrimitive)?.contentOrNull == "false") return@flatMap emptyList()
+                val opacity = (l["opacity"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() ?: 1.0
+                val collection = collections[l.name()] ?: return@flatMap emptyList()
+                if ((l["geometry"] as? JsonPrimitive)?.contentOrNull != "POINT") return@flatMap emptyList()
+                val own = collection["features"] as? JsonArray ?: return@flatMap emptyList()
                 val labelled = nameField(collection)?.let { MapLabels.label(own, it, style, density) } ?: own
-                labelled.map { tagged(it.jsonObject, index, layerColorHex(index)) }
+                labelled.map { tagged(it.jsonObject, index, layerColorHex(madeIndex(l)), opacity) }
             },
         )
         val geoJson = buildJsonObject {
@@ -453,8 +473,9 @@ fun MapScreen(
     fun requestPlace() {
         val id = projectId ?: return
         val remembered = graph.settings.placingLayer(id)
-        val kept = points.firstOrNull { it.id == remembered }
-        if (remembered != null && kept == null) graph.settings.setPlacingLayer(id, null) // the layer has gone: ask again
+        // A hidden layer takes no new points (they would not show); a remembered one that is hidden asks, and is kept.
+        val kept = points.firstOrNull { it.id == remembered && it.visible }
+        if (remembered != null && points.none { it.id == remembered }) graph.settings.setPlacingLayer(id, null) // the layer has gone: ask again
         when {
             kept != null -> startPlacing(kept.name)
             points.isEmpty() -> {
@@ -799,7 +820,7 @@ fun MapScreen(
     if (picking) {
         LayerPicker(
             title = stringResource(R.string.pick_layer_title),
-            layers = points,
+            layers = points.filter { it.visible },
             onPick = { layer, remember ->
                 picking = false
                 if (remember) projectId?.let { graph.settings.setPlacingLayer(it, layer.id) }
@@ -985,11 +1006,15 @@ private const val MEASURE_COLOR = "#ff6d00"
 private const val COLOR = "_color"
 
 // A feature for the shared source: an id that names its layer, and its layer's colour.
-private fun tagged(feature: JsonObject, layer: Int, color: String): JsonObject {
+private fun tagged(feature: JsonObject, layer: Int, color: String, opacity: Double): JsonObject {
     val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
     val fid = (feature["id"] as? JsonPrimitive)?.contentOrNull
-    return JsonObject(feature + ("id" to JsonPrimitive("$layer/$fid")) + ("properties" to JsonObject(properties + (COLOR to JsonPrimitive(color)))))
+    val shown = properties + (COLOR to JsonPrimitive(color)) + (OPACITY to JsonPrimitive(opacity))
+    return JsonObject(feature + ("id" to JsonPrimitive("$layer/$fid")) + ("properties" to JsonObject(shown)))
 }
+
+// The point's layer's opacity.
+private const val OPACITY = "_opacity"
 
 /** The project's name, and whether it has edits to save; fixed and opaque. */
 @Composable

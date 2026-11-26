@@ -3,6 +3,8 @@ package org.geocrew.android
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -13,12 +15,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Numbers
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.ToggleOn
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -29,6 +36,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -36,12 +44,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -59,23 +69,45 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.add
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
 import org.geocrew.storage.Workspace
 
 /** A layer of the open project, in its colour on the map, with its fields and how many features it has once read. */
-data class LayerInfo(val name: String, val id: String, val point: Boolean, val color: Color, val count: Int = 0, val fields: List<FormField> = emptyList())
+data class LayerInfo(
+    val name: String,
+    val id: String,
+    val point: Boolean,
+    val color: Color,
+    val count: Int = 0,
+    val fields: List<FormField> = emptyList(),
+    val visible: Boolean = true,
+    val opacity: Float = 1f,
+)
 
 /** The layers project.current lists, in order, each in its colour on the map. */
-fun listedLayers(about: JsonObject): List<LayerInfo> = about["layers"]?.jsonArray.orEmpty().mapIndexedNotNull { index, l ->
+fun listedLayers(about: JsonObject): List<LayerInfo> = about["layers"]?.jsonArray.orEmpty().mapNotNull { l ->
     val listed = l.jsonObject
-    val name = (listed["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapIndexedNotNull null
+    val name = (listed["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
     LayerInfo(
         name,
         (listed["id"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
         (listed["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT",
-        layerColor(index),
+        layerColor(madeIndex(listed)),
+        visible = (listed["visible"] as? JsonPrimitive)?.contentOrNull != "false",
+        opacity = (listed["opacity"] as? JsonPrimitive)?.contentOrNull?.toFloatOrNull() ?: 1f,
     )
+}
+
+/** A basemap under the layers, as project.current lists it. */
+data class BasemapInfo(val id: String, val visible: Boolean, val opacity: Float)
+
+fun listedBasemaps(about: JsonObject): List<BasemapInfo> = about["basemaps"]?.jsonArray.orEmpty().mapNotNull { b ->
+    val listed = b.jsonObject
+    val id = (listed["id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+    BasemapInfo(id, (listed["visible"] as? JsonPrimitive)?.contentOrNull != "false", (listed["opacity"] as? JsonPrimitive)?.contentOrNull?.toFloatOrNull() ?: 1f)
 }
 
 /** A field to add once the project's edits are saved. */
@@ -92,6 +124,7 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var layers by remember { mutableStateOf<List<LayerInfo>>(emptyList()) }
+    var basemaps by remember { mutableStateOf<List<BasemapInfo>>(emptyList()) }
     val open = remember { mutableStateMapOf<String, Boolean>() }
     var naming by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf<LayerInfo?>(null) }
@@ -110,6 +143,7 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
             failure = texts.of(opened)
             return@LaunchedEffect
         }
+        basemaps = listedBasemaps(opened.output.jsonObject)
         layers = listedLayers(opened.output.jsonObject).mapNotNull { layer ->
             when (val info = graph.invoke(Workspace.LAYER_INFO, buildJsonObject { put("layer", layer.name) })) {
                 is Outcome.Done -> {
@@ -129,6 +163,14 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
         when (val made = graph.invoke(Workspace.LAYER_CREATE, params)) {
             is Outcome.Done -> loads++
             else -> failure = texts.of(made)
+        }
+    }
+
+    // Display changes are saved in the project at once; the page shows them when they are.
+    fun display(action: String, params: JsonObject) = scope.launch {
+        when (val done = graph.invoke(action, params)) {
+            is Outcome.Done -> loads++
+            else -> failure = texts.of(done)
         }
     }
 
@@ -177,13 +219,44 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
                                     pluralStringResource(R.plurals.fields_count, layer.fields.size, layer.fields.size),
                             )
                         },
-                        leadingContent = { LayerDot(layer.color) },
-                        trailingContent = { Icon(Icons.Rounded.ExpandMore, null, modifier = Modifier.rotate(turn)) },
+                        leadingContent = { LayerDot(if (layer.visible) layer.color else layer.color.copy(alpha = 0.3f)) },
+                        trailingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("visible", !layer.visible) }) }) {
+                                    Icon(
+                                        if (layer.visible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                        stringResource(if (layer.visible) R.string.layer_hide else R.string.layer_show),
+                                    )
+                                }
+                                Icon(Icons.Rounded.ExpandMore, null, modifier = Modifier.rotate(turn))
+                            }
+                        },
                         colors = clear,
                         modifier = Modifier.animateItem().clickable { open[layer.name] = !expanded },
                     )
                 }
                 if (expanded) {
+                    item(key = "display:${layer.name}") {
+                        Column(Modifier.animateItem().padding(start = 40.dp, end = 16.dp)) {
+                            OpacitySlider(layer.opacity) { opacity ->
+                                display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("opacity", opacity.toDouble()) })
+                            }
+                            // Up and down the list: the first is drawn on top.
+                            val at = layers.indexOf(layer)
+                            Row {
+                                TextButton(onClick = { display(Workspace.LAYER_ORDER, order(layers, at, at - 1)) }, enabled = at > 0) {
+                                    Icon(Icons.Rounded.ArrowUpward, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.move_up))
+                                }
+                                TextButton(onClick = { display(Workspace.LAYER_ORDER, order(layers, at, at + 1)) }, enabled = at < layers.size - 1) {
+                                    Icon(Icons.Rounded.ArrowDownward, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.move_down))
+                                }
+                            }
+                        }
+                    }
                     items(layer.fields, key = { "field:${layer.name}:${it.name}" }) { field ->
                         ListItem(
                             headlineContent = { Text(field.name) },
@@ -198,6 +271,33 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
                             Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.field_add))
+                        }
+                    }
+                }
+            }
+            if (basemaps.isNotEmpty()) {
+                item(key = "basemaps") { SectionHeader(stringResource(R.string.basemap_section)) }
+                for (basemap in basemaps.reversed()) {
+                    item(key = "basemap:${basemap.id}") {
+                        Column(Modifier.animateItem()) {
+                            ListItem(
+                                headlineContent = { Text(stringResource(if (basemap.id == "cia") R.string.basemap_cia else R.string.basemap_img)) },
+                                leadingContent = { Icon(Icons.Rounded.Public, null) },
+                                trailingContent = {
+                                    IconButton(onClick = { display(Workspace.BASEMAP_DISPLAY, buildJsonObject { put("basemap", basemap.id); put("visible", !basemap.visible) }) }) {
+                                        Icon(
+                                            if (basemap.visible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                            stringResource(if (basemap.visible) R.string.layer_hide else R.string.layer_show),
+                                        )
+                                    }
+                                },
+                                colors = clear,
+                            )
+                            Column(Modifier.padding(start = 56.dp, end = 16.dp)) {
+                                OpacitySlider(basemap.opacity) { opacity ->
+                                    display(Workspace.BASEMAP_DISPLAY, buildJsonObject { put("basemap", basemap.id); put("opacity", opacity.toDouble()) })
+                                }
+                            }
                         }
                     }
                 }
@@ -266,6 +366,21 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
             text = { Text(message) },
         )
     }
+}
+
+// The layer list with the layer at [from] moved to [to], for layer.order.
+private fun order(layers: List<LayerInfo>, from: Int, to: Int): JsonObject {
+    val names = layers.map { it.name }.toMutableList()
+    names.add(to, names.removeAt(from))
+    return buildJsonObject { putJsonArray("layers") { names.forEach { add(it) } } }
+}
+
+/** How opaque a layer is, set when the finger lifts: each change is written to the project. */
+@Composable
+private fun OpacitySlider(opacity: Float, onSet: (Float) -> Unit) {
+    var value by remember(opacity) { mutableFloatStateOf(opacity) }
+    Text(stringResource(R.string.layer_opacity, Math.round(value * 100)), style = MaterialTheme.typography.bodyMedium)
+    Slider(value = value, onValueChange = { value = it }, onValueChangeFinished = { onSet(value) }, valueRange = 0f..1f)
 }
 
 // A field's type at a glance.
