@@ -164,4 +164,51 @@ var migrations = []string{
 	CREATE INDEX comments_outing ON comments(back_by_unix) WHERE back_by_unix > 0 AND overdue_sent = 0;`,
 	`ALTER TABLE workspaces ADD COLUMN archived_at TEXT NOT NULL DEFAULT '';`,
 	`ALTER TABLE view_links ADD COLUMN kind TEXT NOT NULL DEFAULT 'view';`,
+	// Protocol v1 (package v1): workspaces, members with a token per device,
+	// roles. It sits next to the v0 tables until the API moves to v1 (M3).
+	`CREATE TABLE v1_workspaces (
+		id          TEXT PRIMARY KEY,
+		name        TEXT NOT NULL,
+		invite_code TEXT NOT NULL UNIQUE,
+		leader      TEXT NOT NULL,
+		created_at  TEXT NOT NULL,
+		archived_at TEXT NOT NULL DEFAULT '',
+		last_seq    INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE TABLE v1_members (
+		workspace_id   TEXT NOT NULL REFERENCES v1_workspaces(id),
+		id             TEXT PRIMARY KEY,
+		nickname       TEXT NOT NULL,
+		joined_at      TEXT NOT NULL,
+		removed_at     TEXT NOT NULL DEFAULT '',
+		access_version INTEGER NOT NULL DEFAULT 1
+	);
+	CREATE INDEX v1_members_ws ON v1_members(workspace_id, joined_at);
+	CREATE TABLE v1_roles (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		id           TEXT NOT NULL,
+		name         TEXT NOT NULL,
+		position     INTEGER NOT NULL,
+		permissions  TEXT NOT NULL,
+		version      INTEGER NOT NULL,
+		PRIMARY KEY (workspace_id, id)
+	);
+	CREATE TABLE v1_devices (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		id           TEXT PRIMARY KEY,
+		member_id    TEXT NOT NULL REFERENCES v1_members(id),
+		name         TEXT NOT NULL,
+		token_hash   TEXT NOT NULL UNIQUE,
+		created_at   TEXT NOT NULL,
+		last_seen_at TEXT NOT NULL DEFAULT '',
+		revoked_at   TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX v1_devices_member ON v1_devices(member_id);
+	CREATE TABLE v1_member_roles (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		member_id    TEXT NOT NULL REFERENCES v1_members(id),
+		role_id      TEXT NOT NULL,
+		PRIMARY KEY (workspace_id, member_id, role_id),
+		FOREIGN KEY (workspace_id, role_id) REFERENCES v1_roles(workspace_id, id)
+	);`,
 }

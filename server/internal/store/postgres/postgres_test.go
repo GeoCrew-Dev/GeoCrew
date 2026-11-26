@@ -13,6 +13,8 @@ import (
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqlite"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/storetest"
+	v1 "github.com/GeoCrew-Dev/GeoCrew/server/internal/store/v1"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/v1/v1test"
 )
 
 // The contract runs only against a real server: set GEOCREW_TEST_POSTGRES to
@@ -97,9 +99,16 @@ func TestCopyBetweenEngines(t *testing.T) {
 	lite.AddComment(ctx, ws.ID, m.ID, store.Comment{ID: "c1", Body: "集合", At: []float64{116.4, 39.9}})
 	lite.SetPushTarget(ctx, ws.ID, store.PushTarget{MemberID: m.ID, Endpoint: "https://a/b", Events: []string{"task"}})
 	lite.PutFileMeta(ctx, ws.ID, store.FileMeta{SHA256: "ab", Size: 3, ContentType: "image/jpeg", CreatedAt: at, CreatedBy: m.ID})
+	j, err := lite.V1().CreateWorkspace(ctx, "v1 一组", "组长", "S24")
+	if err != nil {
+		t.Fatal(err)
+	}
 	pg := open(t)
 	if _, err := lite.CopyTo(ctx, pg); err != nil {
 		t.Fatal(err)
+	}
+	if m, _, err := pg.V1().Authenticate(ctx, j.Workspace.ID, j.Token); err != nil || m.ID != j.Member.ID {
+		t.Fatalf("v1 token: %v %+v", err, m)
 	}
 	if _, err := pg.Authenticate(ctx, ws.ID, tok); err != nil {
 		t.Fatalf("token: %v", err)
@@ -113,7 +122,11 @@ func TestCopyBetweenEngines(t *testing.T) {
 	back, _ := sqlite.Open(":memory:")
 	defer back.Close()
 	counts, err := pg.CopyTo(ctx, back)
-	if err != nil || counts["comments"] != 2 || counts["push_targets"] != 1 || counts["files"] != 1 {
+	if err != nil || counts["comments"] != 2 || counts["push_targets"] != 1 || counts["files"] != 1 || counts["v1_roles"] != 1 {
 		t.Fatalf("back to sqlite: %v %v", err, counts)
 	}
+}
+
+func TestContractV1(t *testing.T) {
+	v1test.Run(t, func(t *testing.T, now func() time.Time) v1.Store { return open(t).V1().WithClock(now) })
 }

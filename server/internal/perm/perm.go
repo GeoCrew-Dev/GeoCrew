@@ -6,7 +6,10 @@
 // answers the server will.
 package perm
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Level is how far a scoped permission reaches. Plain permissions are None or All.
 type Level int
@@ -30,6 +33,29 @@ func (l *Level) UnmarshalJSON(b []byte) error {
 		return fmt.Errorf("permission level %s", b)
 	}
 	return nil
+}
+
+// Scoped reports whether perm takes the levels none, own and all; the others
+// are on or off.
+func Scoped(perm string) bool { return perm == EditRows || perm == DeleteRows }
+
+// MarshalPermissions writes permissions the way the protocol does: "none",
+// "own" or "all" for scoped ones, true or false for the rest.
+func MarshalPermissions(ps map[string]Level) ([]byte, error) {
+	out := make(map[string]any, len(ps))
+	for p, l := range ps {
+		switch {
+		case l < None || l > All:
+			return nil, fmt.Errorf("permission %s: level %d", p, l)
+		case Scoped(p):
+			out[p] = [...]string{"none", "own", "all"}[l]
+		case l == Own:
+			return nil, fmt.Errorf("permission %s is on or off, not own", p)
+		default:
+			out[p] = l == All
+		}
+	}
+	return json.Marshal(out)
 }
 
 // Base is the role every member has.

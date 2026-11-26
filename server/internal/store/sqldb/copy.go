@@ -14,6 +14,12 @@ var tables = []string{
 	"comments", "push_targets", "view_links",
 }
 
+// v1Tables are protocol v1's (package v1), in foreign-key order too; every
+// one after v1_workspaces has a workspace_id column.
+var v1Tables = []string{
+	"v1_workspaces", "v1_members", "v1_roles", "v1_devices", "v1_member_roles",
+}
+
 // ErrNotEmpty means a copy's target already holds workspaces.
 var ErrNotEmpty = errors.New("目标数据库里已经有工作组，只能复制到空库")
 
@@ -24,12 +30,14 @@ var ErrNotEmpty = errors.New("目标数据库里已经有工作组，只能复�
 // snapshot) and the target written in one, so a failed copy leaves dst empty.
 // Returns the rows copied per table.
 func (d *DB) CopyTo(ctx context.Context, dst *DB) (map[string]int64, error) {
-	var n int
-	if err := dst.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspaces`).Scan(&n); err != nil {
-		return nil, err
-	}
-	if n > 0 {
-		return nil, ErrNotEmpty
+	for _, t := range []string{"workspaces", "v1_workspaces"} {
+		var n int
+		if err := dst.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+t).Scan(&n); err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			return nil, ErrNotEmpty
+		}
 	}
 	src, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -41,8 +49,8 @@ func (d *DB) CopyTo(ctx context.Context, dst *DB) (map[string]int64, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	counts := make(map[string]int64, len(tables))
-	for _, t := range tables {
+	counts := make(map[string]int64, len(tables)+len(v1Tables))
+	for _, t := range append(append([]string{}, tables...), v1Tables...) {
 		c, err := copyTable(ctx, src, tx, t)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", t, err)

@@ -85,3 +85,28 @@ func TestLevelJSON(t *testing.T) {
 		t.Fatal("an unknown level must be refused")
 	}
 }
+
+func TestMarshalPermissions(t *testing.T) {
+	in := map[string]Level{EditRows: Own, DeleteRows: None, SendMessages: All, ExportData: None}
+	b, err := MarshalPermissions(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"delete_rows":"none","edit_rows":"own","export_data":false,"send_messages":true}`; string(b) != want {
+		t.Fatalf("got %s, want %s", b, want)
+	}
+	var back map[string]Level
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	for p, l := range in {
+		if back[p] != l {
+			t.Fatalf("%s: got %d after a round trip, want %d", p, back[p], l)
+		}
+	}
+	for _, bad := range []map[string]Level{{SendMessages: Own}, {EditRows: Level(7)}} {
+		if _, err := MarshalPermissions(bad); err == nil {
+			t.Fatalf("%v: no error", bad)
+		}
+	}
+}
