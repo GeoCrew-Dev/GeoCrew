@@ -51,8 +51,8 @@
   - [ ] 评估换 NDK r28 及以上：GDAL 数据文件能编进库里，16 KB 对齐成为默认。
   - [x] CI 里用 x86_64 模拟器跑测速程序和仪器测试（GeoCrew-Native 的 `android.yml`）。
   - [ ] 定下是否开 SpatiaLite、联网驱动（curl）、XLS（freexl）等特性，先查许可证。
-- [x] GeoPackage 放在 /sdcard 上：测 10 万要素写入、崩溃后能否恢复、外置存储卡上的表现。用 WAL 时可行，见[验证报告](spikes/m1-gpkg-sdcard.md)，ADR 0004 已采纳。
-  - [ ] 手机再连上后，在真机的 /sdcard 和私有目录上跑一遍 `geocrew_storage`。
+- [x] GeoPackage 放在 /sdcard 上：测 10 万要素写入、崩溃后能否恢复、外置存储卡上的表现。用 WAL 时可行（存储卡只测了模拟器的 FAT32 卡，exFAT 放到"以后"），见[验证报告](spikes/m1-gpkg-sdcard.md)，ADR 0004 已采纳。
+  - [x] 在 S24 Ultra 的 /sdcard 和私有目录上跑了 `geocrew_storage`（2026-11-26）：结论不变，WAL 下 /sdcard 逐条保存约 1 ms，崩溃恢复全部通过。
 - [x] 用 CustomGeometrySource 出图：测 10 万要素，以及编辑后的局部刷新。可行，见[验证报告](spikes/m1-map-customgeometry.md)。
   - [ ] 真机上跑 `mapspike`，量帧率，并试 MapLibre 的 Vulkan 后端（模拟器上会崩溃）。
   - [ ] M2：低缩放级别抽稀或聚合（8 级时一个瓦片装下全部 10 万点，首屏要几秒）。
