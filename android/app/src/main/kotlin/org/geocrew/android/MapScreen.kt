@@ -1,5 +1,7 @@
 package org.geocrew.android
 
+import androidx.compose.material.icons.rounded.AddCircleOutline
+import androidx.compose.material.icons.rounded.EditLocationAlt
 import android.Manifest
 import android.app.Activity
 import android.hardware.GeomagneticField
@@ -195,6 +197,9 @@ fun MapScreen(
     var center by remember { mutableStateOf<LatLng?>(null) }
     var drawn by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<Draft?>(null) }
+    // A line or an area being drawn, and one drawn, waiting for its form.
+    var drawing by remember { mutableStateOf<Drawing?>(null) }
+    var shapeDraft by remember { mutableStateOf<Drawing?>(null) }
     var selected by remember { mutableStateOf<Pair<String, Long>?>(null) }
     // Layers in a projected CRS, by name: their points can be entered as X and Y.
     var projected by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -245,6 +250,7 @@ fun MapScreen(
     val snackbar = remember { SnackbarHostState() }
     val modified = collections.values.any { it.flag("projectModified") }
     val points = pointLayers(layers) { name -> (collections[name]?.get("features") as? JsonArray)?.size ?: 0 }
+    val drawables = drawLayers(layers) { name -> (collections[name]?.get("features") as? JsonArray)?.size ?: 0 }
     val savedText = stringResource(R.string.saved)
     val addedText = stringResource(R.string.place_added)
     val outsideText = stringResource(R.string.position_outside)
@@ -356,6 +362,11 @@ fun MapScreen(
         map.cameraPosition = graph.cameras[project] ?: CameraPosition.Builder().target(LatLng(35.0, 105.0)).zoom(3.5).build()
         map.addOnMapClickListener { point ->
             if (placing) return@addOnMapClickListener false
+            // While drawing, a tap adds a vertex where it is.
+            drawing?.let { d ->
+                drawing = d.copy(vertices = d.vertices + point.wrap())
+                return@addOnMapClickListener true
+            }
             // While measuring, a tap adds a point to the measurement.
             if (measuring != null) {
                 measured = withPoint(measuring ?: return@addOnMapClickListener true, measured, point.wrap())
@@ -363,7 +374,10 @@ fun MapScreen(
             }
             val at = map.projection.toScreenLocation(point)
             val reach = 24 * density
-            val hit = map.queryRenderedFeatures(RectF(at.x - reach, at.y - reach, at.x + reach, at.y + reach), POINT_SOURCE).firstOrNull()
+            val near = RectF(at.x - reach, at.y - reach, at.x + reach, at.y + reach)
+            val hit = map.queryRenderedFeatures(near, POINT_SOURCE).firstOrNull()
+                ?: map.queryRenderedFeatures(near, FEATURE_LINE).firstOrNull()
+                ?: map.queryRenderedFeatures(at, FEATURE_FILL).firstOrNull()
             // Ids are "layer index/fid": points of every layer share the source.
             val (index, fid) = hit?.id()?.split("/")?.takeIf { it.size == 2 } ?: return@addOnMapClickListener false
             val name = layers.getOrNull(index.toIntOrNull() ?: -1)?.name()
@@ -376,9 +390,25 @@ fun MapScreen(
         // A picture for the home screen only once the map has been drawn in full.
         mapView.addOnDidBecomeIdleListener { drawn = true }
         // While a point is being placed, where the crosshair is.
-        map.addOnCameraMoveListener { if (placing) center = map.cameraPosition.target?.wrap() }
+        map.addOnCameraMoveListener { if (placing || drawing != null) center = map.cameraPosition.target?.wrap() }
         map.setStyle(Style.Builder().fromJson(key?.let(MapStyles::tiandituImagery) ?: MapStyles.BLANK)) { style ->
             style.addSource(GeoJsonSource(POINT_SOURCE))
+            // Areas under lines under points, each in its layer's colour.
+            style.addLayer(
+                FillLayer(FEATURE_FILL, POINT_SOURCE).withProperties(
+                    PropertyFactory.fillColor(Expression.get(COLOR)),
+                    PropertyFactory.fillOpacity(Expression.product(Expression.get(OPACITY), Expression.literal(0.25f))),
+                ).withFilter(isType("Polygon")),
+            )
+            style.addLayer(
+                LineLayer(FEATURE_LINE, POINT_SOURCE).withProperties(
+                    PropertyFactory.lineColor(Expression.get(COLOR)),
+                    PropertyFactory.lineOpacity(Expression.get(OPACITY)),
+                    PropertyFactory.lineWidth(3f),
+                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                ).withFilter(Expression.any(isType("LineString"), isType("Polygon"))),
+            )
             style.addLayer(
                 CircleLayer(POINT_SOURCE, POINT_SOURCE).withProperties(
                     PropertyFactory.circleRadius(6f),
@@ -387,7 +417,7 @@ fun MapScreen(
                     PropertyFactory.circleStrokeOpacity(Expression.get(OPACITY)),
                     PropertyFactory.circleStrokeColor("#ffffff"),
                     PropertyFactory.circleStrokeWidth(2f),
-                ),
+                ).withFilter(isType("Point")),
             )
             // Point names to the right of the points; MapLibre keeps them from piling up.
             style.addLayer(
@@ -396,7 +426,7 @@ fun MapScreen(
                     PropertyFactory.iconAnchor(Property.ICON_ANCHOR_LEFT),
                     PropertyFactory.iconOffset(arrayOf(8f, 0f)),
                     PropertyFactory.iconOpacity(Expression.get(OPACITY)),
-                ).withFilter(Expression.has(MapLabels.PROPERTY)),
+                ).withFilter(Expression.all(Expression.has(MapLabels.PROPERTY), isType("Point"))),
             )
             // The measurement on top of everything: its line or polygon, and its points.
             style.addSource(GeoJsonSource(MEASURE_SOURCE))
@@ -441,10 +471,15 @@ fun MapScreen(
         onDispose { mapView.getMapAsync { graph.cameras[project] = it.cameraPosition } }
     }
 
-    LaunchedEffect(styleLoads, measuring, measured) {
+    LaunchedEffect(styleLoads, measuring, measured, drawing, center) {
         val style = mapView.awaitMap().style ?: return@LaunchedEffect
         val mode = measuring
-        val shown = if (mode == null) measureGeoJson(MeasureMode.DISTANCE, emptyList()) else measureGeoJson(mode, measured)
+        val d = drawing
+        val shown = when {
+            d != null -> measureGeoJson(if (d.area) MeasureMode.AREA else MeasureMode.DISTANCE, d.vertices + listOfNotNull(center))
+            mode == null -> measureGeoJson(MeasureMode.DISTANCE, emptyList())
+            else -> measureGeoJson(mode, measured)
+        }
         style.getSourceAs<GeoJsonSource>(MEASURE_SOURCE)?.setGeoJson(shown.toString())
     }
 
@@ -481,16 +516,16 @@ fun MapScreen(
         if (collections.isEmpty()) return@LaunchedEffect
         val map = mapView.awaitMap()
         val style = map.style ?: return@LaunchedEffect
-        // Every point layer in one source, each point with its layer's colour and an id that names its layer.
+        // Every layer in one source (points, lines, areas), each feature with its layer's colour and an id that names its layer.
         // Bottom of the list first, so the first layer is drawn on top; hidden layers stay off the map.
         val features = JsonArray(
             layers.mapIndexed { index, l -> index to l }.reversed().flatMap { (index, l) ->
                 if ((l["visible"] as? JsonPrimitive)?.contentOrNull == "false") return@flatMap emptyList()
                 val opacity = (l["opacity"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() ?: 1.0
                 val collection = collections[l.name()] ?: return@flatMap emptyList()
-                if ((l["geometry"] as? JsonPrimitive)?.contentOrNull != "POINT") return@flatMap emptyList()
                 val own = collection["features"] as? JsonArray ?: return@flatMap emptyList()
-                val labelled = nameField(collection)?.let { MapLabels.label(own, it, style, density) } ?: own
+                val point = (l["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT"
+                val labelled = nameField(collection)?.takeIf { point }?.let { MapLabels.label(own, it, style, density) } ?: own
                 labelled.map { tagged(it.jsonObject, index, layerColorHex(madeIndex(l)), opacity) }
             },
         )
@@ -506,7 +541,16 @@ fun MapScreen(
         }
     }
 
+    fun startDrawing(layer: String, area: Boolean) {
+        placing = false
+        measuring = null // one tool at a time
+        measured = emptyList()
+        drawing = Drawing(layer, area)
+        scope.launch { center = mapView.awaitMap().cameraPosition.target?.wrap() }
+    }
+
     fun startPlacing(layer: String) {
+        drawing = null
         target = layer
         placingAccuracy = null // a fix from before is not where the crosshair is now
         measuring = null // one tool at a time: placing ends a measurement
@@ -515,17 +559,21 @@ fun MapScreen(
         scope.launch { center = mapView.awaitMap().cameraPosition.target?.wrap() }
     }
 
+    fun startAdding(layer: MapLayer) {
+        if (layer.geometry == "POINT") startPlacing(layer.name) else startDrawing(layer.name, holdsAreas(layer.geometry))
+    }
+
     // Placing asks which layer the point goes into: not when the user chose to
     // remember one that is still there; and a project with no point layer makes one first.
     fun requestPlace() {
         val id = projectId ?: return
         val remembered = graph.settings.placingLayer(id)
         // A hidden layer takes no new points (they would not show); a remembered one that is hidden asks, and is kept.
-        val kept = points.firstOrNull { it.id == remembered && it.visible }
-        if (remembered != null && points.none { it.id == remembered }) graph.settings.setPlacingLayer(id, null) // the layer has gone: ask again
+        val kept = drawables.firstOrNull { it.id == remembered && it.visible }
+        if (remembered != null && drawables.none { it.id == remembered }) graph.settings.setPlacingLayer(id, null) // the layer has gone: ask again
         when {
-            kept != null -> startPlacing(kept.name)
-            points.isEmpty() -> {
+            kept != null -> startAdding(kept)
+            drawables.isEmpty() -> {
                 rememberNew = false
                 naming = true
             }
@@ -577,6 +625,42 @@ fun MapScreen(
             snackbar.currentSnackbarData?.dismiss()
             val answer = snackbar.showSnackbar(addedText.format(layer), actionLabel = changeLayerText, duration = SnackbarDuration.Long)
             if (answer == SnackbarResult.ActionPerformed) moving = layer to fid
+        }
+    }
+
+    // The drawn vertices in the layer's CRS, as GeoJSON; null (and said) when they don't convert.
+    suspend fun shapeInLayer(d: Drawing): JsonObject? {
+        val own = layers.firstOrNull { it.name() == d.layer }?.text("srs") ?: Crs.LONGITUDE_LATITUDE
+        val degrees = d.vertices.map { round7(it.longitude) to round7(it.latitude) }
+        if (Crs.same(own, Crs.LONGITUDE_LATITUDE)) return shapeGeoJson(degrees, d.area)
+        val moved = graph.invoke(
+            Workspace.CRS_TRANSFORM,
+            buildJsonObject {
+                put("from", Crs.LONGITUDE_LATITUDE)
+                put("to", own)
+                putJsonArray("xy") { for ((x, y) in degrees) { add(x); add(y) } }
+            },
+        )
+        val xy = ((moved as? Outcome.Done)?.output?.jsonObject?.get("xy") as? JsonArray)?.map { (it as? JsonPrimitive)?.doubleOrNull }
+        if (xy == null || xy.size != degrees.size * 2 || xy.any { it == null || !it.isFinite() }) {
+            failure = outsideText
+            return null
+        }
+        return shapeGeoJson(xy.chunked(2).map { it[0]!! to it[1]!! }, d.area)
+    }
+
+    fun addShape(d: Drawing, values: JsonObject) = once {
+        if (!startEditing(d.layer)) return@once
+        val geometry = shapeInLayer(d) ?: return@once
+        val added = graph.invoke(Editing.ADD, buildJsonObject { put("layer", d.layer); put("geometry", geometry); put("properties", values) })
+        reload()
+        if (added !is Outcome.Done) {
+            failure = texts.of(added)
+            return@once
+        }
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            snackbar.showSnackbar(addedText.format(d.layer))
         }
     }
 
@@ -718,7 +802,11 @@ fun MapScreen(
         }
     }
 
-    BackHandler(enabled = !placing) { requestLeave() }
+    BackHandler(enabled = !placing && drawing == null) { requestLeave() }
+    BackHandler(enabled = drawing != null) {
+        val d = drawing ?: return@BackHandler
+        drawing = if (d.vertices.isEmpty()) null else d.copy(vertices = d.vertices.dropLast(1))
+    }
     BackHandler(enabled = placing) { placing = false }
 
     // The map runs under the status bar, and imagery is mostly dark: light icons there,
@@ -740,7 +828,7 @@ fun MapScreen(
                 .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp)
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent))),
         )
-        if (placing) Crosshair(Modifier.align(Alignment.Center))
+        if (placing || drawing != null) Crosshair(Modifier.align(Alignment.Center))
 
         // The buttons keep clear of the system bars and the camera, in either orientation.
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -779,6 +867,13 @@ fun MapScreen(
                                 }
                             }
                         },
+                    )
+                } else if (drawing != null) {
+                    Spacer(Modifier.height(8.dp))
+                    DrawPanel(
+                        drawing = drawing ?: return@Column,
+                        onUndo = { drawing = drawing?.let { it.copy(vertices = it.vertices.dropLast(1)) } },
+                        onClose = { drawing = null },
                     )
                 } else if (measuring != null) {
                     Spacer(Modifier.height(8.dp))
@@ -831,6 +926,33 @@ fun MapScreen(
                         Text(stringResource(R.string.place_here))
                     }
                     Spacer(Modifier.size(56.dp)) // keeps the confirm button in the middle
+                } else if (drawing != null) {
+                    val d = drawing
+                    RoundButton(Icons.Rounded.Close, stringResource(R.string.cancel), onClick = { drawing = null }, size = 56.dp, solid = true)
+                    ExtendedFloatingActionButton(
+                        onClick = {
+                            scope.launch {
+                                val at = mapView.awaitMap().cameraPosition.target?.wrap() ?: return@launch
+                                drawing = drawing?.let { it.copy(vertices = it.vertices + at) }
+                            }
+                        },
+                        shape = CircleShape,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) {
+                        Icon(Icons.Rounded.Add, null)
+                        Spacer(Modifier.width(12.dp))
+                        Text(stringResource(R.string.draw_add_vertex))
+                    }
+                    RoundButton(
+                        Icons.Rounded.Check, stringResource(R.string.draw_finish),
+                        onClick = {
+                            shapeDraft = drawing
+                            drawing = null
+                        },
+                        size = 56.dp, solid = true, enabled = d?.complete == true,
+                        container = MaterialTheme.colorScheme.primaryContainer, content = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
                 } else {
                     RoundButton(
                         Icons.Rounded.Menu, stringResource(R.string.map_menu), onClick = { menu = true },
@@ -876,6 +998,19 @@ fun MapScreen(
             title = project,
             entries = listOf(
                 MenuTool(stringResource(R.string.map_layers), Icons.Rounded.Layers, onLayers),
+                MenuGroup(
+                    stringResource(R.string.menu_edit), Icons.Rounded.EditLocationAlt,
+                    listOf(
+                        MenuTool(stringResource(R.string.tool_add_feature), Icons.Rounded.AddCircleOutline) {
+                            if (drawables.isEmpty()) {
+                                rememberNew = false
+                                naming = true
+                            } else {
+                                picking = true
+                            }
+                        },
+                    ),
+                ),
                 MenuGroup(
                     stringResource(R.string.menu_map), Icons.Rounded.Map,
                     listOfNotNull(
@@ -952,11 +1087,11 @@ fun MapScreen(
     if (picking) {
         LayerPicker(
             title = stringResource(R.string.pick_layer_title),
-            layers = points.filter { it.visible },
+            layers = drawables.filter { it.visible },
             onPick = { layer, remember ->
                 picking = false
                 if (remember) projectId?.let { graph.settings.setPlacingLayer(it, layer.id) }
-                startPlacing(layer.name)
+                startAdding(layer)
             },
             onNew = { remember ->
                 picking = false
@@ -987,7 +1122,7 @@ fun MapScreen(
             existing = layers.mapNotNull { it.name() },
             suggested = like,
             onDismiss = { movingNew = null },
-            onCreate = { name, _ ->
+            onCreate = { name, _, _ ->
                 movingNew = null
                 moveToNewLayer(name, like, fid)
             },
@@ -1012,12 +1147,30 @@ fun MapScreen(
             existing = layers.mapNotNull { it.name() },
             suggested = suggestedLayer,
             onDismiss = { naming = false },
-            onCreate = { name, srs ->
+            onCreate = { name, srs, _ ->
                 naming = false
                 createLayer(name, srs)
             },
             graph = graph,
             near = mapCenter?.let { it.longitude to it.latitude },
+        )
+    }
+    shapeDraft?.let { d ->
+        FeatureForm(
+            title = stringResource(if (d.area) R.string.draw_new_area_in else R.string.draw_new_line_in, d.layer),
+            fields = formFields(collections[d.layer]),
+            properties = JsonObject(emptyMap()),
+            coordinates = null,
+            isNew = true,
+            onDismiss = {
+                shapeDraft = null
+                drawing = d
+            },
+            onSave = { values, _ ->
+                shapeDraft = null
+                addShape(d, values)
+            },
+            onDelete = null,
         )
     }
     draft?.let { d ->
@@ -1060,12 +1213,15 @@ fun MapScreen(
                     selected = null
                     delete(layer, fid)
                 },
-                onMove = {
+                onMove = if (coordinatesOf(feature) == null) null else ({
                     selected = null
                     moving = layer to fid
-                },
+                }),
                 crs = formCrs[layer],
                 locate = locate,
+                // A line or an area says so when deleted.
+                area = (feature["geometry"] as? JsonObject)?.let { g -> (g["type"] as? JsonPrimitive)?.contentOrNull }
+                    ?.takeUnless { it.endsWith("Point") }?.contains("Polygon"),
             )
         }
     }
@@ -1129,6 +1285,14 @@ private data class Move(val layer: String, val fid: Long, val to: String, val lo
 
 /** A point about to be added: its layer, where it goes and its first values. The form's save adds it. */
 private data class Draft(val layer: String, val longitude: Double, val latitude: Double, val values: JsonObject)
+
+// The map layers that draw the lines and areas of the features source.
+private const val FEATURE_LINE = "geocrew-points-line"
+private const val FEATURE_FILL = "geocrew-points-fill"
+
+// Features of geometry [type] (Point, LineString, Polygon), single or multi.
+private fun isType(type: String): Expression =
+    Expression.any(Expression.eq(Expression.geometryType(), Expression.literal(type)), Expression.eq(Expression.geometryType(), Expression.literal("Multi$type")))
 
 // The measuring tool's source on the map, and its colour.
 private const val MEASURE_SOURCE = "geocrew-measure"

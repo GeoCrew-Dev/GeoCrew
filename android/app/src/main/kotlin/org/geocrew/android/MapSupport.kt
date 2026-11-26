@@ -1,5 +1,7 @@
 package org.geocrew.android
 
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.JsonElement
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -96,15 +98,30 @@ internal fun formFields(collection: JsonObject?): List<FormField> = collection?.
     FormField((f["name"] as JsonPrimitive).content, (f["type"] as JsonPrimitive).content)
 }
 
-/** A point feature's longitude and latitude, or null when it has no point geometry. */
+/** A point feature's longitude and latitude, or null when it is not a point (a line, an area, no geometry). */
 internal fun coordinatesOf(feature: JsonObject): Pair<Double, Double>? {
-    val xy = (feature["geometry"] as? JsonObject)?.get("coordinates") as? JsonArray ?: return null
-    return if (xy.size < 2) null else xy[0].jsonPrimitive.double to xy[1].jsonPrimitive.double
+    val geometry = feature["geometry"] as? JsonObject ?: return null
+    if ((geometry["type"] as? JsonPrimitive)?.contentOrNull != "Point") return null
+    val xy = geometry["coordinates"] as? JsonArray ?: return null
+    val x = (xy.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return null
+    val y = (xy.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return null
+    return x to y
 }
 
-/** Moves the camera to show the features: one point close up, several all at once. */
+/** Every position of a feature's geometry (a point's one, a line's vertices, an area's rings), as longitude and latitude. */
+internal fun positionsOf(feature: JsonObject): List<LatLng> = buildList {
+    fun walk(e: JsonElement?) {
+        val array = e as? JsonArray ?: return
+        val x = (array.getOrNull(0) as? JsonPrimitive)?.doubleOrNull
+        val y = (array.getOrNull(1) as? JsonPrimitive)?.doubleOrNull
+        if (x != null && y != null) add(LatLng(y, x)) else array.forEach(::walk)
+    }
+    walk((feature["geometry"] as? JsonObject)?.get("coordinates"))
+}
+
+/** Moves the camera to show the features: one point close up, several (or a line, an area) all at once. */
 internal fun fit(map: MapLibreMap, features: JsonArray, density: Float) {
-    val points = features.mapNotNull { f -> (f as? JsonObject)?.let(::coordinatesOf)?.let { (x, y) -> LatLng(y, x) } }
+    val points = features.flatMap { f -> (f as? JsonObject)?.let(::positionsOf).orEmpty() }
     if (points.isEmpty()) return
     // Points that span no distance (all in one place) are shown like a single one:
     // a box of no size would zoom in past the basemap's last level.

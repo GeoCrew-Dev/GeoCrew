@@ -39,6 +39,15 @@
     <plurals name="points_count">
         <item quantity="other">%d 个点</item>
     </plurals>
+    <plurals name="lines_count">
+        <item quantity="other">%d 条线</item>
+    </plurals>
+    <plurals name="areas_count">
+        <item quantity="other">%d 个面</item>
+    </plurals>
+    <plurals name="vertices_count">
+        <item quantity="other">%d 个节点</item>
+    </plurals>
     <plurals name="fields_count">
         <item quantity="other">%d 个字段</item>
     </plurals>
@@ -109,6 +118,12 @@
     <string name="place_into">加到「%1$s」</string>
     <string name="place_change_layer">换</string>
     <string name="place_new_point_in">新点 · %1$s</string>
+    <string name="draw_new_line_in">新线 · %1$s</string>
+    <string name="draw_new_area_in">新面 · %1$s</string>
+    <string name="draw_add_vertex">加节点</string>
+    <string name="draw_finish">完成</string>
+    <string name="menu_edit">编辑</string>
+    <string name="tool_add_feature">添加要素</string>
     <string name="layer_crs">坐标系</string>
     <string name="crs_search_hint">搜索名称或代码</string>
     <string name="crs_geographic">地理</string>
@@ -194,6 +209,11 @@
     <string name="layer_name_reserved">不能用这个开头</string>
     <string name="layer_name_taken">已经有叫这个名字的图层了</string>
     <string name="layer_default_name">野外点</string>
+    <string name="layer_default_line">野外线</string>
+    <string name="layer_default_polygon">野外面</string>
+    <string name="layer_kind_point">点</string>
+    <string name="layer_kind_line">线</string>
+    <string name="layer_kind_polygon">面</string>
     <string name="layers_none">还没有图层</string>
     <string name="map_undo">撤销</string>
     <string name="map_redo">重做</string>
@@ -213,6 +233,10 @@
     <string name="feature_untitled">点 %1$d</string>
     <string name="feature_delete">删除这个点</string>
     <string name="feature_delete_title">删除这个点？</string>
+    <string name="line_delete">删除这条线</string>
+    <string name="line_delete_title">删除这条线？</string>
+    <string name="area_delete">删除这个面</string>
+    <string name="area_delete_title">删除这个面？</string>
     <string name="feature_delete_body">保存修改之前还能撤销。</string>
     <string name="coordinates">坐标（CGCS2000，度）</string>
     <string name="attributes">属性</string>

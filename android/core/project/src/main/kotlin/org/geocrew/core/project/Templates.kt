@@ -59,10 +59,34 @@ object Templates {
         ),
     )
 
+    /** Lines drawn in the field (boundaries, faults, routes), with a name and a description like points. */
+    val FIELD_LINE = LayerTemplate(
+        id = "field-line",
+        names = mapOf("zh" to "野外线", "en" to "Field lines"),
+        geometryType = "LINESTRING",
+        crs = "EPSG:4490",
+        fields = listOf(
+            TemplateField(NAME, FieldType.STRING, mapOf("zh" to "名称", "en" to "Name"), "the line's name"),
+            TemplateField(DESCRIPTION, FieldType.STRING, mapOf("zh" to "描述", "en" to "Description"), "what the line is"),
+        ),
+    )
+
+    /** Areas drawn in the field (outcrops, zones, plots), with a name and a description like points. */
+    val FIELD_POLYGON = LayerTemplate(
+        id = "field-polygon",
+        names = mapOf("zh" to "野外面", "en" to "Field areas"),
+        geometryType = "POLYGON",
+        crs = "EPSG:4490",
+        fields = listOf(
+            TemplateField(NAME, FieldType.STRING, mapOf("zh" to "名称", "en" to "Name"), "the area's name"),
+            TemplateField(DESCRIPTION, FieldType.STRING, mapOf("zh" to "描述", "en" to "Description"), "what the area is"),
+        ),
+    )
+
     const val NAME = "name"
     const val DESCRIPTION = "description"
 
-    val all: List<LayerTemplate> = listOf(FIELD_POINT)
+    val all: List<LayerTemplate> = listOf(FIELD_POINT, FIELD_LINE, FIELD_POLYGON)
 
     fun byId(id: String?): LayerTemplate? = all.firstOrNull { it.id == id }
 }

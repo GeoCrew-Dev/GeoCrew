@@ -74,7 +74,7 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
         projectId = (about["id"] as? JsonPrimitive)?.contentOrNull
         layers = listedLayers(about)
         // A remembered layer that has gone is forgotten: placing asks again.
-        placing = projectId?.let(graph.settings::placingLayer)?.takeIf { id -> layers.any { it.id == id && it.point } }
+        placing = projectId?.let(graph.settings::placingLayer)?.takeIf { id -> layers.any { it.id == id } }
     }
 
     Scaffold(
@@ -125,7 +125,7 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
 
     if (choosingPlacing) {
         // Ask each time, or one of the point layers, as "remember" on the map chose.
-        val choices = listOf<LayerInfo?>(null) + layers.filter { it.point }
+        val choices = listOf<LayerInfo?>(null) + layers
         AlertDialog(
             onDismissRequest = { choosingPlacing = false },
             title = { Text(stringResource(R.string.placing_layer)) },

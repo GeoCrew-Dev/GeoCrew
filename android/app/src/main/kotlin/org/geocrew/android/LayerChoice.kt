@@ -1,5 +1,8 @@
 package org.geocrew.android
 
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -48,14 +51,21 @@ import kotlinx.serialization.json.contentOrNull
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.storage.Crs
 
-/** A layer of the open project as the map knows it: its name, id, colour on the map, how many points it has and whether it shows. */
-data class MapLayer(val name: String, val id: String, val color: Color, val count: Int, val visible: Boolean = true)
+/** A layer of the open project as the map knows it: its name, id, colour on the map, how many features it has, whether it shows, and its geometry type. */
+data class MapLayer(val name: String, val id: String, val color: Color, val count: Int, val visible: Boolean = true, val geometry: String? = "POINT")
 
 /** The project's point layers, from the layers project.current lists, each in its colour. */
 fun pointLayers(layers: List<JsonObject>, counts: (String) -> Int): List<MapLayer> = layers.mapNotNull { l ->
     val name = l.text("name") ?: return@mapNotNull null
     if (l.text("geometry") != "POINT") return@mapNotNull null
     MapLayer(name, l.text("id").orEmpty(), layerColor(madeIndex(l)), counts(name), l.text("visible") != "false")
+}
+
+/** The project's layers of any geometry type (points, lines, areas), for adding a feature to one. */
+fun drawLayers(layers: List<JsonObject>, counts: (String) -> Int): List<MapLayer> = layers.mapNotNull { l ->
+    val name = l.text("name") ?: return@mapNotNull null
+    val geometry = l.text("geometry") ?: return@mapNotNull null
+    MapLayer(name, l.text("id").orEmpty(), layerColor(madeIndex(l)), counts(name), l.text("visible") != "false", geometry)
 }
 
 /** When a layer listed by project.current was made among the layers: its colour stays when the list is reordered. */
@@ -101,7 +111,7 @@ fun LayerPicker(
             for (layer in layers) {
                 ListItem(
                     headlineContent = { Text(layer.name) },
-                    supportingContent = { Text(pluralStringResource(R.plurals.points_count, layer.count, layer.count)) },
+                    supportingContent = { Text(pluralStringResource(countOf(layer.geometry), layer.count, layer.count)) },
                     leadingContent = { LayerDot(layer.color) },
                     colors = clear,
                     modifier = Modifier.fillMaxWidth().clickable { onPick(layer, remember) },
@@ -143,17 +153,26 @@ fun LayerDot(color: Color) {
  * for the zones that apply there). Without [graph] the layer gets the
  * template's CRS.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewLayerDialog(
     existing: List<String>,
     suggested: String,
     onDismiss: () -> Unit,
-    onCreate: (name: String, srs: String?) -> Unit,
+    onCreate: (name: String, srs: String?, template: String?) -> Unit,
     graph: AppGraph? = null,
     near: Pair<Double, Double>? = null,
+    kinds: Boolean = false,
 ) {
-    val start = remember(existing, suggested) { generateSequence(1) { it + 1 }.map { if (it == 1) suggested else "$suggested $it" }.first { n -> existing.none { it.equals(n, ignoreCase = true) } } }
-    var name by remember { mutableStateOf(start) }
+    // The first name not taken: 野外点, 野外点 2, ...
+    fun free(base: String) = generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base $it" }.first { n -> existing.none { it.equals(n, ignoreCase = true) } }
+    val suggestions = mapOf(
+        LayerKind.POINT to suggested,
+        LayerKind.LINE to stringResource(R.string.layer_default_line),
+        LayerKind.POLYGON to stringResource(R.string.layer_default_polygon),
+    )
+    var kind by remember { mutableStateOf(LayerKind.POINT) }
+    var name by remember { mutableStateOf(free(suggested)) }
     var srs by remember { mutableStateOf(Crs.LONGITUDE_LATITUDE) }
     val trimmed = name.trim()
     val taken = existing.any { it.equals(trimmed, ignoreCase = true) }
@@ -179,12 +198,38 @@ fun NewLayerDialog(
                         }
                     },
                 )
+                if (kinds) {
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                        LayerKind.entries.forEachIndexed { i, k ->
+                            SegmentedButton(
+                                selected = kind == k,
+                                onClick = {
+                                    // A suggested name follows the kind; one the user typed stays.
+                                    if (name == free(suggestions.getValue(kind))) name = free(suggestions.getValue(k))
+                                    kind = k
+                                },
+                                shape = SegmentedButtonDefaults.itemShape(i, LayerKind.entries.size),
+                            ) { Text(stringResource(k.label)) }
+                        }
+                    }
+                }
                 if (graph != null) CrsField(graph, srs, onPick = { srs = it }, near = near)
             }
         },
-        confirmButton = { TextButton(onClick = { onCreate(trimmed, if (graph == null) null else srs) }, enabled = valid) { Text(stringResource(R.string.project_create)) } },
+        confirmButton = {
+            TextButton(onClick = { onCreate(trimmed, if (graph == null) null else srs, if (kinds) kind.template else null) }, enabled = valid) {
+                Text(stringResource(R.string.project_create))
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
+}
+
+/** What a new layer holds, and the template it is made from. */
+private enum class LayerKind(val template: String, val label: Int) {
+    POINT("field-point", R.string.layer_kind_point),
+    LINE("field-line", R.string.layer_kind_line),
+    POLYGON("field-polygon", R.string.layer_kind_polygon),
 }
 
 /**

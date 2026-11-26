@@ -41,6 +41,18 @@
         <item quantity="one">%d point</item>
         <item quantity="other">%d points</item>
     </plurals>
+    <plurals name="lines_count">
+        <item quantity="one">%d line</item>
+        <item quantity="other">%d lines</item>
+    </plurals>
+    <plurals name="areas_count">
+        <item quantity="one">%d area</item>
+        <item quantity="other">%d areas</item>
+    </plurals>
+    <plurals name="vertices_count">
+        <item quantity="one">%d vertex</item>
+        <item quantity="other">%d vertices</item>
+    </plurals>
     <plurals name="fields_count">
         <item quantity="one">%d field</item>
         <item quantity="other">%d fields</item>
@@ -116,6 +128,12 @@
     <string name="place_into">Into “%1$s”</string>
     <string name="place_change_layer">Change</string>
     <string name="place_new_point_in">New point · %1$s</string>
+    <string name="draw_new_line_in">New line · %1$s</string>
+    <string name="draw_new_area_in">New area · %1$s</string>
+    <string name="draw_add_vertex">Add vertex</string>
+    <string name="draw_finish">Finish</string>
+    <string name="menu_edit">Edit</string>
+    <string name="tool_add_feature">Add feature</string>
     <string name="layer_crs">Coordinate system</string>
     <string name="crs_search_hint">Search name or code</string>
     <string name="crs_geographic">Geographic</string>
@@ -202,6 +220,11 @@
     <string name="layer_name_reserved">Names can\'t start like this</string>
     <string name="layer_name_taken">The project already has a layer with this name</string>
     <string name="layer_default_name">Field points</string>
+    <string name="layer_default_line">Field lines</string>
+    <string name="layer_default_polygon">Field areas</string>
+    <string name="layer_kind_point">Point</string>
+    <string name="layer_kind_line">Line</string>
+    <string name="layer_kind_polygon">Area</string>
     <string name="layers_none">No layers</string>
     <string name="map_undo">Undo</string>
     <string name="map_redo">Redo</string>
@@ -221,6 +244,10 @@
     <string name="feature_untitled">Point %1$d</string>
     <string name="feature_delete">Delete point</string>
     <string name="feature_delete_title">Delete this point?</string>
+    <string name="line_delete">Delete line</string>
+    <string name="line_delete_title">Delete this line?</string>
+    <string name="area_delete">Delete area</string>
+    <string name="area_delete_title">Delete this area?</string>
     <string name="feature_delete_body">You can undo it until the edits are saved.</string>
     <string name="coordinates">Coordinates (CGCS2000, degrees)</string>
     <string name="attributes">Attributes</string>
