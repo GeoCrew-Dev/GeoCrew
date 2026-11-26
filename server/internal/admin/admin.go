@@ -550,6 +550,10 @@ func copyDatabase(ctx context.Context, st store.Store, opt Options, target strin
 	fmt.Fprintf(out, "已复制到 %s：工作组 %d，成员 %d，记录 %d（历史版本 %d），讨论 %d，附件登记 %d。\n",
 		dst.Dialect(), counts["workspaces"], counts["members"], counts["features"], counts["feature_history"],
 		counts["comments"], counts["files"])
+	if counts["v1_workspaces"] > 0 {
+		fmt.Fprintf(out, "协议 v1 的数据也已复制：工作组 %d，成员 %d，设备 %d。\n",
+			counts["v1_workspaces"], counts["v1_members"], counts["v1_devices"])
+	}
 	if dst.Dialect() == "sqlite" {
 		fmt.Fprintln(out, "把这个文件改名为 geocrew.db 放进数据目录，去掉 -database 启动即可；附件仍在数据目录的 files/ 下。")
 	} else {

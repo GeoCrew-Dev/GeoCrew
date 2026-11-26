@@ -59,7 +59,11 @@ func (v *V1) CreateWorkspace(ctx context.Context, name, nickname, device string)
 	}
 	defer tx.Rollback()
 	at := v.clock()
-	ws := v1.Workspace{ID: randHex(8), Name: name, InviteCode: newInviteCode(), Leader: randHex(8), CreatedAt: at}
+	code, err := freeInviteCode(ctx, tx)
+	if err != nil {
+		return v1.Joined{}, err
+	}
+	ws := v1.Workspace{ID: randHex(8), Name: name, InviteCode: code, Leader: randHex(8), CreatedAt: at}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO v1_workspaces (id, name, invite_code, leader, created_at) VALUES (?,?,?,?,?)`,
 		ws.ID, ws.Name, ws.InviteCode, ws.Leader, fmtV1Time(at)); err != nil {
 		return v1.Joined{}, err
@@ -101,6 +105,18 @@ func (v *V1) Join(ctx context.Context, inviteCode, nickname, device string) (v1.
 		return v1.Joined{}, err
 	}
 	return j, tx.Commit()
+}
+
+// freeInviteCode draws invite codes until one is not taken: with 32^8 codes a
+// clash is rare, but it should not fail the request when it happens.
+func freeInviteCode(ctx context.Context, tx *Tx) (string, error) {
+	for {
+		code := newInviteCode()
+		var n int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM v1_workspaces WHERE invite_code = ?`, code).Scan(&n); err != nil || n == 0 {
+			return code, err
+		}
+	}
 }
 
 func cleanJoiner(nickname, device string) (string, string, error) {
