@@ -398,21 +398,21 @@ fun MapScreen(
             style.addLayer(
                 FillLayer(FEATURE_FILL, POINT_SOURCE).withProperties(
                     PropertyFactory.fillColor(Expression.get(COLOR)),
-                    PropertyFactory.fillOpacity(Expression.product(Expression.get(OPACITY), Expression.literal(0.25f))),
+                    PropertyFactory.fillOpacity(Expression.product(Expression.get(OPACITY), Expression.get(FILL))),
                 ).withFilter(isType("Polygon")),
             )
             style.addLayer(
                 LineLayer(FEATURE_LINE, POINT_SOURCE).withProperties(
                     PropertyFactory.lineColor(Expression.get(COLOR)),
                     PropertyFactory.lineOpacity(Expression.get(OPACITY)),
-                    PropertyFactory.lineWidth(3f),
+                    PropertyFactory.lineWidth(Expression.get(WIDTH)),
                     PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
                     PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 ).withFilter(Expression.any(isType("LineString"), isType("Polygon"))),
             )
             style.addLayer(
                 CircleLayer(POINT_SOURCE, POINT_SOURCE).withProperties(
-                    PropertyFactory.circleRadius(6f),
+                    PropertyFactory.circleRadius(Expression.get(SIZE)),
                     PropertyFactory.circleColor(Expression.get(COLOR)),
                     PropertyFactory.circleOpacity(Expression.get(OPACITY)),
                     PropertyFactory.circleStrokeOpacity(Expression.get(OPACITY)),
@@ -527,7 +527,8 @@ fun MapScreen(
                 val own = collection["features"] as? JsonArray ?: return@flatMap emptyList()
                 val point = (l["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT"
                 val labelled = nameField(collection)?.takeIf { point }?.let { MapLabels.label(own, it, style, density) } ?: own
-                labelled.map { tagged(it.jsonObject, index, layerColorHex(madeIndex(l)), opacity) }
+                val style = styleOf(l, layerColor(madeIndex(l)))
+                labelled.map { tagged(it.jsonObject, index, style, opacity) }
             },
         )
         val geoJson = buildJsonObject {
@@ -1352,15 +1353,21 @@ private const val MEASURE_COLOR = "#ff6d00"
 private const val COLOR = "_color"
 
 // A feature for the shared source: an id that names its layer, and its layer's colour.
-private fun tagged(feature: JsonObject, layer: Int, color: String, opacity: Double): JsonObject {
+private fun tagged(feature: JsonObject, layer: Int, style: LayerStyle, opacity: Double): JsonObject {
     val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
     val fid = (feature["id"] as? JsonPrimitive)?.contentOrNull
-    val shown = properties + (COLOR to JsonPrimitive(color)) + (OPACITY to JsonPrimitive(opacity))
+    val shown = properties + (COLOR to JsonPrimitive(style.hex)) + (OPACITY to JsonPrimitive(opacity)) +
+        (SIZE to JsonPrimitive(style.size)) + (WIDTH to JsonPrimitive(style.width)) + (FILL to JsonPrimitive(style.fill))
     return JsonObject(feature + ("id" to JsonPrimitive("$layer/$fid")) + ("properties" to JsonObject(shown)))
 }
 
 // The point's layer's opacity.
 private const val OPACITY = "_opacity"
+
+// The layer's style: a point's radius, a line's width, an area's fill opacity.
+private const val SIZE = "_size"
+private const val WIDTH = "_width"
+private const val FILL = "_fill"
 
 /** The project's name, and whether it has edits to save; fixed and opaque. */
 @Composable

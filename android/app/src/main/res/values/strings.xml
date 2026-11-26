@@ -131,6 +131,12 @@
     <string name="draw_new_line_in">New line · %1$s</string>
     <string name="draw_new_area_in">New area · %1$s</string>
     <string name="draw_add_vertex">Add vertex</string>
+    <string name="style">Style</string>
+    <string name="style_title">Style of %1$s</string>
+    <string name="style_size">Point size</string>
+    <string name="style_width">Line width</string>
+    <string name="style_fill">Fill</string>
+    <string name="style_reset">Default</string>
     <string name="draw_reshape">Edit shape</string>
     <string name="draw_drop_title">Discard the shape being drawn?</string>
     <string name="draw_drop">Discard</string>

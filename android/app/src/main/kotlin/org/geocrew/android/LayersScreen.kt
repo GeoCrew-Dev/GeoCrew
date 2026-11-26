@@ -1,5 +1,6 @@
 package org.geocrew.android
 
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
@@ -95,6 +96,8 @@ data class LayerInfo(
     val visible: Boolean = true,
     val opacity: Float = 1f,
     val geometry: String? = null,
+    val style: LayerStyle = LayerStyle(color),
+    val styled: Boolean = false,
 )
 
 /** The layers project.current lists, in order, each in its colour on the map. */
@@ -106,8 +109,10 @@ fun listedLayers(about: JsonObject): List<LayerInfo> = about["layers"]?.jsonArra
         (listed["srs"] as? JsonPrimitive)?.contentOrNull,
         (listed["id"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
         (listed["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT",
-        layerColor(madeIndex(listed)),
+        styleOf(listed, layerColor(madeIndex(listed))).color,
         geometry = (listed["geometry"] as? JsonPrimitive)?.contentOrNull,
+        style = styleOf(listed, layerColor(madeIndex(listed))),
+        styled = listed["style"] != null,
         visible = (listed["visible"] as? JsonPrimitive)?.contentOrNull != "false",
         opacity = (listed["opacity"] as? JsonPrimitive)?.contentOrNull?.toFloatOrNull() ?: 1f,
     )
@@ -147,6 +152,7 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
     val open = remember { mutableStateMapOf<String, Boolean>() }
     var naming by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<LayerInfo?>(null) }
+    var styling by remember { mutableStateOf<LayerInfo?>(null) }
     var deleting by remember { mutableStateOf<LayerInfo?>(null) }
     var adding by remember { mutableStateOf<LayerInfo?>(null) }
     var saveFirst by remember { mutableStateOf<NewField?>(null) }
@@ -310,6 +316,11 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
                                 )
                             }
                             FlowRow {
+                                TextButton(onClick = { styling = layer }) {
+                                    Icon(Icons.Rounded.Palette, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.style))
+                                }
                                 TextButton(onClick = { onTable(layer.name) }) {
                                     Icon(Icons.Rounded.TableChart, null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(4.dp))
@@ -386,6 +397,22 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
             graph = graph,
             // The zones that apply follow where the map was last.
             near = graph.cameras[project]?.target?.let { it.longitude to it.latitude },
+        )
+    }
+    styling?.let { layer ->
+        StyleDialog(
+            layer = layer.name,
+            geometry = layer.geometry,
+            style = layer.style,
+            onDismiss = { styling = null },
+            onSave = { style ->
+                styling = null
+                display(Workspace.LAYER_STYLE, buildJsonObject { put("layer", layer.name); put("style", style.json()) })
+            },
+            onReset = {
+                styling = null
+                display(Workspace.LAYER_STYLE, buildJsonObject { put("layer", layer.name); put("style", JsonObject(emptyMap())) })
+            },
         )
     }
     renaming?.let { layer ->
