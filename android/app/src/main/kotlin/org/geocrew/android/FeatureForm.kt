@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.util.Locale
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -75,6 +77,7 @@ fun FeatureForm(
     val texts = remember(properties) { mutableStateMapOf<String, String>().apply { putAll(original) } }
     val problems = fields.associate { it.name to problem(it.type, texts[it.name].orEmpty()) }
     val canSave = problems.values.all { it == null }
+    val locale = LocalConfiguration.current.locales[0]
     var confirmDelete by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -103,7 +106,7 @@ fun FeatureForm(
                 for (field in fields) {
                     val problem = problems[field.name]
                     OutlinedTextField(
-                        value = if (editable(field.type)) texts[field.name].orEmpty() else shown(field.type, texts[field.name].orEmpty()),
+                        value = if (editable(field.type)) texts[field.name].orEmpty() else shown(field.type, texts[field.name].orEmpty(), locale),
                         onValueChange = { texts[field.name] = it },
                         label = { Text(field.name) },
                         singleLine = field.type != "string",
@@ -147,11 +150,11 @@ fun FeatureForm(
 
 private fun editable(type: String) = type in setOf("string", "real", "integer", "integer64")
 
-// A date and time stored as UTC, shown in the phone's time zone and format.
-private fun shown(type: String, text: String): String {
+// A date and time stored as UTC, shown in the phone's time zone and the app's language.
+private fun shown(type: String, text: String, locale: Locale): String {
     if (type != "datetime" || text.isBlank()) return text
     return runCatching {
-        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withZone(ZoneId.systemDefault()).format(Instant.parse(text))
+        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(locale).withZone(ZoneId.systemDefault()).format(Instant.parse(text))
     }.getOrDefault(text)
 }
 

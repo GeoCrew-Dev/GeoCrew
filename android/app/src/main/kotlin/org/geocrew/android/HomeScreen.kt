@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -213,7 +214,7 @@ private fun ProjectCard(project: ProjectEntry, onClick: () -> Unit) {
                 // When it was made and last changed.
                 val ago = DateUtils.getRelativeTimeSpanString(project.modified, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
                 val dates = listOfNotNull(
-                    project.created?.let { stringResource(R.string.project_created, CREATED.format(it)) },
+                    project.created?.let { stringResource(R.string.project_created, CREATED.withLocale(LocalConfiguration.current.locales[0]).format(it)) },
                     stringResource(R.string.project_modified, ago),
                 )
                 Text(dates.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -223,7 +224,7 @@ private fun ProjectCard(project: ProjectEntry, onClick: () -> Unit) {
     }
 }
 
-// A date in the phone's language and time zone, such as 2026年11月26日 or 26 Nov 2026.
+// A date in the app's language and the phone's time zone, such as 2026年11月26日 or 26 Nov 2026.
 private val CREATED = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withZone(ZoneId.systemDefault())
 
 @Composable

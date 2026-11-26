@@ -35,9 +35,15 @@ class Projects(private val root: File, private val journals: File) {
     fun list(): List<String> =
         dir.listFiles().orEmpty().filter { it.isDirectory && gpkg(it.name).isFile }.map { it.name }.sorted()
 
-    /** When project [name] last changed, in milliseconds since 1970: its file or the log written ahead of it. */
-    fun modified(name: String): Long =
-        maxOf(gpkg(name).lastModified(), File(gpkg(name).path + "-wal").lastModified())
+    /**
+     * When project [name] last changed, in milliseconds since 1970. Its log
+     * written ahead counts only while it holds changes: opening and closing a
+     * project touches the log without changing anything.
+     */
+    fun modified(name: String): Long {
+        val wal = File(gpkg(name).path + "-wal")
+        return maxOf(gpkg(name).lastModified(), if (wal.length() > 0) wal.lastModified() else 0L)
+    }
 
     /** What the project list shows of a project; null when its file cannot be read. */
     data class Summary(val layers: Int, val features: Long, val bytes: Long, val created: String?)
