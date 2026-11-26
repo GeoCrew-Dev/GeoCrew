@@ -51,6 +51,7 @@ import kotlin.math.roundToLong
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -74,8 +75,11 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.module.http.HttpRequestUtil
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 
 /**
@@ -155,17 +159,26 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
                     PropertyFactory.circleStrokeWidth(2f),
                 ),
             )
+            // Point numbers to the right of the points; MapLibre keeps them from piling up.
+            style.addLayer(
+                SymbolLayer(LABELS, SOURCE).withProperties(
+                    PropertyFactory.iconImage(Expression.get(MapLabels.PROPERTY)),
+                    PropertyFactory.iconAnchor(Property.ICON_ANCHOR_LEFT),
+                    PropertyFactory.iconOffset(arrayOf(8f, 0f)),
+                ).withFilter(Expression.has(MapLabels.PROPERTY)),
+            )
             styleLoads++
         }
     }
 
     LaunchedEffect(styleLoads, collection) {
-        val features = collection?.get("features") ?: return@LaunchedEffect
+        val features = collection?.get("features") as? JsonArray ?: return@LaunchedEffect
+        val style = mapView.awaitMap().style ?: return@LaunchedEffect
         val geoJson = buildJsonObject {
             put("type", "FeatureCollection")
-            put("features", features)
+            put("features", MapLabels.label(features, NUMBER, style, density))
         }
-        mapView.awaitMap().style?.getSourceAs<GeoJsonSource>(SOURCE)?.setGeoJson(geoJson.toString())
+        style.getSourceAs<GeoJsonSource>(SOURCE)?.setGeoJson(geoJson.toString())
     }
 
     fun addPoint() = once {
@@ -390,5 +403,6 @@ private fun scopeParams(scope: String) = buildJsonObject { put("scope", scope) }
 private fun round7(degrees: Double): Double = (degrees * 1e7).roundToLong() / 1e7
 
 private const val SOURCE = "layer"
+private const val LABELS = "labels"
 private const val NUMBER = "点号"
 private const val TIME = "记录时间"
