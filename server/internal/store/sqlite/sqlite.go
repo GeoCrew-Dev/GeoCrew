@@ -211,4 +211,26 @@ var migrations = []string{
 		PRIMARY KEY (workspace_id, member_id, role_id),
 		FOREIGN KEY (workspace_id, role_id) REFERENCES v1_roles(workspace_id, id)
 	);`,
+	// Protocol v1: transfer codes for a member's new phone, and the audit log.
+	`ALTER TABLE v1_workspaces ADD COLUMN audit_seq INTEGER NOT NULL DEFAULT 0;
+	CREATE TABLE v1_transfer_codes (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		code_hash    TEXT PRIMARY KEY,
+		member_id    TEXT NOT NULL REFERENCES v1_members(id),
+		created_by   TEXT NOT NULL,
+		created_at   TEXT NOT NULL,
+		expires_at   TEXT NOT NULL,
+		used_at      TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX v1_transfer_codes_member ON v1_transfer_codes(member_id);
+	CREATE TABLE v1_audit (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		id           INTEGER NOT NULL,
+		at           TEXT NOT NULL,
+		by_member    TEXT NOT NULL,
+		action       TEXT NOT NULL,
+		target       TEXT NOT NULL,
+		detail       TEXT NOT NULL,
+		PRIMARY KEY (workspace_id, id)
+	);`,
 }

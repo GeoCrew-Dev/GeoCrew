@@ -206,12 +206,23 @@ func (v *V1) Members(ctx context.Context, workspaceID string) ([]v1.Member, erro
 	if _, err := v.Workspace(ctx, workspaceID); err != nil {
 		return nil, err
 	}
-	roles, err := v.memberRoles(ctx, workspaceID)
+	return v.members(ctx, v.d.db, workspaceID, "")
+}
+
+// querier runs queries on the store or inside a transaction.
+type querier interface {
+	QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row
+}
+
+// members lists the current members, or only id when it is not "".
+func (v *V1) members(ctx context.Context, q querier, workspaceID, id string) ([]v1.Member, error) {
+	roles, err := v.memberRoles(ctx, q, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := v.d.db.QueryContext(ctx, `SELECT id, nickname, joined_at, access_version FROM v1_members
-		WHERE workspace_id = ? AND removed_at = '' ORDER BY joined_at, id`, workspaceID)
+	rows, err := q.QueryContext(ctx, `SELECT id, nickname, joined_at, access_version FROM v1_members
+		WHERE workspace_id = ? AND removed_at = '' AND (? = '' OR id = ?) ORDER BY joined_at, id`, workspaceID, id, id)
 	if err != nil {
 		return nil, err
 	}
@@ -230,9 +241,21 @@ func (v *V1) Members(ctx context.Context, workspaceID string) ([]v1.Member, erro
 	return out, rows.Err()
 }
 
+// member returns one current member, or store.ErrNotFound.
+func (v *V1) member(ctx context.Context, q querier, workspaceID, id string) (v1.Member, error) {
+	ms, err := v.members(ctx, q, workspaceID, id)
+	if err == nil && len(ms) == 0 {
+		err = store.ErrNotFound
+	}
+	if err != nil {
+		return v1.Member{}, err
+	}
+	return ms[0], nil
+}
+
 // memberRoles maps each member of the workspace to their roles besides the base role, sorted.
-func (v *V1) memberRoles(ctx context.Context, workspaceID string) (map[string][]string, error) {
-	rows, err := v.d.db.QueryContext(ctx, `SELECT member_id, role_id FROM v1_member_roles WHERE workspace_id = ? ORDER BY member_id, role_id`, workspaceID)
+func (v *V1) memberRoles(ctx context.Context, q querier, workspaceID string) (map[string][]string, error) {
+	rows, err := q.QueryContext(ctx, `SELECT member_id, role_id FROM v1_member_roles WHERE workspace_id = ? ORDER BY member_id, role_id`, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +276,12 @@ func (v *V1) Access(ctx context.Context, workspaceID string) (perm.Workspace, er
 	if err != nil {
 		return perm.Workspace{}, err
 	}
-	members, err := v.Members(ctx, workspaceID)
+	return v.access(ctx, v.d.db, ws)
+}
+
+func (v *V1) access(ctx context.Context, q querier, ws v1.Workspace) (perm.Workspace, error) {
+	workspaceID := ws.ID
+	members, err := v.members(ctx, q, workspaceID, "")
 	if err != nil {
 		return perm.Workspace{}, err
 	}
@@ -261,7 +289,7 @@ func (v *V1) Access(ctx context.Context, workspaceID string) (perm.Workspace, er
 	for _, m := range members {
 		out.Members[m.ID] = m.Roles
 	}
-	rows, err := v.d.db.QueryContext(ctx, `SELECT id, position, permissions FROM v1_roles WHERE workspace_id = ?`, workspaceID)
+	rows, err := q.QueryContext(ctx, `SELECT id, position, permissions FROM v1_roles WHERE workspace_id = ?`, workspaceID)
 	if err != nil {
 		return perm.Workspace{}, err
 	}

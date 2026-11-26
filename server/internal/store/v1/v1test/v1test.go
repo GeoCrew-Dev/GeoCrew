@@ -28,22 +28,74 @@ func Run(t *testing.T, open Opener) {
 		{"CreateAndJoin", createAndJoin},
 		{"Authenticate", authenticate},
 		{"Access", access},
+		{"UpdateWorkspace", updateWorkspace},
+		{"RemoveAndLeave", removeAndLeave},
+		{"TransferLeader", transferLeader},
+		{"Devices", devices},
+		{"TransferCode", transferCode},
+		{"AuditLog", auditLog},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
 }
 
-// clock starts at a fixed time and moves on a second at every reading, so
-// each event gets its own time.
-func clock() func() time.Time {
-	var mu sync.Mutex
-	at := time.Date(2026, 11, 26, 8, 0, 0, 0, time.UTC)
-	return func() time.Time {
-		mu.Lock()
-		defer mu.Unlock()
-		at = at.Add(time.Second)
-		return at
+// testClock starts at a fixed time and moves on a second at every reading,
+// so each event gets its own time; Advance jumps ahead.
+type testClock struct {
+	mu sync.Mutex
+	at time.Time
+}
+
+func newClock() *testClock { return &testClock{at: time.Date(2026, 11, 26, 8, 0, 0, 0, time.UTC)} }
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(time.Second)
+	return c.at
+}
+
+func (c *testClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
+}
+
+func clock() func() time.Time { return newClock().Now }
+
+// team is a workspace with a leader and two members, each on one device.
+type team struct {
+	s          v1.Store
+	ws         string
+	lead, a, b v1.Joined
+}
+
+func newTeam(t *testing.T, s v1.Store) team {
+	t.Helper()
+	ctx := context.Background()
+	lead, err := s.CreateWorkspace(ctx, "队", "lead", "lead phone")
+	if err != nil {
+		t.Fatal(err)
 	}
+	a, err := s.Join(ctx, lead.Workspace.InviteCode, "a", "a phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.Join(ctx, lead.Workspace.InviteCode, "b", "b phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return team{s: s, ws: lead.Workspace.ID, lead: lead, a: a, b: b}
+}
+
+// works reports whether a token still signs in.
+func (tm team) works(t *testing.T, token string) bool {
+	t.Helper()
+	_, _, err := tm.s.Authenticate(context.Background(), tm.ws, token)
+	if err != nil && !errors.Is(err, store.ErrUnauthorized) {
+		t.Fatal(err)
+	}
+	return err == nil
 }
 
 func createAndJoin(t *testing.T, open Opener) {
@@ -164,5 +216,282 @@ func access(t *testing.T, open Opener) {
 	}
 	if _, err := s.Access(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("access to an unknown workspace: %v", err)
+	}
+}
+
+func updateWorkspace(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a := tm.s, tm.lead.Member.ID, tm.a.Member.ID
+	name, yes, no := "新名字", true, false
+	if _, err := s.UpdateWorkspace(ctx, tm.ws, a, v1.WorkspaceUpdate{Name: &name}); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member renames: %v", err)
+	}
+	empty := " "
+	if _, err := s.UpdateWorkspace(ctx, tm.ws, l, v1.WorkspaceUpdate{Name: &empty}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("empty name: %v", err)
+	}
+	ws, err := s.UpdateWorkspace(ctx, tm.ws, l, v1.WorkspaceUpdate{Name: &name, Archived: &yes})
+	if err != nil || ws.Name != name || ws.ArchivedAt == nil {
+		t.Fatalf("rename and archive: %v %+v", err, ws)
+	}
+	again, err := s.UpdateWorkspace(ctx, tm.ws, l, v1.WorkspaceUpdate{Archived: &yes})
+	if err != nil || !again.ArchivedAt.Equal(*ws.ArchivedAt) {
+		t.Fatalf("archiving again keeps the time: %v %+v", err, again)
+	}
+	if _, err := s.Join(ctx, ws.InviteCode, "c", "p"); !errors.Is(err, store.ErrArchived) {
+		t.Fatalf("join an archived workspace: %v", err)
+	}
+	if got, _ := s.Workspace(ctx, tm.ws); got.Name != name || got.ArchivedAt == nil || !got.ArchivedAt.Equal(*ws.ArchivedAt) {
+		t.Fatalf("stored %+v", got)
+	}
+	if ws, err := s.UpdateWorkspace(ctx, tm.ws, l, v1.WorkspaceUpdate{Archived: &no}); err != nil || ws.ArchivedAt != nil {
+		t.Fatalf("reopen: %v %+v", err, ws)
+	}
+
+	if _, err := s.ResetInvite(ctx, tm.ws, a); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member resets the code: %v", err)
+	}
+	code, err := s.ResetInvite(ctx, tm.ws, l)
+	if err != nil || code == ws.InviteCode || len(code) != 8 {
+		t.Fatalf("reset: %v %q", err, code)
+	}
+	if _, err := s.Join(ctx, ws.InviteCode, "c", "p"); !errors.Is(err, store.ErrBadInvite) {
+		t.Fatalf("old code: %v", err)
+	}
+	if _, err := s.Join(ctx, code, "c", "p"); err != nil {
+		t.Fatalf("new code: %v", err)
+	}
+	if _, err := s.UpdateWorkspace(ctx, "nope", l, v1.WorkspaceUpdate{Name: &name}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown workspace: %v", err)
+	}
+
+	m, err := s.SetNickname(ctx, tm.ws, a, " 阿甲 ")
+	if err != nil || m.Nickname != "阿甲" || m.ID != a {
+		t.Fatalf("nickname: %v %+v", err, m)
+	}
+	if _, err := s.SetNickname(ctx, tm.ws, a, ""); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("empty nickname: %v", err)
+	}
+}
+
+func removeAndLeave(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	if err := s.RemoveMember(ctx, tm.ws, a, b); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member removes another: %v", err)
+	}
+	if err := s.RemoveMember(ctx, tm.ws, a, l); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member removes the leader: %v", err)
+	}
+	if err := s.RemoveMember(ctx, tm.ws, l, l); !errors.Is(err, v1.ErrLeaderMustTransfer) {
+		t.Fatalf("the leader leaves: %v", err)
+	}
+	if err := s.RemoveMember(ctx, tm.ws, l, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("remove nobody: %v", err)
+	}
+	if err := s.RemoveMember(ctx, tm.ws, l, a); err != nil {
+		t.Fatal(err)
+	}
+	if tm.works(t, tm.a.Token) {
+		t.Fatal("a removed member's token still works")
+	}
+	if err := s.RemoveMember(ctx, tm.ws, l, a); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("remove twice: %v", err)
+	}
+	// Leaving is a safety right: no permission needed.
+	if err := s.RemoveMember(ctx, tm.ws, b, b); err != nil {
+		t.Fatalf("leave: %v", err)
+	}
+	if tm.works(t, tm.b.Token) {
+		t.Fatal("the token of someone who left still works")
+	}
+	ms, err := s.Members(ctx, tm.ws)
+	if err != nil || len(ms) != 1 || ms[0].ID != l {
+		t.Fatalf("members after: %v %+v", err, ms)
+	}
+	if _, err := s.SetNickname(ctx, tm.ws, a, "x"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a removed member renames: %v", err)
+	}
+}
+
+func transferLeader(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a := tm.s, tm.lead.Member.ID, tm.a.Member.ID
+	if err := s.TransferLeader(ctx, tm.ws, a, a); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member takes over: %v", err)
+	}
+	if err := s.TransferLeader(ctx, tm.ws, l, l); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("hand over to oneself: %v", err)
+	}
+	if err := s.TransferLeader(ctx, tm.ws, l, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("hand over to nobody: %v", err)
+	}
+	if err := s.TransferLeader(ctx, tm.ws, l, a); err != nil {
+		t.Fatal(err)
+	}
+	ws, _ := s.Workspace(ctx, tm.ws)
+	if ws.Leader != a {
+		t.Fatalf("leader is %s, want %s", ws.Leader, a)
+	}
+	ms, _ := s.Members(ctx, tm.ws)
+	for _, m := range ms {
+		want := int64(1)
+		if m.ID == l || m.ID == a {
+			want = 2
+		}
+		if m.AccessVersion != want {
+			t.Fatalf("%s access version %d, want %d", m.Nickname, m.AccessVersion, want)
+		}
+	}
+	if err := s.RemoveMember(ctx, tm.ws, a, a); !errors.Is(err, v1.ErrLeaderMustTransfer) {
+		t.Fatalf("the new leader leaves: %v", err)
+	}
+	if err := s.RemoveMember(ctx, tm.ws, l, l); err != nil {
+		t.Fatalf("the old leader leaves: %v", err)
+	}
+}
+
+func devices(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	ds, err := s.Devices(ctx, tm.ws, a, a)
+	if err != nil || len(ds) != 1 || ds[0].ID != tm.a.Device.ID || ds[0].Name != "a phone" || ds[0].LastSeenAt != nil {
+		t.Fatalf("own devices: %v %+v", err, ds)
+	}
+	if _, err := s.Devices(ctx, tm.ws, b, a); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("another member's devices: %v", err)
+	}
+	if ds, err := s.Devices(ctx, tm.ws, l, a); err != nil || len(ds) != 1 {
+		t.Fatalf("the leader reads them: %v %+v", err, ds)
+	}
+	seen := time.Date(2026, 11, 26, 9, 30, 42, 0, time.UTC)
+	if err := s.Touch(ctx, tm.a.Device.ID, seen); err != nil {
+		t.Fatal(err)
+	}
+	if ds, _ := s.Devices(ctx, tm.ws, a, a); ds[0].LastSeenAt == nil || !ds[0].LastSeenAt.Equal(seen.Truncate(time.Minute)) {
+		t.Fatalf("last seen: %+v", ds[0])
+	}
+	if err := s.RevokeDevice(ctx, tm.ws, b, tm.a.Device.ID); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("another member revokes: %v", err)
+	}
+	if err := s.RevokeDevice(ctx, tm.ws, a, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("revoke nothing: %v", err)
+	}
+	if err := s.RevokeDevice(ctx, tm.ws, l, tm.b.Device.ID); err != nil {
+		t.Fatalf("the leader revokes: %v", err)
+	}
+	if tm.works(t, tm.b.Token) {
+		t.Fatal("a revoked token still works")
+	}
+	if ds, _ := s.Devices(ctx, tm.ws, b, b); len(ds) != 0 {
+		t.Fatalf("revoked devices are not listed: %+v", ds)
+	}
+	if err := s.RevokeDevice(ctx, tm.ws, a, tm.a.Device.ID); err != nil {
+		t.Fatalf("revoke one's own: %v", err)
+	}
+	if tm.works(t, tm.a.Token) {
+		t.Fatal("a revoked token still works")
+	}
+}
+
+func transferCode(t *testing.T, open Opener) {
+	ctx := context.Background()
+	c := newClock()
+	tm := newTeam(t, open(t, c.Now))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	if _, _, err := s.CreateTransferCode(ctx, tm.ws, b, a); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("another member makes a code: %v", err)
+	}
+	code, expires, err := s.CreateTransferCode(ctx, tm.ws, a, a)
+	if err != nil || len(code) != 12 || expires.Sub(c.Now()) > v1.TransferCodeTTL || expires.Sub(c.Now()) < v1.TransferCodeTTL-time.Minute {
+		t.Fatalf("code: %v %q %v", err, code, expires)
+	}
+	if _, err := s.JoinWithTransferCode(ctx, "WRONGWRONG22", "new phone"); !errors.Is(err, store.ErrBadInvite) {
+		t.Fatalf("wrong code: %v", err)
+	}
+	// Typed with spaces and in lower case, as people do.
+	typed := strings.ToLower(code[:4] + " " + code[4:8] + "-" + code[8:])
+	j, err := s.JoinWithTransferCode(ctx, typed, "new phone")
+	if err != nil || j.Member.ID != a || j.Workspace.ID != tm.ws || j.Device.ID == tm.a.Device.ID || j.Token == tm.a.Token {
+		t.Fatalf("transfer: %v %+v", err, j)
+	}
+	if !tm.works(t, j.Token) || !tm.works(t, tm.a.Token) {
+		t.Fatal("both phones should sign in")
+	}
+	if _, err := s.JoinWithTransferCode(ctx, code, "third phone"); !errors.Is(err, store.ErrBadInvite) {
+		t.Fatalf("used twice: %v", err)
+	}
+	if ds, _ := s.Devices(ctx, tm.ws, a, a); len(ds) != 2 {
+		t.Fatalf("devices after the transfer: %+v", ds)
+	}
+
+	// The leader makes one for a member who lost their phone; a newer code replaces it.
+	old, _, err := s.CreateTransferCode(ctx, tm.ws, l, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, _, err := s.CreateTransferCode(ctx, tm.ws, b, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.JoinWithTransferCode(ctx, old, "p"); !errors.Is(err, store.ErrBadInvite) {
+		t.Fatalf("replaced code: %v", err)
+	}
+	c.Advance(v1.TransferCodeTTL)
+	if _, err := s.JoinWithTransferCode(ctx, fresh, "p"); !errors.Is(err, store.ErrBadInvite) {
+		t.Fatalf("expired code: %v", err)
+	}
+	// Removing a member ends their codes.
+	late, _, err := s.CreateTransferCode(ctx, tm.ws, b, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveMember(ctx, tm.ws, l, b); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.JoinWithTransferCode(ctx, late, "p"); !errors.Is(err, store.ErrBadInvite) {
+		t.Fatalf("code of a removed member: %v", err)
+	}
+}
+
+func auditLog(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	if err := s.RevokeDevice(ctx, tm.ws, a, tm.a.Device.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveMember(ctx, tm.ws, l, b); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveMember(ctx, tm.ws, a, a); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Audit(ctx, tm.ws, a, 0, 10); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member reads the log: %v", err)
+	}
+	log, err := s.Audit(ctx, tm.ws, l, 0, 0)
+	if err != nil || len(log) != 3 {
+		t.Fatalf("log: %v %+v", err, log)
+	}
+	want := []struct{ action, by, target string }{
+		{v1.AuditLeave, a, a}, {v1.AuditRemoveMember, l, b}, {v1.AuditRevokeDevice, a, tm.a.Device.ID},
+	}
+	for i, w := range want {
+		e := log[i]
+		if e.Action != w.action || e.By != w.by || e.Target != w.target || e.At.IsZero() || len(e.Detail) == 0 {
+			t.Fatalf("entry %d: %+v, want %+v", i, e, w)
+		}
+	}
+	if !log[0].At.After(log[1].At) || log[0].ID <= log[1].ID {
+		t.Fatalf("newest first: %+v", log)
+	}
+	page, err := s.Audit(ctx, tm.ws, l, log[0].ID, 1)
+	if err != nil || len(page) != 1 || page[0].ID != log[1].ID {
+		t.Fatalf("next page: %v %+v", err, page)
 	}
 }
