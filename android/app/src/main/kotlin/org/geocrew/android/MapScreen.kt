@@ -141,6 +141,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
     var history by remember { mutableStateOf(false to false) }
     var placing by remember { mutableStateOf(false) }
     var center by remember { mutableStateOf<LatLng?>(null) }
+    var drawn by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<Draft?>(null) }
     var selected by remember { mutableStateOf<Long?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
@@ -215,6 +216,8 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
             hit?.id()?.toLongOrNull()?.let { selected = it }
             hit != null
         }
+        // A picture for the home screen only once the map has been drawn in full.
+        mapView.addOnDidBecomeIdleListener { drawn = true }
         // While a point is being placed, where the crosshair is.
         map.addOnCameraMoveListener { if (placing) center = map.cameraPosition.target?.wrap() }
         map.setStyle(Style.Builder().fromJson(key?.let(MapStyles::tiandituImagery) ?: MapStyles.BLANK)) { style ->
@@ -313,10 +316,10 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
     }
 
     // Leaves the map. A picture of it goes to the project's card at home first, if
-    // the map gives one in time; then the project closes, its layers stopping.
+    // the map has been drawn and gives one in time; then the project closes, its layers stopping.
     suspend fun close() {
         try {
-            withTimeoutOrNull(THUMBNAIL_WAIT_MS) { saveThumbnail(mapView.awaitMap(), graph.thumbnail(project)) }
+            if (drawn) withTimeoutOrNull(THUMBNAIL_WAIT_MS) { saveThumbnail(mapView.awaitMap(), graph.thumbnail(project)) }
         } catch (e: IOException) {
             // The card keeps the picture it had.
         }

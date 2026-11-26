@@ -89,7 +89,13 @@ internal fun fieldNames(collection: JsonObject?): List<String> =
     collection?.get("fields")?.jsonArray.orEmpty().mapNotNull { (it.jsonObject["name"] as? JsonPrimitive)?.contentOrNull }
 
 /** The field that names points (D001 and on), under the name the template gave it in the project's language. */
-internal fun nameField(collection: JsonObject?): String? = Templates.FIELD_POINT.column(Templates.NAME, fieldNames(collection))
+internal fun nameField(collection: JsonObject?): String? {
+    val names = fieldNames(collection)
+    return Templates.FIELD_POINT.column(Templates.NAME, names) ?: names.firstOrNull { it in EARLIER_NAME_FIELDS }
+}
+
+// The number field of the first point template, in projects made before it became the name field.
+private val EARLIER_NAME_FIELDS = setOf("点号", "Number")
 
 internal fun formFields(collection: JsonObject?): List<FormField> = collection?.get("fields")?.jsonArray.orEmpty().map {
     val f = it.jsonObject
