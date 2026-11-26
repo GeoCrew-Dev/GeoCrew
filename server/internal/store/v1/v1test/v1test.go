@@ -1010,6 +1010,7 @@ func pushRows(t *testing.T, open Opener) {
 		{v1.Change{ID: uuid(107), Layer: layerA, Row: row, Set: map[string]merge.Edit{"f3": edit(`"2026-13-40"`, t0)}}, v1.RejectInvalidValue},
 		{v1.Change{ID: uuid(108), Layer: layerA, Row: row, Delete: &merge.Edit{Value: json.RawMessage(`"yes"`), EditedAt: t0}}, v1.RejectInvalidValue},
 		{v1.Change{ID: uuid(109), Layer: layerB, Row: row, Set: map[string]merge.Edit{"f1": edit(`"x"`, t0)}}, v1.RejectUnknownLayer},
+		{v1.Change{ID: uuid(130), Layer: layerA, Row: row, Set: map[string]merge.Edit{"f1": edit(`"`+strings.Repeat("x", 1<<20)+`"`, t0)}}, v1.RejectInvalidValue},
 	} {
 		if r := pushOne(t, s, tm.ws, a, t0, bad.c); r.Status != v1.Rejected || r.Error != bad.code || r.Message == "" {
 			t.Fatalf("bad change %d: %+v, want %s", i, r, bad.code)
