@@ -1,5 +1,6 @@
 package org.geocrew.core.action
 
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
@@ -80,12 +81,17 @@ class ActionRegistry(
         gate.deny(caller, action.spec, params)?.let { return Outcome.Denied(it) }
         val result = try {
             action.run(caller, params)
+        } catch (e: CancellationException) {
+            throw e // a cancelled caller stops; it is not a failure of the action
         } catch (e: Exception) {
             ActionResult.Failed("error", e.message ?: e.javaClass.simpleName)
         }
         return when (result) {
             is ActionResult.Done -> {
-                result.undo?.let { undos.addLast(it) }
+                result.undo?.let {
+                    undos.addLast(it)
+                    if (undos.size > MAX_UNDO) undos.removeFirst()
+                }
                 Outcome.Done(result.output)
             }
             is ActionResult.Failed -> Outcome.Failed(result.code, result.message)
@@ -97,6 +103,11 @@ class ActionRegistry(
         val last = undos.removeLastOrNull() ?: return@withLock false
         last.undo()
         true
+    }
+
+    companion object {
+        /** How many runs back undo reaches; older ones are let go. */
+        const val MAX_UNDO = 100
     }
 
     private fun opensTo(stability: Stability, caller: Caller): Boolean = when (stability) {

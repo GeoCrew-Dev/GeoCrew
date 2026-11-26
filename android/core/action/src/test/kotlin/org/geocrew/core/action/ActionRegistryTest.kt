@@ -7,6 +7,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -77,6 +78,7 @@ class ActionRegistryTest {
         }
         assertEquals(0, counter.value, "an invalid call must not run")
         assertIs<Outcome.Done>(registry.invoke(Caller.USER, "counter.add", json("""{"name": "a", "elev": 12, "count": 3, "kind": "rock", "tags": ["x"]}""")))
+        assertIs<Outcome.Done>(registry.invoke(Caller.USER, "counter.add", json("""{"name": "a", "count": 2.0}""")))
     }
 
     @Test
@@ -122,6 +124,35 @@ class ActionRegistryTest {
         assertTrue(registry.undo())
         assertEquals(0, counter.value)
         assertFalse(registry.undo())
+    }
+
+    @Test
+    fun undoReachesBackALimitedWay() = runTest {
+        val counter = Counter()
+        val registry = ActionRegistry().apply { register(counter) }
+        repeat(ActionRegistry.MAX_UNDO + 5) { registry.invoke(Caller.USER, "counter.add", ok) }
+        var undone = 0
+        while (registry.undo()) undone++
+        assertEquals(ActionRegistry.MAX_UNDO, undone)
+        assertEquals(5, counter.value)
+    }
+
+    @Test
+    fun cancellingTheCallerIsNotAFailure() = runTest {
+        val slow = object : Action {
+            override val spec = ActionSpec("slow", "Slow", "", json("""{"type": "object"}"""), Risk.VIEW, Stability.STABLE)
+            override suspend fun run(caller: Caller, params: JsonObject): ActionResult {
+                kotlinx.coroutines.awaitCancellation()
+            }
+        }
+        val log = mutableListOf<LogEntry>()
+        val registry = ActionRegistry(log = { log += it }).apply { register(slow) }
+        val job = launch { registry.invoke(Caller.AI, "slow") }
+        testScheduler.runCurrent()
+        job.cancel()
+        job.join()
+        assertTrue(job.isCancelled)
+        assertTrue(log.isEmpty(), "a cancelled call is not logged as a failure")
     }
 
     @Test
