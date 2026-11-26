@@ -34,7 +34,7 @@ class Projects(private val root: File, private val journals: File) {
 
     /** Makes project [name] with a layer for each of [templates], and opens it. */
     fun create(name: String, templates: List<LayerTemplate> = Templates.all): Project {
-        ProjectFormat.nameProblem(name)?.let { throw IllegalArgumentException(it) }
+        ProjectFormat.nameProblem(name)?.let { throw IllegalArgumentException(it.message) }
         val folder = File(dir, name)
         require(!folder.exists()) { "there is already a project called $name" }
         root.mkdirs()
