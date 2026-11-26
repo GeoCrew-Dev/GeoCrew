@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -138,7 +139,8 @@ fun CrsField(
             modifier = Modifier.fillMaxWidth(),
         )
         // The whole field opens the picker; the text field itself takes no typing.
-        Box(Modifier.matchParentSize().semantics { role = Role.DropdownList }.clickable { picking = true })
+        val description = "$label: ${name ?: srs}"
+        Box(Modifier.matchParentSize().semantics { role = Role.DropdownList; contentDescription = description }.clickable { picking = true })
     }
     if (picking) {
         CrsPickerDialog(

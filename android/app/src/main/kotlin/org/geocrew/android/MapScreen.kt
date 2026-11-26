@@ -204,9 +204,6 @@ fun MapScreen(
         val xy = ((moved as? Outcome.Done)?.output?.jsonObject?.get("xy") as? JsonArray)?.map { (it as? JsonPrimitive)?.doubleOrNull }
         if (xy != null && xy.size == 2 && xy[0] != null && xy[1] != null) xy[0]!! to xy[1]!! else null
     }
-    val describeCrs: suspend (String) -> String? = { srs ->
-        ((graph.invoke(Workspace.CRS_DESCRIBE, buildJsonObject { put("srs", srs) }) as? Outcome.Done)?.output as? JsonObject)?.text("name")
-    }
     // One per layer, kept while the layers stay: the form keys its state on it.
     val formCrs = remember(projected) { projected.mapValues { (_, srs) -> FormCrs(srs, convert) } }
     var failure by remember { mutableStateOf<String?>(null) }
