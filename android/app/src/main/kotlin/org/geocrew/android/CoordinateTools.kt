@@ -188,12 +188,16 @@ fun CoordinateConvertDialog(graph: AppGraph, near: Pair<Double, Double>?, onDism
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = {
-                            // The result becomes the input, in the other CRS.
-                            val back = result
-                            val wasTo = to
-                            to = from
-                            from = wasTo
-                            texts = if (back != null && toProjected != null) textsOf(back, toProjected == true) else CoordinateTexts()
+                            // The input converted now, not the last result shown, becomes the input in the other CRS.
+                            scope.launch {
+                                val current = input
+                                val back = current?.let { convertPosition(graph, it, to) }
+                                val backProjected = toProjected
+                                val wasTo = to
+                                to = from
+                                from = wasTo
+                                texts = if (back != null && backProjected != null) textsOf(back, backProjected) else CoordinateTexts()
+                            }
                         },
                     ) { Icon(Icons.Rounded.SwapVert, stringResource(R.string.convert_swap)) }
                     if (near != null) {
@@ -238,7 +242,10 @@ fun CoordinateConvertDialog(graph: AppGraph, near: Pair<Double, Double>?, onDism
             TextButton(
                 onClick = {
                     val at = input ?: return@TextButton
-                    scope.launch { convertPosition(graph, at, Crs.LONGITUDE_LATITUDE)?.let { onShow(it.x, it.y) } }
+                    scope.launch {
+                        val degrees = convertPosition(graph, at, Crs.LONGITUDE_LATITUDE)
+                        if (degrees == null) failed = true else onShow(degrees.x, degrees.y)
+                    }
                 },
                 enabled = input != null && !failed,
             ) { Text(stringResource(R.string.convert_show)) }
