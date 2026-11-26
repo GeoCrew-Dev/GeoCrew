@@ -35,6 +35,7 @@ func Run(t *testing.T, open Opener) {
 		{"TransferCode", transferCode},
 		{"TransferCodeRace", transferCodeRace},
 		{"AuditLog", auditLog},
+		{"Roles", roles},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -525,4 +526,176 @@ func transferCodeRace(t *testing.T, open Opener) {
 	if won != 1 {
 		t.Fatalf("%d phones signed in with one code", won)
 	}
+}
+
+// versions maps member ids to their access versions.
+func (tm team) versions(t *testing.T) map[string]int64 {
+	t.Helper()
+	ms, err := tm.s.Members(context.Background(), tm.ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]int64{}
+	for _, m := range ms {
+		out[m.ID] = m.AccessVersion
+	}
+	return out
+}
+
+// bumped lists who of ids got a new access version since before.
+func (tm team) bumped(t *testing.T, before map[string]int64) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	for id, v := range tm.versions(t) {
+		if v != before[id] {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+func roles(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	rs, err := s.Roles(ctx, tm.ws)
+	if err != nil || len(rs) != 1 || rs[0].ID != perm.Base || rs[0].Name != v1.BaseRoleName || rs[0].Version != 1 {
+		t.Fatalf("roles of a new workspace: %v %+v", err, rs)
+	}
+
+	deputyPerms := map[string]perm.Level{perm.ManageMembers: perm.All, perm.ManageRoles: perm.All, perm.EditRows: perm.All, perm.ExportData: perm.All}
+	if _, err := s.CreateRole(ctx, tm.ws, a, "副组长", 30, deputyPerms); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member makes a role: %v", err)
+	}
+	for _, bad := range []struct {
+		name  string
+		pos   int
+		perms map[string]perm.Level
+	}{
+		{"x", 0, nil},
+		{"", 5, nil},
+		{"x", 5, map[string]perm.Level{"fly": perm.All}},
+		{"x", 5, map[string]perm.Level{perm.ViewLayer: perm.None}}, // per layer only
+		{"x", 5, map[string]perm.Level{perm.SendMessages: perm.Own}},
+	} {
+		if _, err := s.CreateRole(ctx, tm.ws, l, bad.name, bad.pos, bad.perms); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("role %+v: %v", bad, err)
+		}
+	}
+	deputy, err := s.CreateRole(ctx, tm.ws, l, "副组长", 30, deputyPerms)
+	if err != nil || deputy.ID == "" || deputy.Version != 1 || deputy.Permissions[perm.ManageRoles] != perm.All {
+		t.Fatalf("create: %v %+v", err, deputy)
+	}
+
+	before := tm.versions(t)
+	m, err := s.SetMemberRoles(ctx, tm.ws, l, a, []string{deputy.ID, deputy.ID})
+	if err != nil || len(m.Roles) != 1 || m.Roles[0] != deputy.ID {
+		t.Fatalf("give a the deputy role: %v %+v", err, m)
+	}
+	if got := tm.bumped(t, before); !got[a] || len(got) != 1 {
+		t.Fatalf("access versions bumped for %v, want only a", got)
+	}
+	if _, err := s.SetMemberRoles(ctx, tm.ws, l, a, []string{perm.Base}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("the base role is not given: %v", err)
+	}
+	if _, err := s.SetMemberRoles(ctx, tm.ws, l, a, []string{"nope"}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("an unknown role: %v", err)
+	}
+
+	// The deputy works below their own place, with what they hold.
+	if _, err := s.CreateRole(ctx, tm.ws, a, "并列", 30, nil); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a role at the deputy's own place: %v", err)
+	}
+	if _, err := s.CreateRole(ctx, tm.ws, a, "插件", 10, map[string]perm.Level{perm.ManagePlugins: perm.All}); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a permission the deputy lacks: %v", err)
+	}
+	sampler, err := s.CreateRole(ctx, tm.ws, a, "采样员", 20, map[string]perm.Level{perm.EditRows: perm.All})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetMemberRoles(ctx, tm.ws, a, b, []string{deputy.ID}); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("give a role at one's own place: %v", err)
+	}
+	if _, err := s.SetMemberRoles(ctx, tm.ws, a, l, []string{sampler.ID}); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("set the leader's roles: %v", err)
+	}
+	if _, err := s.SetMemberRoles(ctx, tm.ws, a, a, nil); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("set one's own roles: %v", err)
+	}
+	if _, err := s.SetMemberRoles(ctx, tm.ws, a, b, []string{sampler.ID}); err != nil {
+		t.Fatalf("give a role below: %v", err)
+	}
+
+	// Updates go by version and stay within what the actor holds.
+	newName := "采样"
+	if cur, err := s.UpdateRole(ctx, tm.ws, a, sampler.ID, v1.RoleUpdate{Name: &newName}, 7); !errors.Is(err, store.ErrStale) || cur.Version != 1 {
+		t.Fatalf("stale update: %v %+v", err, cur)
+	}
+	if _, err := s.UpdateRole(ctx, tm.ws, a, sampler.ID, v1.RoleUpdate{Permissions: map[string]perm.Level{perm.EditRows: perm.All, perm.ManagePlugins: perm.All}}, 1); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("grant what one lacks: %v", err)
+	}
+	pos := 40
+	if _, err := s.UpdateRole(ctx, tm.ws, a, sampler.ID, v1.RoleUpdate{Position: &pos}, 1); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("move a role above oneself: %v", err)
+	}
+	before = tm.versions(t)
+	up, err := s.UpdateRole(ctx, tm.ws, a, sampler.ID, v1.RoleUpdate{Name: &newName, Permissions: map[string]perm.Level{perm.EditRows: perm.All, perm.ExportData: perm.All}}, 1)
+	if err != nil || up.Name != newName || up.Version != 2 || up.Permissions[perm.ExportData] != perm.All {
+		t.Fatalf("update: %v %+v", err, up)
+	}
+	if got := tm.bumped(t, before); got[b] != false || len(got) != 0 {
+		// b already exported through the base role, so nothing b may do changed.
+		t.Fatalf("access versions bumped for %v, want none", got)
+	}
+	if _, err := s.UpdateRole(ctx, tm.ws, l, perm.Base, v1.RoleUpdate{Name: &newName}, 1); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("rename the base role: %v", err)
+	}
+	before = tm.versions(t)
+	basePerms := copyLevels(v1.DefaultBasePermissions)
+	delete(basePerms, perm.SendMessages)
+	if _, err := s.UpdateRole(ctx, tm.ws, l, perm.Base, v1.RoleUpdate{Permissions: basePerms}, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got := tm.bumped(t, before); !got[a] || !got[b] || got[l] {
+		t.Fatalf("access versions bumped for %v, want a and b (the leader holds everything anyway)", got)
+	}
+	if w, _ := s.Access(ctx, tm.ws); w.Has(b, perm.SendMessages) {
+		t.Fatal("the base role change did not reach the rules")
+	}
+
+	if err := s.DeleteRole(ctx, tm.ws, l, perm.Base); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("delete the base role: %v", err)
+	}
+	if err := s.DeleteRole(ctx, tm.ws, a, deputy.ID); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("delete one's own place: %v", err)
+	}
+	before = tm.versions(t)
+	if err := s.DeleteRole(ctx, tm.ws, a, sampler.ID); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := tm.s.Members(ctx, tm.ws); len(m[2].Roles) != 0 {
+		t.Fatalf("the deleted role stays on b: %+v", m[2])
+	}
+	if got := tm.bumped(t, before); !got[b] || len(got) != 1 {
+		t.Fatalf("access versions bumped for %v, want only b", got)
+	}
+	if err := s.DeleteRole(ctx, tm.ws, l, sampler.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("delete twice: %v", err)
+	}
+	log, _ := s.Audit(ctx, tm.ws, l, 0, 100)
+	actions := map[string]int{}
+	for _, e := range log {
+		actions[e.Action]++
+	}
+	if actions[v1.AuditCreateRole] != 2 || actions[v1.AuditUpdateRole] != 2 || actions[v1.AuditDeleteRole] != 1 || actions[v1.AuditSetRoles] != 2 {
+		t.Fatalf("audit actions %v", actions)
+	}
+}
+
+func copyLevels(in map[string]perm.Level) map[string]perm.Level {
+	out := map[string]perm.Level{}
+	for p, l := range in {
+		out[p] = l
+	}
+	return out
 }
