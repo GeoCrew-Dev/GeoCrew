@@ -113,15 +113,21 @@ func (v *V1) Pull(ctx context.Context, workspaceID, actor string, since int64, l
 	if err := cs.Err(); err != nil {
 		return v1.Pulled{}, err
 	}
+	targets := map[string]string{} // attachment row -> target layer, read once per pull
 	for _, c := range conflicts {
 		layer := c.Layer
 		switch layer {
 		case v1.TableLayers:
 			layer = c.Row
 		case v1.TableAttachments:
-			if layer, err = v.attachmentTarget(ctx, workspaceID, c.Row); err != nil {
-				return v1.Pulled{}, err
+			t, ok := targets[c.Row]
+			if !ok {
+				if t, err = v.attachmentTarget(ctx, workspaceID, c.Row); err != nil {
+					return v1.Pulled{}, err
+				}
+				targets[c.Row] = t
 			}
+			layer = t
 		}
 		if sees(layer) && wanted(layer) {
 			out.Conflicts = append(out.Conflicts, c)
