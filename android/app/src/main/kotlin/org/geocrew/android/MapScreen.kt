@@ -1,8 +1,8 @@
 package org.geocrew.android
 
 import android.Manifest
-import android.hardware.GeomagneticField
 import android.app.Activity
+import android.hardware.GeomagneticField
 import android.graphics.RectF
 import android.view.Gravity
 import androidx.activity.compose.BackHandler
@@ -100,6 +100,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import java.io.File
@@ -209,8 +212,10 @@ fun MapScreen(
     // Whether the map may show where the phone is; granted later, it shows from then on.
     var located by remember { mutableStateOf(mayLocate(context)) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) located = true }
-    val phone by rememberPhonePosition(located)
-    val heading by rememberHeading(located)
+    // Only while the app is in front: the map stays composed when the user goes elsewhere.
+    val inFront = LocalLifecycleOwner.current.lifecycle.currentStateAsState().value.isAtLeast(Lifecycle.State.STARTED)
+    val phone by rememberPhonePosition(located && inFront)
+    val heading by rememberHeading(located && inFront)
     // The zoom the heading cone is drawn for, in quarter steps, so it keeps its size on screen.
     var coneZoom by remember { mutableStateOf(0.0) }
     val locate: suspend () -> Fix? = {
