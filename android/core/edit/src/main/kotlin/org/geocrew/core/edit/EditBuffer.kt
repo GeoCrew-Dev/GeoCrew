@@ -195,10 +195,12 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
      * Writes the edits to the store the way QGIS orders them: changed features,
      * then deletions, then new features. With transactions this is one
      * transaction, so a failure writes nothing and keeps every edit; without,
-     * what was written leaves the buffer and the rest stays. Returns the fid the
-     * store gave each new feature.
+     * what was written leaves the buffer and the rest stays. Edits to stored
+     * features that have since gone are dropped. Returns the fid the store gave
+     * each new feature.
      */
     fun save(): Map<Long, Long> {
+        for (fid in slots.keys.filter { it >= 0 && store.feature(it) == null }) set(fid, Slot.EMPTY)
         if (slots.isEmpty()) return emptyMap()
         journal.append(JournalEntry.Saving(store.lastFid()))
         val transaction = store.capabilities.transactions
@@ -247,7 +249,8 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
      * Brings back the unsaved edits the journal kept from before a crash; their
      * undo history is not kept. When the app stopped during a save, what the
      * store has decides what was saved: new fids above the journal's mark, and
-     * deleted features gone.
+     * deleted features gone. That holds while no other program writes the layer,
+     * as for synced projects (ADR 0004).
      */
     fun recover(): Recovery {
         check(slots.isEmpty()) { "recover before editing" }

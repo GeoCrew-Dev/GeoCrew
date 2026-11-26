@@ -266,7 +266,7 @@ class EditBufferTest {
         val a = store.put("a")
         for (bad in listOf(
             """{"colour": "red"}""", """{"dip": "45a"}""", """{"n": 1.5}""", """{"n": 3000000000}""", """{"rock": true}""",
-            """{"ok": 1}""", """{"day": "26/11/2026"}""", """{"at": "noon"}""", """{"blob": "00ff"}""", """{"rock": [1]}""",
+            """{"ok": 1}""", """{"dip": 1e400}""", """{"day": "26/11/2026"}""", """{"at": "noon"}""", """{"blob": "00ff"}""", """{"rock": [1]}""",
         )) {
             assertFailsWith<IllegalArgumentException>(bad) { buffer.changeValues(a, json(bad)) }
             assertFailsWith<IllegalArgumentException>(bad) { buffer.add(null, json(bad)) }
@@ -291,6 +291,22 @@ class EditBufferTest {
         assertFailsWith<IllegalArgumentException> { buffer.changeValues(a, json("""{"rock": "x"}""")) }
         assertFailsWith<IllegalArgumentException> { buffer.changeGeometry(a, null) }
         assertFailsWith<IllegalArgumentException> { buffer.delete(a) }
+        assertFalse(buffer.isModified)
+    }
+
+    @Test
+    fun editsToFeaturesThatHaveGoneAreDropped() {
+        val a = store.put("a")
+        val b = store.put("b")
+        val c = store.put("c")
+        buffer.changeValues(a, json("""{"rock": "a2"}"""))
+        buffer.delete(b)
+        buffer.changeValues(c, json("""{"rock": "c2"}"""))
+        store.rows.remove(a) // another program, or a delete that an interrupted save already made
+        store.rows.remove(b)
+        buffer.save()
+        assertEquals(listOf("update", "commit"), store.writes)
+        assertEquals(listOf("c2"), rocks())
         assertFalse(buffer.isModified)
     }
 
