@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.geocrew.core.edit.EditTarget
+import org.geocrew.core.edit.FieldType
 import org.geocrew.core.edit.FileJournal
 import org.geocrew.core.project.LayerTemplate
 import org.geocrew.core.project.ProjectFormat
@@ -64,8 +65,11 @@ class Projects(private val root: File, private val journals: File) {
         }
     }.getOrNull()
 
-    /** Makes project [name] with a layer for each of [templates], and opens it. */
-    fun create(name: String, templates: List<LayerTemplate> = Templates.all): Project {
+    /**
+     * Makes project [name] with a layer for each of [templates], its layer and
+     * field names in [language] ("zh" or "en"; English for any other), and opens it.
+     */
+    fun create(name: String, templates: List<LayerTemplate> = Templates.all, language: String = "en"): Project {
         ProjectFormat.nameProblem(name)?.let { throw IllegalArgumentException(it.message) }
         val folder = File(dir, name)
         require(!folder.exists()) { "there is already a project called $name" }
@@ -82,7 +86,7 @@ class Projects(private val root: File, private val journals: File) {
                     "created" to Instant.now().toString(),
                 )
                 for ((key, value) in about) ds.sql("INSERT INTO ${ProjectFormat.PROJECT_TABLE} VALUES (${quote(key)}, ${quote(value)})")
-                for (template in templates) addLayer(ds, template)
+                for (template in templates) addLayer(ds, template, language)
             }
         } catch (e: Exception) {
             folder.deleteRecursively() // nothing half-made stays behind
@@ -120,6 +124,12 @@ class Projects(private val root: File, private val journals: File) {
 
     private fun gpkg(name: String) = File(File(dir, name), "$name.gpkg")
 
+    /** Closes [project] and opens it again, as GDAL learns a table's columns when it opens the file. */
+    fun reopen(project: Project): Project {
+        project.close()
+        return open(project.name)
+    }
+
     private companion object {
         const val EXPORTS = "导出"
     }
@@ -129,15 +139,16 @@ class Projects(private val root: File, private val journals: File) {
     private fun pathKey(file: File): String =
         MessageDigest.getInstance("SHA-256").digest(file.canonicalPath.toByteArray()).take(6).joinToString("") { "%02x".format(it) }
 
-    private fun addLayer(ds: VectorDataset, template: LayerTemplate) {
+    private fun addLayer(ds: VectorDataset, template: LayerTemplate, language: String) {
         val fields = buildJsonArray {
-            for (f in template.fields) add(buildJsonObject { put("name", f.name); put("type", f.type.name.lowercase()) })
+            for (f in template.fields) add(buildJsonObject { put("name", f.name(language)); put("type", f.type.name.lowercase()) })
         }
-        ds.createLayer(template.name, template.geometryType, template.crs, fields.toString())
-        val table = quote(template.name)
+        val layer = template.name(language)
+        ds.createLayer(layer, template.geometryType, template.crs, fields.toString())
+        val table = quote(layer)
         ds.sql("INSERT INTO ${ProjectFormat.LAYERS_TABLE} VALUES ($table, ${quote(UUID.randomUUID().toString())}, ${quote(template.id)})")
         for (f in template.fields) {
-            ds.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES ($table, ${quote(f.name)}, ${quote(UUID.randomUUID().toString())})")
+            ds.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES ($table, ${quote(f.name(language))}, ${quote(UUID.randomUUID().toString())})")
         }
     }
 
@@ -177,6 +188,25 @@ class Project internal constructor(
         val row = Json.parseToJsonElement(dataset.sql("PRAGMA wal_checkpoint(TRUNCATE)")).jsonArray.single()
             .jsonObject.getValue("properties").jsonObject.values.map { (it as? JsonPrimitive)?.contentOrNull?.toLongOrNull() }
         check(row.size == 3 && row[0] == 0L && row[1] == row[2]) { "the project is busy; try again" }
+    }
+
+    /**
+     * Adds field [name] of [type] to [layer] (ADR 0004: it gets a stable id). GDAL
+     * sees it once the project is opened again, see [Projects.reopen].
+     */
+    fun addField(layer: String, name: String, type: FieldType) {
+        require(layers.any { it.name == layer }) { "there is no layer $layer" }
+        val column = when (type) {
+            FieldType.STRING -> "TEXT"
+            FieldType.REAL -> "REAL"
+            FieldType.INTEGER, FieldType.INTEGER64 -> "INTEGER"
+            FieldType.DATE -> "DATE"
+            FieldType.DATETIME -> "DATETIME"
+            FieldType.BOOLEAN -> "BOOLEAN"
+            FieldType.OTHER -> throw IllegalArgumentException("a field cannot be of type other")
+        }
+        dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} ADD COLUMN ${ProjectFormat.identifier(name)} $column")
+        dataset.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES (${quote(layer)}, ${quote(name)}, ${quote(UUID.randomUUID().toString())})")
     }
 
     /** What editing [layer] needs: its store, and its journal in the app's own files, named by the layer's id. */

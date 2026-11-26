@@ -112,6 +112,7 @@
     <string name="feature_delete_body">保存修改之前还能撤销。</string>
     <string name="field_not_a_number">要填数字</string>
     <string name="field_not_a_whole_number">要填整数</string>
+    <string name="field_not_a_date">按 2026-11-26 这样填日期</string>
     <string name="field_add">添加字段</string>
     <string name="field_name">字段名称</string>
     <string name="field_type">类型</string>

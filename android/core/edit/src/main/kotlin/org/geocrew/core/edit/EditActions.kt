@@ -45,6 +45,17 @@ class Editing(private val open: (String) -> EditTarget) {
     /** Whether [layer] has edits to save. Inside an action only. */
     fun isModified(layer: String): Boolean = buffers[layer]?.isModified == true
 
+    /**
+     * Stops editing [layer] when it has nothing to save, as when its file must be
+     * opened again; says whether it is no longer being edited. Inside an action
+     * only; the action ends the layer's undo scope.
+     */
+    fun release(layer: String): Boolean {
+        if (buffers[layer]?.isModified == true) return false
+        buffers.remove(layer)
+        return true
+    }
+
     /** The actions, for the registry. */
     val actions: List<Action> = listOf(
         LayerAction(START, "Start editing", "Starts editing a layer; unsaved edits from before a crash come back", Risk.EDIT, editing = false) { layer, _ ->
@@ -56,23 +67,23 @@ class Editing(private val open: (String) -> EditTarget) {
         },
         FeatureAction(
             ADD, "Add feature", "Adds a feature to a layer being edited", Risk.EDIT, ADD_PARAMS,
-            """{"layer": "地质点", "geometry": {"type": "Point", "coordinates": [500123.45, 3320113.21]}, "properties": {"岩性": "花岗岩"}}""",
+            """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.305, 30.5928]}, "properties": {"点号": "D001", "描述": "泉水出露"}}""",
         ) { buffer, p ->
             buffer.add(p["geometry"].geometry(), (p["properties"] as? JsonObject) ?: JsonObject(emptyMap()))
         },
         FeatureAction(
             GEOMETRY, "Change geometry", "Gives a feature a new geometry, or none", Risk.EDIT, GEOMETRY_PARAMS,
-            """{"layer": "地质点", "fid": 12, "geometry": {"type": "Point", "coordinates": [500125.0, 3320110.5]}}""",
+            """{"layer": "野外点", "fid": 12, "geometry": {"type": "Point", "coordinates": [114.3051, 30.5929]}}""",
         ) { buffer, p ->
             buffer.changeGeometry(p.fid(), p["geometry"].geometry())
         },
         FeatureAction(
             VALUES, "Change values", "Sets fields of a feature", Risk.EDIT, VALUES_PARAMS,
-            """{"layer": "地质点", "fid": 12, "values": {"岩性": "片麻岩", "倾角": 35}}""",
+            """{"layer": "野外点", "fid": 12, "values": {"描述": "泉水出露，流量约 2 L/s", "海拔": 35.2}}""",
         ) { buffer, p ->
             buffer.changeValues(p.fid(), p.getValue("values").jsonObject)
         },
-        FeatureAction(DELETE, "Delete feature", "Deletes a feature", Risk.DELETE, FID_PARAMS, """{"layer": "地质点", "fid": 12}""") { buffer, p ->
+        FeatureAction(DELETE, "Delete feature", "Deletes a feature", Risk.DELETE, FID_PARAMS, """{"layer": "野外点", "fid": 12}""") { buffer, p ->
             buffer.delete(p.fid())
         },
         LayerAction(SAVE, "Save edits", "Writes a layer's edits to its file", Risk.EDIT) { layer, _ ->
@@ -103,7 +114,7 @@ class Editing(private val open: (String) -> EditTarget) {
     ) : Action {
         override val spec = ActionSpec(
             id, name, description, LAYER_PARAMS, risk, Stability.PREVIEW,
-            inputs = listOf("vector"), examples = listOf(schema("""{"layer": "地质点"}""")),
+            inputs = listOf("vector"), examples = listOf(schema("""{"layer": "野外点"}""")),
         )
 
         override suspend fun run(caller: Caller, params: JsonObject): ActionResult {

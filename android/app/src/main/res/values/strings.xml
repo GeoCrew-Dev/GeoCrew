@@ -118,6 +118,7 @@
     <string name="feature_delete_body">You can undo it until the edits are saved.</string>
     <string name="field_not_a_number">Enter a number</string>
     <string name="field_not_a_whole_number">Enter a whole number</string>
+    <string name="field_not_a_date">Enter a date as 2026-11-26</string>
     <string name="field_add">Add field</string>
     <string name="field_name">Field name</string>
     <string name="field_type">Type</string>

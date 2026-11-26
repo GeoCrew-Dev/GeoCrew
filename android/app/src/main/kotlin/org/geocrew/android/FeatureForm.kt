@@ -2,6 +2,7 @@ package org.geocrew.android
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -35,6 +37,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -52,6 +55,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import org.geocrew.core.edit.FieldType
 
 /** A field of a layer, as layer.features describes it. */
 data class FormField(val name: String, val type: String)
@@ -105,10 +109,21 @@ fun FeatureForm(
             ) {
                 for (field in fields) {
                     val problem = problems[field.name]
+                    if (field.type == "boolean") {
+                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(field.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Switch(
+                                checked = texts[field.name] == "true",
+                                onCheckedChange = { texts[field.name] = it.toString() },
+                            )
+                        }
+                        continue
+                    }
                     OutlinedTextField(
                         value = if (editable(field.type)) texts[field.name].orEmpty() else shown(field.type, texts[field.name].orEmpty(), locale),
                         onValueChange = { texts[field.name] = it },
                         label = { Text(field.name) },
+                        placeholder = if (field.type == "date") ({ Text("2026-11-26") }) else null,
                         singleLine = field.type != "string",
                         readOnly = !editable(field.type),
                         isError = problem != null,
@@ -148,7 +163,7 @@ fun FeatureForm(
     }
 }
 
-private fun editable(type: String) = type in setOf("string", "real", "integer", "integer64")
+private fun editable(type: String) = type in setOf("string", "real", "integer", "integer64", "date", "boolean")
 
 // A date and time stored as UTC, shown in the phone's time zone and the app's language.
 private fun shown(type: String, text: String, locale: Locale): String {
@@ -173,6 +188,7 @@ private fun problem(type: String, text: String): Int? {
         "real" -> if (text.trim().toDoubleOrNull()?.isFinite() == true) null else R.string.field_not_a_number
         "integer" -> if (text.trim().toIntOrNull() != null) null else R.string.field_not_a_whole_number
         "integer64" -> if (text.trim().toLongOrNull() != null) null else R.string.field_not_a_whole_number
+        "date" -> if (FieldType.DATE.accepts(JsonPrimitive(text.trim()))) null else R.string.field_not_a_date
         else -> null
     }
 }
@@ -181,5 +197,7 @@ private fun value(type: String, text: String): JsonElement = when {
     text.isBlank() -> JsonNull
     type == "real" -> JsonPrimitive(text.trim().toDouble())
     type == "integer" || type == "integer64" -> JsonPrimitive(text.trim().toLong())
+    type == "boolean" -> JsonPrimitive(text == "true")
+    type == "date" -> JsonPrimitive(text.trim())
     else -> JsonPrimitive(text)
 }
