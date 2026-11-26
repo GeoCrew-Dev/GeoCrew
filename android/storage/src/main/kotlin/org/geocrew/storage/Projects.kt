@@ -223,6 +223,43 @@ class Project internal constructor(
         val made: Int = 0,
     )
 
+    /** A saved map view: where the map looked, how far in (zoom) and how turned (bearing, degrees). */
+    data class Bookmark(val id: Long, val name: String, val longitude: Double, val latitude: Double, val zoom: Double, val bearing: Double)
+
+    /** The saved map views, oldest first. */
+    val bookmarks: List<Bookmark>
+        get() {
+            val made = rows(dataset, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${ProjectFormat.BOOKMARKS_TABLE}'").isNotEmpty()
+            if (!made) return emptyList()
+            // The id under another name: GDAL takes an integer primary key, even renamed, for the feature id and leaves it out.
+            return rows(dataset, "SELECT CAST(id AS TEXT) AS bookmark, name, longitude, latitude, zoom, bearing FROM ${ProjectFormat.BOOKMARKS_TABLE} ORDER BY id").map {
+                Bookmark(
+                    it.getValue("bookmark")!!.toLong(), it.getValue("name").orEmpty(),
+                    it.getValue("longitude")!!.toDouble(), it.getValue("latitude")!!.toDouble(),
+                    it.getValue("zoom")!!.toDouble(), it["bearing"]?.toDoubleOrNull() ?: 0.0,
+                )
+            }
+        }
+
+    /** Saves a map view as [name]; saved in the project at once, not undone. */
+    fun addBookmark(name: String, longitude: Double, latitude: Double, zoom: Double, bearing: Double): Bookmark {
+        val trimmed = name.trim()
+        require(trimmed.isNotEmpty()) { "a bookmark needs a name" }
+        require(longitude in -180.0..180.0 && latitude in -90.0..90.0) { "longitude and latitude in degrees" }
+        dataset.sql(ProjectFormat.BOOKMARKS_SCHEMA)
+        dataset.sql(
+            "INSERT INTO ${ProjectFormat.BOOKMARKS_TABLE} (name, longitude, latitude, zoom, bearing, created) VALUES " +
+                "(${quote(trimmed)}, $longitude, $latitude, $zoom, $bearing, ${quote(java.time.Instant.now().toString())})",
+        )
+        return bookmarks.last()
+    }
+
+    /** Deletes the bookmark [id]; saved at once, not undone. */
+    fun deleteBookmark(id: Long) {
+        require(bookmarks.any { it.id == id }) { "there is no bookmark $id" }
+        dataset.sql("DELETE FROM ${ProjectFormat.BOOKMARKS_TABLE} WHERE id = $id")
+    }
+
     /** How a layer or basemap shows: its place in the list when set, whether it shows, and its opacity from 0 to 1. */
     data class Display(val sort: Int? = null, val visible: Boolean = true, val opacity: Double = 1.0)
 

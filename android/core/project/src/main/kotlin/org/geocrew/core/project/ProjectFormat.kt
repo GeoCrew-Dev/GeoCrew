@@ -28,6 +28,15 @@ object ProjectFormat {
     const val DISPLAY_SCHEMA = "CREATE TABLE IF NOT EXISTS $DISPLAY_TABLE " +
         "(layer_id TEXT PRIMARY KEY NOT NULL, sort INTEGER, visible INTEGER NOT NULL DEFAULT 1, opacity REAL NOT NULL DEFAULT 1)"
 
+    /**
+     * Saved map views, by name: where the map looked (WGS84 / CGCS2000), how far
+     * in and how turned. Made when the first one is saved.
+     */
+    const val BOOKMARKS_TABLE = "geocrew_bookmarks"
+    const val BOOKMARKS_SCHEMA = "CREATE TABLE IF NOT EXISTS $BOOKMARKS_TABLE " +
+        "(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, longitude REAL NOT NULL, latitude REAL NOT NULL, " +
+        "zoom REAL NOT NULL, bearing REAL NOT NULL DEFAULT 0, created TEXT NOT NULL)"
+
     /** The statements that make GeoCrew's own tables in a new project. */
     val SCHEMA = listOf(
         "CREATE TABLE $PROJECT_TABLE (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",

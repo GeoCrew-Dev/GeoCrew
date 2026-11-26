@@ -275,6 +275,29 @@ class WorkspaceTest {
     }
 
     @Test
+    fun bookmarksAreSavedInTheProject() {
+        run(Workspace.CREATE, """{"name": "书签", "language": "zh"}""")
+        assertEquals(0, output(run(Workspace.BOOKMARKS)).getValue("bookmarks").jsonArray.size, "an older project has none and is not written to")
+        run(Workspace.BOOKMARK_ADD, """{"name": "一号剖面", "longitude": 114.3, "latitude": 30.6, "zoom": 15}""")
+        val added = output(run(Workspace.BOOKMARK_ADD, """{"name": " 二号 ", "longitude": 114.4, "latitude": 30.7, "zoom": 12.5, "bearing": 30}"""))
+        val second = added.getValue("bookmarks").jsonArray[1].jsonObject
+        assertEquals("二号", second.getValue("name").jsonPrimitive.content, "the name is trimmed")
+        assertEquals(30.0, second.getValue("bearing").jsonPrimitive.content.toDouble())
+        assertIs<Outcome.Failed>(run(Workspace.BOOKMARK_ADD, """{"name": " ", "longitude": 114.4, "latitude": 30.7, "zoom": 12}"""), "a name is needed")
+
+        run(Workspace.CLOSE)
+        assertIs<Outcome.Done>(run(Workspace.OPEN, """{"name": "书签"}"""))
+        val listed = run(Workspace.BOOKMARKS)
+        assertIs<Outcome.Done>(listed, listed.toString())
+        val kept = output(listed).getValue("bookmarks").jsonArray.map { it.jsonObject }
+        assertEquals(listOf("一号剖面", "二号"), kept.map { it.getValue("name").jsonPrimitive.content }, "kept in the file")
+        val first = kept[0].getValue("id").jsonPrimitive.content
+        val left = output(run(Workspace.BOOKMARK_DELETE, "{\"id\": $first}")).getValue("bookmarks").jsonArray
+        assertEquals(listOf("二号"), left.map { it.jsonObject.getValue("name").jsonPrimitive.content })
+        assertIs<Outcome.Failed>(run(Workspace.BOOKMARK_DELETE, "{\"id\": $first}"), "already gone")
+    }
+
+    @Test
     fun theOpenProjectCanBeAskedFor() {
         assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))
         run(Workspace.CREATE, """{"name": "乙", "language": "zh"}""")
