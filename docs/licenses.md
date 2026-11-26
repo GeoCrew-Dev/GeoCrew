@@ -23,7 +23,7 @@
 | GDAL、PROJ 的间接依赖 | 宽松许可 | libtiff（libtiff）、libgeotiff（MIT）、libpng（libpng-2.0）、libjpeg-turbo（BSD-3-Clause 与 IJG）、libwebp（BSD-3-Clause）、zstd（BSD-3-Clause 与 GPL-2.0 双许可，按 BSD-3-Clause 用）、zlib（Zlib）、liblzma（0BSD）、Expat（MIT）、json-c（MIT）、nlohmann-json（MIT），以及编译期用的 fast_float、libdivide |
 | libc++（NDK） | Apache-2.0 WITH LLVM-exception | 安卓上以 libc++_shared.so 随应用发布 |
 | SQLite | 公有领域 | |
-| MapLibre Native | BSD-2-Clause | |
+| MapLibre Native | BSD-2-Clause | 只要求在开源许可页里附上版权声明和许可证全文，不要求在地图上显示它的标志 |
 | QuickJS | MIT | 插件引擎，待技术验证 |
 | llama.cpp | MIT | 手机端模型，以后再用 |
 | MNN | Apache-2.0 | 手机端模型，以后再用 |
