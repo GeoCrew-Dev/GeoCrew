@@ -155,6 +155,7 @@
     <string name="tool_azimuth">测方位角</string>
     <string name="tool_pick">拾取坐标</string>
     <string name="measure_azimuth_value">方位角 %1$s</string>
+    <string name="measure_magnetic_value">磁方位角 %1$s</string>
     <string name="pick_value">经度 %1$s  纬度 %2$s</string>
     <string name="copy">复制</string>
     <string name="measure_hint">点地图加点</string>
