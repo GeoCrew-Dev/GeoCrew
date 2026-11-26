@@ -122,6 +122,7 @@
     <string name="coord_xy">X/Y</string>
     <string name="northing">X（北）</string>
     <string name="easting">Y（东）</string>
+    <string name="position_outside">这个位置换算不到图层的坐标系里</string>
     <string name="failure_crs">坐标系不同的图层之间还不能转移</string>
     <string name="menu_map">地图</string>
     <string name="menu_measure">测量</string>

@@ -207,6 +207,7 @@ fun MapScreen(
     val points = pointLayers(layers) { name -> (collections[name]?.get("features") as? JsonArray)?.size ?: 0 }
     val savedText = stringResource(R.string.saved)
     val addedText = stringResource(R.string.place_added)
+    val outsideText = stringResource(R.string.position_outside)
     val movedText = stringResource(R.string.moved)
     val changeLayerText = stringResource(R.string.change_layer)
     val suggestedLayer = stringResource(R.string.layer_default_name)
@@ -265,7 +266,7 @@ fun MapScreen(
         val own = layers.firstOrNull { it.name() == layer }?.text("srs")
         if (own == null || Crs.same(own, position.srs)) return point(position.x to position.y)
         val moved = convert(position.srs, own, position.x, position.y)
-        if (moved == null) failure = texts.failed.format(position.srs)
+        if (moved == null) failure = outsideText
         return moved?.let(::point)
     }
 

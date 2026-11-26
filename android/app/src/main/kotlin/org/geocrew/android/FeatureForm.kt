@@ -122,7 +122,8 @@ fun FeatureForm(
     var latitude by remember(coordinates) { mutableStateOf(start?.second.orEmpty()) }
     val problems = fields.associate { it.name to problem(it.type, texts[it.name].orEmpty()) }
     // X and Y in the layer's projected CRS, entered there when chosen; X is the northing, as surveyors write it.
-    var byXY by remember(coordinates, crs) { mutableStateOf(crs != null) }
+    // X/Y comes up once the converted values are there; until then, and when conversion fails, longitude and latitude.
+    var byXY by remember(coordinates, crs) { mutableStateOf(false) }
     var startXY by remember(coordinates, crs) { mutableStateOf<Pair<String, String>?>(null) }
     var easting by remember(coordinates, crs) { mutableStateOf("") }
     var northing by remember(coordinates, crs) { mutableStateOf("") }
@@ -134,6 +135,7 @@ fun FeatureForm(
         startXY = shown
         easting = shown.first
         northing = shown.second
+        byXY = true
     }
     val xyReady = crs != null && startXY != null
     val eastingProblem = if (byXY) numberProblem(easting) else null
