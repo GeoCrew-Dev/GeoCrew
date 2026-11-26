@@ -29,6 +29,9 @@ class DegreesTest {
         near(30.5, "北30°30′")
         near(-30.5, "-30.5")
         near(114.5, "E 114 30")
+        assertNull(Degrees.parse("30°30'E", Degrees.Axis.LATITUDE), "east is no latitude")
+        assertNull(Degrees.parse("N114", Degrees.Axis.LONGITUDE))
+        assertEquals(-30.5, Degrees.parse("30°30'S", Degrees.Axis.LATITUDE)!!, 1e-9)
     }
 
     @Test

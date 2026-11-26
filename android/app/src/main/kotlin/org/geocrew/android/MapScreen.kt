@@ -441,6 +441,7 @@ fun MapScreen(
 
     fun startPlacing(layer: String) {
         target = layer
+        placingAccuracy = null // a fix from before is not where the crosshair is now
         measuring = null // one tool at a time: placing ends a measurement
         measured = emptyList()
         placing = true

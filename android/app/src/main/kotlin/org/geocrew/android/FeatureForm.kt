@@ -176,8 +176,8 @@ fun FeatureForm(
         if (xy == byXY || crs == null) return
         scope.launch {
             if (xy) {
-                val lon = Degrees.parse(longitude)
-                val lat = Degrees.parse(latitude)
+                val lon = Degrees.parse(longitude, Degrees.Axis.LONGITUDE)
+                val lat = Degrees.parse(latitude, Degrees.Axis.LATITUDE)
                 if (lon != null && lat != null) crs.convert(DEGREES_CRS, crs.srs, lon, lat)?.let { (x, y) -> easting = metres(x); northing = metres(y) }
             } else {
                 val x = easting.trim().toDoubleOrNull()
@@ -203,7 +203,7 @@ fun FeatureForm(
             }
             else -> {
                 val moved = isNew || longitude != start.first || latitude != start.second
-                if (moved) Position(Degrees.parse(longitude)!!, Degrees.parse(latitude)!!, DEGREES_CRS) else null
+                if (moved) Position(Degrees.parse(longitude, Degrees.Axis.LONGITUDE)!!, Degrees.parse(latitude, Degrees.Axis.LATITUDE)!!, DEGREES_CRS) else null
             }
         }
         onSave(JsonObject(values.associate { it.name to value(it.type, texts[it.name].orEmpty()) }), position)
@@ -377,7 +377,7 @@ fun GoToDialog(onDismiss: () -> Unit, onGo: (longitude: Double, latitude: Double
             }
         },
         confirmButton = {
-            TextButton(onClick = { onGo(Degrees.parse(longitude)!!, Degrees.parse(latitude)!!) }, enabled = ready) {
+            TextButton(onClick = { onGo(Degrees.parse(longitude, Degrees.Axis.LONGITUDE)!!, Degrees.parse(latitude, Degrees.Axis.LATITUDE)!!) }, enabled = ready) {
                 Text(stringResource(R.string.go))
             }
         },
@@ -450,7 +450,7 @@ private fun problem(type: String, text: String): Int? {
 
 // What is wrong with a coordinate, as a string resource: a point always has both.
 private fun coordinateProblem(text: String, limit: Double, outOfRange: Int): Int? {
-    val degrees = Degrees.parse(text)
+    val degrees = Degrees.parse(text, if (limit > 90) Degrees.Axis.LONGITUDE else Degrees.Axis.LATITUDE)
     return when {
         text.isBlank() -> R.string.coordinate_missing
         degrees == null || !degrees.isFinite() -> R.string.field_not_a_number
