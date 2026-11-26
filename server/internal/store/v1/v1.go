@@ -64,6 +64,25 @@ type WorkspaceUpdate struct {
 	Archived *bool
 }
 
+// Role is a named set of permissions (protocol 4.1, 5.4). Position orders
+// roles, higher is more senior; the base role perm.Base sits at 0. Version
+// goes up at every change, for UpdateRole's baseVersion.
+type Role struct {
+	ID          string
+	Name        string
+	Position    int
+	Permissions map[string]perm.Level
+	Version     int64
+}
+
+// RoleUpdate changes a role; nil fields stay. Permissions, when set,
+// replaces the whole set.
+type RoleUpdate struct {
+	Name        *string
+	Position    *int
+	Permissions map[string]perm.Level
+}
+
 // AuditEntry is one line of the audit log (protocol 5.7). Target is the
 // member, device or role acted on.
 type AuditEntry struct {
@@ -83,6 +102,10 @@ const (
 	AuditRevokeDevice   = "revoke_device"
 	AuditTransferCode   = "transfer_code"      // a transfer code was issued for Target
 	AuditTransferUsed   = "transfer_code_used" // Target is the device it signed in
+	AuditCreateRole     = "create_role"
+	AuditUpdateRole     = "update_role"
+	AuditDeleteRole     = "delete_role"
+	AuditSetRoles       = "set_roles" // Target is the member
 )
 
 // ErrLeaderMustTransfer means the leader tried to leave without handing over first.
@@ -165,6 +188,25 @@ type Store interface {
 	// JoinWithTransferCode signs a new device in as the code's member, with
 	// their roles and rows. An unknown, used or expired code is store.ErrBadInvite.
 	JoinWithTransferCode(ctx context.Context, code, device string) (Joined, error)
+
+	// Roles lists the workspace's roles, most senior first.
+	Roles(ctx context.Context, workspaceID string) ([]Role, error)
+	// CreateRole adds a role. Actor needs manage_roles; the position must be
+	// above 0 and below actor's rank, and actor must hold every permission at
+	// the level given. Unknown permissions and levels are store.ErrInvalid.
+	CreateRole(ctx context.Context, workspaceID, actor, name string, position int, perms map[string]perm.Level) (Role, error)
+	// UpdateRole changes a role actor can manage (perm's CanManageRole). The
+	// base role only takes Permissions. Permissions actor does not hold at
+	// the old and new level cannot be changed. When baseVersion is not the
+	// role's version it returns the current role and store.ErrStale.
+	UpdateRole(ctx context.Context, workspaceID, actor, id string, u RoleUpdate, baseVersion int64) (Role, error)
+	// DeleteRole removes a role actor can manage and takes it off everyone;
+	// the base role cannot go (store.ErrInvalid).
+	DeleteRole(ctx context.Context, workspaceID, actor, id string) error
+	// SetMemberRoles replaces target's roles besides the base role. Actor must
+	// be able to manage target, and to give (manage_members) every role
+	// added or taken away.
+	SetMemberRoles(ctx context.Context, workspaceID, actor, target string, roles []string) (Member, error)
 
 	// Audit lists the audit log newest first, starting below id before (0 for
 	// the newest), at most limit entries (1 to 100). Only the leader may read it.

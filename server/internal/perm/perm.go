@@ -86,6 +86,15 @@ const (
 	ViewLayer = "view_layer"
 )
 
+// Permissions lists what a role may grant. ViewLayer is not among them: it
+// can only be set per layer.
+var Permissions = map[string]bool{
+	ManageMembers: true, ManageRoles: true, ManageWorkspace: true, ManageSettings: true, PostAnnouncements: true,
+	ManageLayers: true, EditSchema: true, EditRows: true, DeleteRows: true, Review: true, AssignTasks: true,
+	SendMessages: true, StartRollcall: true, DeleteMessages: true, ViewLocations: true,
+	ExportData: true, CreateViewLinks: true, CreateAILinks: true, ManagePlugins: true,
+}
+
 // Overridable lists the permissions a layer override may set.
 var Overridable = map[string]bool{ViewLayer: true, EditRows: true, DeleteRows: true}
 
@@ -182,7 +191,9 @@ func (w Workspace) CanTouchRow(member, perm, layer, owner string) bool {
 	return false
 }
 
-// rank is the position of a member's most senior role; the leader outranks everyone.
+// Rank is the position of a member's most senior role; the leader outranks everyone.
+func (w Workspace) Rank(member string) int { return w.rank(member) }
+
 func (w Workspace) rank(member string) int {
 	if member == w.Leader {
 		return int(^uint(0) >> 1)
