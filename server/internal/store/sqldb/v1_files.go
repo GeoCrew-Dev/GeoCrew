@@ -98,6 +98,13 @@ func mustJSON(s string) json.RawMessage {
 }
 
 func (v *V1) upload(ctx context.Context, tx *Tx, workspaceID, actor, id string) (v1.Upload, error) {
+	ws, err := scanV1Workspace(tx.QueryRowContext(ctx, v1WorkspaceSelect+` WHERE id = ?`, workspaceID))
+	if err != nil {
+		return v1.Upload{}, err
+	}
+	if ws.ArchivedAt != nil {
+		return v1.Upload{}, store.ErrArchived // uploads stop while archived (protocol 5.1)
+	}
 	u, err := scanUpload(tx.QueryRowContext(ctx, `SELECT `+uploadCols+` FROM v1_uploads WHERE workspace_id = ? AND id = ?`+v.d.dialect.ForUpdate, workspaceID, id))
 	if err == nil && u.MemberID != actor {
 		err = store.ErrNotFound // another member's upload is not theirs to fill
