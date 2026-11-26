@@ -120,7 +120,11 @@ fun FeatureForm(
     onMove: (() -> Unit)? = null,
     crs: FormCrs? = null,
     locate: (suspend () -> Fix?)? = null,
+    area: Boolean? = null,
 ) {
+    // What is deleted: a point, or with [area] a line (false) or an area (true).
+    val deleteText = stringResource(when (area) { null -> R.string.feature_delete; false -> R.string.line_delete; true -> R.string.area_delete })
+    val deleteTitle = stringResource(when (area) { null -> R.string.feature_delete_title; false -> R.string.line_delete_title; true -> R.string.area_delete_title })
     val original = remember(properties) { fields.associate { it.name to text(properties[it.name]) } }
     val texts = remember(properties) { mutableStateMapOf<String, String>().apply { putAll(original) } }
     val start = remember(coordinates) { coordinates?.let { degrees(it.first) to degrees(it.second) } }
@@ -324,7 +328,7 @@ fun FeatureForm(
                         ) {
                             Icon(Icons.Rounded.DeleteOutline, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.feature_delete))
+                            Text(deleteText)
                         }
                     }
                     Spacer(Modifier.height(24.dp))
@@ -336,7 +340,7 @@ fun FeatureForm(
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             icon = { Icon(Icons.Rounded.DeleteOutline, null) },
-            title = { Text(stringResource(R.string.feature_delete_title)) },
+            title = { Text(deleteTitle) },
             text = { Text(stringResource(R.string.feature_delete_body)) },
             confirmButton = {
                 TextButton(onClick = {

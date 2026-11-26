@@ -331,6 +331,37 @@ class WorkspaceTest {
         assertIs<Outcome.Failed>(run(Workspace.CRS_SEARCH, """{"near": [114.3]}"""))
     }
 
+    // Lines and areas, not only points: drawn, saved, read back and exported.
+    @Test
+    fun lineAndPolygonLayersKeepTheirShapes() {
+        run(Workspace.CREATE, """{"name": "线面", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "断层", "template": "field-line", "language": "zh"}""")
+        val made = output(run(Workspace.LAYER_CREATE, """{"name": "露头", "template": "field-polygon", "language": "zh"}"""))
+        val kinds = made.getValue("layers").jsonArray.associate { it.jsonObject.getValue("name").jsonPrimitive.content to it.jsonObject.getValue("geometry").jsonPrimitive.content }
+        assertEquals(mapOf("断层" to "LINESTRING", "露头" to "POLYGON"), kinds)
+        assertEquals(listOf("名称", "描述"), workspace.current!!.target("断层").store.fields.map { it.name })
+
+        run(Editing.START, """{"layer": "断层"}""")
+        run(Editing.START, """{"layer": "露头"}""")
+        val line = """{"type": "LineString", "coordinates": [[114.30, 30.60], [114.31, 30.61], [114.32, 30.60]]}"""
+        val area = """{"type": "Polygon", "coordinates": [[[114.30, 30.60], [114.31, 30.60], [114.31, 30.61], [114.30, 30.60]]]}"""
+        assertIs<Outcome.Done>(run(Editing.ADD, "{\"layer\": \"断层\", \"geometry\": $line, \"properties\": {\"名称\": \"F1\"}}"))
+        assertIs<Outcome.Done>(run(Editing.ADD, "{\"layer\": \"露头\", \"geometry\": $area, \"properties\": {\"名称\": \"O1\"}}"))
+        run(Editing.SAVE_ALL)
+        run(Workspace.CLOSE)
+        run(Workspace.OPEN, """{"name": "线面"}""")
+
+        fun geometry(layer: String) = output(run(Workspace.FEATURES, "{\"layer\": \"$layer\"}")).getValue("features").jsonArray.single()
+            .jsonObject.getValue("geometry").jsonObject
+        val savedLine = geometry("断层")
+        assertEquals("LineString", savedLine.getValue("type").jsonPrimitive.content)
+        assertEquals(3, savedLine.getValue("coordinates").jsonArray.size)
+        val savedArea = geometry("露头")
+        assertEquals("Polygon", savedArea.getValue("type").jsonPrimitive.content)
+        assertEquals(4, savedArea.getValue("coordinates").jsonArray.single().jsonArray.size, "the ring is closed")
+        assertIs<Outcome.Done>(run(Workspace.EXPORT, """{"format": "kml"}"""))
+    }
+
     @Test
     fun theOpenProjectCanBeAskedFor() {
         assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))

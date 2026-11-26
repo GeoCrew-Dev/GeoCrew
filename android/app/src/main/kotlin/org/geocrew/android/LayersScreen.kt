@@ -94,6 +94,7 @@ data class LayerInfo(
     val fields: List<FormField> = emptyList(),
     val visible: Boolean = true,
     val opacity: Float = 1f,
+    val geometry: String? = null,
 )
 
 /** The layers project.current lists, in order, each in its colour on the map. */
@@ -106,9 +107,17 @@ fun listedLayers(about: JsonObject): List<LayerInfo> = about["layers"]?.jsonArra
         (listed["id"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
         (listed["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT",
         layerColor(madeIndex(listed)),
+        geometry = (listed["geometry"] as? JsonPrimitive)?.contentOrNull,
         visible = (listed["visible"] as? JsonPrimitive)?.contentOrNull != "false",
         opacity = (listed["opacity"] as? JsonPrimitive)?.contentOrNull?.toFloatOrNull() ?: 1f,
     )
+}
+
+/** The plural for a count of a layer's features: points, lines or areas. */
+fun countOf(geometry: String?): Int = when {
+    geometry?.contains("LINE") == true -> R.plurals.lines_count
+    geometry?.contains("POLYGON") == true -> R.plurals.areas_count
+    else -> R.plurals.points_count
 }
 
 /** A basemap under the layers, as project.current lists it. */
@@ -170,8 +179,13 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
         }
     }
 
-    fun createLayer(name: String, srs: String?) = scope.launch {
-        val params = buildJsonObject { put("name", name); put("language", AppLanguage.speaking(context)); if (srs != null) put("srs", srs) }
+    fun createLayer(name: String, srs: String?, template: String?) = scope.launch {
+        val params = buildJsonObject {
+            put("name", name)
+            put("language", AppLanguage.speaking(context))
+            if (srs != null) put("srs", srs)
+            if (template != null) put("template", template)
+        }
         when (val made = graph.invoke(Workspace.LAYER_CREATE, params)) {
             is Outcome.Done -> loads++
             else -> failure = texts.of(made)
@@ -227,7 +241,7 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
                         headlineContent = { Text(layer.name, style = MaterialTheme.typography.titleMedium) },
                         supportingContent = {
                             Text(
-                                pluralStringResource(R.plurals.points_count, layer.count, layer.count) + " · " +
+                                pluralStringResource(countOf(layer.geometry), layer.count, layer.count) + " · " +
                                     pluralStringResource(R.plurals.fields_count, layer.fields.size, layer.fields.size),
                             )
                         },
@@ -364,10 +378,11 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
             existing = layers.map { it.name },
             suggested = stringResource(R.string.layer_default_name),
             onDismiss = { naming = false },
-            onCreate = { name, srs ->
+            onCreate = { name, srs, template ->
                 naming = false
-                createLayer(name, srs)
+                createLayer(name, srs, template)
             },
+            kinds = true,
             graph = graph,
             // The zones that apply follow where the map was last.
             near = graph.cameras[project]?.target?.let { it.longitude to it.latitude },
