@@ -604,7 +604,8 @@ fun MapScreen(
 
     // Every point of every layer in view.
     fun showAll() = scope.launch {
-        val all = JsonArray(collections.values.flatMap { (it["features"] as? JsonArray).orEmpty() })
+        val shown = layers.filter { it.text("visible") != "false" }.mapNotNull { it.name() }
+        val all = JsonArray(shown.flatMap { (collections[it]?.get("features") as? JsonArray).orEmpty() })
         fit(mapView.awaitMap(), all, density)
     }
 
@@ -837,7 +838,7 @@ fun MapScreen(
     moving?.let { (layer, fid) ->
         LayerPicker(
             title = stringResource(R.string.move_title),
-            layers = points.filter { it.name != layer },
+            layers = points.filter { it.visible && it.name != layer },
             showRemember = false,
             onPick = { to, _ ->
                 moving = null
