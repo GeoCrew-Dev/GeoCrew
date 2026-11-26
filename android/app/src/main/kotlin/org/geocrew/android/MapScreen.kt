@@ -39,6 +39,8 @@ import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ScreenLockRotation
+import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.MyLocation
@@ -452,6 +454,13 @@ fun MapScreen(
         val north = if (at == null || heading == null) heading else
             (heading!! + GeomagneticField(at.latitude.toFloat(), at.longitude.toFloat(), 0f, System.currentTimeMillis()).declination + 360) % 360
         style.getSourceAs<GeoJsonSource>(ME_SOURCE)?.setGeoJson(myLocationGeoJson(at, north, coneZoom).toString())
+    }
+
+    // Rotation locked: north stays up and two fingers no longer turn the map.
+    LaunchedEffect(graph.settings.rotationLocked) {
+        val map = mapView.awaitMap()
+        map.uiSettings.isRotateGesturesEnabled = !graph.settings.rotationLocked
+        if (graph.settings.rotationLocked) map.resetNorth()
     }
 
     // Each basemap as the project says: shown or not, and how opaque (Tianditu's imagery is "base", its annotation "labels").
@@ -873,6 +882,11 @@ fun MapScreen(
                         MenuTool(stringResource(R.string.tool_go_to), Icons.Rounded.NearMe) { goingTo = true },
                         MenuTool(stringResource(R.string.tool_north_up), Icons.Rounded.Explore, ::northUp),
                         MenuTool(stringResource(R.string.tool_bookmarks), Icons.Rounded.Bookmarks) { bookmarkAction(Workspace.BOOKMARKS) },
+                        if (graph.settings.rotationLocked) {
+                            MenuTool(stringResource(R.string.tool_unlock_rotation), Icons.Rounded.ScreenRotation) { graph.settings.lockRotation(false) }
+                        } else {
+                            MenuTool(stringResource(R.string.tool_lock_rotation), Icons.Rounded.ScreenLockRotation) { graph.settings.lockRotation(true) }
+                        },
                     ),
                 ),
                 MenuGroup(
