@@ -52,7 +52,9 @@ object Schema {
         "null" -> value is JsonNull
         "string" -> value is JsonPrimitive && value !is JsonNull && value.isString
         "boolean" -> value is JsonPrimitive && !value.isString && value.booleanOrNull != null
-        "integer" -> value is JsonPrimitive && !value.isString && value.longOrNull != null
+        // JSON Schema counts 2.0 as an integer too.
+        "integer" -> value is JsonPrimitive && !value.isString &&
+            (value.longOrNull != null || value.doubleOrNull?.let { it % 1.0 == 0.0 && kotlin.math.abs(it) <= Long.MAX_VALUE } == true)
         "number" -> value is JsonPrimitive && !value.isString && value.doubleOrNull != null
         else -> true
     }
