@@ -311,6 +311,7 @@ class Project internal constructor(
         if (srs != null) Crs.describe(srs) // a CRS GDAL does not know is refused before anything is made
         addLayer(dataset, name, template.geometryType, srs ?: template.crs, template.id, template.fields(language))
         layers = readLayers(dataset)
+        putOnTop(name)
         return layers.single { it.name == name }
     }
 
@@ -324,7 +325,14 @@ class Project internal constructor(
         val fields = VectorLayerStore(dataset, like).fields.filter { it.type != FieldType.OTHER } // fields GeoCrew cannot edit stay behind
         addLayer(dataset, name, source.geometry ?: "POINT", source.srs ?: "EPSG:4490", source.template, fields)
         layers = readLayers(dataset)
+        putOnTop(name)
         return layers.single { it.name == name }
+    }
+
+    // A new layer goes on top of a list that has been put in order, as in QGIS; an unordered list keeps the order layers were made.
+    private fun putOnTop(name: String) {
+        if (layers.none { it.display.sort != null }) return
+        setOrder(listOf(name) + layers.map { it.name }.filter { it != name })
     }
 
     private fun checkNewName(name: String) {
