@@ -41,6 +41,8 @@
 - 用 CustomGeometrySource 显示 10 万要素和编辑后的刷新：在模拟器上验证可行，低缩放级别要抽稀或聚合，见[验证报告](../spikes/m1-map-customgeometry.md)；
 - 非 Web 墨卡托栅格的显示：在模拟器上验证可行，GDAL 按请求现场重投影成瓦片，经 OkHttp 拦截器交给 MapLibre，见[验证报告](../spikes/m1-raster-reprojection.md)。
 
+2026-11-26 在 S24 Ultra 真机上复测，两项都通过：10 万点缩放约 100 至 110 帧 / 秒，栅格缩放 120 帧 / 秒（屏幕上限）。渲染后端用 MapLibre 的 OpenGL ES 版（`android-sdk-opengl`）：默认的 Vulkan 版在真机上同样流畅，但在模拟器上会崩溃，而开发和 CI 都靠模拟器。以后 Vulkan 版在模拟器上修好了再考虑换。
+
 ## 相关
 
 - [ADR 0003](0003-gis-engine.md)
