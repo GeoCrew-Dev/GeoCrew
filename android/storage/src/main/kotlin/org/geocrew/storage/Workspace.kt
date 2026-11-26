@@ -94,7 +94,7 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(
                 buildJsonObject {
                     put("type", "FeatureCollection")
-                    put("srs", wanted ?: own)
+                    put("srs", if (wanted != null && own != null) wanted else own)
                     putJsonArray("features") {
                         for ((f, geometry) in features.zip(geometries)) {
                             addJsonObject {

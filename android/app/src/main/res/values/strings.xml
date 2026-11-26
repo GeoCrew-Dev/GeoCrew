@@ -129,6 +129,7 @@
     <string name="coord_xy">X/Y</string>
     <string name="northing">Northing (X)</string>
     <string name="easting">Easting (Y)</string>
+    <string name="position_outside">This position doesn\'t convert into the layer\'s coordinate system</string>
     <string name="failure_crs">Points can\'t move between layers in different coordinate systems yet</string>
     <string name="menu_map">Map</string>
     <string name="menu_measure">Measure</string>
