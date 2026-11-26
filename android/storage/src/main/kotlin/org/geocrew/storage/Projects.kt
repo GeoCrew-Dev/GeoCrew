@@ -338,10 +338,21 @@ class Project internal constructor(
      */
     fun renameLayer(layer: String, to: String) {
         require(layers.any { it.name == layer }) { "there is no layer $layer" }
-        checkNewName(to)
-        dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} RENAME TO ${ProjectFormat.identifier(to)}")
-        dataset.sql("UPDATE ${ProjectFormat.LAYERS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
-        dataset.sql("UPDATE ${ProjectFormat.FIELDS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
+        checkNewName(to, besides = layer)
+        // All or nothing: a table renamed without GeoCrew's rows would drop out of the project.
+        dataset.begin()
+        try {
+            // SQLite takes table names in any case as the same, so a change of case goes by way of another name.
+            val via = if (to.equals(layer, ignoreCase = true)) "geocrew_renaming" else layer
+            if (via != layer) dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} RENAME TO ${ProjectFormat.identifier(via)}")
+            dataset.sql("ALTER TABLE ${ProjectFormat.identifier(via)} RENAME TO ${ProjectFormat.identifier(to)}")
+            dataset.sql("UPDATE ${ProjectFormat.LAYERS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
+            dataset.sql("UPDATE ${ProjectFormat.FIELDS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
+            dataset.commit()
+        } catch (e: Exception) {
+            dataset.rollback()
+            throw e
+        }
     }
 
     /**
@@ -365,12 +376,13 @@ class Project internal constructor(
         setOrder(listOf(name) + layers.map { it.name }.filter { it != name })
     }
 
-    private fun checkNewName(name: String) {
+    // [besides]: a layer being renamed, whose own name, in any case, does not count as taken.
+    private fun checkNewName(name: String, besides: String? = null) {
         require(name.isNotBlank() && name == name.trim() && name.length <= ProjectFormat.MAX_NAME) {
             "a layer name has 1 to ${ProjectFormat.MAX_NAME} characters, without spaces at either end"
         }
         require(RESERVED_PREFIXES.none { name.startsWith(it, ignoreCase = true) }) { "a layer name cannot start with ${RESERVED_PREFIXES.joinToString()}" }
-        require(dataset.layers.none { it.equals(name, ignoreCase = true) }) { "the project already has a layer $name" }
+        require(dataset.layers.none { it.equals(name, ignoreCase = true) && it != besides }) { "the project already has a layer $name" }
     }
 
     /** How many features [layer] has in its file. */

@@ -258,8 +258,10 @@ class WorkspaceTest {
         assertEquals(0.4, springs.getValue("opacity").jsonPrimitive.content.toDouble(), "the display stays with the layer")
         assertEquals("D001", workspace.current!!.target("泉点").store.features().single().properties.getValue("点名").jsonPrimitive.content)
         assertIs<Outcome.Failed>(run(Workspace.LAYER_RENAME, """{"layer": "泉点", "to": "临时"}"""), "the name is taken")
+        assertIs<Outcome.Done>(run(Workspace.LAYER_RENAME, """{"layer": "临时", "to": "临时a"}"""))
+        assertIs<Outcome.Done>(run(Workspace.LAYER_RENAME, """{"layer": "临时a", "to": "临时A"}"""), "only the case changes")
 
-        val deleted = output(run(Workspace.LAYER_DELETE, """{"layer": "临时"}"""))
+        val deleted = output(run(Workspace.LAYER_DELETE, """{"layer": "临时A"}"""))
         assertEquals(listOf("泉点"), deleted.getValue("layers").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content })
         run(Workspace.CLOSE)
         val path = File(root, "工程/改名/改名.gpkg").path
