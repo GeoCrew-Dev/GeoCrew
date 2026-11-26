@@ -364,6 +364,26 @@ class WorkspaceTest {
         assertEquals(listOf(0L, 1L, 1L), listOf("points", "lines", "areas").map { card.getValue(it).jsonPrimitive.content.toLong() }, "counted by kind")
     }
 
+    // A layer's own colour and sizes, kept in the project (ADR 0006).
+    @Test
+    fun layerStylesAreKeptAndCleared() {
+        run(Workspace.CREATE, """{"name": "样式", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        fun style(o: JsonObject) = o.getValue("layers").jsonArray.single().jsonObject["style"]?.jsonObject
+        assertNull(style(output(run(Workspace.CURRENT))), "no style until one is set")
+
+        val set = output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1E88E5", "size": 8, "fill": 0.4}}"""))
+        assertEquals("#1e88e5", style(set)!!.getValue("color").jsonPrimitive.content)
+        assertEquals("single", style(set)!!.getValue("kind").jsonPrimitive.content)
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "blue"}}"""), "not #rrggbb")
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"size": 99}}"""), "too big")
+
+        run(Workspace.CLOSE)
+        run(Workspace.OPEN, """{"name": "样式"}""")
+        assertEquals(8.0, style(output(run(Workspace.CURRENT)))!!.getValue("size").jsonPrimitive.content.toDouble(), "kept in the file")
+        assertNull(style(output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {}}"""))), "an empty style is the default again")
+    }
+
     @Test
     fun theOpenProjectCanBeAskedFor() {
         assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))

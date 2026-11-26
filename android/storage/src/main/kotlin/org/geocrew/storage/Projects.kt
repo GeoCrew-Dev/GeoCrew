@@ -5,6 +5,7 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -194,6 +195,9 @@ private fun readDisplay(ds: VectorDataset): Map<String, Project.Display> {
     }
 }
 
+// What a layer's style may say (ADR 0006, v1: one symbol).
+private val STYLE_KEYS = setOf("color", "size", "width", "fill")
+
 // The rows of a query, as column name to text.
 private fun rows(ds: VectorDataset, sql: String): List<Map<String, String?>> =
     Json.parseToJsonElement(ds.sql(sql)).jsonArray.map { row ->
@@ -236,6 +240,54 @@ class Project internal constructor(
         val display: Display = Display(),
         val made: Int = 0,
     )
+
+    /** Each layer's style (ADR 0006) by layer id, for those that have one. */
+    val styles: Map<String, JsonObject>
+        get() {
+            val made = rows(dataset, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${ProjectFormat.STYLE_TABLE}'").isNotEmpty()
+            if (!made) return emptyMap()
+            return rows(dataset, "SELECT layer_id, style FROM ${ProjectFormat.STYLE_TABLE}").mapNotNull { row ->
+                val id = row["layer_id"] ?: return@mapNotNull null
+                val style = runCatching { Json.parseToJsonElement(row["style"].orEmpty()).jsonObject }.getOrNull() ?: return@mapNotNull null
+                id to style
+            }.toMap()
+        }
+
+    /**
+     * Sets how layer [layer] is drawn: one colour (#rrggbb), a point's [size]
+     * and a line's width in dp, an area's fill opacity; what is left out takes
+     * its default. An empty [style] goes back to the default style. Saved at
+     * once, not undone, like the display.
+     */
+    fun setStyle(layer: String, style: JsonObject) {
+        val id = layers.firstOrNull { it.name == layer }?.id ?: throw IllegalArgumentException("there is no layer $layer")
+        val unknown = style.keys - STYLE_KEYS
+        require(unknown.isEmpty()) { "a style has no ${unknown.joinToString()}" }
+        fun number(key: String, range: ClosedFloatingPointRange<Double>): Double? {
+            val value = style[key] ?: return null
+            val n = (value as? JsonPrimitive)?.takeUnless { it.isString }?.contentOrNull?.toDoubleOrNull()
+            require(n != null && n in range) { "$key goes from ${range.start} to ${range.endInclusive}" }
+            return n
+        }
+        val color = style["color"]?.let { (it as? JsonPrimitive)?.contentOrNull }
+        require(style["color"] == null || (color != null && Regex("#[0-9a-fA-F]{6}").matches(color))) { "color is #rrggbb" }
+        val size = number("size", 1.0..30.0)
+        val width = number("width", 0.5..20.0)
+        val fill = number("fill", 0.0..1.0)
+        dataset.sql(ProjectFormat.STYLE_SCHEMA)
+        if (style.isEmpty()) {
+            dataset.sql("DELETE FROM ${ProjectFormat.STYLE_TABLE} WHERE layer_id = ${quote(id)}")
+            return
+        }
+        val stored = buildJsonObject {
+            put("kind", "single")
+            color?.let { put("color", it.lowercase()) }
+            size?.let { put("size", it) }
+            width?.let { put("width", it) }
+            fill?.let { put("fill", it) }
+        }
+        dataset.sql("INSERT OR REPLACE INTO ${ProjectFormat.STYLE_TABLE} (layer_id, style) VALUES (${quote(id)}, ${quote(stored.toString())})")
+    }
 
     /** A saved map view: where the map looked, how far in (zoom) and how turned (bearing, degrees). */
     data class Bookmark(val id: Long, val name: String, val longitude: Double, val latitude: Double, val zoom: Double, val bearing: Double)
@@ -418,6 +470,8 @@ class Project internal constructor(
         dataset.sql("DELETE FROM ${ProjectFormat.LAYERS_TABLE} WHERE table_name = ${quote(layer)}")
         dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
         dataset.sql("DELETE FROM ${ProjectFormat.DISPLAY_TABLE} WHERE layer_id = ${quote(found.id)}")
+        dataset.sql(ProjectFormat.STYLE_SCHEMA)
+        dataset.sql("DELETE FROM ${ProjectFormat.STYLE_TABLE} WHERE layer_id = ${quote(found.id)}")
         File(journals, "${found.id}.jsonl").delete()
     }
 

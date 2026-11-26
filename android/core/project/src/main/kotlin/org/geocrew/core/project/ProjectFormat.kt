@@ -29,6 +29,17 @@ object ProjectFormat {
         "(layer_id TEXT PRIMARY KEY NOT NULL, sort INTEGER, visible INTEGER NOT NULL DEFAULT 1, opacity REAL NOT NULL DEFAULT 1)"
 
     /**
+     * How each layer is drawn (ADR 0006), as JSON; made when a style is first
+     * set, a layer without one drawn in a colour by when it was made. v1 has
+     * one symbol per layer: {"kind": "single", "color": "#rrggbb", "size": a
+     * point's radius in dp, "width": a line's width in dp, "fill": an area's
+     * fill opacity from 0 to 1}. Categorized, graduated and rule-based styles
+     * come as other kinds.
+     */
+    const val STYLE_TABLE = "geocrew_layer_style"
+    const val STYLE_SCHEMA = "CREATE TABLE IF NOT EXISTS $STYLE_TABLE (layer_id TEXT PRIMARY KEY NOT NULL, style TEXT NOT NULL)"
+
+    /**
      * Saved map views, by name: where the map looked (WGS84 / CGCS2000), how far
      * in and how turned. Made when the first one is saved.
      */

@@ -225,6 +225,17 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
+            LAYER_STYLE, "Layer style",
+            "Sets how a layer of the open project is drawn (ADR 0006): one colour (#rrggbb), a point's size and a line's width in dp " +
+                "(size 1 to 30, width 0.5 to 20), an area's fill opacity (0 to 1); what is left out takes its default, an empty style " +
+                "goes back to the default. Saved in the project at once, not undone",
+            Risk.EDIT, STYLE_PARAMS, """{"layer": "野外点", "style": {"color": "#1e88e5", "size": 8}}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.setStyle(p.getValue("layer").jsonPrimitive.content, p.getValue("style").jsonObject)
+            ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
             BASEMAP_DISPLAY, "Basemap display", "Shows or hides a basemap under the layers (img: imagery, cia: its annotation) and sets its opacity",
             Risk.EDIT, BASEMAP_PARAMS, """{"basemap": "img", "opacity": 0.6}""",
         ) { p ->
@@ -356,6 +367,7 @@ class Workspace(private val projects: Projects) {
     }
 
     private fun about(project: Project): JsonObject = buildJsonObject {
+        val styles = project.styles
         put("name", project.name)
         put("id", project.id)
         put("folder", project.folder.path)
@@ -370,6 +382,7 @@ class Workspace(private val projects: Projects) {
                     put("made", layer.made)
                     put("visible", layer.display.visible)
                     put("opacity", layer.display.opacity)
+                    styles[layer.id]?.let { put("style", it) }
                 }
             }
         }
@@ -416,6 +429,7 @@ class Workspace(private val projects: Projects) {
         const val LAYER_DELETE = "layer.delete"
         const val BASEMAP_DISPLAY = "basemap.display"
         const val LAYER_ORDER = "layer.order"
+        const val LAYER_STYLE = "layer.style"
         const val BOOKMARKS = "bookmark.list"
         const val BOOKMARK_ADD = "bookmark.add"
         const val BOOKMARK_DELETE = "bookmark.delete"
@@ -460,6 +474,11 @@ class Workspace(private val projects: Projects) {
         )
         private val BOOKMARK_DELETE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["id"], "properties": {"id": {"type": "integer"}}}""",
+        )
+        private val STYLE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "style"], "properties": {"layer": {"type": "string"},
+                "style": {"type": "object", "additionalProperties": false, "properties": {"color": {"type": "string"}, "size": {"type": "number"},
+                "width": {"type": "number"}, "fill": {"type": "number"}}}}}""",
         )
         private val RENAME_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer", "to"], "properties": {"layer": {"type": "string"}, "to": {"type": "string"}}}""",

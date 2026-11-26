@@ -58,14 +58,14 @@ data class MapLayer(val name: String, val id: String, val color: Color, val coun
 fun pointLayers(layers: List<JsonObject>, counts: (String) -> Int): List<MapLayer> = layers.mapNotNull { l ->
     val name = l.text("name") ?: return@mapNotNull null
     if (l.text("geometry") != "POINT") return@mapNotNull null
-    MapLayer(name, l.text("id").orEmpty(), layerColor(madeIndex(l)), counts(name), l.text("visible") != "false")
+    MapLayer(name, l.text("id").orEmpty(), styleOf(l, layerColor(madeIndex(l))).color, counts(name), l.text("visible") != "false")
 }
 
 /** The project's layers of any geometry type (points, lines, areas), for adding a feature to one. */
 fun drawLayers(layers: List<JsonObject>, counts: (String) -> Int): List<MapLayer> = layers.mapNotNull { l ->
     val name = l.text("name") ?: return@mapNotNull null
     val geometry = l.text("geometry") ?: return@mapNotNull null
-    MapLayer(name, l.text("id").orEmpty(), layerColor(madeIndex(l)), counts(name), l.text("visible") != "false", geometry)
+    MapLayer(name, l.text("id").orEmpty(), styleOf(l, layerColor(madeIndex(l))).color, counts(name), l.text("visible") != "false", geometry)
 }
 
 /** When a layer listed by project.current was made among the layers: its colour stays when the list is reordered. */
