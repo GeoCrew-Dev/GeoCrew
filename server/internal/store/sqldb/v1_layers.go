@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"regexp"
 	"strings"
 
@@ -142,9 +143,10 @@ func compactJSON(b []byte) []byte {
 func (v *V1) CreateLayer(ctx context.Context, workspaceID, actor string, in v1.LayerInput) (v1.Layer, error) {
 	name, err := clean(in.Name, 64)
 	if err != nil || !uuidPattern.MatchString(in.ID) || !v1.GeometryTypes[in.GeometryType] || !validCRS(in.CRS) ||
-		!validJSONProp(in.Style) || !validJSONProp(in.Form) {
+		!validJSONProp(in.Style) || !validJSONProp(in.Form) || (in.Order != nil && (math.IsNaN(*in.Order) || math.IsInf(*in.Order, 0))) {
 		return v1.Layer{}, store.ErrInvalid
 	}
+	in.Fields = append([]v1.FieldDef(nil), in.Fields...) // normalised below; the caller's slice stays as it was
 	seen := map[string]bool{}
 	for i, f := range in.Fields {
 		if !validField(f) || seen[f.ID] {
