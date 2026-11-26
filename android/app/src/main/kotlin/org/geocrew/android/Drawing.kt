@@ -66,15 +66,20 @@ fun reshapeVertices(feature: JsonObject): Pair<Boolean, List<LatLng>>? {
     }
 }
 
-/** Whether layers of geometry types [a] and [b] (OGC names) hold the same kind of feature: points, lines or areas. */
+/**
+ * Whether layers of geometry types [a] and [b] (OGC names) hold the same kind
+ * of feature: points, lines or areas, single or multi-part alike, as GDAL does
+ * not put a multi-part shape into a single-part layer.
+ */
 fun sameKind(a: String?, b: String?): Boolean {
     fun kind(g: String?) = when {
         g == null -> null
         g.contains("POLYGON") -> 2
         g.contains("LINE") -> 1
-        else -> 0
+        g.contains("POINT") -> 0
+        else -> null
     }
-    return kind(a) != null && kind(a) == kind(b)
+    return kind(a) != null && kind(a) == kind(b) && a!!.startsWith("MULTI") == b!!.startsWith("MULTI")
 }
 
 /** Whether a layer of [geometry] (an OGC name such as MULTIPOLYGON) holds areas. */
