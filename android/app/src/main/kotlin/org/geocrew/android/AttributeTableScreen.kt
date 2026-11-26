@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import java.text.Collator
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -55,6 +56,9 @@ import org.geocrew.storage.Workspace
 
 /** A feature as a row of the table: its fid and its values as shown, one per field. */
 private data class TableRow(val fid: Long, val cells: List<String>)
+
+// The fid column's header, the name GeoPackage gives it.
+private const val FID = "fid"
 
 /** A column sorted by, ascending or not. */
 private data class Sorting(val column: Int, val ascending: Boolean)
@@ -88,12 +92,13 @@ fun AttributeTableScreen(graph: AppGraph, project: String, layer: String, onBack
         }
         val collection = listed.output.jsonObject
         val read = formFields(collection)
-        fields = read
+        // The fid first, as QGIS shows it: a layer without fields still lists its features.
+        fields = listOf(FormField(FID, "integer64")) + read
         rows = collection["features"]?.jsonArray.orEmpty().mapNotNull { f ->
             val feature = f.jsonObject
             val fid = (feature["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
             val properties = feature["properties"] as? JsonObject
-            TableRow(fid, read.map { cell(properties?.get(it.name), it.type, yes, no) })
+            TableRow(fid, listOf(fid.toString()) + read.map { cell(properties?.get(it.name), it.type, yes, no) })
         }
     }
 
@@ -115,7 +120,7 @@ fun AttributeTableScreen(graph: AppGraph, project: String, layer: String, onBack
             when {
                 failure != null -> Message(failure!!)
                 rows == null -> Unit
-                fields.isEmpty() || shown.isEmpty() -> Message(stringResource(R.string.no_features))
+                shown.isEmpty() -> Message(stringResource(R.string.no_features))
                 else -> Column(Modifier.fillMaxHeight().horizontalScroll(rememberScrollState())) {
                     LazyColumn(Modifier.width(widths.fold(0.dp) { a, b -> a + b })) {
                         stickyHeader {
@@ -190,7 +195,8 @@ private fun sorted(rows: List<TableRow>, sorting: Sorting?): List<TableRow> {
     val i = sorting.column
     val (empty, filled) = rows.partition { it.cells[i].isEmpty() }
     val numeric = filled.all { it.cells[i].toDoubleOrNull() != null }
-    val ordered = if (numeric) filled.sortedBy { it.cells[i].toDouble() } else filled.sortedBy { it.cells[i] }
+    val collator = Collator.getInstance()
+    val ordered = if (numeric) filled.sortedBy { it.cells[i].toDouble() } else filled.sortedWith { a, b -> collator.compare(a.cells[i], b.cells[i]) }
     return (if (sorting.ascending) ordered else ordered.reversed()) + empty
 }
 
