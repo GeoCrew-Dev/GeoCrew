@@ -63,6 +63,21 @@ class WorkspaceTest {
     }
 
     @Test
+    fun layersReadAsGeoJson() {
+        run(Workspace.CREATE, """{"name": "图"}""")
+        val empty = output(run(Workspace.FEATURES, """{"layer": "地质点"}"""))
+        assertEquals("FeatureCollection", empty.getValue("type").jsonPrimitive.content)
+        assertEquals(false, empty.getValue("editing").jsonPrimitive.content.toBoolean())
+        run(Editing.START, """{"layer": "地质点"}""")
+        run(Editing.ADD, """{"layer": "地质点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点号": "D001"}}""")
+        val edited = output(run(Workspace.FEATURES, """{"layer": "地质点"}"""))
+        assertEquals(true, edited.getValue("modified").jsonPrimitive.content.toBoolean())
+        val feature = edited.getValue("features").jsonArray.single().jsonObject
+        assertEquals(-1, feature.getValue("id").jsonPrimitive.content.toInt(), "an unsaved feature shows with its negative fid")
+        assertEquals("D001", feature.getValue("properties").jsonObject.getValue("点号").jsonPrimitive.content)
+    }
+
+    @Test
     fun theOpenProjectCanBeAskedFor() {
         assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))
         run(Workspace.CREATE, """{"name": "乙"}""")

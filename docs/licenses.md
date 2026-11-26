@@ -24,6 +24,8 @@
 | libc++（NDK） | Apache-2.0 WITH LLVM-exception | 安卓上以 libc++_shared.so 随应用发布 |
 | SQLite | 公有领域 | |
 | MapLibre Native | BSD-2-Clause | 只要求在开源许可页里附上版权声明和许可证全文，不要求在地图上显示它的标志 |
+| MapLibre 的手势库 | BSD | 随 MapLibre 带进来 |
+| MapLibre 的 GeoJSON 和 Turf 库，OkHttp、Okio、Gson、Timber | Apache-2.0 | 随 MapLibre 带进来 |
 | QuickJS | MIT | 插件引擎，待技术验证 |
 | llama.cpp | MIT | 手机端模型，以后再用 |
 | MNN | Apache-2.0 | 手机端模型，以后再用 |

@@ -39,6 +39,12 @@ class Editing(private val open: (String) -> EditTarget) {
     /** The layers being edited. Read it inside an action, while no other runs. */
     val layersBeingEdited: Set<String> get() = buffers.keys.toSet()
 
+    /** [layer]'s features as edited, or null when it is not being edited. Inside an action only. */
+    fun features(layer: String): List<Feature>? = buffers[layer]?.features()
+
+    /** Whether [layer] has edits to save. Inside an action only. */
+    fun isModified(layer: String): Boolean = buffers[layer]?.isModified == true
+
     /** The actions, for the registry. */
     val actions: List<Action> = listOf(
         LayerAction(START, "Start editing", "Starts editing a layer; unsaved edits from before a crash come back", Risk.EDIT, editing = false) { layer, _ ->

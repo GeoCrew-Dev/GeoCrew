@@ -42,6 +42,7 @@ tasks.named("preBuild") {
 dependencies {
     implementation(files(nativeAar))
     implementation(project(":storage"))
+    implementation(libs.maplibre)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)

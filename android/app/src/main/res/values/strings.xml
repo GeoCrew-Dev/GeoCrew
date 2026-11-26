@@ -22,6 +22,22 @@
     <string name="project_layers">图层</string>
     <string name="layer_template">模板：%1$s</string>
     <string name="project_close">关闭工程</string>
+    <string name="map_open">打开地图</string>
+    <string name="back">返回</string>
+
+    <string name="map_key">图源 Key</string>
+    <string name="map_no_key">还没有填天地图 Key，底图不显示。点右上角“图源 Key”填写。</string>
+    <string name="map_add_point">加点</string>
+    <string name="map_undo">撤销</string>
+    <string name="map_redo">重做</string>
+    <string name="map_save">保存</string>
+    <string name="map_discard">放弃</string>
+    <string name="attribution_tianditu">© 天地图</string>
+    <string name="key_title">天地图 Key</string>
+    <string name="key_hint">在天地图官网申请的 Key</string>
+    <string name="key_invalid">Key 是 32 位的数字和字母 a–f</string>
+    <string name="unsaved_title">有没保存的修改</string>
+    <string name="unsaved_body">“%1$s”图层有没保存的修改。</string>
 
     <string name="name_taken">已经有叫这个名字的工程了</string>
     <string name="name_empty">名称不能为空</string>

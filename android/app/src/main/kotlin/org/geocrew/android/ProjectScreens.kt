@@ -75,6 +75,7 @@ fun ProjectsRoute(graph: AppGraph) {
     var open by remember { mutableStateOf<JsonObject?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
     var startFailure by remember { mutableStateOf<String?>(null) }
+    var mapLayer by remember { mutableStateOf<String?>(null) }
 
     suspend fun refresh() {
         val listed = graph.invoke(Workspace.LIST)
@@ -110,7 +111,8 @@ fun ProjectsRoute(graph: AppGraph) {
             Text(stringResource(R.string.start_failed, startFailure!!), Modifier.padding(padding).padding(24.dp))
         }
         !ready -> Scaffold { padding -> Text(stringResource(R.string.starting), Modifier.padding(padding).padding(24.dp)) }
-        shown != null -> ProjectScreen(shown, onClose = {
+        shown != null && mapLayer != null -> MapScreen(graph, shown.getValue("name").jsonPrimitive.content, mapLayer!!, onBack = { mapLayer = null })
+        shown != null -> ProjectScreen(shown, onMap = { mapLayer = it }, onClose = {
             run(Workspace.CLOSE, JsonObject(emptyMap())) {
                 open = null
                 refresh()
@@ -208,7 +210,7 @@ private fun nameProblemText(problem: NameProblem): String = when (problem) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProjectScreen(project: JsonObject, onClose: () -> Unit) {
+private fun ProjectScreen(project: JsonObject, onMap: (String) -> Unit, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
     val name = project.getValue("name").jsonPrimitive.content
     val layers = project.getValue("layers").jsonArray.map { it.jsonObject }
@@ -225,6 +227,13 @@ private fun ProjectScreen(project: JsonObject, onClose: () -> Unit) {
                     },
                 )
                 HorizontalDivider()
+            }
+            // The map shows the layer made from the geological point template.
+            val points = layers.firstOrNull { (it["template"] as? JsonPrimitive)?.contentOrNull == Templates.GEO_POINT.id }
+            points?.let { p ->
+                Button(onClick = { onMap(p.getValue("name").jsonPrimitive.content) }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(stringResource(R.string.map_open))
+                }
             }
             OutlinedButton(onClick = onClose, modifier = Modifier.padding(16.dp)) { Text(stringResource(R.string.project_close)) }
         }
