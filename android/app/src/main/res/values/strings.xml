@@ -12,6 +12,7 @@
     <string name="saved">Saved</string>
     <string name="start_failed">GeoCrew could not start: %1$s</string>
     <string name="action_failed">That did not work: %1$s</string>
+    <string name="failure_empty">The project has no layers</string>
     <string name="failure_unsaved">The project has unsaved changes: save or discard them first.</string>
 
     <!-- Permissions -->
@@ -120,6 +121,7 @@
     <string name="pick_layer_remember">Remember this choice and don\'t ask again</string>
     <string name="layer_new">New layer</string>
     <string name="layer_name">Layer name</string>
+    <string name="layer_name_reserved">Names can\'t start like this</string>
     <string name="layer_name_taken">The project already has a layer with this name</string>
     <string name="layer_default_name">Field points</string>
     <string name="layers_none">No layers</string>

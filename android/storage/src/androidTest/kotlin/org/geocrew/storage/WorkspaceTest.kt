@@ -169,6 +169,7 @@ class WorkspaceTest {
         assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))
         run(Workspace.CREATE, """{"name": "乙", "language": "zh"}""")
         assertEquals("乙", output(run(Workspace.CURRENT)).getValue("name").jsonPrimitive.content)
+        assertEquals("empty", (run(Workspace.EXPORT, """{"format": "kml"}""") as Outcome.Failed).code, "no KML of a project without layers")
     }
 
     @Test

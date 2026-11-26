@@ -11,6 +11,7 @@
     <string name="saved">已保存</string>
     <string name="start_failed">同勘没能启动：%1$s</string>
     <string name="action_failed">没有成功：%1$s</string>
+    <string name="failure_empty">工程里没有图层</string>
     <string name="failure_unsaved">工程里有没保存的修改，先保存或放弃。</string>
 
     <!-- 权限 -->
@@ -113,6 +114,7 @@
     <string name="pick_layer_remember">记住此选项并不再提示</string>
     <string name="layer_new">新建图层</string>
     <string name="layer_name">图层名称</string>
+    <string name="layer_name_reserved">不能用这个开头</string>
     <string name="layer_name_taken">已经有叫这个名字的图层了</string>
     <string name="layer_default_name">野外点</string>
     <string name="layers_none">还没有图层</string>
