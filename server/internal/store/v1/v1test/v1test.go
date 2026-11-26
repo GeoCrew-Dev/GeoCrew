@@ -643,12 +643,16 @@ func roles(t *testing.T, open Opener) {
 	if err != nil || up.Name != newName || up.Version != 2 || up.Permissions[perm.ExportData] != perm.All {
 		t.Fatalf("update: %v %+v", err, up)
 	}
-	if got := tm.bumped(t, before); got[b] != false || len(got) != 0 {
-		// b already exported through the base role, so nothing b may do changed.
+	if got := tm.bumped(t, before); len(got) != 0 {
+		// b already exported through the base role, so nothing anyone may do changed.
 		t.Fatalf("access versions bumped for %v, want none", got)
 	}
 	if _, err := s.UpdateRole(ctx, tm.ws, l, perm.Base, v1.RoleUpdate{Name: &newName}, 1); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("rename the base role: %v", err)
+	}
+	// The base role binds people above the deputy too: only the leader changes it.
+	if _, err := s.UpdateRole(ctx, tm.ws, a, perm.Base, v1.RoleUpdate{Permissions: map[string]perm.Level{}}, 1); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("the deputy changes the base role: %v", err)
 	}
 	before = tm.versions(t)
 	basePerms := copyLevels(v1.DefaultBasePermissions)
