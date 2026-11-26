@@ -66,6 +66,17 @@ fun reshapeVertices(feature: JsonObject): Pair<Boolean, List<LatLng>>? {
     }
 }
 
+/** Whether layers of geometry types [a] and [b] (OGC names) hold the same kind of feature: points, lines or areas. */
+fun sameKind(a: String?, b: String?): Boolean {
+    fun kind(g: String?) = when {
+        g == null -> null
+        g.contains("POLYGON") -> 2
+        g.contains("LINE") -> 1
+        else -> 0
+    }
+    return kind(a) != null && kind(a) == kind(b)
+}
+
 /** Whether a layer of [geometry] (an OGC name such as MULTIPOLYGON) holds areas. */
 fun holdsAreas(geometry: String?): Boolean = geometry?.contains("POLYGON") == true
 
