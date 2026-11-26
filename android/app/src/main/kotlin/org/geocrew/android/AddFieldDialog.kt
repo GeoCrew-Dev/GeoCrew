@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.geocrew.core.project.ProjectFormat
+import org.geocrew.storage.Workspace
 
 /** The field types a user can add, in the order offered. Dates with a time wait for a picker. */
 private val TYPES = listOf("string", "real", "integer", "date", "boolean")
@@ -35,7 +36,7 @@ fun AddFieldDialog(existing: List<String>, onDismiss: () -> Unit, onAdd: (name: 
     var name by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(TYPES.first()) }
     val trimmed = name.trim()
-    val taken = existing.any { it.equals(trimmed, ignoreCase = true) } || trimmed.equals("fid", ignoreCase = true)
+    val taken = (existing + Workspace.RESERVED).any { it.equals(trimmed, ignoreCase = true) }
     val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && !taken
     AlertDialog(
         onDismissRequest = onDismiss,

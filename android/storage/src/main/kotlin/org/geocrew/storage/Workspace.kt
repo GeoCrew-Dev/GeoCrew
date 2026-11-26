@@ -126,15 +126,22 @@ class Workspace(private val projects: Projects) {
             val type = FieldType.of(p.getValue("type").jsonPrimitive.content)
             val unsaved = editing.layersBeingEdited.filter(editing::isModified)
             if (unsaved.isNotEmpty()) return@WorkspaceAction ActionResult.Failed("unsaved", "save or discard the edits of ${unsaved.joinToString()} first")
+            // The project's file is opened again, so no layer may stay open for editing. The
+            // layer itself is let go when clean; another would keep an undo history on a
+            // buffer that is gone, so it has to be stopped first.
+            val others = editing.layersBeingEdited - layer
+            if (others.isNotEmpty()) return@WorkspaceAction ActionResult.Failed("editing", "stop editing ${others.joinToString()} first")
             val existing = project.target(layer).store.fields.map { it.name }
             require(name.isNotEmpty() && name.length <= ProjectFormat.MAX_NAME) { "a field name has 1 to ${ProjectFormat.MAX_NAME} characters" }
-            require(existing.none { it.equals(name, ignoreCase = true) } && !name.equals("fid", ignoreCase = true)) {
+            require(existing.none { it.equals(name, ignoreCase = true) } && RESERVED.none { it.equals(name, ignoreCase = true) }) {
                 "the layer already has a field $name"
             }
-            // The layer's file is opened again, so nothing of the project may stay open for editing.
-            editing.layersBeingEdited.forEach(editing::release)
+            editing.release(layer)
             project.addField(layer, name, type)
-            current = projects.reopen(project)
+            current = runCatching { projects.reopen(project) }.getOrElse {
+                current = null // closed, and not open again
+                throw it
+            }
             ActionResult.Done(buildJsonObject { put("layer", layer); put("field", name) }, endsUndo = Editing.scope(layer))
         },
         WorkspaceAction(CLOSE, "Close project", "Closes the open project", Risk.VIEW, NO_PARAMS, "{}") {
@@ -190,6 +197,9 @@ class Workspace(private val projects: Projects) {
         const val FEATURES = "layer.features"
         const val EXPORT = "project.export"
         const val FIELD_ADD = "layer.field.add"
+
+        /** Columns every GeoPackage layer has: its feature id and its geometry. */
+        val RESERVED = setOf("fid", "geom")
 
         private fun schema(s: String) = Json.parseToJsonElement(s).jsonObject
 
