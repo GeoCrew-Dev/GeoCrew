@@ -292,6 +292,9 @@ func (v *V1) access(ctx context.Context, q querier, ws v1.Workspace) (perm.Works
 	for _, m := range members {
 		out.Members[m.ID] = m.Roles
 	}
+	if out.Layers, err = v.overrides(ctx, q, workspaceID); err != nil {
+		return perm.Workspace{}, err
+	}
 	rows, err := q.QueryContext(ctx, `SELECT id, position, permissions FROM v1_roles WHERE workspace_id = ?`, workspaceID)
 	if err != nil {
 		return perm.Workspace{}, err

@@ -213,6 +213,7 @@ func (v *V1) DeleteRole(ctx context.Context, workspaceID, actor, id string) erro
 	}
 	for _, q := range []string{
 		`DELETE FROM v1_member_roles WHERE workspace_id = ? AND role_id = ?`,
+		`DELETE FROM v1_layer_overrides WHERE workspace_id = ? AND role_id = ?`,
 		`DELETE FROM v1_roles WHERE workspace_id = ? AND id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, ws.ID, id); err != nil {
@@ -223,6 +224,9 @@ func (v *V1) DeleteRole(ctx context.Context, workspaceID, actor, id string) erro
 	delete(after.Roles, id)
 	for m, rs := range after.Members {
 		after.Members[m] = without(rs, id)
+	}
+	for _, roles := range after.Layers {
+		delete(roles, id)
 	}
 	if err := v.bumpChanged(ctx, tx, ws.ID, acc, after); err != nil {
 		return err
@@ -302,22 +306,29 @@ func (v *V1) SetMemberRoles(ctx context.Context, workspaceID, actor, target stri
 	return v.member(ctx, v.d.db, ws.ID, target)
 }
 
-// copyAccess copies the maps a change rewrites (roles and members' role
-// lists), so the old picture stays intact for comparison.
+// copyAccess copies the maps a change rewrites (roles, members' role lists,
+// layer overrides), so the old picture stays intact for comparison.
 func copyAccess(w perm.Workspace) perm.Workspace {
-	out := perm.Workspace{Leader: w.Leader, Roles: map[string]perm.Role{}, Members: map[string][]string{}, Layers: w.Layers}
+	out := perm.Workspace{Leader: w.Leader, Roles: map[string]perm.Role{}, Members: map[string][]string{},
+		Layers: map[string]map[string]map[string]perm.Level{}}
 	for id, r := range w.Roles {
 		out.Roles[id] = r
 	}
 	for m, rs := range w.Members {
 		out.Members[m] = append([]string{}, rs...)
 	}
+	for layer, roles := range w.Layers {
+		out.Layers[layer] = map[string]map[string]perm.Level{}
+		for r, set := range roles {
+			out.Layers[layer][r] = set
+		}
+	}
 	return out
 }
 
 // accessSignature sums up what member may do: rank, every permission and
-// every layer override, so two pictures can be compared.
-func accessSignature(w perm.Workspace, member string) string {
+// the overridable ones on each of layers, so two pictures can be compared.
+func accessSignature(w perm.Workspace, member string, layers []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d;", w.Rank(member))
 	perms := make([]string, 0, len(perm.Permissions))
@@ -328,11 +339,6 @@ func accessSignature(w perm.Workspace, member string) string {
 	for _, p := range perms {
 		fmt.Fprintf(&b, "%d", w.Level(member, p, ""))
 	}
-	layers := make([]string, 0, len(w.Layers))
-	for l := range w.Layers {
-		layers = append(layers, l)
-	}
-	sort.Strings(layers)
 	for _, l := range layers {
 		fmt.Fprintf(&b, ";%s:%d%d%d", l, w.Level(member, perm.ViewLayer, l), w.Level(member, perm.EditRows, l), w.Level(member, perm.DeleteRows, l))
 	}
@@ -342,8 +348,20 @@ func accessSignature(w perm.Workspace, member string) string {
 // bumpChanged raises access_version for every member whose permissions
 // differ between before and after (protocol 5.7, 10.2).
 func (v *V1) bumpChanged(ctx context.Context, tx *Tx, workspaceID string, before, after perm.Workspace) error {
+	// Both pictures are read on the same layers, those with overrides in either.
+	seen := map[string]bool{}
+	layers := []string{}
+	for _, w := range []perm.Workspace{before, after} {
+		for l := range w.Layers {
+			if !seen[l] {
+				seen[l] = true
+				layers = append(layers, l)
+			}
+		}
+	}
+	sort.Strings(layers)
 	for m := range after.Members {
-		if accessSignature(before, m) == accessSignature(after, m) {
+		if accessSignature(before, m, layers) == accessSignature(after, m, layers) {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE v1_members SET access_version = access_version + 1 WHERE workspace_id = ? AND id = ?`,
