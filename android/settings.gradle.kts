@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "geocrew-android"
-include(":app", ":core:action", ":core:edit")
+include(":app", ":core:action", ":core:edit", ":storage")
