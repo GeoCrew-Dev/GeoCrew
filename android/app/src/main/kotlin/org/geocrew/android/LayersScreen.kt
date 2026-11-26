@@ -97,7 +97,6 @@ data class LayerInfo(
     val opacity: Float = 1f,
     val geometry: String? = null,
     val style: LayerStyle = LayerStyle(color),
-    val styled: Boolean = false,
 )
 
 /** The layers project.current lists, in order, each in its colour on the map. */
@@ -112,7 +111,6 @@ fun listedLayers(about: JsonObject): List<LayerInfo> = about["layers"]?.jsonArra
         styleOf(listed, layerColor(madeIndex(listed))).color,
         geometry = (listed["geometry"] as? JsonPrimitive)?.contentOrNull,
         style = styleOf(listed, layerColor(madeIndex(listed))),
-        styled = listed["style"] != null,
         visible = (listed["visible"] as? JsonPrimitive)?.contentOrNull != "false",
         opacity = (listed["opacity"] as? JsonPrimitive)?.contentOrNull?.toFloatOrNull() ?: 1f,
     )

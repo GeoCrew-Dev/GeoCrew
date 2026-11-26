@@ -430,6 +430,11 @@ class Project internal constructor(
         val fields = VectorLayerStore(dataset, like).fields.filter { it.type != FieldType.OTHER } // fields GeoCrew cannot edit stay behind
         addLayer(dataset, name, source.geometry ?: "POINT", source.srs ?: "EPSG:4490", source.template, fields)
         layers = readLayers(dataset)
+        // Its style too, so a feature moved across keeps its look.
+        styles[source.id]?.let { style ->
+            val made = layers.single { it.name == name }.id
+            dataset.sql("INSERT OR REPLACE INTO ${ProjectFormat.STYLE_TABLE} (layer_id, style) VALUES (${quote(made)}, ${quote(style.toString())})")
+        }
         putOnTop(name)
         return layers.single { it.name == name }
     }

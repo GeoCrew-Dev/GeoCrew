@@ -425,7 +425,7 @@ fun MapScreen(
                 SymbolLayer(POINT_LABELS, POINT_SOURCE).withProperties(
                     PropertyFactory.iconImage(Expression.get(MapLabels.PROPERTY)),
                     PropertyFactory.iconAnchor(Property.ICON_ANCHOR_LEFT),
-                    PropertyFactory.iconOffset(arrayOf(8f, 0f)),
+                    PropertyFactory.iconOffset(Expression.get(LABEL_OFFSET)),
                     PropertyFactory.iconOpacity(Expression.get(OPACITY)),
                 ).withFilter(Expression.all(Expression.has(MapLabels.PROPERTY), isType("Point"))),
             )
@@ -1358,7 +1358,9 @@ private fun tagged(feature: JsonObject, layer: Int, style: LayerStyle, opacity: 
     val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
     val fid = (feature["id"] as? JsonPrimitive)?.contentOrNull
     val shown = properties + (COLOR to JsonPrimitive(style.hex)) + (OPACITY to JsonPrimitive(opacity)) +
-        (SIZE to JsonPrimitive(style.size)) + (WIDTH to JsonPrimitive(style.width)) + (FILL to JsonPrimitive(style.fill))
+        (SIZE to JsonPrimitive(style.size)) + (WIDTH to JsonPrimitive(style.width)) + (FILL to JsonPrimitive(style.fill)) +
+        // The name label starts just right of the point, however big the point is.
+        (LABEL_OFFSET to JsonArray(listOf(JsonPrimitive(style.size + 2), JsonPrimitive(0))))
     return JsonObject(feature + ("id" to JsonPrimitive("$layer/$fid")) + ("properties" to JsonObject(shown)))
 }
 
@@ -1369,6 +1371,7 @@ private const val OPACITY = "_opacity"
 private const val SIZE = "_size"
 private const val WIDTH = "_width"
 private const val FILL = "_fill"
+private const val LABEL_OFFSET = "_label_offset"
 
 /** The project's name, and whether it has edits to save; fixed and opaque. */
 @Composable

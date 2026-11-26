@@ -381,7 +381,10 @@ class WorkspaceTest {
         run(Workspace.CLOSE)
         run(Workspace.OPEN, """{"name": "样式"}""")
         assertEquals(8.0, style(output(run(Workspace.CURRENT)))!!.getValue("size").jsonPrimitive.content.toDouble(), "kept in the file")
-        assertNull(style(output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {}}"""))), "an empty style is the default again")
+        val like = output(run(Workspace.LAYER_CREATE, """{"name": "泉点", "like": "野外点"}""")).getValue("layers").jsonArray
+            .map { it.jsonObject }.single { it.getValue("name").jsonPrimitive.content == "泉点" }
+        assertEquals("#1e88e5", like["style"]?.jsonObject?.getValue("color")?.jsonPrimitive?.content, "a layer made like another takes its style")
+        assertNull(output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {}}""")).getValue("layers").jsonArray.map { it.jsonObject }.single { it.getValue("name").jsonPrimitive.content == "野外点" }["style"], "an empty style is the default again")
     }
 
     @Test
