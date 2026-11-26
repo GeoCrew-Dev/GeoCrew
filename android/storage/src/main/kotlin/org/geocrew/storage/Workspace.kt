@@ -40,6 +40,9 @@ class Workspace(private val projects: Projects) {
         WorkspaceAction(OPEN, "Open project", "Opens a project, closing the one that is open", Risk.VIEW, NAME_PARAMS, """{"name": "测区一号"}""") { p ->
             switchTo { projects.open(p.name()) }
         },
+        WorkspaceAction(CURRENT, "Current project", "The open project and its layers; an empty object when none is open", Risk.VIEW, NO_PARAMS, "{}") {
+            ActionResult.Done(current?.let(::about) ?: JsonObject(emptyMap()))
+        },
         WorkspaceAction(CLOSE, "Close project", "Closes the open project", Risk.VIEW, NO_PARAMS, "{}") {
             busy() ?: ActionResult.Done().also {
                 current?.close()
@@ -89,6 +92,7 @@ class Workspace(private val projects: Projects) {
         const val CREATE = "project.create"
         const val OPEN = "project.open"
         const val CLOSE = "project.close"
+        const val CURRENT = "project.current"
 
         private fun schema(s: String) = Json.parseToJsonElement(s).jsonObject
 

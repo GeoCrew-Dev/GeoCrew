@@ -63,6 +63,13 @@ class WorkspaceTest {
     }
 
     @Test
+    fun theOpenProjectCanBeAskedFor() {
+        assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))
+        run(Workspace.CREATE, """{"name": "乙"}""")
+        assertEquals("乙", output(run(Workspace.CURRENT)).getValue("name").jsonPrimitive.content)
+    }
+
+    @Test
     fun aFailedOpenKeepsTheOpenProject() {
         run(Workspace.CREATE, """{"name": "甲"}""")
         assertIs<Outcome.Failed>(run(Workspace.OPEN, """{"name": "没有这个"}"""))

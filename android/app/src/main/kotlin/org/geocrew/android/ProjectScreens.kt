@@ -74,6 +74,7 @@ fun ProjectsRoute(graph: AppGraph) {
     var projects by remember { mutableStateOf(emptyList<String>()) }
     var open by remember { mutableStateOf<JsonObject?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
+    var startFailure by remember { mutableStateOf<String?>(null) }
 
     suspend fun refresh() {
         val listed = graph.invoke(Workspace.LIST)
@@ -91,13 +92,23 @@ fun ProjectsRoute(graph: AppGraph) {
     }
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { graph.start() }
+        val started = withContext(Dispatchers.IO) { runCatching { graph.start() } }
+        started.exceptionOrNull()?.let {
+            startFailure = it.message ?: it.toString()
+            return@LaunchedEffect
+        }
         refresh()
+        // The activity may have been made again (the phone turned) with a project still open.
+        val current = graph.invoke(Workspace.CURRENT)
+        if (current is Outcome.Done && current.output.jsonObject.containsKey("name")) open = current.output.jsonObject
         ready = true
     }
 
     val shown = open
     when {
+        startFailure != null -> Scaffold { padding ->
+            Text(stringResource(R.string.start_failed, startFailure!!), Modifier.padding(padding).padding(24.dp))
+        }
         !ready -> Scaffold { padding -> Text(stringResource(R.string.starting), Modifier.padding(padding).padding(24.dp)) }
         shown != null -> ProjectScreen(shown, onClose = {
             run(Workspace.CLOSE, JsonObject(emptyMap())) {

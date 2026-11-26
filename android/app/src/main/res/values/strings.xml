@@ -4,6 +4,7 @@
     <string name="ok">确定</string>
     <string name="cancel">取消</string>
     <string name="starting">正在准备…</string>
+    <string name="start_failed">同勘没能启动：%1$s</string>
     <string name="action_failed">没有成功：%1$s</string>
 
     <string name="storage_title">工程放在哪里</string>
