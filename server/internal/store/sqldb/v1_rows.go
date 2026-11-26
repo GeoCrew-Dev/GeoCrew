@@ -210,7 +210,12 @@ func (p *push) one(ctx context.Context, c v1.Change) (v1.Result, error) {
 		live["geom"] = true
 	}
 	for id, e := range c.Set {
-		if !live[id] {
+		switch {
+		case len(e.Value) > maxValue:
+			return rejected(c, v1.RejectInvalidValue, id+" is larger than 1 MiB"), nil
+		case id == "geom" && l.GeometryType == "None":
+			return rejected(c, v1.RejectInvalidValue, "the layer has no geometry"), nil
+		case !live[id]:
 			continue // becomes a deleted_field conflict, so the value is kept
 		}
 		if msg := checkValue(l.GeometryType, types[id], id, e.Value); msg != "" {
@@ -329,6 +334,9 @@ func (p *push) recordChange(ctx context.Context, c v1.Change, seq int64) error {
 		p.ws.ID, c.ID, c.Row, seq, p.actor, fmtV1Time(p.serverNow), string(body))
 	return err
 }
+
+// maxValue bounds one field value, geometries included: every pull carries it.
+const maxValue = 1 << 20
 
 // maxSafeInt is the largest integer every JSON parser keeps exactly (protocol 7.2).
 const maxSafeInt = 1<<53 - 1
