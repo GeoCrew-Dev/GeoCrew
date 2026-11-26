@@ -1,6 +1,7 @@
 package org.geocrew.storage
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -264,6 +265,32 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(Crs.describe(p.getValue("srs").jsonPrimitive.content))
         },
         WorkspaceAction(
+            CRS_SEARCH, "Search CRSs",
+            "CRSs PROJ knows whose name or code has every word of text (Chinese words for China's CRSs work: 西安80, 高斯 3 度带, 38带), " +
+                "of the kinds asked for (geographic and projected by default), applying at near [longitude, latitude] when given; " +
+                "or, with srs, those CRSs by AUTH:CODE",
+            Risk.VIEW, CRS_SEARCH_PARAMS, """{"text": "2000 3度带", "near": [114.3, 30.6]}""",
+        ) { p ->
+            val found = (p["srs"] as? JsonArray)?.let { list -> CrsCatalog.find(list.map { it.jsonPrimitive.content }) } ?: run {
+                val near = (p["near"] as? JsonArray)?.map { it.jsonPrimitive.double }?.let { require(it.size == 2) { "near is [longitude, latitude]" }; it[0] to it[1] }
+                val kinds = (p["kinds"] as? JsonArray)?.map { it.jsonPrimitive.content }?.toSet() ?: CrsCatalog.HORIZONTAL
+                CrsCatalog.search((p["text"] as? JsonPrimitive)?.contentOrNull.orEmpty(), kinds, near, (p.number("limit") ?: 200.0).toInt())
+            }
+            ActionResult.Done(
+                buildJsonObject {
+                    putJsonArray("crs") {
+                        for (e in found) addJsonObject {
+                            put("srs", e.srs)
+                            put("name", e.name)
+                            put("type", e.type)
+                            e.area?.let { put("area", it) }
+                            if (e.deprecated) put("deprecated", true)
+                        }
+                    }
+                },
+            )
+        },
+        WorkspaceAction(
             CRS_TRANSFORM, "Transform coordinates",
             "x, y pairs (longitude or easting first) from one CRS to another; a pair that cannot be transformed comes back as null",
             Risk.VIEW, TRANSFORM_PARAMS, """{"from": "EPSG:4490", "to": "EPSG:4547", "xy": [114.0, 30.0]}""",
@@ -380,6 +407,7 @@ class Workspace(private val projects: Projects) {
         const val LAYER_INFO = "layer.info"
         const val LAYER_CREATE = "layer.create"
         const val CRS_DESCRIBE = "crs.describe"
+        const val CRS_SEARCH = "crs.search"
         const val LAYER_DISPLAY = "layer.display"
         const val LAYER_RENAME = "layer.rename"
         const val LAYER_DELETE = "layer.delete"
@@ -443,6 +471,14 @@ class Workspace(private val projects: Projects) {
         )
         private val ORDER_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layers"], "properties": {"layers": {"type": "array", "items": {"type": "string"}}}}""",
+        )
+        private val CRS_SEARCH_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "properties": {
+                "text": {"type": "string"},
+                "kinds": {"type": "array", "items": {"enum": ["geographic", "projected", "geographic3d", "geocentric", "vertical", "compound"]}},
+                "near": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+                "srs": {"type": "array", "items": {"type": "string"}},
+                "limit": {"type": "integer"}}}""",
         )
         private val CRS_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["srs"], "properties": {"srs": {"type": "string"}}}""",

@@ -57,6 +57,17 @@ class AppSettings(context: Context) {
         prefs.edit { putBoolean(ROTATION_LOCKED, on) }
     }
 
+    /** CRSs picked lately (AUTH:CODE), newest first, for the CRS picker. */
+    var recentCrs by mutableStateOf(prefs.getString(RECENT_CRS, null)?.split(',')?.filter { it.isNotBlank() }.orEmpty())
+        private set
+
+    /** Puts [srs] first among the recently used; definitions (WKT, PROJ strings) are not kept. */
+    fun usedCrs(srs: String) {
+        if (!Regex("[A-Za-z0-9_]+:[A-Za-z0-9_]+").matches(srs)) return
+        recentCrs = (listOf(srs) + recentCrs.filterNot { it.equals(srs, ignoreCase = true) }).take(RECENT_CRS_KEPT)
+        prefs.edit { putString(RECENT_CRS, recentCrs.joinToString(",")) }
+    }
+
     fun markLocationAsked() {
         locationAsked = true
         prefs.edit { putBoolean(LOCATION_ASKED, true) }
@@ -80,6 +91,8 @@ class AppSettings(context: Context) {
         const val OWN_FOLDER = "own_folder"
         const val LOCATION_ASKED = "location_asked"
         const val ROTATION_LOCKED = "rotation_locked"
+        const val RECENT_CRS = "recent_crs"
+        const val RECENT_CRS_KEPT = 8
     }
 }
 

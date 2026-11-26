@@ -212,6 +212,7 @@ fun MapScreen(
     var failure by remember { mutableStateOf<String?>(null) }
     // The phone's position: the system asks for permission the first time; no fix is said plainly.
     val noFixText = stringResource(R.string.no_fix)
+    val goToOutsideText = stringResource(R.string.go_to_outside)
     // Whether the map may show where the phone is; granted later, it shows from then on.
     var located by remember { mutableStateOf(mayLocate(context)) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) located = true }
@@ -919,10 +920,15 @@ fun MapScreen(
     }
     if (goingTo) {
         GoToDialog(
+            graph = graph,
+            near = mapCenter?.let { it.longitude to it.latitude },
             onDismiss = { goingTo = false },
-            onGo = { longitude, latitude ->
+            onGo = { at ->
                 goingTo = false
-                goTo(longitude, latitude)
+                scope.launch {
+                    val degrees = if (Crs.same(at.srs, Crs.LONGITUDE_LATITUDE)) at.x to at.y else convert(at.srs, Crs.LONGITUDE_LATITUDE, at.x, at.y)
+                    if (degrees == null) failure = goToOutsideText else goTo(degrees.first, degrees.second)
+                }
             },
         )
     }
@@ -993,8 +999,8 @@ fun MapScreen(
                 naming = false
                 createLayer(name, srs)
             },
-            centerLongitude = mapCenter?.longitude,
-            describe = describeCrs,
+            graph = graph,
+            near = mapCenter?.let { it.longitude to it.latitude },
         )
     }
     draft?.let { d ->

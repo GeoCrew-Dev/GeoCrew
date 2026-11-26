@@ -297,6 +297,38 @@ class WorkspaceTest {
         assertIs<Outcome.Failed>(run(Workspace.BOOKMARK_DELETE, "{\"id\": $first}"), "already gone")
     }
 
+    // The CRS picker searches all of PROJ's CRSs, in Chinese words too.
+    @Test
+    fun crsSearchFindsByCodeNameChineseAndPlace() {
+        fun found(params: String): List<JsonObject> {
+            val outcome = run(Workspace.CRS_SEARCH, params)
+            assertIs<Outcome.Done>(outcome, "$params: $outcome")
+            return outcome.output.jsonObject.getValue("crs").jsonArray.map { it.jsonObject }
+        }
+        fun srs(params: String) = found(params).map { it.getValue("srs").jsonPrimitive.content }
+
+        assertEquals("EPSG:4547", srs("""{"text": "4547"}""").first(), "a code comes first")
+        assertEquals("EPSG:4547", srs("""{"text": "epsg:4547"}""").first())
+        val wgs = found("""{"text": "WGS84"}""").first { it.getValue("srs").jsonPrimitive.content == "EPSG:4326" }
+        assertEquals("WGS 84", wgs.getValue("name").jsonPrimitive.content, "spaces don't matter")
+        assertEquals("geographic 2D", wgs.getValue("type").jsonPrimitive.content)
+        assertTrue("EPSG:4610" in srs("""{"text": "西安80"}"""), "Xian 1980 from Chinese")
+        assertTrue("EPSG:4214" in srs("""{"text": "北京54"}"""), "Beijing 1954 from Chinese")
+        assertEquals(listOf("EPSG:4526"), srs("""{"text": "国家2000 高斯 38带"}"""), "zone 38 of the 3-degree zones")
+        assertEquals(listOf("EPSG:4547"), srs("""{"text": "2000 三度带 中央经线114"}"""))
+
+        // Where the map is: only the zones that apply there, and an area to show.
+        val here = found("""{"text": "cgcs2000 3度带", "near": [114.3, 30.6]}""")
+        assertEquals(setOf("EPSG:4526", "EPSG:4547"), here.map { it.getValue("srs").jsonPrimitive.content }.toSet())
+        assertTrue(here.all { it.getValue("area").jsonPrimitive.content.startsWith("China") })
+        assertTrue(srs("""{"near": [114.3, 30.6]}""").size > 20, "every CRS for the place, with no words")
+        assertTrue(srs("""{"text": "2000", "kinds": ["geographic"]}""").all { it != "EPSG:4547" }, "no projected CRS")
+
+        assertEquals(listOf("EPSG:4490", "EPSG:4547"), srs("""{"srs": ["EPSG:4490", "EPSG:999999", "EPSG:4547"]}"""), "by code, unknown ones left out")
+        assertEquals(emptyList(), srs("""{"text": ""}"""))
+        assertIs<Outcome.Failed>(run(Workspace.CRS_SEARCH, """{"near": [114.3]}"""))
+    }
+
     @Test
     fun theOpenProjectCanBeAskedFor() {
         assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))
