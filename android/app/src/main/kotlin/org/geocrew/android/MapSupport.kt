@@ -147,13 +147,28 @@ internal fun share(context: Context, file: File, title: String) {
 
 /**
  * The map as it is now, at full size, as a PNG in [dir] named after [project]
- * and the time, like the exports; null when MapLibre gives no picture.
+ * and the time, like the exports, with [attribution] (the basemap's credit) in
+ * its corner; null when MapLibre gives no picture or it cannot be written.
  */
-internal suspend fun saveScreenshot(map: MapLibreMap, dir: File, project: String): File? {
+internal suspend fun saveScreenshot(map: MapLibreMap, dir: File, project: String, attribution: String?, density: Float): File? {
     val shot = suspendCancellableCoroutine<Bitmap?> { continuation ->
         map.snapshot { if (continuation.isActive) continuation.resume(it) }
     } ?: return null
-    return withContext(Dispatchers.IO) {
+    return withContext(Dispatchers.IO) { runCatching { writeScreenshot(shot, dir, project, attribution, density) }.getOrNull() }
+}
+
+private fun writeScreenshot(snapshot: Bitmap, dir: File, project: String, attribution: String?, density: Float): File? {
+    val shot = if (attribution == null) snapshot else snapshot.copy(Bitmap.Config.ARGB_8888, true).also { picture ->
+        // The credit as the map shows it: small, at the bottom right, readable on imagery.
+        val canvas = android.graphics.Canvas(picture)
+        val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 11 * density; color = android.graphics.Color.WHITE }
+        val halo = android.graphics.Paint(fill).apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 3 * density; color = android.graphics.Color.BLACK }
+        val x = picture.width - fill.measureText(attribution) - 8 * density
+        val y = picture.height - 8 * density
+        canvas.drawText(attribution, x, y, halo)
+        canvas.drawText(attribution, x, y, fill)
+    }
+    run {
         dir.mkdirs()
         val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
         var out = File(dir, "$project-$stamp.png")
@@ -162,7 +177,7 @@ internal suspend fun saveScreenshot(map: MapLibreMap, dir: File, project: String
         // Written under another name first: a picture cut short never looks finished.
         val part = File(out.path + ".part")
         part.outputStream().use { shot.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        if (part.renameTo(out)) out else null
+        return if (part.renameTo(out)) out else null
     }
 }
 

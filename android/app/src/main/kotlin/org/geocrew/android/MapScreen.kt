@@ -222,6 +222,7 @@ fun MapScreen(
     val noFixText = stringResource(R.string.no_fix)
     val goToOutsideText = stringResource(R.string.go_to_outside)
     val screenshotFailedText = stringResource(R.string.map_screenshot_failed)
+    val attributionText = stringResource(R.string.attribution_tianditu)
     // Whether the map may show where the phone is; granted later, it shows from then on.
     var located by remember { mutableStateOf(mayLocate(context)) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) located = true }
@@ -1066,7 +1067,7 @@ fun MapScreen(
                         MenuTool(stringResource(R.string.tool_screenshot), Icons.Rounded.PhotoCamera) {
                             scope.launch {
                                 // The map alone, without the buttons; saved with the exports, then offered to share.
-                                val file = saveScreenshot(mapView.awaitMap(), File(graph.root, Projects.EXPORTS), project)
+                                val file = saveScreenshot(mapView.awaitMap(), File(graph.root, Projects.EXPORTS), project, attributionText.takeIf { key != null }, density)
                                 if (file != null) exported = file else failure = screenshotFailedText
                             }
                         },
