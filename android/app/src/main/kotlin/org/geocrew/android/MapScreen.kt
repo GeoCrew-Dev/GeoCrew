@@ -253,12 +253,11 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
         }
     }
 
+    // A feature that has gone (an undone addition, say) shows no form.
     selected?.let { fid ->
         val feature = collection?.get("features")?.jsonArray?.map { it.jsonObject }
             ?.firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() == fid }
-        if (feature == null) {
-            selected = null
-        } else {
+        if (feature != null) {
             val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
             val fields = collection?.get("fields")?.jsonArray.orEmpty().map {
                 val f = it.jsonObject
