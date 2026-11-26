@@ -9,6 +9,8 @@ import (
 
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/storetest"
+	v1 "github.com/GeoCrew-Dev/GeoCrew/server/internal/store/v1"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/v1/v1test"
 )
 
 func open(t *testing.T) *DB {
@@ -121,4 +123,8 @@ func TestCopyTo(t *testing.T) {
 	if _, err := src.CopyTo(ctx, dst); err == nil {
 		t.Fatal("copied into a database that already has workspaces")
 	}
+}
+
+func TestContractV1(t *testing.T) {
+	v1test.Run(t, func(t *testing.T, now func() time.Time) v1.Store { return open(t).V1().WithClock(now) })
 }
