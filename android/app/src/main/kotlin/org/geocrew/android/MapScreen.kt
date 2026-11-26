@@ -108,6 +108,7 @@ import kotlinx.serialization.json.putJsonArray
 import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
+import org.geocrew.core.edit.FieldType
 import org.geocrew.core.project.PointNumbers
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
@@ -395,6 +396,7 @@ fun MapScreen(
         }
         val fid = (added.output.jsonObject["fid"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: return@once
         scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
             val answer = snackbar.showSnackbar(addedText.format(layer), actionLabel = changeLayerText, duration = SnackbarDuration.Long)
             if (answer == SnackbarResult.ActionPerformed) moving = layer to fid
         }
@@ -403,7 +405,7 @@ fun MapScreen(
     fun move(m: Move) = once {
         if (!startEditing(m.layer) || !startEditing(m.to)) return@once
         if (act(Editing.MOVE, buildJsonObject { put("layer", m.layer); put("fid", m.fid); put("to", m.to) })) {
-            scope.launch { snackbar.showSnackbar(movedText.format(m.to)) }
+            scope.launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(movedText.format(m.to)) }
         }
     }
 
@@ -411,8 +413,10 @@ fun MapScreen(
     fun requestMove(layer: String, fid: Long, to: String) {
         val feature = collections[layer]?.get("features")?.jsonArray?.map { it.jsonObject }
             ?.firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() == fid } ?: return
-        val kept = fieldNames(collections[to]).toSet()
-        val lost = (feature["properties"] as? JsonObject).orEmpty().filter { (name, value) -> value !is JsonNull && name !in kept }.keys.toList()
+        // A value goes along when the other layer has a field of that name that takes it, as the move itself decides.
+        val takes = formFields(collections[to]).associate { it.name to FieldType.of(it.type) }
+        val lost = (feature["properties"] as? JsonObject).orEmpty()
+            .filter { (name, value) -> value !is JsonNull && takes[name]?.accepts(value) != true }.keys.toList()
         val m = Move(layer, fid, to, lost)
         if (lost.isEmpty()) move(m) else dropping = m
     }
@@ -428,7 +432,7 @@ fun MapScreen(
         }
         if (!startEditing(like) || !startEditing(name)) return@once
         if (act(Editing.MOVE, buildJsonObject { put("layer", like); put("fid", fid); put("to", name) })) {
-            scope.launch { snackbar.showSnackbar(movedText.format(name)) }
+            scope.launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(movedText.format(name)) }
         }
     }
 
@@ -443,7 +447,7 @@ fun MapScreen(
     }
 
     fun save() = once {
-        if (act(Editing.SAVE_ALL, NONE)) scope.launch { snackbar.showSnackbar(savedText) }
+        if (act(Editing.SAVE_ALL, NONE)) scope.launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(savedText) }
     }
 
     // Leaves the map. A picture of it goes to the project's card at home first, if
