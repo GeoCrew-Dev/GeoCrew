@@ -1132,7 +1132,8 @@ fun MapScreen(
     moving?.let { (layer, fid) ->
         LayerPicker(
             title = stringResource(R.string.move_title),
-            layers = points.filter { it.visible && it.name != layer },
+            // Layers of the same kind (points, lines or areas) take the feature.
+            layers = drawables.filter { other -> other.visible && other.name != layer && sameKind(other.geometry, drawables.firstOrNull { it.name == layer }?.geometry) },
             showRemember = false,
             onPick = { to, _ ->
                 moving = null
@@ -1242,10 +1243,10 @@ fun MapScreen(
                     selected = null
                     delete(layer, fid)
                 },
-                onMove = if (coordinatesOf(feature) == null) null else ({
+                onMove = {
                     selected = null
                     moving = layer to fid
-                }),
+                },
                 onReshape = reshapeVertices(feature)?.let { (area, vertices) ->
                     {
                         selected = null
