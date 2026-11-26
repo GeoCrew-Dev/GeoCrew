@@ -1,5 +1,6 @@
 package org.geocrew.android
 
+import android.hardware.GeomagneticField
 import android.location.Location
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -58,6 +59,15 @@ fun azimuthOf(from: LatLng, to: LatLng): Double {
     val results = FloatArray(2)
     Location.distanceBetween(from.latitude, from.longitude, to.latitude, to.longitude, results)
     return (results[1].toDouble() + 360) % 360
+}
+
+/**
+ * The azimuth a compass reads for [azimuth] (true) at [at]: magnetic north lies
+ * east or west of true north by the declination of the World Magnetic Model.
+ */
+fun magneticAzimuth(azimuth: Double, at: LatLng): Double {
+    val declination = GeomagneticField(at.latitude.toFloat(), at.longitude.toFloat(), 0f, System.currentTimeMillis()).declination
+    return (azimuth - declination + 360) % 360
 }
 
 /** 123.4°. */
@@ -163,13 +173,20 @@ fun MeasurePanel(mode: MeasureMode, points: List<LatLng>, onUndo: () -> Unit, on
             Spacer(Modifier.width(12.dp))
             val picked = points.lastOrNull()?.takeIf { mode == MeasureMode.PICK }
             val pickedText = picked?.let { stringResource(R.string.pick_value, degreesText(it.longitude), degreesText(it.latitude)) }
+            // Copied as plain "latitude, longitude", which map apps and spreadsheets take.
+            val copied = picked?.let { String.format(Locale.ROOT, "%.7f, %.7f", it.latitude, it.longitude) }
             Column(Modifier.weight(1f)) {
                 when (mode) {
                     MeasureMode.DISTANCE -> Text(stringResource(R.string.measure_distance_value, distanceText(lengthOf(points))), style = MaterialTheme.typography.titleMedium)
                     MeasureMode.AREA -> Text(stringResource(R.string.measure_area_value, areaText(areaOf(points))), style = MaterialTheme.typography.titleMedium)
                     MeasureMode.AZIMUTH -> if (points.size == 2) {
-                        Text(stringResource(R.string.measure_azimuth_value, azimuthText(azimuthOf(points[0], points[1]))), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.measure_distance_value, distanceText(lengthOf(points))), style = MaterialTheme.typography.bodySmall)
+                        val azimuth = azimuthOf(points[0], points[1])
+                        Text(stringResource(R.string.measure_azimuth_value, azimuthText(azimuth)), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.measure_magnetic_value, azimuthText(magneticAzimuth(azimuth, points[0]))) + " · " +
+                                stringResource(R.string.measure_distance_value, distanceText(lengthOf(points))),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     } else {
                         Text(stringResource(R.string.tool_azimuth), style = MaterialTheme.typography.titleMedium)
                     }
@@ -183,7 +200,7 @@ fun MeasurePanel(mode: MeasureMode, points: List<LatLng>, onUndo: () -> Unit, on
                 if (points.isEmpty()) Text(stringResource(R.string.measure_hint), style = MaterialTheme.typography.bodySmall)
             }
             if (mode == MeasureMode.PICK) {
-                IconButton(onClick = { pickedText?.let { clipboard.setText(AnnotatedString(it)) } }, enabled = picked != null) {
+                IconButton(onClick = { copied?.let { clipboard.setText(AnnotatedString(it)) } }, enabled = picked != null) {
                     Icon(Icons.Rounded.ContentCopy, stringResource(R.string.copy))
                 }
             } else {

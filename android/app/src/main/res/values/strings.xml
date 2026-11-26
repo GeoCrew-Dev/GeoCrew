@@ -163,6 +163,7 @@
     <string name="tool_azimuth">Measure azimuth</string>
     <string name="tool_pick">Pick coordinates</string>
     <string name="measure_azimuth_value">Azimuth %1$s</string>
+    <string name="measure_magnetic_value">Magnetic %1$s</string>
     <string name="pick_value">Lon %1$s  Lat %2$s</string>
     <string name="copy">Copy</string>
     <string name="measure_hint">Tap the map to add points</string>
