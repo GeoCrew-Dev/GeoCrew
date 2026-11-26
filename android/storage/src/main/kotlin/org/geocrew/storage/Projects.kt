@@ -52,7 +52,7 @@ class Projects(private val root: File, private val journals: File) {
         val features: Long,
         val bytes: Long,
         val created: String?,
-        val points: Long = features,
+        val points: Long = features, // generic geometry layers count only in the total
         val lines: Long = 0,
         val areas: Long = 0,
     )
@@ -68,11 +68,12 @@ class Projects(private val root: File, private val journals: File) {
             val kinds = rows(ds, "SELECT table_name, geometry_type_name FROM gpkg_geometry_columns").associate { it["table_name"] to it["geometry_type_name"].orEmpty() }
             val counts = layers.associateWith { rowCount(ds, it) }
             fun of(kind: String) = counts.filterKeys { kinds[it]?.contains(kind) == true }.values.sum()
+            val points = of("POINT")
             val lines = of("LINE")
             val areas = of("POLYGON")
             val features = counts.values.sum()
             val created = rows(ds, "SELECT value FROM ${ProjectFormat.PROJECT_TABLE} WHERE key = 'created'").firstOrNull()?.get("value")
-            Summary(layers.size, features, gpkg(name).length() + File(gpkg(name).path + "-wal").length(), created, features - lines - areas, lines, areas)
+            Summary(layers.size, features, gpkg(name).length() + File(gpkg(name).path + "-wal").length(), created, points, lines, areas)
         }
     }.getOrNull()
 
