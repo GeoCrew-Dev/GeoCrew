@@ -1,6 +1,7 @@
 package org.geocrew.android
 
 import android.Manifest
+import android.hardware.GeomagneticField
 import android.app.Activity
 import android.graphics.RectF
 import android.view.Gravity
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.PinDrop
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Map
@@ -204,7 +206,13 @@ fun MapScreen(
     var failure by remember { mutableStateOf<String?>(null) }
     // The phone's position: the system asks for permission the first time; no fix is said plainly.
     val noFixText = stringResource(R.string.no_fix)
-    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    // Whether the map may show where the phone is; granted later, it shows from then on.
+    var located by remember { mutableStateOf(mayLocate(context)) }
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) located = true }
+    val phone by rememberPhonePosition(located)
+    val heading by rememberHeading(located)
+    // The zoom the heading cone is drawn for, in quarter steps, so it keeps its size on screen.
+    var coneZoom by remember { mutableStateOf(0.0) }
     val locate: suspend () -> Fix? = {
         if (!mayLocate(context)) {
             askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -352,6 +360,8 @@ fun MapScreen(
             true
         }
         map.addOnCameraIdleListener { mapCenter = map.cameraPosition.target?.wrap() }
+        map.addOnCameraMoveListener { coneZoom = Math.round(map.cameraPosition.zoom * 4) / 4.0 }
+        coneZoom = Math.round(map.cameraPosition.zoom * 4) / 4.0
         // A picture for the home screen only once the map has been drawn in full.
         mapView.addOnDidBecomeIdleListener { drawn = true }
         // While a point is being placed, where the crosshair is.
@@ -399,6 +409,7 @@ fun MapScreen(
                     PropertyFactory.circleStrokeWidth(2f),
                 ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Point"))),
             )
+            addMyLocationLayers(style)
             styleLoads++
         }
     }
@@ -424,6 +435,15 @@ fun MapScreen(
         val mode = measuring
         val shown = if (mode == null) measureGeoJson(MeasureMode.DISTANCE, emptyList()) else measureGeoJson(mode, measured)
         style.getSourceAs<GeoJsonSource>(MEASURE_SOURCE)?.setGeoJson(shown.toString())
+    }
+
+    // The phone's position and heading on the map; the compass gives magnetic north, the map wants true north.
+    LaunchedEffect(styleLoads, phone, heading, coneZoom) {
+        val style = mapView.awaitMap().style ?: return@LaunchedEffect
+        val at = phone
+        val north = if (at == null || heading == null) heading else
+            (heading!! + GeomagneticField(at.latitude.toFloat(), at.longitude.toFloat(), 0f, System.currentTimeMillis()).declination + 360) % 360
+        style.getSourceAs<GeoJsonSource>(ME_SOURCE)?.setGeoJson(myLocationGeoJson(at, north, coneZoom).toString())
     }
 
     // Each basemap as the project says: shown or not, and how opaque (Tianditu's imagery is "base", its annotation "labels").
@@ -625,6 +645,19 @@ fun MapScreen(
         map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(latitude, longitude), maxOf(map.cameraPosition.zoom, 15.0)))
     }
 
+    // To where the phone is: the map's last position at once, else one asked for.
+    fun showMe() {
+        if (!mayLocate(context)) {
+            askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            return
+        }
+        scope.launch {
+            val map = mapView.awaitMap()
+            val at = phone?.let { LatLng(it.latitude, it.longitude) } ?: locate()?.let { LatLng(it.latitude, it.longitude) } ?: return@launch
+            map.animateCamera(CameraUpdateFactory.newLatLngZoom(at, maxOf(map.cameraPosition.zoom, 16.0)))
+        }
+    }
+
     fun measure(mode: MeasureMode) {
         placing = false
         measuring = mode
@@ -729,6 +762,7 @@ fun MapScreen(
                     Icons.AutoMirrored.Rounded.Redo, stringResource(R.string.map_redo),
                     onClick = { once { act(ActionRegistry.REDO, projectScope) } }, enabled = history.second,
                 )
+                RoundButton(Icons.Rounded.MyLocation, stringResource(R.string.my_position), onClick = ::showMe)
             }
 
             Row(
