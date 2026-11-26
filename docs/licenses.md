@@ -32,6 +32,7 @@
 | Kotlin 标准库、kotlinx.coroutines、kotlinx.serialization | Apache-2.0 | 安卓客户端的基础库，见 ADR 0016 |
 | Jetpack Compose、Material 3 | Apache-2.0 | 安卓客户端的界面，见 ADR 0016 |
 | JUnit 4 | EPL-1.0 | 只在测试时用，不随应用发布 |
+| AndroidX Test（runner、ext.junit） | Apache-2.0 | 仪器测试用，不随应用发布，见 ADR 0016 |
 | UnifiedPush 连接库 | Apache-2.0 | 待核实 |
 | coder/websocket | ISC | 服务端 |
 | pgx | MIT | 服务端 |
