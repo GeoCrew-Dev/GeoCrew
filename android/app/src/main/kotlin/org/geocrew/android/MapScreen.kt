@@ -659,6 +659,13 @@ fun MapScreen(
         return shapeGeoJson(xy.chunked(2).map { it[0]!! to it[1]!! }, d.area)
     }
 
+    fun reshape(d: Drawing) = once {
+        val fid = d.fid ?: return@once
+        if (!startEditing(d.layer)) return@once
+        val geometry = shapeInLayer(d) ?: return@once
+        act(Editing.GEOMETRY, buildJsonObject { put("layer", d.layer); put("fid", fid); put("geometry", geometry) })
+    }
+
     fun addShape(d: Drawing, values: JsonObject) = once {
         if (!startEditing(d.layer)) return@once
         val geometry = shapeInLayer(d) ?: return@once
@@ -962,8 +969,9 @@ fun MapScreen(
                     RoundButton(
                         Icons.Rounded.Check, stringResource(R.string.draw_finish),
                         onClick = {
-                            shapeDraft = drawing
+                            val done = drawing
                             drawing = null
+                            if (done?.fid != null) reshape(done) else shapeDraft = done
                         },
                         size = 56.dp, solid = true, enabled = d?.complete == true,
                         container = MaterialTheme.colorScheme.primaryContainer, content = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1233,6 +1241,13 @@ fun MapScreen(
                     selected = null
                     moving = layer to fid
                 }),
+                onReshape = reshapeVertices(feature)?.let { (area, vertices) ->
+                    {
+                        selected = null
+                        startDrawing(layer, area)
+                        drawing = Drawing(layer, area, vertices, fid)
+                    }
+                },
                 crs = formCrs[layer],
                 locate = locate,
                 // A line or an area says so when deleted.

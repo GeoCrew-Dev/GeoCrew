@@ -121,6 +121,7 @@
     <string name="draw_new_line_in">新线 · %1$s</string>
     <string name="draw_new_area_in">新面 · %1$s</string>
     <string name="draw_add_vertex">加节点</string>
+    <string name="draw_reshape">编辑形状</string>
     <string name="draw_drop_title">放弃画了一半的要素？</string>
     <string name="draw_drop">放弃</string>
     <string name="draw_finish">完成</string>

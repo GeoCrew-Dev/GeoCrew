@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material3.AlertDialog
@@ -118,6 +119,7 @@ fun FeatureForm(
     onSave: (values: JsonObject, position: Position?) -> Unit,
     onDelete: (() -> Unit)?,
     onMove: (() -> Unit)? = null,
+    onReshape: (() -> Unit)? = null,
     crs: FormCrs? = null,
     locate: (suspend () -> Fix?)? = null,
     area: Boolean? = null,
@@ -310,6 +312,14 @@ fun FeatureForm(
                             keyboardOptions = KeyboardOptions(keyboardType = keyboard(field.type)),
                             modifier = Modifier.fillMaxWidth(),
                         )
+                    }
+                    if (onReshape != null) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(onClick = onReshape, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.draw_reshape))
+                        }
                     }
                     if (onMove != null) {
                         Spacer(Modifier.height(8.dp))
