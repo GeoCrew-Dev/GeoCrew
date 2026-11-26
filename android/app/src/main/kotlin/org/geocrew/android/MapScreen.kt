@@ -52,8 +52,10 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -90,6 +92,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -154,6 +157,10 @@ fun MapScreen(
     var picking by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
     var rememberNew by remember { mutableStateOf(false) }
+    // A point going to another layer (its layer and fid), to a new one made like its own, and a move that would drop values.
+    var moving by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    var movingNew by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    var dropping by remember { mutableStateOf<Move?>(null) }
     var center by remember { mutableStateOf<LatLng?>(null) }
     var drawn by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<Draft?>(null) }
@@ -168,6 +175,8 @@ fun MapScreen(
     val points = pointLayers(layers) { name -> (collections[name]?.get("features") as? JsonArray)?.size ?: 0 }
     val savedText = stringResource(R.string.saved)
     val addedText = stringResource(R.string.place_added)
+    val movedText = stringResource(R.string.moved)
+    val changeLayerText = stringResource(R.string.change_layer)
     val suggestedLayer = stringResource(R.string.layer_default_name)
     val texts = FailureTexts(
         unsaved = stringResource(R.string.failure_unsaved),
@@ -375,10 +384,51 @@ fun MapScreen(
         draft = Draft(layer, round7(at.longitude), round7(at.latitude), JsonObject(values))
     }
 
+    // After adding, the snackbar names the layer and offers to change it: the quick way back from the wrong one.
     fun add(layer: String, values: JsonObject, at: Pair<Double, Double>) = once {
         if (!startEditing(layer)) return@once
-        if (act(Editing.ADD, buildJsonObject { put("layer", layer); put("geometry", point(at)); put("properties", values) })) {
-            scope.launch { snackbar.showSnackbar(addedText.format(layer)) }
+        val added = graph.invoke(Editing.ADD, buildJsonObject { put("layer", layer); put("geometry", point(at)); put("properties", values) })
+        reload()
+        if (added !is Outcome.Done) {
+            failure = texts.of(added)
+            return@once
+        }
+        val fid = (added.output.jsonObject["fid"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: return@once
+        scope.launch {
+            val answer = snackbar.showSnackbar(addedText.format(layer), actionLabel = changeLayerText, duration = SnackbarDuration.Long)
+            if (answer == SnackbarResult.ActionPerformed) moving = layer to fid
+        }
+    }
+
+    fun move(m: Move) = once {
+        if (!startEditing(m.layer) || !startEditing(m.to)) return@once
+        if (act(Editing.MOVE, buildJsonObject { put("layer", m.layer); put("fid", m.fid); put("to", m.to) })) {
+            scope.launch { snackbar.showSnackbar(movedText.format(m.to)) }
+        }
+    }
+
+    // A move that would drop values asks first; one that keeps them all goes ahead.
+    fun requestMove(layer: String, fid: Long, to: String) {
+        val feature = collections[layer]?.get("features")?.jsonArray?.map { it.jsonObject }
+            ?.firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() == fid } ?: return
+        val kept = fieldNames(collections[to]).toSet()
+        val lost = (feature["properties"] as? JsonObject).orEmpty().filter { (name, value) -> value !is JsonNull && name !in kept }.keys.toList()
+        val m = Move(layer, fid, to, lost)
+        if (lost.isEmpty()) move(m) else dropping = m
+    }
+
+    // A new layer like the point's own, so the point keeps every value, then the move into it.
+    fun moveToNewLayer(name: String, like: String, fid: Long) = once {
+        when (val made = graph.invoke(Workspace.LAYER_CREATE, buildJsonObject { put("name", name); put("like", like) })) {
+            is Outcome.Done -> show(made.output.jsonObject)
+            else -> {
+                failure = texts.of(made)
+                return@once
+            }
+        }
+        if (!startEditing(like) || !startEditing(name)) return@once
+        if (act(Editing.MOVE, buildJsonObject { put("layer", like); put("fid", fid); put("to", name) })) {
+            scope.launch { snackbar.showSnackbar(movedText.format(name)) }
         }
     }
 
@@ -544,6 +594,7 @@ fun MapScreen(
     }
     if (picking) {
         LayerPicker(
+            title = stringResource(R.string.pick_layer_title),
             layers = points,
             onPick = { layer, remember ->
                 picking = false
@@ -556,6 +607,47 @@ fun MapScreen(
                 naming = true
             },
             onDismiss = { picking = false },
+        )
+    }
+    moving?.let { (layer, fid) ->
+        LayerPicker(
+            title = stringResource(R.string.move_title),
+            layers = points.filter { it.name != layer },
+            showRemember = false,
+            onPick = { to, _ ->
+                moving = null
+                requestMove(layer, fid, to.name)
+            },
+            onNew = { _ ->
+                moving = null
+                movingNew = layer to fid
+            },
+            onDismiss = { moving = null },
+        )
+    }
+    movingNew?.let { (like, fid) ->
+        NewLayerDialog(
+            existing = layers.mapNotNull { it.name() },
+            suggested = like,
+            onDismiss = { movingNew = null },
+            onCreate = { name ->
+                movingNew = null
+                moveToNewLayer(name, like, fid)
+            },
+        )
+    }
+    dropping?.let { m ->
+        AlertDialog(
+            onDismissRequest = { dropping = null },
+            title = { Text(stringResource(R.string.move_drops_title)) },
+            text = { Text(stringResource(R.string.move_drops_body, m.to, m.lost.joinToString("、"))) },
+            confirmButton = {
+                TextButton(onClick = {
+                    dropping = null
+                    move(m)
+                }) { Text(stringResource(R.string.move_anyway)) }
+            },
+            dismissButton = { TextButton(onClick = { dropping = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
     if (naming) {
@@ -606,6 +698,10 @@ fun MapScreen(
                 onDelete = {
                     selected = null
                     delete(layer, fid)
+                },
+                onMove = {
+                    selected = null
+                    moving = layer to fid
                 },
             )
         }
@@ -664,6 +760,9 @@ fun MapScreen(
         )
     }
 }
+
+/** A point on its way to layer [to], and the fields whose values it would leave behind. */
+private data class Move(val layer: String, val fid: Long, val to: String, val lost: List<String>)
 
 /** A point about to be added: its layer, where it goes and its first values. The form's save adds it. */
 private data class Draft(val layer: String, val longitude: Double, val latitude: Double, val values: JsonObject)

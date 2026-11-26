@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.geocrew.core.edit.EditTarget
+import org.geocrew.core.edit.Field
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.edit.FileJournal
 import org.geocrew.core.project.LayerTemplate
@@ -85,7 +86,7 @@ class Projects(private val root: File, private val journals: File) {
                     "created" to Instant.now().toString(),
                 )
                 for ((key, value) in about) ds.sql("INSERT INTO ${ProjectFormat.PROJECT_TABLE} VALUES (${quote(key)}, ${quote(value)})")
-                for (template in templates) addLayer(ds, template.name(language), template, language)
+                for (template in templates) addLayer(ds, template.name(language), template.geometryType, template.crs, template.id, template.fields(language))
             }
         } catch (e: Exception) {
             folder.deleteRecursively() // nothing half-made stays behind
@@ -136,16 +137,19 @@ class Projects(private val root: File, private val journals: File) {
 
 }
 
-// Makes layer [layer] from [template], its fields named in [language], with an id for it and each field.
-private fun addLayer(ds: VectorDataset, layer: String, template: LayerTemplate, language: String) {
-    val fields = buildJsonArray {
-        for (f in template.fields) add(buildJsonObject { put("name", f.name(language)); put("type", f.type.name.lowercase()) })
+// [template]'s fields, named in [language].
+private fun LayerTemplate.fields(language: String): List<Field> = fields.map { Field(it.name(language), it.type) }
+
+// Makes layer [layer] with [fields], an id for it and each field, and the template it came from, if any.
+private fun addLayer(ds: VectorDataset, layer: String, geometry: String, crs: String, template: String?, fields: List<Field>) {
+    val described = buildJsonArray {
+        for (f in fields) add(buildJsonObject { put("name", f.name); put("type", f.type.name.lowercase()) })
     }
-    ds.createLayer(layer, template.geometryType, template.crs, fields.toString())
+    ds.createLayer(layer, geometry, crs, described.toString())
     val table = quote(layer)
-    ds.sql("INSERT INTO ${ProjectFormat.LAYERS_TABLE} VALUES ($table, ${quote(UUID.randomUUID().toString())}, ${quote(template.id)})")
-    for (f in template.fields) {
-        ds.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES ($table, ${quote(f.name(language))}, ${quote(UUID.randomUUID().toString())})")
+    ds.sql("INSERT INTO ${ProjectFormat.LAYERS_TABLE} VALUES ($table, ${quote(UUID.randomUUID().toString())}, ${template?.let(::quote) ?: "NULL"})")
+    for (f in fields) {
+        ds.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES ($table, ${quote(f.name)}, ${quote(UUID.randomUUID().toString())})")
     }
 }
 
@@ -240,14 +244,31 @@ class Project internal constructor(
      * open file: layers being edited carry on, unsaved edits and all.
      */
     fun createLayer(name: String, template: LayerTemplate, language: String): Layer {
+        checkNewName(name)
+        addLayer(dataset, name, template.geometryType, template.crs, template.id, template.fields(language))
+        layers = readLayers(dataset)
+        return layers.single { it.name == name }
+    }
+
+    /**
+     * Makes layer [name] like layer [like]: its fields, geometry type, CRS and
+     * template, and no features. A feature moved between the two keeps every value.
+     */
+    fun createLayerLike(name: String, like: String): Layer {
+        checkNewName(name)
+        val source = layers.firstOrNull { it.name == like } ?: throw IllegalArgumentException("there is no layer $like")
+        val fields = VectorLayerStore(dataset, like).fields.filter { it.type != FieldType.OTHER } // fields GeoCrew cannot edit stay behind
+        addLayer(dataset, name, source.geometry ?: "POINT", source.srs ?: "EPSG:4490", source.template, fields)
+        layers = readLayers(dataset)
+        return layers.single { it.name == name }
+    }
+
+    private fun checkNewName(name: String) {
         require(name.isNotBlank() && name == name.trim() && name.length <= ProjectFormat.MAX_NAME) {
             "a layer name has 1 to ${ProjectFormat.MAX_NAME} characters, without spaces at either end"
         }
         require(RESERVED_PREFIXES.none { name.startsWith(it, ignoreCase = true) }) { "a layer name cannot start with ${RESERVED_PREFIXES.joinToString()}" }
         require(dataset.layers.none { it.equals(name, ignoreCase = true) }) { "the project already has a layer $name" }
-        addLayer(dataset, name, template, language)
-        layers = readLayers(dataset)
-        return layers.single { it.name == name }
     }
 
     /** How many features [layer] has in its file. */
@@ -257,7 +278,7 @@ class Project internal constructor(
     fun target(layer: String): EditTarget {
         val found = layers.firstOrNull { it.name == layer } ?: throw IllegalArgumentException("there is no layer $layer")
         journals.mkdirs()
-        return EditTarget(VectorLayerStore(dataset, found.name), FileJournal(File(journals, "${found.id}.jsonl")))
+        return EditTarget(VectorLayerStore(dataset, found.name), FileJournal(File(journals, "${found.id}.jsonl")), found.srs)
     }
 
     override fun close() = dataset.close()

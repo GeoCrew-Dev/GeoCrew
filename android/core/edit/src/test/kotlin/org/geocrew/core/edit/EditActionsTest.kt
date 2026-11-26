@@ -9,7 +9,9 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Outcome
@@ -120,6 +122,49 @@ class EditActionsTest {
         assertFalse(registry.canRedo("project"), "the redo dropped out")
         run(Editing.START, """{"layer": "points"}""")
         assertEquals(0, project.buffer("points")!!.features().size)
+    }
+
+    // The QGIS way of cut and paste: fields of the same name carry their values.
+    @Test
+    fun aFeatureMovesToAnotherLayerInOneStep() = runTest {
+        val springs = FakeStore(fields = listOf(Field("rock", FieldType.STRING), Field("flow", FieldType.REAL)))
+        val all = stores + ("springs" to springs)
+        val project = Editing(sharedScope = "project") { layer -> EditTarget(all.getValue(layer), MemoryJournal(), "EPSG:4490") }
+        val registry = ActionRegistry().apply { project.actions.forEach(::register) }
+        suspend fun run(action: String, params: String) = registry.invoke(Caller.USER, action, json(params))
+        run(START, """{"layer": "points"}""")
+        run(START, """{"layer": "springs"}""")
+        val stored = stores.getValue("points").put("granite")
+        run(VALUES, """{"layer": "points", "fid": $stored, "values": {"dip": 35}}""")
+
+        val moved = output(run(Editing.MOVE, """{"layer": "points", "fid": $stored, "to": "springs"}"""))
+        assertEquals(listOf("dip"), moved.getValue("dropped").jsonArray.map { it.jsonPrimitive.content }, "springs has no dip")
+        assertEquals(0, project.buffer("points")!!.features().size)
+        val copy = project.buffer("springs")!!.features().single()
+        assertEquals(JsonPrimitive("granite"), copy.properties["rock"])
+        assertEquals(point(0, 0), copy.geometry)
+
+        assertIs<Outcome.Done>(registry.invoke(Caller.USER, ActionRegistry.UNDO, json("""{"scope": "project"}""")))
+        assertEquals(1, project.buffer("points")!!.features().size, "one undo takes back both halves")
+        assertEquals(0, project.buffer("springs")!!.features().size)
+        assertIs<Outcome.Done>(registry.invoke(Caller.USER, ActionRegistry.REDO, json("""{"scope": "project"}""")))
+        assertEquals(1, project.buffer("springs")!!.features().size)
+
+        assertEquals("same-layer", (run(Editing.MOVE, """{"layer": "springs", "fid": -1, "to": "springs"}""") as Outcome.Failed).code)
+        assertEquals("not-editing", (run(Editing.MOVE, """{"layer": "springs", "fid": -1, "to": "lines"}""") as Outcome.Failed).code)
+    }
+
+    @Test
+    fun movingNeedsTheSameCoordinateSystem() = runTest {
+        val crs = mapOf("points" to "EPSG:4490", "lines" to "EPSG:4549")
+        val project = Editing(sharedScope = "project") { layer -> EditTarget(stores.getValue(layer), journals.getValue(layer), crs.getValue(layer)) }
+        val registry = ActionRegistry().apply { project.actions.forEach(::register) }
+        suspend fun run(action: String, params: String) = registry.invoke(Caller.USER, action, json(params))
+        run(START, """{"layer": "points"}""")
+        run(START, """{"layer": "lines"}""")
+        run(ADD, """{"layer": "points", "properties": {"rock": "p1"}}""")
+        assertEquals("crs", (run(Editing.MOVE, """{"layer": "points", "fid": -1, "to": "lines"}""") as Outcome.Failed).code)
+        assertEquals(1, project.buffer("points")!!.features().size, "nothing moved")
     }
 
     @Test

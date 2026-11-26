@@ -11,6 +11,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -162,6 +163,26 @@ class WorkspaceTest {
         assertEquals(true, output(run(Workspace.FEATURES, """{"layer": "野外点"}""")).getValue("projectModified").jsonPrimitive.content.toBoolean())
         assertIs<Outcome.Done>(run(Editing.SAVE_ALL, "{}"))
         assertEquals(false, output(run(Workspace.FEATURES, """{"layer": "野外点"}""")).getValue("projectModified").jsonPrimitive.content.toBoolean())
+    }
+
+    // A point put in the wrong layer goes to the right one, every value with it.
+    @Test
+    fun aPointMovesToALayerMadeLikeItsOwn() {
+        run(Workspace.CREATE, """{"name": "转移", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "流量", "type": "real"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "泉点", "like": "野外点"}""")
+        val springs = output(run(Workspace.LAYER_INFO, """{"layer": "泉点"}"""))
+        assertEquals(listOf("点名", "描述", "流量"), springs.getValue("fields").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content })
+        run(Editing.START, """{"layer": "野外点"}""")
+        run(Editing.START, """{"layer": "泉点"}""")
+        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "S1", "流量": 2.5}}""")
+        val moved = output(run(Editing.MOVE, """{"layer": "野外点", "fid": -1, "to": "泉点"}"""))
+        assertTrue(moved.getValue("dropped").jsonArray.isEmpty(), "nothing lost")
+        assertIs<Outcome.Done>(run(Editing.SAVE_ALL))
+        val target = workspace.current!!.target("泉点").store.features().single()
+        assertEquals(JsonPrimitive(2.5), target.properties["流量"])
+        assertEquals(0L, workspace.current!!.count("野外点"))
     }
 
     @Test

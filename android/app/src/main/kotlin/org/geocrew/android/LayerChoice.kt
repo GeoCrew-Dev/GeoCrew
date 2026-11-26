@@ -76,13 +76,20 @@ private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LayerPicker(layers: List<MapLayer>, onPick: (MapLayer, remember: Boolean) -> Unit, onNew: (remember: Boolean) -> Unit, onDismiss: () -> Unit) {
+fun LayerPicker(
+    title: String,
+    layers: List<MapLayer>,
+    onPick: (MapLayer, remember: Boolean) -> Unit,
+    onNew: (remember: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    showRemember: Boolean = true,
+) {
     var remember by remember { mutableStateOf(false) }
     val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             Text(
-                stringResource(R.string.pick_layer_title),
+                title,
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
@@ -101,12 +108,14 @@ fun LayerPicker(layers: List<MapLayer>, onPick: (MapLayer, remember: Boolean) ->
                 colors = clear,
                 modifier = Modifier.fillMaxWidth().clickable { onNew(remember) },
             )
-            Row(
-                Modifier.fillMaxWidth().clickable { remember = !remember }.padding(horizontal = 12.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(checked = remember, onCheckedChange = { remember = it })
-                Text(stringResource(R.string.pick_layer_remember), style = MaterialTheme.typography.bodyMedium)
+            if (showRemember) {
+                Row(
+                    Modifier.fillMaxWidth().clickable { remember = !remember }.padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = remember, onCheckedChange = { remember = it })
+                    Text(stringResource(R.string.pick_layer_remember), style = MaterialTheme.typography.bodyMedium)
+                }
             }
             Spacer(Modifier.height(16.dp))
         }

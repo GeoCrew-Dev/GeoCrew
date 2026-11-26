@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -81,7 +82,7 @@ data class FormField(val name: String, val type: String)
  * A new point ([isNew]) is added only by its save, which gets every field that
  * has a value and the coordinates. For a feature already there [onSave] gets
  * the fields that changed, a cleared one as null, and the coordinates only when
- * they changed; [onDelete] deletes it.
+ * they changed; [onDelete] deletes it and [onMove] moves it to another layer.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,6 +95,7 @@ fun FeatureForm(
     onDismiss: () -> Unit,
     onSave: (values: JsonObject, coordinates: Pair<Double, Double>?) -> Unit,
     onDelete: (() -> Unit)?,
+    onMove: (() -> Unit)? = null,
 ) {
     val original = remember(properties) { fields.associate { it.name to text(properties[it.name]) } }
     val texts = remember(properties) { mutableStateMapOf<String, String>().apply { putAll(original) } }
@@ -180,6 +182,14 @@ fun FeatureForm(
                             keyboardOptions = KeyboardOptions(keyboardType = keyboard(field.type)),
                             modifier = Modifier.fillMaxWidth(),
                         )
+                    }
+                    if (onMove != null) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(onClick = onMove, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Rounded.Layers, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.move_to_layer))
+                        }
                     }
                     if (onDelete != null) {
                         Spacer(Modifier.height(8.dp))
