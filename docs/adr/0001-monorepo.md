@@ -22,7 +22,7 @@
   - GeoCrew-Dev.github.io：官网，仓库名是固定的。
 - **历史**：原来三个仓库的提交历史，用 `git filter-branch` 改写进对应子目录后合并，内容与原仓库逐字节一致。原仓库已在 2026-11-25 删除，本地和 GitHub 都删了。
 - **发布标签带组件前缀**，例如 `server-v0.3.0`、`android-v0.3.0`。更新检查读 `GET /repos/GeoCrew-Dev/GeoCrew/releases?per_page=100`，每个组件只取带自己前缀、不是草稿也不是预发布的版本里最高的一个。为了照顾镜像和分叉项目，旧的单个版本格式（`/releases/latest`）仍然可以读。
-- **CI 放在根目录，按改动的路径触发**：`protocol.yml`（OpenAPI 检查，并用一致性检查测 `server/`）、`server.yml`、`android.yml`（安卓客户端；旧版删除时一并删掉，随重写重新加）、`server-release.yml`（`server-v*` 标签）。安卓的发布工作流随重写一起做。
+- **CI 放在根目录，按改动的路径触发**：`protocol.yml`（OpenAPI 检查，并用一致性检查测 `server/`）、`server.yml`、`android.yml`（旧版构建加服务端联调测试）、`server-release.yml`（`server-v*` 标签）。安卓的发布工作流随重写一起做。
 - **Go 模块路径**：`github.com/GeoCrew-Dev/GeoCrew/server`、`github.com/GeoCrew-Dev/GeoCrew/protocol/conformance`。
 
 ## 理由
