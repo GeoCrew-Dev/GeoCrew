@@ -247,7 +247,8 @@ fun MapScreen(
     var converting by remember { mutableStateOf(false) }
     var choosingBasemap by remember { mutableStateOf(false) }
     // Which Tianditu map shows: imagery, the vector map or terrain, kept per project on this phone.
-    var basemapKind by remember { mutableStateOf("img") }
+    // Null until the project says which: no basemap shows (or loads) before then.
+    var basemapKind by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(projectId) { projectId?.let { basemapKind = graph.settings.basemapKind(it) } }
     // The bookmarks sheet: shown with the project's saved views once read.
     var bookmarks by remember { mutableStateOf<List<MapBookmark>?>(null) }
@@ -1102,7 +1103,7 @@ fun MapScreen(
     }
     if (choosingBasemap) {
         BasemapSheet(
-            chosen = basemapKind,
+            chosen = basemapKind ?: "img",
             onPick = { kind ->
                 choosingBasemap = false
                 basemapKind = kind
