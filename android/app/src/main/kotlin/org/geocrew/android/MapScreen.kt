@@ -1,5 +1,6 @@
 package org.geocrew.android
 
+import android.graphics.RectF
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -94,6 +95,7 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
     var failure by remember { mutableStateOf<String?>(null) }
     var leaving by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(false to false) }
+    var selected by remember { mutableStateOf<Long?>(null) }
     val layerParams = buildJsonObject { put("layer", layer) }
     val scopeName = Editing.scope(layer)
     val editing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
@@ -130,6 +132,16 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
         val map = mapView.awaitMap()
         map.uiSettings.isLogoEnabled = false // MapLibre's licence does not ask for it; we credit the data ourselves
         map.uiSettings.isAttributionEnabled = false
+        if (styleLoads == 0) {
+            // A tap on a feature opens its form.
+            map.addOnMapClickListener { point ->
+                val at = map.projection.toScreenLocation(point)
+                val reach = 24 * context.resources.displayMetrics.density
+                val hit = map.queryRenderedFeatures(RectF(at.x - reach, at.y - reach, at.x + reach, at.y + reach), SOURCE).firstOrNull()
+                hit?.id()?.toLongOrNull()?.let { selected = it }
+                hit != null
+            }
+        }
         if (styleLoads == 0) map.cameraPosition = CameraPosition.Builder().target(LatLng(35.0, 105.0)).zoom(3.5).build()
         map.setStyle(Style.Builder().fromJson(key?.let(MapStyles::tiandituImagery) ?: MapStyles.BLANK)) { style ->
             style.addSource(GeoJsonSource(SOURCE))
@@ -176,6 +188,12 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
                 }
             },
         )
+    }
+
+    // Changing a feature starts editing its layer first, the QGIS way.
+    fun change(action: String, params: JsonObject) = once {
+        val isEditing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
+        if (isEditing || act(Editing.START)) act(action, params)
     }
 
     fun leave() = once {
@@ -233,6 +251,36 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
         }
     }
 
+    selected?.let { fid ->
+        val feature = collection?.get("features")?.jsonArray?.map { it.jsonObject }
+            ?.firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() == fid }
+        if (feature == null) {
+            selected = null
+        } else {
+            val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
+            val fields = collection?.get("fields")?.jsonArray.orEmpty().map {
+                val f = it.jsonObject
+                FormField((f["name"] as JsonPrimitive).content, (f["type"] as JsonPrimitive).content)
+            }
+            val number = (properties[NUMBER] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+            FeatureForm(
+                title = number ?: stringResource(R.string.feature_untitled, fid),
+                fields = fields,
+                properties = properties,
+                onDismiss = { selected = null },
+                onSave = { values ->
+                    selected = null
+                    if (values.isNotEmpty()) {
+                        change(Editing.VALUES, buildJsonObject { put("layer", layer); put("fid", fid); put("values", values) })
+                    }
+                },
+                onDelete = {
+                    selected = null
+                    change(Editing.DELETE, buildJsonObject { put("layer", layer); put("fid", fid) })
+                },
+            )
+        }
+    }
     if (askKey) {
         KeyDialog(current = key.orEmpty(), onDismiss = { askKey = false }, onSave = {
             TiandituKey.write(context, it)

@@ -68,6 +68,8 @@ class WorkspaceTest {
         val empty = output(run(Workspace.FEATURES, """{"layer": "地质点"}"""))
         assertEquals("FeatureCollection", empty.getValue("type").jsonPrimitive.content)
         assertEquals(false, empty.getValue("editing").jsonPrimitive.content.toBoolean())
+        val dip = empty.getValue("fields").jsonArray.map { it.jsonObject }.single { it.getValue("name").jsonPrimitive.content == "倾角" }
+        assertEquals("real", dip.getValue("type").jsonPrimitive.content)
         run(Editing.START, """{"layer": "地质点"}""")
         run(Editing.ADD, """{"layer": "地质点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点号": "D001"}}""")
         val edited = output(run(Workspace.FEATURES, """{"layer": "地质点"}"""))

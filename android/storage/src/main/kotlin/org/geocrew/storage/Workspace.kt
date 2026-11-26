@@ -45,12 +45,13 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(current?.let(::about) ?: JsonObject(emptyMap()))
         },
         WorkspaceAction(
-            FEATURES, "Layer features", "A layer of the open project as GeoJSON, as edited, with whether it is being edited",
+            FEATURES, "Layer features", "A layer of the open project as GeoJSON, as edited, with its fields and whether it is being edited",
             Risk.VIEW, LAYER_PARAMS, """{"layer": "地质点"}""",
         ) { p ->
             val layer = p.getValue("layer").jsonPrimitive.content
             val project = checkNotNull(current) { "no project is open" }
-            val features = editing.features(layer) ?: project.target(layer).store.features()
+            val store = project.target(layer).store
+            val features = editing.features(layer) ?: store.features()
             ActionResult.Done(
                 buildJsonObject {
                     put("type", "FeatureCollection")
@@ -63,6 +64,9 @@ class Workspace(private val projects: Projects) {
                                 put("properties", f.properties)
                             }
                         }
+                    }
+                    putJsonArray("fields") {
+                        for (f in store.fields) addJsonObject { put("name", f.name); put("type", f.type.name.lowercase()) }
                     }
                     put("editing", layer in editing.layersBeingEdited)
                     put("modified", editing.isModified(layer))

@@ -36,6 +36,10 @@
     <string name="key_title">天地图 Key</string>
     <string name="key_hint">在天地图官网申请的 Key</string>
     <string name="key_invalid">Key 是 32 位的数字和字母 a–f</string>
+    <string name="feature_untitled">要素 %1$d</string>
+    <string name="feature_delete">删除</string>
+    <string name="field_not_a_number">要填数字</string>
+    <string name="field_not_a_whole_number">要填整数</string>
     <string name="unsaved_title">有没保存的修改</string>
     <string name="unsaved_body">“%1$s”图层有没保存的修改。</string>
 
