@@ -164,13 +164,19 @@ class Workspace(private val projects: Projects) {
         },
         WorkspaceAction(
             LAYER_CREATE, "Create layer",
-            "Adds a point layer to the open project, made from a template (field-point: a name and a description), its fields named in the language given",
+            "Adds a point layer to the open project: like another layer (its fields, geometry type and CRS) or from a template " +
+                "(field-point: a name and a description), its fields named in the language given",
             Risk.EDIT, LAYER_CREATE_PARAMS, """{"name": "野外点", "language": "zh"}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
-            val id = (p["template"] as? JsonPrimitive)?.contentOrNull ?: Templates.FIELD_POINT.id
-            val template = requireNotNull(Templates.all.firstOrNull { it.id == id }) { "there is no template $id" }
-            project.createLayer(p.name(), template, (p["language"] as? JsonPrimitive)?.contentOrNull ?: "en")
+            val like = (p["like"] as? JsonPrimitive)?.contentOrNull
+            if (like != null) {
+                project.createLayerLike(p.name(), like)
+            } else {
+                val id = (p["template"] as? JsonPrimitive)?.contentOrNull ?: Templates.FIELD_POINT.id
+                val template = requireNotNull(Templates.all.firstOrNull { it.id == id }) { "there is no template $id" }
+                project.createLayer(p.name(), template, (p["language"] as? JsonPrimitive)?.contentOrNull ?: "en")
+            }
             ActionResult.Done(about(project))
         },
         WorkspaceAction(CLOSE, "Close project", "Closes the open project, once no layer has unsaved edits", Risk.VIEW, NO_PARAMS, "{}") {
@@ -275,7 +281,7 @@ class Workspace(private val projects: Projects) {
         )
         private val LAYER_CREATE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"],
-                "properties": {"name": {"type": "string"}, "template": {"enum": ["field-point"]}, "language": {"enum": ["zh", "en"]}}}""",
+                "properties": {"name": {"type": "string"}, "like": {"type": "string"}, "template": {"enum": ["field-point"]}, "language": {"enum": ["zh", "en"]}}}""",
         )
         private val NAME_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string"}}}""",

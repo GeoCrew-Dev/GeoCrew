@@ -109,6 +109,13 @@
     <string name="place_into">加到「%1$s」</string>
     <string name="place_change_layer">换</string>
     <string name="place_new_point_in">新点 · %1$s</string>
+    <string name="change_layer">换图层</string>
+    <string name="move_to_layer">移到其他图层</string>
+    <string name="move_title">移到哪个图层</string>
+    <string name="move_drops_title">有些值会丢掉</string>
+    <string name="move_drops_body">「%1$s」没有这些字段：%2$s</string>
+    <string name="move_anyway">仍然移过去</string>
+    <string name="moved">已移到「%1$s」</string>
     <string name="place_added">已加到「%1$s」</string>
     <string name="pick_layer_title">加到哪个图层</string>
     <string name="pick_layer_remember">记住此选项并不再提示</string>

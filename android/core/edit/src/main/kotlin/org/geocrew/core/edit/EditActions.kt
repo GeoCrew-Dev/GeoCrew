@@ -9,7 +9,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.geocrew.core.action.Action
 import org.geocrew.core.action.ActionResult
 import org.geocrew.core.action.ActionSpec
@@ -18,8 +20,12 @@ import org.geocrew.core.action.Risk
 import org.geocrew.core.action.Stability
 import org.geocrew.core.action.Undo
 
-/** A layer to edit: where its features are kept and where its unsaved edits go. */
-data class EditTarget(val store: LayerStore, val journal: Journal)
+/**
+ * A layer to edit: where its features are kept, where its unsaved edits go,
+ * and its CRS (such as EPSG:4490) when known, as moving features between
+ * layers needs it.
+ */
+data class EditTarget(val store: LayerStore, val journal: Journal, val srs: String? = null)
 
 /**
  * Layer editing as actions, the QGIS way (ADR 0005, 0010): start editing a
@@ -31,6 +37,7 @@ data class EditTarget(val store: LayerStore, val journal: Journal)
  */
 class Editing(private val sharedScope: String? = null, private val open: (String) -> EditTarget) {
     private val buffers = HashMap<String, EditBuffer>()
+    private val targets = HashMap<String, EditTarget>()
 
     /**
      * The edit buffer of [layer] while it is being edited. Not thread-safe:
@@ -58,6 +65,7 @@ class Editing(private val sharedScope: String? = null, private val open: (String
     fun release(layer: String): Boolean {
         if (buffers[layer]?.isModified == true) return false
         buffers.remove(layer)
+        targets.remove(layer)
         return true
     }
 
@@ -73,6 +81,7 @@ class Editing(private val sharedScope: String? = null, private val open: (String
             val buffer = EditBuffer(target.store, target.journal)
             val recovered = buffer.recover()
             buffers[layer] = buffer
+            targets[layer] = target
             // A layer's own history starts afresh; a shared one carries on with the other layers'.
             ActionResult.Done(buildJsonObject { put("recovered", recovered.name.lowercase()) }, endsUndo = if (sharedScope == null) listOf(scope(layer)) else emptyList())
         },
@@ -110,9 +119,11 @@ class Editing(private val sharedScope: String? = null, private val open: (String
                 ActionResult.Failed("unsaved", "save or discard the edits first")
             } else {
                 buffers.remove(layer)
+                targets.remove(layer)
                 ActionResult.Done(endsUndo = listOf(scopeOf(layer)))
             }
         },
+        Move(),
         AllAction(SAVE_ALL, "Save all edits", "Writes the edits of every layer being edited to its file", Risk.EDIT) {
             val saved = buffers.filterValues { it.isModified }.mapValues { (_, buffer) -> buffer.save() }
             ActionResult.Done(
@@ -125,6 +136,58 @@ class Editing(private val sharedScope: String? = null, private val open: (String
             ActionResult.Done(endsUndo = buffers.keys.map(::scopeOf).distinct())
         },
     )
+
+    // A feature moved to another layer, as QGIS cuts and pastes: the values of
+    // fields the other layer has go along, the rest are dropped and named in
+    // the result. Both layers change in one step of the shared undo history.
+    private inner class Move : Action {
+        override val spec = ActionSpec(
+            MOVE, "Move feature", "Moves a feature to another layer being edited; the values of fields that layer lacks are dropped",
+            MOVE_PARAMS, Risk.EDIT, Stability.PREVIEW, inputs = listOf("vector"), outputs = listOf("vector"),
+            examples = listOf(schema("""{"layer": "野外点", "fid": 12, "to": "泉点"}""")),
+        )
+
+        override suspend fun run(caller: Caller, params: JsonObject): ActionResult {
+            val layer = params.getValue("layer").jsonPrimitive.content
+            val to = params.getValue("to").jsonPrimitive.content
+            val fid = params.fid()
+            if (layer == to) return ActionResult.Failed("same-layer", "the feature is in $to already")
+            val source = buffers[layer] ?: return ActionResult.Failed("not-editing", "layer $layer is not being edited")
+            val target = buffers[to] ?: return ActionResult.Failed("not-editing", "layer $to is not being edited")
+            if (scopeOf(layer) != scopeOf(to)) return ActionResult.Failed("unsupported", "moving needs one undo history for both layers")
+            val from = targets.getValue(layer)
+            val into = targets.getValue(to)
+            if (from.srs != into.srs) return ActionResult.Failed("crs", "$layer and $to have different coordinate systems")
+            if (fid >= 0 && !from.store.capabilities.delete) return ActionResult.Failed("read-only", "layer $layer does not allow deleting its features")
+            val feature = requireNotNull(source.feature(fid)) { "there is no feature $fid" }
+            val fields = into.store.fields.associateBy { it.name }
+            val kept = LinkedHashMap<String, JsonElement>()
+            val dropped = ArrayList<String>()
+            for ((name, value) in feature.properties) {
+                if (value is JsonNull) continue
+                if (fields[name]?.type?.accepts(value) == true) kept[name] = value else dropped += name
+            }
+            // The copy goes in first: a crash between the two leaves the feature in both layers, never in neither.
+            val added = target.add(feature.geometry, JsonObject(kept))
+            val deleted = try {
+                source.delete(fid)
+            } catch (e: IllegalArgumentException) {
+                target.revert(added)
+                throw e
+            }
+            val undo = Undo(
+                scopeOf(layer),
+                redo = {
+                    live(to, target).reapply(added)
+                    live(layer, source).reapply(deleted)
+                },
+            ) {
+                live(layer, source).revert(deleted)
+                live(to, target).revert(added)
+            }
+            return ActionResult.Done(buildJsonObject { put("fid", added.fid); putJsonArray("dropped") { dropped.forEach { add(it) } } }, undo)
+        }
+    }
 
     // Every layer being edited at once, as a project's save button does.
     private inner class AllAction(id: String, name: String, description: String, risk: Risk, private val body: () -> ActionResult) : Action {
@@ -187,6 +250,7 @@ class Editing(private val sharedScope: String? = null, private val open: (String
         const val GEOMETRY = "feature.geometry"
         const val VALUES = "feature.values"
         const val DELETE = "feature.delete"
+        const val MOVE = "feature.move"
         const val SAVE_ALL = "edits.save"
         const val DISCARD_ALL = "edits.discard"
 
@@ -207,6 +271,10 @@ class Editing(private val sharedScope: String? = null, private val open: (String
         )
         private val GEOMETRY_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer", "fid", "geometry"], "properties": {$LAYER, $FID, $GEOMETRY_ARG}}""",
+        )
+        private val MOVE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "fid", "to"],
+                "properties": {$LAYER, $FID, "to": {"type": "string"}}}""",
         )
         private val VALUES_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer", "fid", "values"],

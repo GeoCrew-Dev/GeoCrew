@@ -17,8 +17,10 @@ internal val FIELDS = listOf(
 )
 
 /** A layer in memory that fails on request and keeps the order of its writes, like a GeoPackage. */
-internal class FakeStore(override val capabilities: Capabilities = Capabilities(true, true, true, true)) : LayerStore {
-    override val fields = FIELDS
+internal class FakeStore(
+    override val capabilities: Capabilities = Capabilities(true, true, true, true),
+    override val fields: List<Field> = FIELDS,
+) : LayerStore {
     val rows = sortedMapOf<Long, Feature>()
     val writes = mutableListOf<String>()
     var failOn: String? = null

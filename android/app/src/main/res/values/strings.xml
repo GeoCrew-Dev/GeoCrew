@@ -116,6 +116,13 @@
     <string name="place_into">Into “%1$s”</string>
     <string name="place_change_layer">Change</string>
     <string name="place_new_point_in">New point · %1$s</string>
+    <string name="change_layer">Change layer</string>
+    <string name="move_to_layer">Move to another layer</string>
+    <string name="move_title">Move to which layer</string>
+    <string name="move_drops_title">Some values will be lost</string>
+    <string name="move_drops_body">“%1$s” lacks %2$s</string>
+    <string name="move_anyway">Move anyway</string>
+    <string name="moved">Moved to “%1$s”</string>
     <string name="place_added">Added to “%1$s”</string>
     <string name="pick_layer_title">Add to which layer</string>
     <string name="pick_layer_remember">Remember this choice and don\'t ask again</string>
