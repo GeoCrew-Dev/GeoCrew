@@ -30,7 +30,7 @@ kotlin {
 }
 
 dependencies {
-    api(project(":core:edit"))
+    api(project(":core:project"))
     compileOnly(files(nativeAar))
     androidTestImplementation(files(nativeAar))
     androidTestImplementation(libs.androidx.test.runner)
