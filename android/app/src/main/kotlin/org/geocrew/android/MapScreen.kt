@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
@@ -234,6 +235,8 @@ fun MapScreen(
     var measuring by remember { mutableStateOf<MeasureMode?>(null) }
     var measured by remember { mutableStateOf(emptyList<LatLng>()) }
     var goingTo by remember { mutableStateOf(false) }
+    // The bookmarks sheet: shown with the project's saved views once read.
+    var bookmarks by remember { mutableStateOf<List<MapBookmark>?>(null) }
     var ai by remember { mutableStateOf(false) }
     var exported by remember { mutableStateOf<File?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -663,6 +666,35 @@ fun MapScreen(
         }
     }
 
+    // A bookmark action; its output is the bookmarks as they now are.
+    fun bookmarkAction(action: String, params: JsonObject = JsonObject(emptyMap())) = once {
+        when (val outcome = graph.invoke(action, params)) {
+            is Outcome.Done -> bookmarks = listedBookmarks(outcome.output.jsonObject)
+            else -> failure = texts.of(outcome)
+        }
+    }
+
+    fun addBookmark(name: String) = scope.launch {
+        val camera = mapView.awaitMap().cameraPosition
+        val at = camera.target?.wrap() ?: return@launch
+        bookmarkAction(
+            Workspace.BOOKMARK_ADD,
+            buildJsonObject {
+                put("name", name)
+                put("longitude", at.longitude)
+                put("latitude", at.latitude)
+                put("zoom", camera.zoom)
+                put("bearing", camera.bearing)
+            },
+        )
+    }
+
+    fun goToBookmark(b: MapBookmark) = scope.launch {
+        bookmarks = null
+        val position = CameraPosition.Builder().target(LatLng(b.latitude, b.longitude)).zoom(b.zoom).bearing(b.bearing).build()
+        mapView.awaitMap().animateCamera(CameraUpdateFactory.newCameraPosition(position))
+    }
+
     fun measure(mode: MeasureMode) {
         placing = false
         measuring = mode
@@ -818,6 +850,16 @@ fun MapScreen(
         }
     }
 
+    bookmarks?.let { list ->
+        BookmarksSheet(
+            bookmarks = list,
+            onGo = ::goToBookmark,
+            onAdd = ::addBookmark,
+            onDelete = { b -> bookmarkAction(Workspace.BOOKMARK_DELETE, buildJsonObject { put("id", b.id) }) },
+            onDismiss = { bookmarks = null },
+        )
+    }
+
     if (menu) {
         // The menu in levels (backlog: tiered menus of GIS and map tools); groups fill up tool by tool.
         MenuSheet(
@@ -830,6 +872,7 @@ fun MapScreen(
                         MenuTool(stringResource(R.string.tool_show_all), Icons.Rounded.ZoomOutMap, ::showAll),
                         MenuTool(stringResource(R.string.tool_go_to), Icons.Rounded.NearMe) { goingTo = true },
                         MenuTool(stringResource(R.string.tool_north_up), Icons.Rounded.Explore, ::northUp),
+                        MenuTool(stringResource(R.string.tool_bookmarks), Icons.Rounded.Bookmarks) { bookmarkAction(Workspace.BOOKMARKS) },
                     ),
                 ),
                 MenuGroup(

@@ -160,6 +160,12 @@
     <string name="tool_measure_area">Measure area</string>
     <string name="measure_distance_value">Distance %1$s</string>
     <string name="measure_area_value">Area %1$s</string>
+    <string name="tool_bookmarks">Bookmarks</string>
+    <string name="bookmark_add">Add</string>
+    <string name="bookmark_add_title">Add bookmark</string>
+    <string name="bookmark_name">Name</string>
+    <string name="bookmarks_none">No bookmarks yet</string>
+    <string name="bookmark_delete_title">Delete bookmark “%1$s”?</string>
     <string name="tool_azimuth">Measure azimuth</string>
     <string name="tool_pick">Pick coordinates</string>
     <string name="measure_azimuth_value">Azimuth %1$s</string>

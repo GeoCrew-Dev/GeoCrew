@@ -228,6 +228,27 @@ class Workspace(private val projects: Projects) {
             project.setDisplay(basemap = p.getValue("basemap").jsonPrimitive.content, visible = p.flag("visible"), opacity = p.number("opacity"))
             ActionResult.Done(about(project))
         },
+        WorkspaceAction(BOOKMARKS, "Bookmarks", "The open project's saved map views, oldest first", Risk.VIEW, NO_PARAMS, "{}") {
+            ActionResult.Done(bookmarksOf(checkNotNull(current) { "no project is open" }))
+        },
+        WorkspaceAction(
+            BOOKMARK_ADD, "Add bookmark", "Saves a map view of the open project by name: its centre in degrees, zoom and bearing; saved at once, not undone",
+            Risk.EDIT, BOOKMARK_ADD_PARAMS, """{"name": "一号剖面", "longitude": 114.3, "latitude": 30.6, "zoom": 15}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.addBookmark(
+                p.getValue("name").jsonPrimitive.content, p.number("longitude")!!, p.number("latitude")!!, p.number("zoom")!!, p.number("bearing") ?: 0.0,
+            )
+            ActionResult.Done(bookmarksOf(project))
+        },
+        WorkspaceAction(
+            BOOKMARK_DELETE, "Delete bookmark", "Deletes a saved map view of the open project; it cannot be undone",
+            Risk.DELETE, BOOKMARK_DELETE_PARAMS, """{"id": 1}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.deleteBookmark(p.getValue("id").jsonPrimitive.content.toLong())
+            ActionResult.Done(bookmarksOf(project))
+        },
         WorkspaceAction(
             LAYER_ORDER, "Layer order", "Puts the open project's layers in the order given, every layer once, the first drawn on top",
             Risk.EDIT, ORDER_PARAMS, """{"layers": ["泉点", "野外点"]}""",
@@ -261,6 +282,19 @@ class Workspace(private val projects: Projects) {
             }
         },
     ) + editing.actions
+
+    private fun bookmarksOf(project: Project) = buildJsonObject {
+        putJsonArray("bookmarks") {
+            for (b in project.bookmarks) addJsonObject {
+                put("id", b.id)
+                put("name", b.name)
+                put("longitude", b.longitude)
+                put("latitude", b.latitude)
+                put("zoom", b.zoom)
+                put("bearing", b.bearing)
+            }
+        }
+    }
 
     // The project's file opened again, as GDAL learns of changed tables when it opens the file; closed if that fails.
     private fun reopen(project: Project): Project = runCatching { projects.reopen(project) }.getOrElse {
@@ -351,6 +385,9 @@ class Workspace(private val projects: Projects) {
         const val LAYER_DELETE = "layer.delete"
         const val BASEMAP_DISPLAY = "basemap.display"
         const val LAYER_ORDER = "layer.order"
+        const val BOOKMARKS = "bookmark.list"
+        const val BOOKMARK_ADD = "bookmark.add"
+        const val BOOKMARK_DELETE = "bookmark.delete"
         const val CRS_TRANSFORM = "crs.transform"
 
         /** The registry scope of a project's undo history: one for all its layers. */
@@ -384,6 +421,14 @@ class Workspace(private val projects: Projects) {
         )
         private val FEATURES_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer"], "properties": {"layer": {"type": "string"}, "srs": {"type": "string"}}}""",
+        )
+        private val BOOKMARK_ADD_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["name", "longitude", "latitude", "zoom"],
+                "properties": {"name": {"type": "string"}, "longitude": {"type": "number"}, "latitude": {"type": "number"},
+                "zoom": {"type": "number"}, "bearing": {"type": "number"}}}""",
+        )
+        private val BOOKMARK_DELETE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["id"], "properties": {"id": {"type": "integer"}}}""",
         )
         private val RENAME_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer", "to"], "properties": {"layer": {"type": "string"}, "to": {"type": "string"}}}""",

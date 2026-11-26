@@ -152,6 +152,12 @@
     <string name="tool_measure_area">测面积</string>
     <string name="measure_distance_value">距离 %1$s</string>
     <string name="measure_area_value">面积 %1$s</string>
+    <string name="tool_bookmarks">书签</string>
+    <string name="bookmark_add">添加</string>
+    <string name="bookmark_add_title">添加书签</string>
+    <string name="bookmark_name">名称</string>
+    <string name="bookmarks_none">还没有书签</string>
+    <string name="bookmark_delete_title">删除书签「%1$s」？</string>
     <string name="tool_azimuth">测方位角</string>
     <string name="tool_pick">拾取坐标</string>
     <string name="measure_azimuth_value">方位角 %1$s</string>
