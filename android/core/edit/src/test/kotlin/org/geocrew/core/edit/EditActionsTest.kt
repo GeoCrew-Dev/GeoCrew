@@ -76,6 +76,52 @@ class EditActionsTest {
         assertTrue(registry.canUndo(Editing.scope("lines")))
     }
 
+    // A project keeps one undo history for all its layers, and saves them all at once.
+    @Test
+    fun oneHistoryAndOneSaveForAProject() = runTest {
+        val project = Editing(sharedScope = "project") { layer -> EditTarget(stores.getValue(layer), journals.getValue(layer)) }
+        val registry = ActionRegistry().apply { project.actions.forEach(::register) }
+        suspend fun run(action: String, params: String) = registry.invoke(Caller.USER, action, json(params))
+        run(Editing.START, """{"layer": "points"}""")
+        run(Editing.ADD, """{"layer": "points", "properties": {"rock": "p1"}}""")
+        run(Editing.START, """{"layer": "lines"}""")
+        run(Editing.ADD, """{"layer": "lines", "properties": {"rock": "l1"}}""")
+        assertTrue(registry.canUndo("project"), "starting the second layer kept the first one's history")
+        assertIs<Outcome.Done>(registry.invoke(Caller.USER, ActionRegistry.UNDO, json("""{"scope": "project"}""")))
+        assertEquals(0, project.buffer("lines")!!.features().size, "the latest edit, on lines, went first")
+        assertIs<Outcome.Done>(registry.invoke(Caller.USER, ActionRegistry.UNDO, json("""{"scope": "project"}""")))
+        assertEquals(0, project.buffer("points")!!.features().size)
+        registry.invoke(Caller.USER, ActionRegistry.REDO, json("""{"scope": "project"}"""))
+        registry.invoke(Caller.USER, ActionRegistry.REDO, json("""{"scope": "project"}"""))
+
+        val saved = output(run(Editing.SAVE_ALL, "{}"))
+        assertEquals(setOf("points", "lines"), saved.keys)
+        assertEquals(1, stores.getValue("points").rows.size)
+        assertEquals(1, stores.getValue("lines").rows.size)
+        assertFalse(registry.canUndo("project"), "saving ends the project's history")
+
+        run(Editing.ADD, """{"layer": "points", "properties": {"rock": "p2"}}""")
+        assertIs<Outcome.Done>(run(Editing.DISCARD_ALL, "{}"))
+        assertFalse(project.isModified("points"))
+        assertFalse(registry.canUndo("project"))
+    }
+
+    // The layer's file may have changed since its buffer was let go.
+    @Test
+    fun anUndoNeverReachesABufferLetGo() = runTest {
+        val project = Editing(sharedScope = "project") { layer -> EditTarget(stores.getValue(layer), journals.getValue(layer)) }
+        val registry = ActionRegistry().apply { project.actions.forEach(::register) }
+        suspend fun run(action: String, params: String) = registry.invoke(Caller.USER, action, json(params))
+        run(Editing.START, """{"layer": "points"}""")
+        run(Editing.ADD, """{"layer": "points", "properties": {"rock": "p1"}}""")
+        run(ActionRegistry.UNDO, """{"scope": "project"}""")
+        assertTrue(project.release("points"), "nothing unsaved")
+        assertIs<Outcome.Failed>(run(ActionRegistry.REDO, """{"scope": "project"}"""))
+        assertFalse(registry.canRedo("project"), "the redo dropped out")
+        run(Editing.START, """{"layer": "points"}""")
+        assertEquals(0, project.buffer("points")!!.features().size)
+    }
+
     @Test
     fun startingBringsBackEditsFromBeforeACrash() = runTest {
         run(START)

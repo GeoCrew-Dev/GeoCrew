@@ -110,13 +110,13 @@ class ActionRegistry(
         }
         return when (result) {
             is ActionResult.Done -> {
-                result.endsUndo?.let { histories.remove(it) }
+                result.endsUndo.forEach { histories.remove(it) }
                 result.undo?.let { undo ->
                     val history = histories.getOrPut(undo.scope) { History() }
                     history.undos.push(undo)
                     history.redos.clear() // a new run starts a new line of history
                 }
-                if (result.endsUndo != null || result.undo != null) publish()
+                if (result.endsUndo.isNotEmpty() || result.undo != null) publish()
                 Outcome.Done(result.output)
             }
             is ActionResult.Failed -> Outcome.Failed(result.code, result.message)

@@ -1,29 +1,27 @@
 package org.geocrew.android
 
 import android.app.Activity
-import android.content.Context
-import android.content.Intent
 import android.graphics.RectF
+import android.view.Gravity
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -32,7 +30,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
@@ -40,59 +37,57 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Menu
-import androidx.compose.material.icons.rounded.Notes
+import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SaveAlt
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.io.File
-import java.time.Instant
-import java.time.temporal.ChronoUnit
-import kotlin.coroutines.resume
-import kotlin.math.roundToLong
+import java.io.IOException
+import java.util.Locale
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -100,28 +95,20 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
 import org.geocrew.core.project.PointNumbers
-import org.geocrew.core.project.Templates
 import org.geocrew.storage.Workspace
-import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
-import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.geometry.LatLngBounds
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
-import org.maplibre.android.module.http.HttpRequestUtil
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.Property
@@ -130,14 +117,18 @@ import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 
 /**
- * A project's main screen: its map (ADR 0006). The map fills the screen; the
- * buttons float over it, translucent, except the menu and the AI, which always
- * stand out. Adding a point is the main action. Editing works the QGIS way,
- * through actions (ADR 0005, 0010). A point goes in at the crosshair, for now.
+ * A project's main screen: its map (ADR 0006). The map fills the screen and the
+ * buttons float over it. The fixed ones are opaque and always there: leave and
+ * the title at the top left, save at the top right, and the menu, placing a
+ * point and the AI along the bottom. The others (layers, undo, redo) are
+ * translucent: they are the ones the user will be able to arrange. Editing goes
+ * the QGIS way, through actions (ADR 0005, 0010): a change starts editing its
+ * layer, one undo history and one save cover the whole project, and leaving
+ * asks about edits not saved.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: () -> Unit) {
+fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: () -> Unit, onProjectSettings: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current.density
@@ -148,6 +139,9 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
     var collection by remember { mutableStateOf<JsonObject?>(null) }
     var styleLoads by remember { mutableIntStateOf(0) }
     var history by remember { mutableStateOf(false to false) }
+    var placing by remember { mutableStateOf(false) }
+    var center by remember { mutableStateOf<LatLng?>(null) }
+    var draft by remember { mutableStateOf<Draft?>(null) }
     var selected by remember { mutableStateOf<Long?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
     var leaving by remember { mutableStateOf(false) }
@@ -155,18 +149,17 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
     var layerSheet by remember { mutableStateOf(false) }
     var ai by remember { mutableStateOf(false) }
     var exported by remember { mutableStateOf<File?>(null) }
-    var addingField by remember { mutableStateOf(false) }
-    val editing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
-    val modified = (collection?.get("modified") as? JsonPrimitive)?.booleanOrNull == true
+    val snackbar = remember { SnackbarHostState() }
+    val modified = collection.flag("projectModified")
+    val savedText = stringResource(R.string.saved)
     val texts = FailureTexts(
         unsaved = stringResource(R.string.failure_unsaved),
-        editing = stringResource(R.string.failure_editing),
         failed = stringResource(R.string.action_failed),
         start = stringResource(R.string.start_failed),
     )
 
     // One operation at a time: a tap while one runs is ignored, so a quick
-    // double tap cannot start editing twice or add two points.
+    // double tap cannot add two points or save twice.
     val busy = remember { Mutex() }
     fun once(block: suspend () -> Unit) = scope.launch {
         if (!busy.tryLock()) return@launch
@@ -177,64 +170,66 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         }
     }
 
+    // The point layer as it is now, and what the project's undo history holds.
     suspend fun reload() {
         val name = layer ?: return
         val loaded = graph.invoke(Workspace.FEATURES, buildJsonObject { put("layer", name) })
         if (loaded is Outcome.Done) collection = loaded.output.jsonObject else failure = texts.of(loaded)
-        val scopeName = Editing.scope(name)
-        history = graph.registry.canUndo(scopeName) to graph.registry.canRedo(scopeName)
+        history = graph.registry.canUndo(Workspace.PROJECT_SCOPE) to graph.registry.canRedo(Workspace.PROJECT_SCOPE)
     }
 
-    suspend fun act(action: String, params: JsonObject = buildJsonObject { put("layer", layer.orEmpty()) }): Boolean {
+    // Runs an action, then shows what it did; a failure is said in a dialog.
+    suspend fun act(action: String, params: JsonObject): Boolean {
         val outcome = graph.invoke(action, params)
         if (outcome !is Outcome.Done) failure = texts.of(outcome)
         reload()
         return outcome is Outcome.Done
     }
 
-    // Open the project, unless it is open already (just made, or back from the settings).
+    // A change starts editing its layer first, the QGIS way.
+    suspend fun startEditing(name: String): Boolean =
+        collection.flag("editing") || act(Editing.START, buildJsonObject { put("layer", name) })
+
     LaunchedEffect(project) {
-        val current = graph.invoke(Workspace.CURRENT)
-        val about = (current as? Outcome.Done)?.output?.jsonObject?.takeIf { (it["name"] as? JsonPrimitive)?.contentOrNull == project }
-            ?: when (val opened = graph.invoke(Workspace.OPEN, buildJsonObject { put("name", project) })) {
-                is Outcome.Done -> opened.output.jsonObject
-                else -> {
-                    failure = texts.of(opened)
-                    return@LaunchedEffect
-                }
+        when (val opened = graph.open(project)) {
+            is Outcome.Done -> {
+                layers = opened.output.jsonObject["layers"]?.jsonArray.orEmpty().map { it.jsonObject }
+                layer = pointLayer(layers)
+                reload()
             }
-        layers = about["layers"]?.jsonArray.orEmpty().map { it.jsonObject }
-        layer = pointLayer(layers)
-        reload()
+            else -> failure = texts.of(opened)
+        }
     }
 
-    // The basemap, then the layer and its labels on top.
+    // The basemap, then the points and their names on top.
     LaunchedEffect(mapView) {
         val map = mapView.awaitMap()
         map.uiSettings.isLogoEnabled = false // MapLibre's licence does not ask for it; we credit the data ourselves
         map.uiSettings.isAttributionEnabled = false
-        map.uiSettings.setCompassMargins(0, (96 * density).toInt(), (16 * density).toInt(), 0)
         map.cameraPosition = graph.cameras[project] ?: CameraPosition.Builder().target(LatLng(35.0, 105.0)).zoom(3.5).build()
         map.addOnMapClickListener { point ->
+            if (placing) return@addOnMapClickListener false
             val at = map.projection.toScreenLocation(point)
             val reach = 24 * density
-            val hit = map.queryRenderedFeatures(RectF(at.x - reach, at.y - reach, at.x + reach, at.y + reach), SOURCE).firstOrNull()
+            val hit = map.queryRenderedFeatures(RectF(at.x - reach, at.y - reach, at.x + reach, at.y + reach), POINT_SOURCE).firstOrNull()
             hit?.id()?.toLongOrNull()?.let { selected = it }
             hit != null
         }
+        // While a point is being placed, where the crosshair is.
+        map.addOnCameraMoveListener { if (placing) center = map.cameraPosition.target?.wrap() }
         map.setStyle(Style.Builder().fromJson(key?.let(MapStyles::tiandituImagery) ?: MapStyles.BLANK)) { style ->
-            style.addSource(GeoJsonSource(SOURCE))
+            style.addSource(GeoJsonSource(POINT_SOURCE))
             style.addLayer(
-                CircleLayer(SOURCE, SOURCE).withProperties(
+                CircleLayer(POINT_SOURCE, POINT_SOURCE).withProperties(
                     PropertyFactory.circleRadius(6f),
                     PropertyFactory.circleColor("#e53935"),
                     PropertyFactory.circleStrokeColor("#ffffff"),
                     PropertyFactory.circleStrokeWidth(2f),
                 ),
             )
-            // Point numbers to the right of the points; MapLibre keeps them from piling up.
+            // Point names to the right of the points; MapLibre keeps them from piling up.
             style.addLayer(
-                SymbolLayer(LABELS, SOURCE).withProperties(
+                SymbolLayer(POINT_LABELS, POINT_SOURCE).withProperties(
                     PropertyFactory.iconImage(Expression.get(MapLabels.PROPERTY)),
                     PropertyFactory.iconAnchor(Property.ICON_ANCHOR_LEFT),
                     PropertyFactory.iconOffset(arrayOf(8f, 0f)),
@@ -242,6 +237,17 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
             )
             styleLoads++
         }
+    }
+
+    // The compass, when the map is turned, stands over the menu button, clear of
+    // the system bars and the camera in either orientation.
+    val insets = WindowInsets.safeDrawing
+    val insetStart = insets.getLeft(LocalDensity.current, LocalLayoutDirection.current)
+    val insetBottom = insets.getBottom(LocalDensity.current)
+    LaunchedEffect(insetStart, insetBottom) {
+        val map = mapView.awaitMap()
+        map.uiSettings.compassGravity = Gravity.BOTTOM or Gravity.START
+        map.uiSettings.setCompassMargins(insetStart + (24 * density).toInt(), 0, 0, insetBottom + (96 * density).toInt())
     }
 
     // Where the map was is kept for the next visit.
@@ -256,9 +262,9 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         val style = map.style ?: return@LaunchedEffect
         val geoJson = buildJsonObject {
             put("type", "FeatureCollection")
-            put("features", numberField(collection)?.let { MapLabels.label(features, it, style, density) } ?: features)
+            put("features", nameField(collection)?.let { MapLabels.label(features, it, style, density) } ?: features)
         }
-        style.getSourceAs<GeoJsonSource>(SOURCE)?.setGeoJson(geoJson.toString())
+        style.getSourceAs<GeoJsonSource>(POINT_SOURCE)?.setGeoJson(geoJson.toString())
         // The first visit shows the points there are.
         if (!fitted && styleLoads > 0) {
             fitted = true
@@ -266,44 +272,58 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         }
     }
 
-    fun addPoint() = once {
-        val name = layer ?: return@once
-        val center = mapView.awaitMap().cameraPosition.target?.wrap() ?: return@once
-        val isEditing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
-        if (!isEditing && !act(Editing.START)) return@once
-        val numberField = numberField(collection)
-        val numbers = collection?.get("features")?.jsonArray.orEmpty().map {
-            numberField?.let { field -> (it.jsonObject["properties"]?.jsonObject?.get(field) as? JsonPrimitive)?.contentOrNull }
+    fun startPlacing() {
+        placing = true
+        scope.launch { center = mapView.awaitMap().cameraPosition.target?.wrap() }
+    }
+
+    // The new point's form comes first: its save adds the point, its cancel leaves
+    // none, the QGIS way. The point is named after the last, D001 and on.
+    fun place() = scope.launch {
+        val at = mapView.awaitMap().cameraPosition.target?.wrap() ?: return@launch
+        placing = false
+        val field = nameField(collection)
+        val names = collection?.get("features")?.jsonArray.orEmpty().map { f ->
+            field?.let { (((f as? JsonObject)?.get("properties") as? JsonObject)?.get(it) as? JsonPrimitive)?.contentOrNull }
         }
-        act(
-            Editing.ADD,
-            buildJsonObject {
-                put("layer", name)
-                putJsonObject("geometry") {
-                    put("type", "Point")
-                    // GNSS and the map are WGS84, taken as CGCS2000 (ADR 0015); 1e-7 degrees is about a centimetre.
-                    putJsonArray("coordinates") { add(round7(center.longitude)); add(round7(center.latitude)) }
-                }
-                putJsonObject("properties") {
-                    numberField?.let { put(it, PointNumbers.next(numbers)) }
-                    timeField(collection)?.let { put(it, Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()) }
-                }
-            },
-        )
+        val values = if (field == null) emptyMap() else mapOf(field to JsonPrimitive(PointNumbers.next(names)))
+        draft = Draft(round7(at.longitude), round7(at.latitude), JsonObject(values))
     }
 
-    // Changing a feature starts editing its layer first, the QGIS way.
-    fun change(action: String, params: JsonObject) = once {
-        val isEditing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
-        if (isEditing || act(Editing.START)) act(action, params)
+    fun add(values: JsonObject, at: Pair<Double, Double>) = once {
+        val name = layer ?: return@once
+        if (!startEditing(name)) return@once
+        act(Editing.ADD, buildJsonObject { put("layer", name); put("geometry", point(at)); put("properties", values) })
     }
 
-    // Leaves the map: stops editing and closes the project; unsaved edits are asked about first.
+    fun change(fid: Long, values: JsonObject, at: Pair<Double, Double>?) = once {
+        val name = layer ?: return@once
+        if (!startEditing(name)) return@once
+        if (at != null && !act(Editing.GEOMETRY, buildJsonObject { put("layer", name); put("fid", fid); put("geometry", point(at)) })) return@once
+        if (values.isNotEmpty()) act(Editing.VALUES, buildJsonObject { put("layer", name); put("fid", fid); put("values", values) })
+    }
+
+    fun delete(fid: Long) = once {
+        val name = layer ?: return@once
+        if (startEditing(name)) act(Editing.DELETE, buildJsonObject { put("layer", name); put("fid", fid) })
+    }
+
+    fun save() = once {
+        if (act(Editing.SAVE_ALL, NONE)) scope.launch { snackbar.showSnackbar(savedText) }
+    }
+
+    // Leaves the map. A picture of it goes to the project's card at home first, if
+    // the map gives one in time; then the project closes, its layers stopping.
     suspend fun close() {
-        val isEditing = (collection?.get("editing") as? JsonPrimitive)?.booleanOrNull == true
-        if (isEditing && !act(Editing.STOP)) return
-        graph.invoke(Workspace.CLOSE)
-        onBack()
+        try {
+            withTimeoutOrNull(THUMBNAIL_WAIT_MS) { saveThumbnail(mapView.awaitMap(), graph.thumbnail(project)) }
+        } catch (e: IOException) {
+            // The card keeps the picture it had.
+        }
+        when (val closed = graph.invoke(Workspace.CLOSE)) {
+            is Outcome.Done -> onBack()
+            else -> failure = texts.of(closed)
+        }
     }
 
     fun requestLeave() {
@@ -317,7 +337,8 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         }
     }
 
-    BackHandler { requestLeave() }
+    BackHandler(enabled = !placing) { requestLeave() }
+    BackHandler(enabled = placing) { placing = false }
 
     // The map runs under the status bar, and imagery is mostly dark: light icons there,
     // whatever the theme; the theme's own come back when the map goes.
@@ -338,164 +359,149 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
                 .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp)
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent))),
         )
-        Crosshair(Modifier.align(Alignment.Center))
+        if (placing) Crosshair(Modifier.align(Alignment.Center))
 
-        Column(Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding().padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RoundButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back), onClick = ::requestLeave)
-                Spacer(Modifier.width(8.dp))
-                Box(Modifier.weight(1f)) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TRANSLUCENT),
-                    shadowElevation = 1.dp,
-                ) {
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(project, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (editing) {
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                stringResource(if (modified) R.string.map_unsaved_short else R.string.map_editing),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (modified) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                            )
-                        }
-                    }
+        // The buttons keep clear of the system bars and the camera, in either orientation.
+        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RoundButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.map_leave), onClick = ::requestLeave, solid = true)
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.weight(1f)) { Title(project, modified) }
+                    Spacer(Modifier.width(8.dp))
+                    RoundButton(
+                        Icons.Rounded.Save, stringResource(R.string.save), onClick = { save() }, solid = true, enabled = modified,
+                        container = if (modified) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        content = if (modified) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    )
                 }
+                if (placing) {
+                    Spacer(Modifier.height(8.dp))
+                    PlacingHint(center = { center })
+                } else if (key == null) {
+                    Spacer(Modifier.height(8.dp))
+                    NoKey(onSettings)
                 }
-                Spacer(Modifier.width(8.dp))
+            }
+
+            Column(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val projectScope = buildJsonObject { put("scope", Workspace.PROJECT_SCOPE) }
                 RoundButton(Icons.Rounded.Layers, stringResource(R.string.map_layers), onClick = { layerSheet = true })
+                RoundButton(
+                    Icons.AutoMirrored.Rounded.Undo, stringResource(R.string.map_undo),
+                    onClick = { once { act(ActionRegistry.UNDO, projectScope) } }, enabled = history.first,
+                )
+                RoundButton(
+                    Icons.AutoMirrored.Rounded.Redo, stringResource(R.string.map_redo),
+                    onClick = { once { act(ActionRegistry.REDO, projectScope) } }, enabled = history.second,
+                )
             }
-            if (key == null) {
-                Spacer(Modifier.height(8.dp))
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TRANSLUCENT),
-                    shadowElevation = 1.dp,
-                ) {
-                    Row(Modifier.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Key, null, modifier = Modifier.size(20.dp))
+
+            Row(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (placing) {
+                    RoundButton(Icons.Rounded.Close, stringResource(R.string.cancel), onClick = { placing = false }, size = 56.dp, solid = true)
+                    // The content form: the icon-and-text form hides its text from screen readers.
+                    ExtendedFloatingActionButton(
+                        onClick = { place() },
+                        shape = CircleShape,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) {
+                        Icon(Icons.Rounded.Check, null)
                         Spacer(Modifier.width(12.dp))
-                        Text(stringResource(R.string.map_no_key), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        TextButton(onClick = onSettings) { Text(stringResource(R.string.map_set_key)) }
+                        Text(stringResource(R.string.place_here))
                     }
-                }
-            }
-        }
-
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            if (editing) {
-                val scopeParams = buildJsonObject { put("scope", Editing.scope(layer.orEmpty())) }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Spacer(Modifier.size(56.dp)) // keeps the confirm button in the middle
+                } else {
                     RoundButton(
-                        Icons.AutoMirrored.Rounded.Undo, stringResource(R.string.map_undo),
-                        onClick = { once { act(ActionRegistry.UNDO, scopeParams) } }, enabled = history.first,
+                        Icons.Rounded.Menu, stringResource(R.string.map_menu), onClick = { menu = true },
+                        size = 56.dp, solid = true, container = MaterialTheme.colorScheme.surfaceContainerHighest,
                     )
                     RoundButton(
-                        Icons.AutoMirrored.Rounded.Redo, stringResource(R.string.map_redo),
-                        onClick = { once { act(ActionRegistry.REDO, scopeParams) } }, enabled = history.second,
+                        Icons.Rounded.AddLocationAlt, stringResource(R.string.map_place), onClick = ::startPlacing,
+                        size = 72.dp, solid = true, container = MaterialTheme.colorScheme.primary, content = MaterialTheme.colorScheme.onPrimary,
+                        enabled = layer != null,
                     )
                     RoundButton(
-                        Icons.Rounded.Check, stringResource(R.string.map_save), onClick = { once { act(Editing.SAVE) } },
-                        enabled = modified, content = MaterialTheme.colorScheme.primary,
-                    )
-                    RoundButton(
-                        Icons.Rounded.Close, stringResource(R.string.map_discard), onClick = { once { act(Editing.DISCARD) } },
-                        enabled = modified, content = MaterialTheme.colorScheme.error,
+                        Icons.Rounded.AutoAwesome, stringResource(R.string.map_ai), onClick = { ai = true },
+                        size = 56.dp, solid = true, container = MaterialTheme.colorScheme.tertiaryContainer,
+                        content = MaterialTheme.colorScheme.onTertiaryContainer,
                     )
                 }
-                Spacer(Modifier.height(16.dp))
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                RoundButton(
-                    Icons.Rounded.Menu, stringResource(R.string.map_menu), onClick = { menu = true },
-                    size = 56.dp, solid = true, container = MaterialTheme.colorScheme.surfaceContainerHighest,
-                )
-                RoundButton(
-                    Icons.Rounded.AddLocationAlt, stringResource(R.string.map_add_point), onClick = { addPoint() },
-                    size = 76.dp, container = MaterialTheme.colorScheme.primary, content = MaterialTheme.colorScheme.onPrimary,
-                    enabled = layer != null,
-                )
-                RoundButton(
-                    Icons.Rounded.AutoAwesome, stringResource(R.string.map_ai), onClick = { ai = true },
-                    size = 56.dp, solid = true, container = MaterialTheme.colorScheme.tertiaryContainer,
-                    content = MaterialTheme.colorScheme.onTertiaryContainer,
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp))
+            if (key != null) {
+                Text(
+                    stringResource(R.string.attribution_tianditu),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 2.dp),
                 )
             }
-        }
-
-        if (key != null) {
-            Text(
-                stringResource(R.string.attribution_tianditu),
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White,
-                modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 12.dp, bottom = 2.dp),
-            )
         }
     }
 
     if (menu) {
         ModalBottomSheet(onDismissRequest = { menu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-            Text(project, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-            SheetItem(Icons.Rounded.Layers, stringResource(R.string.map_layers)) { menu = false; layerSheet = true }
-            SheetItem(Icons.Rounded.SaveAlt, stringResource(R.string.export_gpkg)) { menu = false; export("gpkg") }
-            SheetItem(Icons.Rounded.Public, stringResource(R.string.export_kml)) { menu = false; export("kml") }
-            SheetItem(Icons.Rounded.Settings, stringResource(R.string.settings)) { menu = false; onSettings() }
-            SheetItem(Icons.AutoMirrored.Rounded.Logout, stringResource(R.string.project_close)) { menu = false; requestLeave() }
-            Spacer(Modifier.height(16.dp))
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(project, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+                SheetItem(Icons.Rounded.Layers, stringResource(R.string.map_layers)) { menu = false; layerSheet = true }
+                SheetItem(Icons.Rounded.Tune, stringResource(R.string.project_settings)) { menu = false; onProjectSettings() }
+                SheetItem(Icons.Rounded.SaveAlt, stringResource(R.string.export_gpkg)) { menu = false; export("gpkg") }
+                SheetItem(Icons.Rounded.Public, stringResource(R.string.export_kml)) { menu = false; export("kml") }
+                SheetItem(Icons.AutoMirrored.Rounded.Logout, stringResource(R.string.project_close)) { menu = false; requestLeave() }
+                Spacer(Modifier.height(16.dp))
+            }
         }
     }
     if (layerSheet) {
+        // How many features each layer has, as edited.
+        val counts by produceState(emptyMap<String, Int>(), layers) {
+            value = layers.mapNotNull { l ->
+                val name = l.name() ?: return@mapNotNull null
+                val info = graph.invoke(Workspace.LAYER_INFO, buildJsonObject { put("layer", name) }) as? Outcome.Done
+                info?.output?.jsonObject?.get("count")?.jsonPrimitive?.longOrNull?.let { name to it.toInt() }
+            }.toMap()
+        }
         // Fully open at once: a half-open sheet dragged open ignored the back gesture afterwards.
         ModalBottomSheet(onDismissRequest = { layerSheet = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-            Text(
-                stringResource(R.string.map_layers),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-            )
-            for (l in layers) {
-                val name = (l["name"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-                val count = if (name == layer) collection?.get("features")?.jsonArray?.size else null
-                ListItem(
-                    headlineContent = { Text(name) },
-                    supportingContent = count?.let { { Text(pluralStringResource(R.plurals.points_count, it, it)) } },
-                    leadingContent = { Icon(Icons.Rounded.Place, null, tint = Color(0xFFE53935)) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                Text(
+                    stringResource(R.string.map_layers),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                 )
-                if (name == layer) {
-                    // The layer's fields: the template's few, and whatever the user added.
-                    for (field in formFields(collection)) {
-                        ListItem(
-                            headlineContent = { Text(field.name) },
-                            trailingContent = { Text(typeName(field.type), style = MaterialTheme.typography.labelMedium) },
-                            leadingContent = { Icon(Icons.Rounded.Notes, null, modifier = Modifier.size(20.dp)) },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            modifier = Modifier.padding(start = 24.dp).height(48.dp),
-                        )
-                    }
-                    FilledTonalButton(
-                        // The sheet steps aside for the dialog: a dialog over a sheet leaves the
-                        // sheet without focus afterwards, deaf to the back key.
-                        onClick = {
-                            layerSheet = false
-                            addingField = true
-                        },
-                        modifier = Modifier.padding(start = 40.dp, top = 4.dp, bottom = 8.dp),
-                    ) {
-                        Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.field_add))
-                    }
+                for (l in layers) {
+                    val name = l.name().orEmpty()
+                    ListItem(
+                        headlineContent = { Text(name) },
+                        supportingContent = counts[name]?.let { { Text(pluralStringResource(R.plurals.points_count, it, it)) } },
+                        leadingContent = { Icon(Icons.Rounded.Place, null, tint = Color(0xFFE53935)) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
                 }
-            }
-            Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
             }
         }
+    }
+    draft?.let { d ->
+        FeatureForm(
+            title = stringResource(R.string.place_new_point),
+            fields = formFields(collection),
+            properties = d.values,
+            coordinates = d.longitude to d.latitude,
+            isNew = true,
+            onDismiss = { draft = null },
+            onSave = { values, at ->
+                draft = null
+                add(values, at ?: (d.longitude to d.latitude))
+            },
+            onDelete = null,
+        )
     }
     selected?.let { fid ->
         // A feature that has gone (an undone addition, say) shows no form.
@@ -503,21 +509,21 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
             ?.firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() == fid }
         if (feature != null) {
             val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
-            val number = numberField(collection)?.let { (properties[it] as? JsonPrimitive)?.contentOrNull }?.takeIf { it.isNotBlank() }
+            val name = nameField(collection)?.let { (properties[it] as? JsonPrimitive)?.contentOrNull }?.takeIf { it.isNotBlank() }
             FeatureForm(
-                title = number ?: stringResource(R.string.feature_untitled, fid),
+                title = name ?: stringResource(R.string.feature_untitled, fid),
                 fields = formFields(collection),
                 properties = properties,
+                coordinates = coordinatesOf(feature),
+                isNew = false,
                 onDismiss = { selected = null },
-                onSave = { values ->
+                onSave = { values, at ->
                     selected = null
-                    if (values.isNotEmpty()) {
-                        change(Editing.VALUES, buildJsonObject { put("layer", layer.orEmpty()); put("fid", fid); put("values", values) })
-                    }
+                    if (values.isNotEmpty() || at != null) change(fid, values, at)
                 },
                 onDelete = {
                     selected = null
-                    change(Editing.DELETE, buildJsonObject { put("layer", layer.orEmpty()); put("fid", fid) })
+                    delete(fid)
                 },
             )
         }
@@ -526,11 +532,11 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         AlertDialog(
             onDismissRequest = { leaving = false },
             title = { Text(stringResource(R.string.unsaved_title)) },
-            text = { Text(stringResource(R.string.unsaved_body, layer.orEmpty())) },
+            text = { Text(stringResource(R.string.unsaved_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     leaving = false
-                    once { if (act(Editing.SAVE)) close() }
+                    once { if (act(Editing.SAVE_ALL, NONE)) close() }
                 }) { Text(stringResource(R.string.save)) }
             },
             dismissButton = {
@@ -538,21 +544,8 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
                     TextButton(onClick = { leaving = false }) { Text(stringResource(R.string.cancel)) }
                     TextButton(onClick = {
                         leaving = false
-                        once { if (act(Editing.DISCARD)) close() }
-                    }) { Text(stringResource(R.string.map_discard), color = MaterialTheme.colorScheme.error) }
-                }
-            },
-        )
-    }
-    if (addingField) {
-        AddFieldDialog(
-            existing = fieldNames(collection),
-            onDismiss = { addingField = false },
-            onAdd = { name, type ->
-                addingField = false
-                once {
-                    act(Workspace.FIELD_ADD, buildJsonObject { put("layer", layer.orEmpty()); put("name", name); put("type", type) })
-                    layerSheet = true // back to the fields, the new one among them
+                        once { if (act(Editing.DISCARD_ALL, NONE)) close() }
+                    }) { Text(stringResource(R.string.dont_save), color = MaterialTheme.colorScheme.error) }
                 }
             },
         )
@@ -590,122 +583,94 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
     }
 }
 
-/** Failures said in the user's language when their code is known (`unsaved`, `editing`). */
-private class FailureTexts(val unsaved: String, val editing: String, val failed: String, val start: String) {
-    fun of(outcome: Outcome): String = when (outcome) {
-        is Outcome.Failed -> when (outcome.code) {
-            "unsaved" -> unsaved
-            "editing" -> editing
-            AppGraph.START_FAILED -> start.format(outcome.message)
-            else -> failed.format(outcome.message)
-        }
-        else -> failed.format(outcome.toString())
-    }
-}
+/** A point about to be added: where it goes and its first values. The form's save adds it. */
+private data class Draft(val longitude: Double, val latitude: Double, val values: JsonObject)
 
+/** The project's name, and whether it has edits to save; fixed and opaque. */
 @Composable
-private fun SheetItem(icon: ImageVector, label: String, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(label) },
-        leadingContent = { Icon(icon, null) },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-    )
-}
-
-/** The layer points go into: the one made from a point template, else the first. */
-private fun pointLayer(layers: List<JsonObject>): String? {
-    val named = layers.map { (it["name"] as? JsonPrimitive)?.contentOrNull to (it["template"] as? JsonPrimitive)?.contentOrNull }
-    return (named.firstOrNull { it.second in POINT_TEMPLATES } ?: named.firstOrNull())?.first
-}
-
-private val POINT_TEMPLATES = setOf("field-point", "geo-point")
-
-private fun fieldNames(collection: JsonObject?): List<String> =
-    collection?.get("fields")?.jsonArray.orEmpty().mapNotNull { (it.jsonObject["name"] as? JsonPrimitive)?.contentOrNull }
-
-/** The field that numbers points, under the name the template gave it in the project's language. */
-private fun numberField(collection: JsonObject?): String? = Templates.FIELD_POINT.column(Templates.NUMBER, fieldNames(collection))
-
-private fun timeField(collection: JsonObject?): String? = Templates.FIELD_POINT.column(Templates.TIME, fieldNames(collection))
-
-private fun formFields(collection: JsonObject?): List<FormField> = collection?.get("fields")?.jsonArray.orEmpty().map {
-    val f = it.jsonObject
-    FormField((f["name"] as JsonPrimitive).content, (f["type"] as JsonPrimitive).content)
-}
-
-// Moves the camera to show the features: one point close up, several all at once.
-private fun fit(map: MapLibreMap, features: JsonArray, density: Float) {
-    val points = features.mapNotNull { f ->
-        val xy = ((f as? JsonObject)?.get("geometry") as? JsonObject)?.get("coordinates") as? JsonArray ?: return@mapNotNull null
-        if (xy.size < 2) null else LatLng(xy[1].jsonPrimitive.double, xy[0].jsonPrimitive.double)
-    }
-    if (points.isEmpty()) return
-    // Points that span no distance (all in one place) are shown like a single one:
-    // a box of no size would zoom in past the basemap's last level.
-    val spread = points.maxOf { it.latitude } - points.minOf { it.latitude } + points.maxOf { it.longitude } - points.minOf { it.longitude }
-    if (spread < 1e-6) {
-        map.cameraPosition = CameraPosition.Builder().target(points.first()).zoom(15.0).build()
-    } else {
-        map.moveCamera(CameraUpdateFactory.newLatLngBounds(LatLngBounds.fromLatLngs(points), (64 * density).toInt()))
-    }
-}
-
-/** Hands an exported file to another app through the system's share sheet. */
-private fun share(context: Context, file: File, title: String) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-    val type = if (file.extension == "gpkg") "application/geopackage+sqlite3" else "application/vnd.google-earth.kml+xml"
-    val send = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    context.startActivity(Intent.createChooser(send, title))
-}
-
-/** Where a new point goes: the middle of the map. */
-@Composable
-private fun Crosshair(modifier: Modifier) {
-    Canvas(modifier.size(28.dp)) {
-        val red = Color(0xFFE53935)
-        val stroke = 3.dp.toPx()
-        drawLine(red, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), stroke)
-        drawLine(red, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), stroke)
-    }
-}
-
-/** A MapView that follows the screen's lifecycle. */
-@Composable
-private fun rememberMapView(): MapView {
-    val context = LocalContext.current
-    val mapView = remember {
-        MapLibre.getInstance(context)
-        HttpRequestUtil.setLogEnabled(false) // MapLibre logs the URLs of failed requests, and Tianditu's carry the key
-        MapView(context).apply { onCreate(null) }
-    }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle, mapView) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> mapView.onStart()
-                Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                Lifecycle.Event.ON_STOP -> mapView.onStop()
-                else -> Unit
+private fun Title(project: String, modified: Boolean) {
+    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 3.dp) {
+        Row(Modifier.height(48.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                project,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (modified) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.map_unsaved_short),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 1,
+                )
             }
         }
-        lifecycle.addObserver(observer)
-        onDispose {
-            lifecycle.removeObserver(observer)
-            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) mapView.onPause()
-            if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) mapView.onStop()
-            mapView.onDestroy()
-        }
     }
-    return mapView
 }
 
-private suspend fun MapView.awaitMap(): MapLibreMap =
-    suspendCancellableCoroutine { continuation -> getMapAsync { if (continuation.isActive) continuation.resume(it) } }
+/** What to do while placing a point, and where the crosshair is. */
+@Composable
+private fun PlacingHint(center: () -> LatLng?) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shadowElevation = 3.dp,
+        modifier = Modifier.widthIn(max = 560.dp),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.OpenWith, null)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(stringResource(R.string.place_hint), style = MaterialTheme.typography.bodyMedium)
+                center()?.let {
+                    Text(
+                        stringResource(R.string.place_coordinates, DEGREES.format(Locale.ROOT, it.longitude), DEGREES.format(Locale.ROOT, it.latitude)),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+        }
+    }
+}
 
-private fun round7(degrees: Double): Double = (degrees * 1e7).roundToLong() / 1e7
+/** No basemap without the user's Tianditu key: where to set it. */
+@Composable
+private fun NoKey(onSettings: () -> Unit) {
+    // A colour with alpha matches no theme colour, so the text colour is given: it would be black on dark.
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TRANSLUCENT),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shadowElevation = 1.dp,
+        modifier = Modifier.widthIn(max = 560.dp),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Key, null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(stringResource(R.string.map_no_key), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = onSettings) { Text(stringResource(R.string.map_set_key)) }
+        }
+    }
+}
 
-// Names of our own: the basemap's style has layers of its own (Tianditu's "labels", say).
-private const val SOURCE = "geocrew-points"
-private const val LABELS = "geocrew-point-labels"
+private val NONE = JsonObject(emptyMap())
+
+private const val DEGREES = "%.7f"
+
+// How long leaving waits for the map's picture.
+private const val THUMBNAIL_WAIT_MS = 2_000L
+
+private fun JsonObject?.flag(name: String): Boolean = (this?.get(name) as? JsonPrimitive)?.booleanOrNull == true
+
+private fun JsonObject.name(): String? = (this["name"] as? JsonPrimitive)?.contentOrNull
+
+// GNSS and the map are WGS84, taken as CGCS2000 (ADR 0015).
+private fun point(at: Pair<Double, Double>): JsonObject = buildJsonObject {
+    put("type", "Point")
+    putJsonArray("coordinates") { add(at.first); add(at.second) }
+}

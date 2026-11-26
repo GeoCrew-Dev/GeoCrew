@@ -191,16 +191,6 @@ private fun languageName(choice: AppLanguage.Choice): String = when (choice) {
     AppLanguage.Choice.ENGLISH -> stringResource(R.string.language_en)
 }
 
-@Composable
-private fun SectionHeader(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 4.dp),
-    )
-}
-
 /** The user's own Tianditu key (ADR 0015). */
 @Composable
 fun KeyDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {

@@ -1,6 +1,7 @@
 package org.geocrew.android
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,10 +25,22 @@ import androidx.compose.ui.unit.dp
 /** How much of the map shows through the floating buttons. */
 const val TRANSLUCENT = 0.72f
 
+/** The title of a group of items on a settings screen. */
+@Composable
+fun SectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 4.dp),
+    )
+}
+
 /**
  * A round icon button with a ripple, floating over the map: translucent by
- * default; [solid] for the buttons that must always stand out (the menu and the
- * AI). A long press shows what it does.
+ * default, for the buttons the user will be able to arrange; [solid] for the
+ * fixed ones that always stand out (leave, save, the menu, placing a point and
+ * the AI). A long press shows what it does.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

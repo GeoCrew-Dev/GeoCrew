@@ -47,10 +47,10 @@ class Undo(val scope: String? = null, val redo: (suspend () -> Unit)? = null, va
 sealed interface ActionResult {
     /**
      * It worked. [undo] takes it back, when the action can be undone.
-     * [endsUndo] names a scope whose undo history ends with this run, as saving
-     * or discarding a layer's edits ends that layer's.
+     * [endsUndo] names the scopes whose undo history ends with this run, as
+     * saving or discarding edits ends theirs.
      */
-    data class Done(val output: JsonElement = JsonNull, val undo: Undo? = null, val endsUndo: String? = null) : ActionResult
+    data class Done(val output: JsonElement = JsonNull, val undo: Undo? = null, val endsUndo: Collection<String> = emptyList()) : ActionResult
 
     /** It could not be done; [code] is for programs, [message] for people. */
     data class Failed(val code: String, val message: String) : ActionResult

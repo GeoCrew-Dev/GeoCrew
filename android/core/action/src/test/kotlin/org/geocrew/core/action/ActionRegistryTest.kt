@@ -146,7 +146,7 @@ class ActionRegistryTest {
         val b = Counter(id = "b.add", scope = "layer:b")
         val save = object : Action {
             override val spec = ActionSpec("a.save", "Save", "", json("""{"type": "object"}"""), Risk.EDIT, Stability.STABLE)
-            override suspend fun run(caller: Caller, params: JsonObject) = ActionResult.Done(endsUndo = "layer:a")
+            override suspend fun run(caller: Caller, params: JsonObject) = ActionResult.Done(endsUndo = listOf("layer:a"))
         }
         val registry = ActionRegistry().apply { register(a); register(b); register(save) }
         registry.invoke(Caller.USER, "a.add", ok)

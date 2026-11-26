@@ -1,27 +1,35 @@
 package org.geocrew.android
 
+import android.graphics.BitmapFactory
 import android.text.format.DateUtils
 import android.text.format.Formatter
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Map
@@ -45,25 +53,33 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -88,9 +104,10 @@ private data class ProjectEntry(
 )
 
 /**
- * The home screen: the projects, latest first, each opening straight into its
- * map; a new project; Settings and About. Everything goes through actions
- * (ADR 0010).
+ * The home screen: the projects, latest first, each a large card with a picture
+ * of its map from when it was last left, opening straight into the map; a new
+ * project; Settings and About. The cards stand side by side where the screen
+ * is wide, as in landscape. Everything goes through actions (ADR 0010).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,8 +120,8 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
     val failedText = stringResource(R.string.action_failed)
     val startText = stringResource(R.string.start_failed)
     val scroll = TopAppBarDefaults.pinnedScrollBehavior()
-    val list = rememberLazyListState()
-    val expanded by remember { derivedStateOf { list.firstVisibleItemIndex == 0 } }
+    val grid = rememberLazyGridState()
+    val expanded by remember { derivedStateOf { grid.firstVisibleItemIndex == 0 } }
 
     LaunchedEffect(Unit) {
         when (val listed = graph.invoke(Workspace.LIST)) {
@@ -142,7 +159,8 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
                 ExtendedFloatingActionButton(
                     onClick = { creating = true },
                     expanded = expanded,
-                    icon = { Icon(Icons.Rounded.Add, null) },
+                    // The icon carries the name for screen readers: this button hides its text from them.
+                    icon = { Icon(Icons.Rounded.Add, stringResource(R.string.project_new)) },
                     text = { Text(stringResource(R.string.project_new)) },
                 )
             }
@@ -152,13 +170,25 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
         when {
             shown == null -> Box(Modifier.fillMaxSize().padding(padding))
             shown.isEmpty() -> EmptyProjects(Modifier.padding(padding), onCreate = { creating = true })
-            else -> LazyColumn(
-                state = list,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = padding.calculateTopPadding() + 8.dp, bottom = 112.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(shown, key = { it.name }) { project -> ProjectCard(project, onClick = { onOpen(project.name) }) }
+            else -> {
+                val direction = LocalLayoutDirection.current
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 320.dp),
+                    state = grid,
+                    contentPadding = PaddingValues(
+                        start = padding.calculateStartPadding(direction) + 16.dp,
+                        end = padding.calculateEndPadding(direction) + 16.dp,
+                        top = padding.calculateTopPadding() + 8.dp,
+                        bottom = 112.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(shown, key = { it.name }) { project ->
+                        ProjectCard(project, graph.thumbnail(project.name), onClick = { onOpen(project.name) })
+                    }
+                }
             }
         }
     }
@@ -172,7 +202,11 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
                 scope.launch {
                     val language = AppLanguage.speaking(context)
                     when (val created = graph.invoke(Workspace.CREATE, buildJsonObject { put("name", name); put("language", language) })) {
-                        is Outcome.Done -> onOpen(name)
+                        is Outcome.Done -> {
+                            // A picture left by an earlier project of the same name is not this one's.
+                            withContext(Dispatchers.IO) { graph.thumbnail(name).delete() }
+                            onOpen(name)
+                        }
                         is Outcome.Failed -> failure = failedText.format(created.message)
                         else -> failure = failedText.format(created.toString())
                     }
@@ -190,38 +224,45 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
 }
 
 @Composable
-private fun ProjectCard(project: ProjectEntry, onClick: () -> Unit) {
+private fun ProjectCard(project: ProjectEntry, thumbnail: File, onClick: () -> Unit) {
     ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.Map, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+        Thumbnail(thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(project.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
+            // What is in it: points, layers, size.
+            val context = LocalContext.current
+            val contents = listOfNotNull(
+                project.features?.let { pluralStringResource(R.plurals.points_count, it.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), it) },
+                project.layers?.let { pluralStringResource(R.plurals.layers_count, it, it) },
+                project.bytes?.let { Formatter.formatShortFileSize(context, it) },
+            )
+            if (contents.isNotEmpty()) {
+                Text(contents.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(project.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(2.dp))
-                // What is in it: points, layers, size.
-                val context = LocalContext.current
-                val contents = listOfNotNull(
-                    project.features?.let { pluralStringResource(R.plurals.points_count, it.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), it) },
-                    project.layers?.let { pluralStringResource(R.plurals.layers_count, it, it) },
-                    project.bytes?.let { Formatter.formatShortFileSize(context, it) },
-                )
-                if (contents.isNotEmpty()) {
-                    Text(contents.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                // When it was made and last changed.
-                val ago = DateUtils.getRelativeTimeSpanString(project.modified, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
-                val dates = listOfNotNull(
-                    project.created?.let { stringResource(R.string.project_created, CREATED.withLocale(LocalConfiguration.current.locales[0]).format(it)) },
-                    stringResource(R.string.project_modified, ago),
-                )
-                Text(dates.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            // When it was made and last changed.
+            val ago = DateUtils.getRelativeTimeSpanString(project.modified, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
+            val dates = listOfNotNull(
+                project.created?.let { stringResource(R.string.project_created, CREATED.withLocale(LocalConfiguration.current.locales[0]).format(it)) },
+                stringResource(R.string.project_modified, ago),
+            )
+            Text(dates.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** The project's map as it was last left; a plain map sign until it has been left once. */
+@Composable
+private fun Thumbnail(file: File, modifier: Modifier) {
+    val picture by produceState<ImageBitmap?>(null, file) {
+        value = withContext(Dispatchers.IO) { BitmapFactory.decodeFile(file.path)?.asImageBitmap() }
+    }
+    Box(modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+        val shown = picture
+        if (shown != null) {
+            Image(shown, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+            Icon(Icons.Rounded.Map, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
         }
     }
 }
@@ -231,31 +272,37 @@ private val CREATED = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).with
 
 @Composable
 private fun EmptyProjects(modifier: Modifier, onCreate: () -> Unit) {
-    Column(
-        modifier.fillMaxSize().padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            Modifier.size(112.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
-            contentAlignment = Alignment.Center,
+    // Centred while it fits; landscape leaves little height, so there the picture is
+    // smaller and the rest scrolls if it must.
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val short = maxHeight < 420.dp
+        val picture = if (short) 80.dp else 112.dp
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(horizontal = 32.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(Icons.Rounded.Map, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(56.dp))
-        }
-        Spacer(Modifier.height(24.dp))
-        Text(stringResource(R.string.projects_empty_title), style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            stringResource(R.string.projects_empty_body),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(24.dp))
-        FilledTonalButton(onClick = onCreate) {
-            Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.project_new))
+            Box(
+                Modifier.size(picture).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Map, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(picture / 2))
+            }
+            Spacer(Modifier.height(if (short) 16.dp else 24.dp))
+            Text(stringResource(R.string.projects_empty_title), style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.projects_empty_body),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(24.dp))
+            FilledTonalButton(onClick = onCreate) {
+                Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.project_new))
+            }
         }
     }
 }

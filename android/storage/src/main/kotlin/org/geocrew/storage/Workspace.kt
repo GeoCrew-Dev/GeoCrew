@@ -31,7 +31,8 @@ class Workspace(private val projects: Projects) {
     var current: Project? = null
         private set
 
-    val editing = Editing { layer -> checkNotNull(current) { "no project is open" }.target(layer) }
+    // One undo history for the whole project, as its save covers every layer.
+    val editing = Editing(sharedScope = PROJECT_SCOPE) { layer -> checkNotNull(current) { "no project is open" }.target(layer) }
 
     /** The project actions and the editing actions, for the registry. */
     val actions: List<Action> = listOf(
@@ -99,6 +100,7 @@ class Workspace(private val projects: Projects) {
                     }
                     put("editing", layer in editing.layersBeingEdited)
                     put("modified", editing.isModified(layer))
+                    put("projectModified", editing.layersBeingEdited.any(editing::isModified))
                 },
             )
         },
@@ -107,8 +109,7 @@ class Workspace(private val projects: Projects) {
             Risk.SEND, EXPORT_PARAMS, """{"format": "kml"}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
-            val unsaved = editing.layersBeingEdited.filter(editing::isModified)
-            if (unsaved.isNotEmpty()) return@WorkspaceAction ActionResult.Failed("unsaved", "save or discard the edits of ${unsaved.joinToString()} first")
+            unsaved()?.let { return@WorkspaceAction it }
             val exports = Exports(projects.exports)
             val file = when (p.getValue("format").jsonPrimitive.content) {
                 "gpkg" -> exports.gpkg(project)
@@ -124,51 +125,75 @@ class Workspace(private val projects: Projects) {
             val layer = p.getValue("layer").jsonPrimitive.content
             val name = p.getValue("name").jsonPrimitive.content.trim()
             val type = FieldType.of(p.getValue("type").jsonPrimitive.content)
-            val unsaved = editing.layersBeingEdited.filter(editing::isModified)
-            if (unsaved.isNotEmpty()) return@WorkspaceAction ActionResult.Failed("unsaved", "save or discard the edits of ${unsaved.joinToString()} first")
-            // The project's file is opened again, so no layer may stay open for editing. The
-            // layer itself is let go when clean; another would keep an undo history on a
-            // buffer that is gone, so it has to be stopped first.
-            val others = editing.layersBeingEdited - layer
-            if (others.isNotEmpty()) return@WorkspaceAction ActionResult.Failed("editing", "stop editing ${others.joinToString()} first")
+            unsaved()?.let { return@WorkspaceAction it }
             val existing = project.target(layer).store.fields.map { it.name }
             require(name.isNotEmpty() && name.length <= ProjectFormat.MAX_NAME) { "a field name has 1 to ${ProjectFormat.MAX_NAME} characters" }
             require(existing.none { it.equals(name, ignoreCase = true) } && RESERVED.none { it.equals(name, ignoreCase = true) }) {
                 "the layer already has a field $name"
             }
-            editing.release(layer)
+            // The project's file is opened again: every layer stops being edited, with nothing unsaved.
+            val ended = (stopEditing() + editing.scopeOf(layer)).distinct()
             project.addField(layer, name, type)
             current = runCatching { projects.reopen(project) }.getOrElse {
                 current = null // closed, and not open again
                 throw it
             }
-            ActionResult.Done(buildJsonObject { put("layer", layer); put("field", name) }, endsUndo = Editing.scope(layer))
+            ActionResult.Done(buildJsonObject { put("layer", layer); put("field", name) }, endsUndo = ended)
         },
-        WorkspaceAction(CLOSE, "Close project", "Closes the open project", Risk.VIEW, NO_PARAMS, "{}") {
-            busy() ?: ActionResult.Done().also {
+        WorkspaceAction(
+            LAYER_INFO, "Layer info", "A layer of the open project: its fields with their types, and how many features it has, as edited",
+            Risk.VIEW, LAYER_PARAMS, """{"layer": "野外点"}""",
+        ) { p ->
+            val layer = p.getValue("layer").jsonPrimitive.content
+            val project = checkNotNull(current) { "no project is open" }
+            val store = project.target(layer).store
+            ActionResult.Done(
+                buildJsonObject {
+                    put("name", layer)
+                    put("template", project.layers.firstOrNull { it.name == layer }?.template)
+                    putJsonArray("fields") {
+                        for (f in store.fields) addJsonObject { put("name", f.name); put("type", f.type.name.lowercase()) }
+                    }
+                    put("count", editing.features(layer)?.size?.toLong() ?: project.count(layer))
+                },
+            )
+        },
+        WorkspaceAction(CLOSE, "Close project", "Closes the open project, once no layer has unsaved edits", Risk.VIEW, NO_PARAMS, "{}") {
+            unsaved() ?: run {
+                val ended = stopEditing()
                 current?.close()
                 current = null
+                ActionResult.Done(endsUndo = ended)
             }
         },
     ) + editing.actions
 
     // The open project stays open until the next one is: a failure leaves it as it was.
     private fun switchTo(open: () -> Project): ActionResult {
-        busy()?.let { return it }
+        unsaved()?.let { return it }
         val next = open()
+        val ended = stopEditing()
         current?.close()
         current = next
-        return ActionResult.Done(about(next))
+        return ActionResult.Done(about(next), endsUndo = ended)
     }
 
-    // A project cannot close while one of its layers is being edited.
-    private fun busy(): ActionResult.Failed? {
+    // Unsaved edits are saved or discarded before the project's file closes, as QGIS asks.
+    private fun unsaved(): ActionResult.Failed? {
+        val layers = editing.layersBeingEdited.filter(editing::isModified)
+        return if (layers.isEmpty()) null else ActionResult.Failed("unsaved", "save or discard the edits of ${layers.joinToString()} first")
+    }
+
+    // Every layer stops being edited, none having anything unsaved; the undo histories that end with it.
+    private fun stopEditing(): List<String> {
         val layers = editing.layersBeingEdited
-        return if (layers.isEmpty()) null else ActionResult.Failed("editing", "stop editing ${layers.joinToString()} first")
+        layers.forEach(editing::release)
+        return layers.map(editing::scopeOf).distinct()
     }
 
     private fun about(project: Project): JsonObject = buildJsonObject {
         put("name", project.name)
+        put("folder", project.folder.path)
         putJsonArray("layers") {
             for (layer in project.layers) addJsonObject { put("name", layer.name); put("template", layer.template) }
         }
@@ -197,6 +222,10 @@ class Workspace(private val projects: Projects) {
         const val FEATURES = "layer.features"
         const val EXPORT = "project.export"
         const val FIELD_ADD = "layer.field.add"
+        const val LAYER_INFO = "layer.info"
+
+        /** The registry scope of a project's undo history: one for all its layers. */
+        const val PROJECT_SCOPE = "project"
 
         /** Columns every GeoPackage layer has: its feature id and its geometry. */
         val RESERVED = setOf("fid", "geom")
