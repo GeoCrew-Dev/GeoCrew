@@ -309,6 +309,8 @@ class WorkspaceTest {
 
         assertEquals("EPSG:4547", srs("""{"text": "4547"}""").first(), "a code comes first")
         assertEquals("EPSG:4547", srs("""{"text": "epsg:4547"}""").first())
+        val year = srs("""{"text": "2000"}""")
+        assertTrue("EPSG:2000" !in year && "EPSG:4490" in year, "2000 is CGCS2000's year, not EPSG:2000")
         val wgs = found("""{"text": "WGS84"}""").first { it.getValue("srs").jsonPrimitive.content == "EPSG:4326" }
         assertEquals("WGS 84", wgs.getValue("name").jsonPrimitive.content, "spaces don't matter")
         assertEquals("geographic 2D", wgs.getValue("type").jsonPrimitive.content)

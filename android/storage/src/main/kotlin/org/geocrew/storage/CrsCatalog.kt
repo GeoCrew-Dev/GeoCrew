@@ -55,9 +55,17 @@ object CrsCatalog {
         val types = kinds.flatMap { KINDS[it].orEmpty() }.ifEmpty { return emptyList() }
         val where = mutableListOf("c.deprecated = 0", "c.auth_name IN ($AUTHORITIES)", "c.type IN (${types.joinToString { "?" }})")
         val args = types.toMutableList()
+        // A year (1954, 1980, 2000) is part of a datum's name, not a code: 2000 is CGCS2000, not EPSG:2000.
+        val codes = words.filterNot { it.length == 4 && it.toIntOrNull() in 1900..2100 }
         for (w in words) {
-            where += "($FLAT_NAME LIKE ? ESCAPE '\\' OR CAST(c.code AS TEXT) = ? OR lower(c.auth_name || ':' || c.code) = ?)"
-            args += listOf("%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%", w, w)
+            val like = "%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            if (w in codes) {
+                where += "($FLAT_NAME LIKE ? ESCAPE '\\' OR CAST(c.code AS TEXT) = ? OR lower(c.auth_name || ':' || c.code) = ?)"
+                args += listOf(like, w, w)
+            } else {
+                where += "$FLAT_NAME LIKE ? ESCAPE '\\'"
+                args += like
+            }
         }
         if (near != null) {
             val (lon, lat) = near
@@ -68,8 +76,8 @@ object CrsCatalog {
             args += listOf(lat, lat, lon, lon, lon, lon).map { it.toString() }
         }
         // A word naming a CRS by its code puts that CRS first.
-        val exact = if (words.isEmpty()) "" else "(" + words.joinToString(" OR ") { "CAST(c.code AS TEXT) = ? OR lower(c.auth_name || ':' || c.code) = ?" } + ") DESC, "
-        args += words.flatMap { listOf(it, it) }
+        val exact = if (codes.isEmpty()) "" else "(" + codes.joinToString(" OR ") { "CAST(c.code AS TEXT) = ? OR lower(c.auth_name || ':' || c.code) = ?" } + ") DESC, "
+        args += codes.flatMap { listOf(it, it) }
         val sql = "SELECT c.auth_name, c.code, c.name, c.type, $AREA FROM crs_view c WHERE ${where.joinToString(" AND ")} " +
             "ORDER BY $exact(c.auth_name = 'EPSG') DESC, c.name LIMIT ${limit.coerceIn(1, 1000)}"
         return query(sql, args)
