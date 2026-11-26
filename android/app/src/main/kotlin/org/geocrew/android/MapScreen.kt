@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -87,6 +88,7 @@ import org.maplibre.android.style.sources.GeoJsonSource
 fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current.density
     val mapView = rememberMapView()
     var key by remember { mutableStateOf(TiandituKey.read(context)) }
     var askKey by remember { mutableStateOf(false) }
@@ -136,7 +138,7 @@ fun MapScreen(graph: AppGraph, project: String, layer: String, onBack: () -> Uni
             // A tap on a feature opens its form.
             map.addOnMapClickListener { point ->
                 val at = map.projection.toScreenLocation(point)
-                val reach = 24 * context.resources.displayMetrics.density
+                val reach = 24 * density
                 val hit = map.queryRenderedFeatures(RectF(at.x - reach, at.y - reach, at.x + reach, at.y + reach), SOURCE).firstOrNull()
                 hit?.id()?.toLongOrNull()?.let { selected = it }
                 hit != null
