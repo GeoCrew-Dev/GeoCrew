@@ -39,13 +39,17 @@ class AppGraph(private val app: Application) {
         get() = prefs.getBoolean(OWN_FOLDER, false)
         set(value) = prefs.edit { putBoolean(OWN_FOLDER, value) }
 
-    /** The GeoCrew folder. It is fixed once [start] has run, until the app restarts. */
+    /**
+     * The GeoCrew folder. Once the user chose the app's own folder it stays,
+     * even if all-files access comes later, so no project drops out of sight;
+     * moving them is a step of its own. Fixed once [start] has run.
+     */
     val root: File
-        get() = workspaceRoot ?: if (hasAllFilesAccess) {
+        get() = workspaceRoot ?: if (ownFolderChosen) {
+            File(app.getExternalFilesDir(null), "GeoCrew")
+        } else {
             @Suppress("DEPRECATION") // with all-files access the shared storage is read by path
             File(Environment.getExternalStorageDirectory(), "GeoCrew")
-        } else {
-            File(app.getExternalFilesDir(null), "GeoCrew")
         }
     private var workspaceRoot: File? = null
 
