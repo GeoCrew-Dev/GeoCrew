@@ -73,6 +73,8 @@
 ## M2 单机骨架
 
 - [x] 新客户端的工程骨架（2026-11-26）：Gradle 工程、Compose 外壳、CI，见 ADR 0016。在 S24 上装好能启动，冷启动 0.7 秒。
+- [x] 客户端接上 GeoCrew-Native 的 AAR（2026-11-26）：先用它 CI 产出的 AAR，不发布。在 S24 上加载 GDAL 3.12.4、PROJ 9.9.0、GEOS 3.15.1。
+  - [ ] CI 产物 2027-02-24 过期，在那之前换新的运行编号，或者正式发布 GeoCrew-Native。
 - [ ] 两个仓库一起升到 AGP 9（现在的稳定版是 9.5）和 compileSdk 37，GeoCrew-Native 先升：实测 Compose 1.12 起和 androidx.core 1.19 都需要它，客户端暂时停在 Compose 1.11。
 - [ ] 工程、GPKG、图层模型、编辑缓冲与撤销。
 - [x] 动作注册表的核心（2026-11-26，`android/core/action`）：注册、按 ID 或别名查找、参数按 JSON Schema 检查、稳定级别限制谁能调用、权限关口、操作日志、撤销。
