@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">同勘</string>
+    <string name="skeleton_status">新版客户端正在搭建中</string>
+</resources>
