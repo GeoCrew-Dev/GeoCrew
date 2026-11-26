@@ -8,7 +8,7 @@
 |---|---|
 | `protocol/` | 协同协议、OpenAPI、插件规范、一致性检查 |
 | `server/` | Go 服务端 |
-| `android/` | 旧版安卓客户端，已冻结，待重写 |
+| `android/` | 安卓客户端，M2 起重写；旧版在标签 `android-legacy` |
 | `manual/` | 用户手册 |
 | `docs/` | 章程、架构决策（`docs/adr/`）、待办、合规、威胁模型、许可证、性能预算、评审、技术验证（`docs/spikes/`） |
 | `spikes/` | 技术验证用的一次性代码，正式实现时重写 |
@@ -40,7 +40,7 @@
 - **协议**：
   - OpenAPI 检查：在 `protocol/` 下运行 `npx --yes @redocly/cli@1.34.5 lint docs/openapi.yaml`。
   - 一致性检查：先启动服务端（`cd server && go run ./cmd/geocrew-server -data /tmp/geocrew-check -push=false`），再到 `protocol/conformance` 下运行 `go run . -server http://127.0.0.1:8080 -v`。
-- **安卓（旧版）**：`cd android && ./gradlew test`，需要 JDK 17 和 Android SDK。
+- **安卓**：重写中，构建和测试命令随新工程写进 `android/CLAUDE.md`。
 
 ## 发布
 

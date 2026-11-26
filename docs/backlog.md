@@ -24,7 +24,7 @@
 
 - [x] **章程** [`docs/charter.md`](charter.md)：四个目标、v0.1 的范围和完成标准、分档的功能对等清单、里程碑、不做的事、平台基线、流程。
 - [x] **架构决策** [`docs/adr/`](adr/README.md)：共 15 份。其中 0012（插件）、0013（服务端 GDAL 辅助程序）是草案，等 M1 的技术验证结果再定；0004（工程存储）已经 M1 验证采纳。
-- [x] **CLAUDE.md**：根目录、`protocol/`、`server/`、`android/` 各一份。
+- [x] **CLAUDE.md**：根目录、`protocol/`、`server/` 各一份；`android/` 的随重写重新写（旧版的随旧代码删除）。
 - [x] GeoCrew-Native 的 CLAUDE.md，随 M1 的 GDAL 验证加上。
 - [ ] GeoCrew-Plugins 的 CLAUDE.md，等这个仓库开工时补上。
 - [x] **合规清单** [`docs/compliance.md`](compliance.md)：初稿。
@@ -38,7 +38,7 @@
 - [x] **发布标签**：已加前缀（`server-v*`、`android-v*`），服务端的更新检查已改成按前缀筛选。安卓的发布工作流和更新检查随重写一起做，见 M3。
 - [x] **推到 GitHub**：主仓库已经建好并推送（2026-11-25）。
 - [x] 删除三个旧仓库（GeoCrew-Protocol、GeoCrew-Server、GeoCrew-Android），本地和云端都已删除（2026-11-25）。删除前核对过，三个仓库的最新提交都已并入主仓库。
-- [x] **改掉指向旧仓库的地方**：链接和使用说明已改成主仓库路径；Go 模块路径已改成 `github.com/GeoCrew-Dev/GeoCrew/server` 和 `github.com/GeoCrew-Dev/GeoCrew/protocol/conformance`。旧安卓代码里提到旧仓库的注释没改，因为这部分代码要重写。
+- [x] **改掉指向旧仓库的地方**：链接和使用说明已改成主仓库路径；Go 模块路径已改成 `github.com/GeoCrew-Dev/GeoCrew/server` 和 `github.com/GeoCrew-Dev/GeoCrew/protocol/conformance`。旧安卓代码里提到旧仓库的注释没改，因为这部分代码要重写（旧代码已于 2026-11-26 删除，留在标签 `android-legacy`）。
 - [x] **分支保护与 PR 流程**：2026-11-25 在 main 上开启：必须走 PR，管理员也不例外，禁止强推和删除。CI 按路径触发，只改文档的 PR 不跑任何检查，所以没有设必须通过的检查项。
 
 ## M1 技术验证
@@ -98,7 +98,7 @@
 - [ ] 签名密钥的备份方案。
 - [ ] 安卓的发布工作流：推 `android-v*` 标签时发布；新客户端检查更新时，按 `protocol/docs/releases.md` 的规则只取 `android-v*` 的版本。
 - [ ] 官网写各品牌手机直装 APK 的引导：华为纯净模式，小米、OPPO、vivo 的外部来源安装提示。
-- [ ] 出口标准：两台手机野外验收通过，新代码替换 main。
+- [ ] 出口标准：两台手机野外验收通过。
 
 ## v0.2 – v0.3
 

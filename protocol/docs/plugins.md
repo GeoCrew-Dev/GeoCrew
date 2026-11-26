@@ -6,7 +6,7 @@
 
 用户在「空间分析」里看到的插件工具和内置工具一样：同勘按插件的说明生成参数表单，把当前工程里符合条件的记录交给插件，插件算完后把结果写回，结果作为新记录保存，可同步、导出。
 
-完整的示例插件见主仓库的 `android/samples/plugin`：一个没有界面的 Activity，为线和面求中心点或外接矩形，只用系统自带的 `org.json`。
+完整的示例插件见主仓库标签 `android-legacy` 下的 [`android/samples/plugin`](https://github.com/GeoCrew-Dev/GeoCrew/tree/android-legacy/android/samples/plugin)（旧版应用的代码，重写后会换成新的示例）：一个没有界面的 Activity，为线和面求中心点或外接矩形，只用系统自带的 `org.json`。
 
 如果工具能写成纯 Kotlin，也可以直接实现 `core:gis` 的 `GisTool` 接口，编进同勘或自己的分支，不必做成插件。
 

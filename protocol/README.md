@@ -16,7 +16,7 @@
 
 | 目录 | 内容 |
 | --- | --- |
-| [`android/`](../android) | Android 客户端（旧代码，待重写） |
+| `android/` | Android 客户端（重写中；旧版见标签 `android-legacy`） |
 | [`server/`](../server) | Linux 自部署服务端（Docker） |
 
 ## 设计原则
