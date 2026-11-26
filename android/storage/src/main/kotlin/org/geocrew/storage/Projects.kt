@@ -144,7 +144,10 @@ class Project internal constructor(
      * of the file has every saved change (ADR 0004: before exporting or sharing).
      */
     fun checkpoint() {
-        dataset.sql("PRAGMA wal_checkpoint(TRUNCATE)")
+        // One row: busy, the frames in the log, the frames moved; another reader can stop it part-way.
+        val row = Json.parseToJsonElement(dataset.sql("PRAGMA wal_checkpoint(TRUNCATE)")).jsonArray.single()
+            .jsonObject.getValue("properties").jsonObject.values.map { (it as? JsonPrimitive)?.contentOrNull?.toLongOrNull() }
+        check(row.size == 3 && row[0] == 0L && row[1] == row[2]) { "the project is busy; try again" }
     }
 
     /** What editing [layer] needs: its store, and its journal in the app's own files, named by the layer's id. */

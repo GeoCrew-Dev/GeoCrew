@@ -16,8 +16,11 @@ internal class Exports(private val dir: File) {
     fun gpkg(project: Project): File {
         project.checkpoint()
         val out = next(project, "gpkg")
-        project.file.copyTo(out)
-        VectorDataset.open(out.path, update = true).use { it.sql("PRAGMA journal_mode=DELETE") }
+        // Copied under another name first: a copy cut short never looks like a finished export.
+        val part = File(out.path + ".part")
+        project.file.copyTo(part, overwrite = true)
+        VectorDataset.open(part.path, update = true).use { it.sql("PRAGMA journal_mode=DELETE") }
+        check(part.renameTo(out)) { "cannot name the export $out" }
         return out
     }
 
