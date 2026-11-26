@@ -50,16 +50,14 @@ class Projects(private val root: File, private val journals: File) {
     data class Summary(val layers: Int, val features: Long, val bytes: Long, val created: String?)
 
     /**
-     * Reads project [name] without opening it for editing: its layers, their
-     * features (GeoPackage keeps the counts), its size and when it was made.
+     * Reads project [name] without opening it for editing: its layers, how many
+     * features they have, its size and when it was made.
      */
     fun summary(name: String): Summary? = runCatching {
         VectorDataset.open(gpkg(name).path).use { ds ->
             val present = ds.layers.toSet()
             val layers = rows(ds, "SELECT table_name FROM ${ProjectFormat.LAYERS_TABLE}").mapNotNull { it["table_name"] }.filter { it in present }
-            val features = layers.sumOf {
-                Json.parseToJsonElement(ds.layerInfo(it)).jsonObject["count"]?.let { c -> (c as? JsonPrimitive)?.contentOrNull?.toLongOrNull() } ?: 0L
-            }
+            val features = layers.sumOf { rowCount(ds, it) }
             val created = rows(ds, "SELECT value FROM ${ProjectFormat.PROJECT_TABLE} WHERE key = 'created'").firstOrNull()?.get("value")
             Summary(layers.size, features, gpkg(name).length() + File(gpkg(name).path + "-wal").length(), created)
         }
@@ -160,6 +158,16 @@ class Projects(private val root: File, private val journals: File) {
 }
 
 /**
+ * How many features [layer] has, from its rows. The count a GeoPackage keeps
+ * for itself is left behind when Android stops the app without the file being
+ * closed, as it does without warning.
+ */
+internal fun rowCount(ds: VectorDataset, layer: String): Long {
+    val row = Json.parseToJsonElement(ds.sql("SELECT COUNT(*) AS n FROM ${ProjectFormat.identifier(layer)}")).jsonArray.firstOrNull()
+    return (row?.jsonObject?.get("properties")?.jsonObject?.get("n") as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: 0L
+}
+
+/**
  * An open project: its [layers] and where its attachments go. Close it when done;
  * its layers are edited through [target].
  */
@@ -208,6 +216,9 @@ class Project internal constructor(
         dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} ADD COLUMN ${ProjectFormat.identifier(name)} $column")
         dataset.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES (${quote(layer)}, ${quote(name)}, ${quote(UUID.randomUUID().toString())})")
     }
+
+    /** How many features [layer] has in its file. */
+    fun count(layer: String): Long = rowCount(dataset, layer)
 
     /** What editing [layer] needs: its store, and its journal in the app's own files, named by the layer's id. */
     fun target(layer: String): EditTarget {

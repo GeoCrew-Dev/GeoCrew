@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -50,13 +51,17 @@ class WorkspaceTest {
         val created = output(run(Workspace.CREATE, """{"name": "测区", "language": "zh"}"""))
         assertEquals("野外点", created.getValue("layers").jsonArray.single().jsonObject.getValue("name").jsonPrimitive.content)
         run(Editing.START, """{"layer": "野外点"}""")
-        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点号": "D001"}}""")
-        assertEquals(Outcome.Failed("editing", "stop editing 野外点 first"), run(Workspace.CLOSE))
+        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "D001"}}""")
+        assertEquals(Outcome.Failed("unsaved", "save or discard the edits of 野外点 first"), run(Workspace.CLOSE))
         assertIs<Outcome.Failed>(run(Workspace.OPEN, """{"name": "测区"}"""), "nor can another project open")
-        run(Editing.SAVE, """{"layer": "野外点"}""")
-        run(Editing.STOP, """{"layer": "野外点"}""")
-        assertIs<Outcome.Done>(run(Workspace.CLOSE))
+        run(Editing.SAVE_ALL)
+        // An undone point leaves nothing unsaved, and something to redo, until the project closes.
+        run(Editing.ADD, """{"layer": "野外点", "properties": {"点名": "D002"}}""")
+        run(ActionRegistry.UNDO, """{"scope": "project"}""")
+        assertTrue(registry.canRedo(Workspace.PROJECT_SCOPE))
+        assertIs<Outcome.Done>(run(Workspace.CLOSE), "the layer stops being edited, with nothing unsaved")
         assertNull(workspace.current)
+        assertFalse(registry.canRedo(Workspace.PROJECT_SCOPE), "closing ends the project's history")
 
         val listed = output(run(Workspace.LIST)).getValue("projects").jsonArray.single().jsonObject
         assertEquals("测区", listed.getValue("name").jsonPrimitive.content)
@@ -76,22 +81,22 @@ class WorkspaceTest {
         val empty = output(run(Workspace.FEATURES, """{"layer": "野外点"}"""))
         assertEquals("FeatureCollection", empty.getValue("type").jsonPrimitive.content)
         assertEquals(false, empty.getValue("editing").jsonPrimitive.content.toBoolean())
-        val elevation = empty.getValue("fields").jsonArray.map { it.jsonObject }.single { it.getValue("name").jsonPrimitive.content == "海拔" }
-        assertEquals("real", elevation.getValue("type").jsonPrimitive.content)
+        val description = empty.getValue("fields").jsonArray.map { it.jsonObject }.single { it.getValue("name").jsonPrimitive.content == "描述" }
+        assertEquals("string", description.getValue("type").jsonPrimitive.content)
         run(Editing.START, """{"layer": "野外点"}""")
-        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点号": "D001"}}""")
+        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "D001"}}""")
         val edited = output(run(Workspace.FEATURES, """{"layer": "野外点"}"""))
         assertEquals(true, edited.getValue("modified").jsonPrimitive.content.toBoolean())
         val feature = edited.getValue("features").jsonArray.single().jsonObject
         assertEquals(-1, feature.getValue("id").jsonPrimitive.content.toInt(), "an unsaved feature shows with its negative fid")
-        assertEquals("D001", feature.getValue("properties").jsonObject.getValue("点号").jsonPrimitive.content)
+        assertEquals("D001", feature.getValue("properties").jsonObject.getValue("点名").jsonPrimitive.content)
     }
 
     @Test
     fun exportsHoldWhatIsSaved() {
         run(Workspace.CREATE, """{"name": "出图", "language": "zh"}""")
         run(Editing.START, """{"layer": "野外点"}""")
-        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点号": "D001", "描述": "花岗岩露头"}}""")
+        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "D001", "描述": "花岗岩露头"}}""")
         assertEquals("unsaved", (run(Workspace.EXPORT, """{"format": "gpkg"}""") as Outcome.Failed).code)
         run(Editing.SAVE, """{"layer": "野外点"}""")
 
@@ -115,7 +120,7 @@ class WorkspaceTest {
     fun usersAddTheirOwnFields() {
         run(Workspace.CREATE, """{"name": "水文", "language": "zh"}""")
         run(Editing.START, """{"layer": "野外点"}""")
-        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点号": "S001"}}""")
+        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "S001"}}""")
         val field = """{"layer": "野外点", "name": "水位埋深", "type": "real"}"""
         assertEquals("unsaved", (run(Workspace.FIELD_ADD, field) as Outcome.Failed).code, "not with unsaved edits")
         run(Editing.SAVE, """{"layer": "野外点"}""")
@@ -133,9 +138,23 @@ class WorkspaceTest {
         val saved = output(run(Workspace.FEATURES, """{"layer": "野外点"}""")).getValue("features").jsonArray.single().jsonObject
         assertEquals(3.25, saved.getValue("properties").jsonObject.getValue("水位埋深").jsonPrimitive.content.toDouble())
 
-        assertIs<Outcome.Failed>(run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "点号", "type": "string"}"""), "names are unique")
+        assertIs<Outcome.Failed>(run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "点名", "type": "string"}"""), "names are unique")
         assertIs<Outcome.Failed>(run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "GEOM", "type": "string"}"""), "the geometry column")
         assertIs<Outcome.Invalid>(run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "x", "type": "blob"}"""))
+    }
+
+    @Test
+    fun aLayerSaysItsFieldsAndCount() {
+        run(Workspace.CREATE, """{"name": "信息", "language": "zh"}""")
+        val empty = output(run(Workspace.LAYER_INFO, """{"layer": "野外点"}"""))
+        assertEquals(listOf("点名", "描述"), empty.getValue("fields").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content })
+        assertEquals(0L, empty.getValue("count").jsonPrimitive.content.toLong())
+        run(Editing.START, """{"layer": "野外点"}""")
+        run(Editing.ADD, """{"layer": "野外点", "properties": {"点名": "D001"}}""")
+        assertEquals(1L, output(run(Workspace.LAYER_INFO, """{"layer": "野外点"}""")).getValue("count").jsonPrimitive.content.toLong(), "as edited")
+        assertEquals(true, output(run(Workspace.FEATURES, """{"layer": "野外点"}""")).getValue("projectModified").jsonPrimitive.content.toBoolean())
+        assertIs<Outcome.Done>(run(Editing.SAVE_ALL, "{}"))
+        assertEquals(false, output(run(Workspace.FEATURES, """{"layer": "野外点"}""")).getValue("projectModified").jsonPrimitive.content.toBoolean())
     }
 
     @Test

@@ -7,10 +7,11 @@
     <string name="save">保存</string>
     <string name="delete">删除</string>
     <string name="close">关闭</string>
+    <string name="dont_save">不保存</string>
+    <string name="saved">已保存</string>
     <string name="start_failed">同勘没能启动：%1$s</string>
     <string name="action_failed">没有成功：%1$s</string>
-    <string name="failure_unsaved">先保存或放弃图层里的修改。</string>
-    <string name="failure_editing">先停止编辑图层。</string>
+    <string name="failure_unsaved">工程里有没保存的修改，先保存或放弃。</string>
 
     <!-- 权限 -->
     <string name="permissions_title">需要几项权限</string>
@@ -18,7 +19,7 @@
     <string name="permission_storage">文件</string>
     <string name="permission_storage_body">把工程放在手机存储的 GeoCrew 文件夹里：卸载应用也不会删除，电脑和文件管理器都能直接拿到。</string>
     <string name="permission_location">位置</string>
-    <string name="permission_location_body">在你所在的位置定点，记下海拔和定位精度。</string>
+    <string name="permission_location_body">用 GPS 在你所在的位置定点。</string>
     <string name="permission_grant">授权</string>
     <string name="permission_granted">已授权</string>
     <string name="permissions_continue">继续</string>
@@ -41,6 +42,14 @@
         <item quantity="other">%d 个图层</item>
     </plurals>
     <string name="project_close">关闭工程</string>
+    <string name="project_settings">工程设置</string>
+    <string name="project_section">工程</string>
+    <string name="project_folder">位置</string>
+    <string name="project_fields_section">图层和字段</string>
+    <string name="fields_note">点名和描述是默认字段，坐标就是点的位置。别的字段按需要自己加。</string>
+    <string name="save_first_title">先保存修改</string>
+    <string name="save_first_body">添加字段前要先保存工程里的修改，保存后这些修改就不能再撤销了。</string>
+    <string name="save_and_add">保存并添加</string>
     <string name="name_taken">已经有叫这个名字的工程了</string>
     <string name="name_empty">给工程起个名字</string>
     <string name="name_space">名称前后不能有空格</string>
@@ -87,18 +96,20 @@
     <string name="map_ai">AI 助手</string>
     <string name="map_ai_coming">AI 助手会在后续版本加入。</string>
     <string name="map_layers">图层</string>
-    <string name="map_add_point">加点</string>
+    <string name="map_leave">退出工程</string>
+    <string name="map_place">定点</string>
+    <string name="place_hint">移动地图，让十字对准要定点的位置</string>
+    <string name="place_coordinates">经度 %1$s　纬度 %2$s</string>
+    <string name="place_here">在这里定点</string>
+    <string name="place_new_point">新点</string>
     <string name="map_undo">撤销</string>
     <string name="map_redo">重做</string>
-    <string name="map_save">保存修改</string>
-    <string name="map_discard">放弃修改</string>
-    <string name="map_editing">编辑中</string>
     <string name="map_unsaved_short">未保存</string>
     <string name="map_no_key">还没有填天地图 Key，底图不显示。</string>
     <string name="map_set_key">去填写</string>
     <string name="attribution_tianditu">© 天地图</string>
     <string name="unsaved_title">有未保存的修改</string>
-    <string name="unsaved_body">“%1$s”图层有没保存的修改。</string>
+    <string name="unsaved_body">离开前要保存吗？不保存的话，这些修改会丢掉。</string>
     <string name="export_gpkg">导出 GeoPackage</string>
     <string name="export_kml">导出 KML</string>
     <string name="exported">已导出到：%1$s</string>
@@ -110,6 +121,13 @@
     <string name="feature_delete">删除这个点</string>
     <string name="feature_delete_title">删除这个点？</string>
     <string name="feature_delete_body">保存修改之前还能撤销。</string>
+    <string name="coordinates">坐标（CGCS2000，度）</string>
+    <string name="attributes">属性</string>
+    <string name="longitude">经度</string>
+    <string name="latitude">纬度</string>
+    <string name="coordinate_missing">必填</string>
+    <string name="longitude_range">在 −180 到 180 之间</string>
+    <string name="latitude_range">在 −90 到 90 之间</string>
     <string name="field_not_a_number">要填数字</string>
     <string name="field_not_a_whole_number">要填整数</string>
     <string name="field_not_a_date">按 2026-11-26 这样填日期</string>

@@ -23,11 +23,11 @@ data class EditTarget(val store: LayerStore, val journal: Journal)
 
 /**
  * Layer editing as actions, the QGIS way (ADR 0005, 0010): start editing a
- * layer, change its features, then save or discard; undo and redo work per
- * layer, in scope [scope] of the action registry, until the edits are saved or
- * discarded. [open] finds a layer by its id.
+ * layer, change its features, then save or discard. Undo and redo work in the
+ * registry scope [scopeOf] gives: one per layer, or with [sharedScope] one for
+ * all of them, as a project wants. [open] finds a layer by its id.
  */
-class Editing(private val open: (String) -> EditTarget) {
+class Editing(private val sharedScope: String? = null, private val open: (String) -> EditTarget) {
     private val buffers = HashMap<String, EditBuffer>()
 
     /**
@@ -35,6 +35,9 @@ class Editing(private val open: (String) -> EditTarget) {
      * outside this module, read layers through actions, which run one at a time.
      */
     internal fun buffer(layer: String): EditBuffer? = buffers[layer]
+
+    /** The registry scope of [layer]'s undo history. */
+    fun scopeOf(layer: String): String = sharedScope ?: scope(layer)
 
     /** The layers being edited. Read it inside an action, while no other runs. */
     val layersBeingEdited: Set<String> get() = buffers.keys.toSet()
@@ -56,6 +59,11 @@ class Editing(private val open: (String) -> EditTarget) {
         return true
     }
 
+    // A buffer that was let go (its layer stopped, or its file opened again) takes no
+    // more edits: an undo left over from it fails and drops out of the history.
+    private fun live(layer: String, buffer: EditBuffer): EditBuffer =
+        buffer.takeIf { buffers[layer] === it } ?: throw IllegalStateException("layer $layer is no longer being edited")
+
     /** The actions, for the registry. */
     val actions: List<Action> = listOf(
         LayerAction(START, "Start editing", "Starts editing a layer; unsaved edits from before a crash come back", Risk.EDIT, editing = false) { layer, _ ->
@@ -63,11 +71,12 @@ class Editing(private val open: (String) -> EditTarget) {
             val buffer = EditBuffer(target.store, target.journal)
             val recovered = buffer.recover()
             buffers[layer] = buffer
-            ActionResult.Done(buildJsonObject { put("recovered", recovered.name.lowercase()) }, endsUndo = scope(layer))
+            // A layer's own history starts afresh; a shared one carries on with the other layers'.
+            ActionResult.Done(buildJsonObject { put("recovered", recovered.name.lowercase()) }, endsUndo = if (sharedScope == null) listOf(scope(layer)) else emptyList())
         },
         FeatureAction(
             ADD, "Add feature", "Adds a feature to a layer being edited", Risk.EDIT, ADD_PARAMS,
-            """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.305, 30.5928]}, "properties": {"点号": "D001", "描述": "泉水出露"}}""",
+            """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.305, 30.5928]}, "properties": {"点名": "D001", "描述": "泉水出露"}}""",
         ) { buffer, p ->
             buffer.add(p["geometry"].geometry(), (p["properties"] as? JsonObject) ?: JsonObject(emptyMap()))
         },
@@ -79,7 +88,7 @@ class Editing(private val open: (String) -> EditTarget) {
         },
         FeatureAction(
             VALUES, "Change values", "Sets fields of a feature", Risk.EDIT, VALUES_PARAMS,
-            """{"layer": "野外点", "fid": 12, "values": {"描述": "泉水出露，流量约 2 L/s", "海拔": 35.2}}""",
+            """{"layer": "野外点", "fid": 12, "values": {"点名": "S1", "描述": "泉水出露，流量约 2 L/s"}}""",
         ) { buffer, p ->
             buffer.changeValues(p.fid(), p.getValue("values").jsonObject)
         },
@@ -88,21 +97,39 @@ class Editing(private val open: (String) -> EditTarget) {
         },
         LayerAction(SAVE, "Save edits", "Writes a layer's edits to its file", Risk.EDIT) { layer, _ ->
             val ids = buffers.getValue(layer).save()
-            ActionResult.Done(buildJsonObject { put("fids", JsonObject(ids.entries.associate { (k, v) -> k.toString() to JsonPrimitive(v) })) }, endsUndo = scope(layer))
+            ActionResult.Done(buildJsonObject { put("fids", fids(ids)) }, endsUndo = listOf(scopeOf(layer)))
         },
         LayerAction(DISCARD, "Discard edits", "Drops a layer's unsaved edits", Risk.DELETE) { layer, _ ->
             buffers.getValue(layer).discard()
-            ActionResult.Done(endsUndo = scope(layer))
+            ActionResult.Done(endsUndo = listOf(scopeOf(layer)))
         },
         LayerAction(STOP, "Stop editing", "Stops editing a layer that has nothing unsaved", Risk.VIEW) { layer, _ ->
             if (buffers.getValue(layer).isModified) {
                 ActionResult.Failed("unsaved", "save or discard the edits first")
             } else {
                 buffers.remove(layer)
-                ActionResult.Done(endsUndo = scope(layer))
+                ActionResult.Done(endsUndo = listOf(scopeOf(layer)))
             }
         },
+        AllAction(SAVE_ALL, "Save all edits", "Writes the edits of every layer being edited to its file", Risk.EDIT) {
+            val saved = buffers.filterValues { it.isModified }.mapValues { (_, buffer) -> buffer.save() }
+            ActionResult.Done(
+                buildJsonObject { for ((layer, ids) in saved) put(layer, buildJsonObject { put("fids", fids(ids)) }) },
+                endsUndo = buffers.keys.map(::scopeOf).distinct(),
+            )
+        },
+        AllAction(DISCARD_ALL, "Discard all edits", "Drops the unsaved edits of every layer being edited", Risk.DELETE) {
+            buffers.values.forEach { it.discard() }
+            ActionResult.Done(endsUndo = buffers.keys.map(::scopeOf).distinct())
+        },
     )
+
+    // Every layer being edited at once, as a project's save button does.
+    private inner class AllAction(id: String, name: String, description: String, risk: Risk, private val body: () -> ActionResult) : Action {
+        override val spec = ActionSpec(id, name, description, NO_PARAMS, risk, Stability.PREVIEW, inputs = listOf("vector"), examples = listOf(schema("{}")))
+
+        override suspend fun run(caller: Caller, params: JsonObject): ActionResult = body()
+    }
 
     private inner class LayerAction(
         id: String,
@@ -144,7 +171,7 @@ class Editing(private val open: (String) -> EditTarget) {
             val layer = params.getValue("layer").jsonPrimitive.content
             val buffer = buffers[layer] ?: return ActionResult.Failed("not-editing", "layer $layer is not being edited")
             val edit = change(buffer, params)
-            val undo = Undo(scope(layer), redo = { buffer.reapply(edit) }) { buffer.revert(edit) }
+            val undo = Undo(scopeOf(layer), redo = { live(layer, buffer).reapply(edit) }) { live(layer, buffer).revert(edit) }
             return ActionResult.Done(buildJsonObject { put("fid", edit.fid) }, undo)
         }
     }
@@ -158,6 +185,8 @@ class Editing(private val open: (String) -> EditTarget) {
         const val GEOMETRY = "feature.geometry"
         const val VALUES = "feature.values"
         const val DELETE = "feature.delete"
+        const val SAVE_ALL = "edits.save"
+        const val DISCARD_ALL = "edits.discard"
 
         /** The registry's undo scope for a layer being edited. */
         fun scope(layer: String) = "layer:$layer"
@@ -167,6 +196,7 @@ class Editing(private val open: (String) -> EditTarget) {
         private const val LAYER = """"layer": {"type": "string"}"""
         private const val FID = """"fid": {"type": "integer"}"""
         private const val GEOMETRY_ARG = """"geometry": {"description": "a GeoJSON geometry in the layer's CRS, or null"}"""
+        private val NO_PARAMS = schema("""{"type": "object", "additionalProperties": false}""")
         private val LAYER_PARAMS = schema("""{"type": "object", "additionalProperties": false, "required": ["layer"], "properties": {$LAYER}}""")
         private val FID_PARAMS = schema("""{"type": "object", "additionalProperties": false, "required": ["layer", "fid"], "properties": {$LAYER, $FID}}""")
         private val ADD_PARAMS = schema(
@@ -182,6 +212,9 @@ class Editing(private val open: (String) -> EditTarget) {
         )
 
         private fun JsonObject.fid(): Long = getValue("fid").jsonPrimitive.long
+
+        // New features' temporary fids and the fids the store gave them.
+        private fun fids(ids: Map<Long, Long>) = JsonObject(ids.entries.associate { (k, v) -> k.toString() to JsonPrimitive(v) })
 
         private fun JsonElement?.geometry(): JsonObject? = when (this) {
             null, JsonNull -> null

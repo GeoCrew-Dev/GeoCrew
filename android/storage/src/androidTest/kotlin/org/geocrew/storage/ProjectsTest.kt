@@ -69,7 +69,7 @@ class ProjectsTest {
     fun layerAndFieldNamesFollowTheLanguage() {
         projects.create("English").use { p ->
             assertEquals(listOf("Field points"), p.layers.map { it.name })
-            assertEquals(listOf("Number", "Note", "Elevation", "Accuracy", "Time", "Recorder"), p.target("Field points").store.fields.map { it.name })
+            assertEquals(listOf("Name", "Description"), p.target("Field points").store.fields.map { it.name })
         }
     }
 
@@ -80,17 +80,34 @@ class ProjectsTest {
             val buffer = EditBuffer(target.store, target.journal)
             buffer.add(
                 Json.parseToJsonElement("""{"type": "Point", "coordinates": [114.305, 30.5928]}""").jsonObject,
-                Json.parseToJsonElement("""{"点号": "D001", "描述": "泉水出露", "海拔": 42}""").jsonObject,
+                Json.parseToJsonElement("""{"点名": "D001", "描述": "泉水出露"}""").jsonObject,
             )
             assertTrue(journals.walkTopDown().any { it.name == "${p.layers.single().id}.jsonl" }, "the journal is in the app's own files")
             buffer.save()
         }
         projects.open("编辑").use { p ->
             val saved = p.target("野外点").store.features().single()
-            assertEquals(JsonPrimitive("D001"), saved.properties["点号"])
-            assertEquals(JsonPrimitive(42), saved.properties["海拔"])
+            assertEquals(JsonPrimitive("D001"), saved.properties["点名"])
+            assertEquals(JsonPrimitive("泉水出露"), saved.properties["描述"])
         }
         assertFailsWith<IllegalArgumentException> { projects.open("编辑").use { it.target("路线") } }
+    }
+
+    @Test
+    fun countsAreOfTheRowsThemselves() {
+        projects.create("计数", language = "zh").use { p ->
+            val target = p.target("野外点")
+            EditBuffer(target.store, target.journal).apply {
+                add(null)
+                add(null)
+                save()
+            }
+        }
+        // As an app stopped without warning can leave it.
+        sql("计数", "UPDATE gpkg_ogr_contents SET feature_count = 7")
+        assertEquals(JsonPrimitive(7), sql("计数", "SELECT feature_count FROM gpkg_ogr_contents").single()["feature_count"])
+        assertEquals(2L, projects.summary("计数")!!.features)
+        projects.open("计数").use { assertEquals(2L, it.count("野外点")) }
     }
 
     @Test

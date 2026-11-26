@@ -9,6 +9,10 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Outcome
@@ -78,6 +82,20 @@ class AppGraph(private val app: Application) {
             runCatching { start() }.exceptionOrNull()?.let { return@withContext Outcome.Failed(START_FAILED, it.message ?: it.toString()) }
             registry.invoke(Caller.USER, action, params)
         }
+
+    /**
+     * Opens [project] unless it is open already: just made, back from another
+     * screen, or still open when the app comes back. Done gives the project as
+     * project.current describes it.
+     */
+    suspend fun open(project: String): Outcome {
+        val current = invoke(Workspace.CURRENT)
+        val name = ((current as? Outcome.Done)?.output as? JsonObject)?.get("name") as? JsonPrimitive
+        return if (name?.contentOrNull == project) current else invoke(Workspace.OPEN, buildJsonObject { put("name", project) })
+    }
+
+    /** The picture of [project]'s map from when it was last left, for its card on the home screen. */
+    fun thumbnail(project: String): File = File(app.filesDir, "thumbnails/$project.jpg")
 
     companion object {
         /** The code of an action that could not run because GeoCrew did not start. */

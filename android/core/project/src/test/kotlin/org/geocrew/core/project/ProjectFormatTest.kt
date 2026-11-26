@@ -22,17 +22,17 @@ class ProjectFormatTest {
         assertEquals("\"a\"\"b\"", ProjectFormat.identifier("a\"b"))
     }
 
-    // Points are for every field worker: only the basic fields, no rock type or dip.
+    // Points are for every field worker: a name and a description; the coordinates are the geometry.
     @Test
     fun theFieldPointTemplate() {
         val t = Templates.FIELD_POINT
         assertEquals(t, Templates.byId("field-point"))
         assertEquals("POINT", t.geometryType)
-        assertEquals(listOf("点号", "描述", "海拔", "定位精度", "记录时间", "记录人"), t.fields.map { it.name("zh") })
-        assertEquals(listOf("Number", "Note", "Elevation", "Accuracy", "Time", "Recorder"), t.fields.map { it.name("en") })
-        assertEquals("Number", t.fields.first().name("fr"), "other languages get English")
+        assertEquals(listOf("点名", "描述"), t.fields.map { it.name("zh") })
+        assertEquals(listOf("Name", "Description"), t.fields.map { it.name("en") })
+        assertEquals("Name", t.fields.first().name("fr"), "other languages get English")
         assertEquals("野外点" to "Field points", t.name("zh") to t.name("de"))
-        assertEquals(FieldType.DATETIME, t.fields.single { it.key == Templates.TIME }.type)
+        assertEquals(FieldType.STRING, t.fields.single { it.key == Templates.DESCRIPTION }.type)
         for (language in listOf("zh", "en")) {
             assertEquals(t.fields.size, t.fields.map { it.name(language) }.toSet().size, "field names are unique")
             assertNull(ProjectFormat.nameProblem(t.name(language)), "a template's name is also a fine table name")
@@ -42,9 +42,9 @@ class ProjectFormatTest {
     @Test
     fun theTemplateFindsItsFieldsInEitherLanguage() {
         val t = Templates.FIELD_POINT
-        assertEquals("点号", t.column(Templates.NUMBER, listOf("描述", "点号", "水位埋深")))
-        assertEquals("Time", t.column(Templates.TIME, listOf("Number", "Time")))
-        assertNull(t.column(Templates.NUMBER, listOf("编号", "水位埋深")))
+        assertEquals("点名", t.column(Templates.NAME, listOf("描述", "点名", "水位埋深")))
+        assertEquals("Description", t.column(Templates.DESCRIPTION, listOf("Name", "Description")))
+        assertNull(t.column(Templates.NAME, listOf("编号", "水位埋深")))
         assertNull(t.column("dip", listOf("倾角")))
         assertTrue(Templates.all.all { it.fields.isNotEmpty() })
     }

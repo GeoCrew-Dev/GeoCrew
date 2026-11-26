@@ -40,9 +40,9 @@ private const val ENGLISH = "en"
 
 /**
  * The built-in layer templates. Points are not only for geologists: a
- * hydrogeologist never measures dip. So the point layer has only the fields
- * every field worker needs; everything else, such as rock type or attitude, the
- * user adds. Routes, sections and boreholes have rows of their own (stations,
+ * hydrogeologist never measures dip. So a point has only a name and a
+ * description besides its coordinates; everything else, such as rock type or
+ * the depth to water, the user adds. Routes, sections and boreholes have rows of their own (stations,
  * beds, intervals) and come with their tools.
  */
 object Templates {
@@ -52,22 +52,15 @@ object Templates {
         names = mapOf("zh" to "野外点", "en" to "Field points"),
         geometryType = "POINT",
         crs = "EPSG:4490", // CGCS2000; GNSS positions are taken as CGCS2000 (ADR 0015)
+        // The point's coordinates are its geometry; every other field the user adds.
         fields = listOf(
-            TemplateField(NUMBER, FieldType.STRING, mapOf("zh" to "点号", "en" to "Number"), "the point's number, such as D001"),
-            TemplateField(NOTE, FieldType.STRING, mapOf("zh" to "描述", "en" to "Note"), "what was seen at the point"),
-            TemplateField(ELEVATION, FieldType.REAL, mapOf("zh" to "海拔", "en" to "Elevation"), "height above sea level, metres"),
-            TemplateField(ACCURACY, FieldType.REAL, mapOf("zh" to "定位精度", "en" to "Accuracy"), "horizontal accuracy of the position, metres"),
-            TemplateField(TIME, FieldType.DATETIME, mapOf("zh" to "记录时间", "en" to "Time"), "when the point was recorded"),
-            TemplateField(RECORDER, FieldType.STRING, mapOf("zh" to "记录人", "en" to "Recorder"), "who recorded it"),
+            TemplateField(NAME, FieldType.STRING, mapOf("zh" to "点名", "en" to "Name"), "the point's name, D001 and on by default"),
+            TemplateField(DESCRIPTION, FieldType.STRING, mapOf("zh" to "描述", "en" to "Description"), "what was seen at the point"),
         ),
     )
 
-    const val NUMBER = "number"
-    const val NOTE = "note"
-    const val ELEVATION = "elevation"
-    const val ACCURACY = "accuracy"
-    const val TIME = "time"
-    const val RECORDER = "recorder"
+    const val NAME = "name"
+    const val DESCRIPTION = "description"
 
     val all: List<LayerTemplate> = listOf(FIELD_POINT)
 

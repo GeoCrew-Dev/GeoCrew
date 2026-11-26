@@ -9,9 +9,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -66,77 +68,100 @@ fun PermissionScreen(graph: AppGraph, resumed: Int, onDone: () -> Unit) {
     val files = remember(resumed, answered) { graph.hasAllFilesAccess }
     val located = remember(resumed, answered) { graph.hasLocation(context) }
 
-    Scaffold(
-        bottomBar = {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
-                Button(
-                    onClick = {
-                        if (!located) graph.settings.markLocationAsked()
-                        onDone()
-                    },
-                    enabled = files || graph.settings.ownFolderChosen,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) { Text(stringResource(R.string.permissions_continue)) }
-                if (!files && !graph.settings.ownFolderChosen) {
-                    TextButton(
-                        onClick = {
-                            graph.settings.chooseOwnFolder()
-                            if (!located) graph.settings.markLocationAsked()
-                            onDone()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(stringResource(R.string.permissions_own_folder)) }
-                    Text(
-                        stringResource(R.string.permissions_own_folder_warning),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+    val header: @Composable () -> Unit = {
+        Box(
+            Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.VerifiedUser, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(36.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(stringResource(R.string.permissions_title), style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            stringResource(R.string.permissions_body),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    val cards: @Composable () -> Unit = {
+        PermissionCard(
+            icon = Icons.Rounded.FolderOpen,
+            title = stringResource(R.string.permission_storage),
+            body = stringResource(R.string.permission_storage_body),
+            granted = files,
+            onGrant = {
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.fromParts("package", context.packageName, null)),
+                )
+            },
+        )
+        Spacer(Modifier.height(12.dp))
+        PermissionCard(
+            icon = Icons.Rounded.MyLocation,
+            title = stringResource(R.string.permission_location),
+            body = stringResource(R.string.permission_location_body),
+            granted = located,
+            onGrant = {
+                location.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            },
+        )
+    }
+    val actions: @Composable () -> Unit = {
+        Button(
+            onClick = {
+                if (!located) graph.settings.markLocationAsked()
+                onDone()
+            },
+            enabled = files || graph.settings.ownFolderChosen,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) { Text(stringResource(R.string.permissions_continue)) }
+        if (!files && !graph.settings.ownFolderChosen) {
+            TextButton(
+                onClick = {
+                    graph.settings.chooseOwnFolder()
+                    if (!located) graph.settings.markLocationAsked()
+                    onDone()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.permissions_own_folder)) }
+            Text(
+                stringResource(R.string.permissions_own_folder_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+
+    Scaffold { padding ->
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+            if (maxWidth > maxHeight && maxWidth >= 600.dp) {
+                // Landscape: what it is about on the left, what to grant on the right.
+                Row(Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+                    Column(
+                        Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.Center,
+                    ) { header() }
+                    Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 16.dp)) {
+                        cards()
+                        Spacer(Modifier.height(16.dp))
+                        actions()
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxSize()) {
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+                        Spacer(Modifier.height(32.dp))
+                        header()
+                        Spacer(Modifier.height(20.dp))
+                        cards()
+                        Spacer(Modifier.height(16.dp))
+                    }
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) { actions() }
                 }
             }
-        },
-    ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Spacer(Modifier.height(32.dp))
-            Box(
-                Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.VerifiedUser, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(36.dp))
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(stringResource(R.string.permissions_title), style = MaterialTheme.typography.headlineMedium)
-            Text(
-                stringResource(R.string.permissions_body),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            PermissionCard(
-                icon = Icons.Rounded.FolderOpen,
-                title = stringResource(R.string.permission_storage),
-                body = stringResource(R.string.permission_storage_body),
-                granted = files,
-                onGrant = {
-                    context.startActivity(
-                        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.fromParts("package", context.packageName, null)),
-                    )
-                },
-            )
-            PermissionCard(
-                icon = Icons.Rounded.MyLocation,
-                title = stringResource(R.string.permission_location),
-                body = stringResource(R.string.permission_location_body),
-                granted = located,
-                onGrant = {
-                    location.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                },
-            )
-            Spacer(Modifier.height(16.dp))
         }
     }
 }
