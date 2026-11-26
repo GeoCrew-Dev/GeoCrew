@@ -46,8 +46,16 @@ class Projects(private val root: File, private val journals: File) {
         return maxOf(gpkg(name).lastModified(), if (wal.length() > 0) wal.lastModified() else 0L)
     }
 
-    /** What the project list shows of a project; null when its file cannot be read. */
-    data class Summary(val layers: Int, val features: Long, val bytes: Long, val created: String?)
+    /** What the project list shows of a project: its layers and features, the features by kind too; null when its file cannot be read. */
+    data class Summary(
+        val layers: Int,
+        val features: Long,
+        val bytes: Long,
+        val created: String?,
+        val points: Long = features,
+        val lines: Long = 0,
+        val areas: Long = 0,
+    )
 
     /**
      * Reads project [name] without opening it for editing: its layers, how many
@@ -57,9 +65,14 @@ class Projects(private val root: File, private val journals: File) {
         VectorDataset.open(gpkg(name).path).use { ds ->
             val present = ds.layers.toSet()
             val layers = rows(ds, "SELECT table_name FROM ${ProjectFormat.LAYERS_TABLE}").mapNotNull { it["table_name"] }.filter { it in present }
-            val features = layers.sumOf { rowCount(ds, it) }
+            val kinds = rows(ds, "SELECT table_name, geometry_type_name FROM gpkg_geometry_columns").associate { it["table_name"] to it["geometry_type_name"].orEmpty() }
+            val counts = layers.associateWith { rowCount(ds, it) }
+            fun of(kind: String) = counts.filterKeys { kinds[it]?.contains(kind) == true }.values.sum()
+            val lines = of("LINE")
+            val areas = of("POLYGON")
+            val features = counts.values.sum()
             val created = rows(ds, "SELECT value FROM ${ProjectFormat.PROJECT_TABLE} WHERE key = 'created'").firstOrNull()?.get("value")
-            Summary(layers.size, features, gpkg(name).length() + File(gpkg(name).path + "-wal").length(), created)
+            Summary(layers.size, features, gpkg(name).length() + File(gpkg(name).path + "-wal").length(), created, features - lines - areas, lines, areas)
         }
     }.getOrNull()
 

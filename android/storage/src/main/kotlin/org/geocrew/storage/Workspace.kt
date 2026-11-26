@@ -57,6 +57,9 @@ class Workspace(private val projects: Projects) {
                                 if (summary != null) {
                                     put("layers", summary.layers)
                                     put("features", summary.features)
+                                    put("points", summary.points)
+                                    put("lines", summary.lines)
+                                    put("areas", summary.areas)
                                     put("bytes", summary.bytes)
                                     summary.created?.let { put("created", it) }
                                 }
