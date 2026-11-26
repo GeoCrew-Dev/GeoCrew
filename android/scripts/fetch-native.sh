@@ -21,6 +21,10 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 gh run download "$run" -R GeoCrew-Dev/GeoCrew-Native -n geocrew-native-android -D "$tmp"
 aar=$(find "$tmp" -name '*.aar' | head -n 1)
+if [ -z "$aar" ]; then
+    echo "the artifact of run $run has no AAR in it" >&2
+    exit 1
+fi
 got=$(sha256sum "$aar" | cut -c1-64)
 if [ "$got" != "$sha" ]; then
     echo "the AAR of run $run has SHA-256 $got, not $sha" >&2
