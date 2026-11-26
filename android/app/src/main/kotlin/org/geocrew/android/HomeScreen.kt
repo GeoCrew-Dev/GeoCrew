@@ -100,6 +100,8 @@ private data class ProjectEntry(
     val layers: Int?,
     val features: Long?,
     val bytes: Long?,
+    val lines: Long? = null,
+    val areas: Long? = null,
     val created: Instant?,
 )
 
@@ -131,7 +133,9 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
                     name = p.getValue("name").jsonPrimitive.content,
                     modified = p.getValue("modified").jsonPrimitive.long,
                     layers = p["layers"]?.jsonPrimitive?.intOrNull,
-                    features = p["features"]?.jsonPrimitive?.longOrNull,
+                    features = p["points"]?.jsonPrimitive?.longOrNull ?: p["features"]?.jsonPrimitive?.longOrNull,
+                    lines = p["lines"]?.jsonPrimitive?.longOrNull,
+                    areas = p["areas"]?.jsonPrimitive?.longOrNull,
                     bytes = p["bytes"]?.jsonPrimitive?.longOrNull,
                     created = p["created"]?.jsonPrimitive?.contentOrNull?.let { c -> runCatching { Instant.parse(c) }.getOrNull() },
                 )
@@ -230,10 +234,15 @@ private fun ProjectCard(project: ProjectEntry, thumbnail: File, onClick: () -> U
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text(project.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
-            // What is in it: points, layers, size.
+            // What is in it: points, lines and areas (points even when there are none, unless there are lines or areas), layers, size.
             val context = LocalContext.current
+            val lines = project.lines ?: 0
+            val areas = project.areas ?: 0
+            @Composable fun count(plural: Int, n: Long) = pluralStringResource(plural, n.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), n)
             val contents = listOfNotNull(
-                project.features?.let { pluralStringResource(R.plurals.points_count, it.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), it) },
+                project.features?.takeIf { it > 0 || (lines == 0L && areas == 0L) }?.let { count(R.plurals.points_count, it) },
+                lines.takeIf { it > 0 }?.let { count(R.plurals.lines_count, it) },
+                areas.takeIf { it > 0 }?.let { count(R.plurals.areas_count, it) },
                 project.layers?.let { pluralStringResource(R.plurals.layers_count, it, it) },
                 project.bytes?.let { Formatter.formatShortFileSize(context, it) },
             )

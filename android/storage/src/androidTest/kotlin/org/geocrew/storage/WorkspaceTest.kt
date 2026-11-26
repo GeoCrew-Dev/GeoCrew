@@ -360,6 +360,8 @@ class WorkspaceTest {
         assertEquals("Polygon", savedArea.getValue("type").jsonPrimitive.content)
         assertEquals(4, savedArea.getValue("coordinates").jsonArray.single().jsonArray.size, "the ring is closed")
         assertIs<Outcome.Done>(run(Workspace.EXPORT, """{"format": "kml"}"""))
+        val card = output(run(Workspace.LIST)).getValue("projects").jsonArray.map { it.jsonObject }.single { it.getValue("name").jsonPrimitive.content == "线面" }
+        assertEquals(listOf(0L, 1L, 1L), listOf("points", "lines", "areas").map { card.getValue(it).jsonPrimitive.content.toLong() }, "counted by kind")
     }
 
     @Test
