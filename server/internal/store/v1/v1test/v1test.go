@@ -43,6 +43,8 @@ func Run(t *testing.T, open Opener) {
 		{"Overrides", overrides},
 		{"PushRows", pushRows},
 		{"PushLayerProps", pushLayerProps},
+		{"Pull", pull},
+		{"Resolve", resolve},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -1161,5 +1163,226 @@ func pushLayerProps(t *testing.T, open Opener) {
 	if r := pushOne(t, s, tm.ws, l, t0, v1.Change{ID: uuid(213), Layer: v1.TableLayers, Row: layerB,
 		Set: map[string]merge.Edit{v1.PropName: edit(`"x"`, t0)}}); r.Error != v1.RejectUnknownLayer {
 		t.Fatalf("an unknown layer: %+v", r)
+	}
+}
+
+// pullAll pulls from since in pages of limit until More is false and returns every page.
+func pullAll(t *testing.T, s v1.Store, ws, actor string, since int64, limit int, only []string) []v1.Pulled {
+	t.Helper()
+	var pages []v1.Pulled
+	for {
+		p, err := s.Pull(context.Background(), ws, actor, since, limit, only)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages = append(pages, p)
+		if !p.More {
+			return pages
+		}
+		if p.Seq <= since {
+			t.Fatalf("pull does not move on: since %d, seq %d", since, p.Seq)
+		}
+		since = p.Seq
+	}
+}
+
+func rowIDs(pages ...v1.Pulled) []string {
+	var out []string
+	for _, p := range pages {
+		for _, r := range p.Rows {
+			out = append(out, r.ID)
+		}
+	}
+	return out
+}
+
+func pull(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	t0 := time.Date(2026, 11, 26, 7, 0, 0, 0, time.UTC)
+	if _, err := s.CreateLayer(ctx, tm.ws, l, geoPoints()); err != nil {
+		t.Fatal(err)
+	}
+	other := geoPoints()
+	other.ID = layerB
+	if _, err := s.CreateLayer(ctx, tm.ws, l, other); err != nil {
+		t.Fatal(err)
+	}
+	for i, c := range []struct {
+		who, layer string
+	}{{a, layerA}, {a, layerA}, {b, layerB}} {
+		if r := pushOne(t, s, tm.ws, c.who, t0, v1.Change{ID: uuid(300 + i), Layer: c.layer, Row: uuid(10 + i),
+			Set: map[string]merge.Edit{"f1": edit(`"v"`, t0), "f2": edit(`1`, t0)}}); r.Status != v1.Applied {
+			t.Fatalf("push %d: %+v", i, r)
+		}
+	}
+
+	all, err := s.Pull(ctx, tm.ws, a, 0, 0, nil)
+	if err != nil || all.More || len(all.Layers) != 2 || all.Layers[0].ID != layerA || len(all.Rows) != 3 || all.Seq != 5 {
+		t.Fatalf("everything: %v %+v", err, all)
+	}
+	if again, _ := s.Pull(ctx, tm.ws, a, all.Seq, 0, nil); len(again.Rows)+len(again.Layers) != 0 || again.Seq != all.Seq {
+		t.Fatalf("nothing new: %+v", again)
+	}
+	// Pages of two still bring everything, each once, in order.
+	pages := pullAll(t, s, tm.ws, a, 0, 2, nil)
+	if got := rowIDs(pages...); len(pages) != 3 || strings.Join(got, ",") != strings.Join(rowIDs(all), ",") {
+		t.Fatalf("paged: %d pages, rows %v", len(pages), got)
+	}
+
+	// A layer hidden from a: neither it nor its rows reach a; the leader sees all.
+	if err := s.SetLayerOverride(ctx, tm.ws, l, layerB, perm.Base, map[string]perm.Level{perm.ViewLayer: perm.None}); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := s.Pull(ctx, tm.ws, a, 0, 0, nil); len(p.Layers) != 1 || len(p.Rows) != 2 {
+		t.Fatalf("a hidden layer reached a member: %+v", p)
+	}
+	if p, _ := s.Pull(ctx, tm.ws, l, 0, 0, nil); len(p.Layers) != 2 || len(p.Rows) != 3 {
+		t.Fatalf("the leader misses something: %+v", p)
+	}
+	// Backfill one layer.
+	if p, _ := s.Pull(ctx, tm.ws, l, 0, 0, []string{layerB}); len(p.Layers) != 1 || len(p.Rows) != 1 || p.Rows[0].Layer != layerB {
+		t.Fatalf("only layer B: %+v", p)
+	}
+
+	// A deleted field no longer comes with rows.
+	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 1, []v1.SchemaOp{{Op: "delete_field", ID: "f2"}}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := s.Pull(ctx, tm.ws, a, 0, 0, nil)
+	if _, ok := p.Rows[0].Fields["f2"]; ok || p.Rows[0].Fields["f1"].Value == nil {
+		t.Fatalf("fields of a row after f2 went: %+v", p.Rows[0].Fields)
+	}
+	// A deleted layer comes (so clients hide it) but its rows do not.
+	if _, err := s.DeleteLayer(ctx, tm.ws, l, layerA); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = s.Pull(ctx, tm.ws, a, all.Seq, 0, nil)
+	if len(p.Layers) != 1 || p.Layers[0].Deleted == nil || len(p.Rows) != 0 {
+		t.Fatalf("after deleting layer A: %+v", p)
+	}
+	if p, _ := s.Pull(ctx, tm.ws, a, 0, 0, nil); len(p.Rows) != 0 {
+		t.Fatalf("rows of a deleted layer: %+v", p.Rows)
+	}
+
+	if err := s.RemoveMember(ctx, tm.ws, l, b); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pull(ctx, tm.ws, b, 0, 0, nil); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a removed member pulls: %v", err)
+	}
+}
+
+func resolve(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	t0 := time.Date(2026, 11, 26, 7, 0, 0, 0, time.UTC)
+	if _, err := s.CreateLayer(ctx, tm.ws, l, geoPoints()); err != nil {
+		t.Fatal(err)
+	}
+	row := uuid(20)
+	n := 400
+	change := func(who string, base int64, set map[string]merge.Edit, del string) v1.Result {
+		n++
+		c := v1.Change{ID: uuid(n), Layer: layerA, Row: row, BaseSeq: base, Set: set}
+		if del != "" {
+			c.Delete = &merge.Edit{Value: json.RawMessage(del), EditedAt: t0.Add(time.Duration(n) * time.Minute)}
+		}
+		return pushOne(t, s, tm.ws, who, t0, c)
+	}
+	first := change(a, 0, map[string]merge.Edit{"f1": edit(`"start"`, t0)}, "")
+	change(a, first.Seq, map[string]merge.Edit{"f1": edit(`"from a"`, t0.Add(time.Minute))}, "")
+	clash := change(b, first.Seq, map[string]merge.Edit{"f1": edit(`"from b"`, t0.Add(2*time.Minute))}, "")
+	k := clash.Conflicts[0]
+
+	outsider, err := s.Join(ctx, tm.lead.Workspace.InviteCode, "c", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.ResolveConflict(ctx, tm.ws, outsider.Member.ID, k.ID, v1.ChooseKept); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("someone else resolves: %v", err)
+	}
+	if _, _, err := s.ResolveConflict(ctx, tm.ws, a, k.ID, "both"); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("choose both: %v", err)
+	}
+	if _, _, err := s.ResolveConflict(ctx, tm.ws, a, "nope", v1.ChooseKept); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("an unknown conflict: %v", err)
+	}
+	before, _ := s.Pull(ctx, tm.ws, l, 0, 0, nil)
+	done, res, err := s.ResolveConflict(ctx, tm.ws, a, k.ID, v1.ChooseLost)
+	if err != nil || !done.Resolved || res == nil || res.Status != v1.Applied {
+		t.Fatalf("a takes back the lost value: %v %+v %+v", err, done, res)
+	}
+	got, unresolved, _ := s.Row(ctx, tm.ws, row)
+	if string(got.Fields["f1"].Value) != `"from a"` || got.Conflicted || len(unresolved) != 0 {
+		t.Fatalf("after choosing lost: %+v %+v", got, unresolved)
+	}
+	// The resolution reaches the others: the record, the value and the flag.
+	p, _ := s.Pull(ctx, tm.ws, b, before.Seq, 0, nil)
+	if len(p.Conflicts) != 1 || !p.Conflicts[0].Resolved || len(p.Rows) != 1 || p.Rows[0].Conflicted {
+		t.Fatalf("pulled after the resolution: %+v", p)
+	}
+	if again, res, err := s.ResolveConflict(ctx, tm.ws, l, k.ID, v1.ChooseKept); err != nil || res != nil || !again.Resolved {
+		t.Fatalf("resolve twice: %v %+v %+v", err, again, res)
+	}
+
+	// Keeping the current value only closes the record.
+	cur := got.Seq
+	change(a, cur, map[string]merge.Edit{"f1": edit(`"a2"`, t0.Add(3*time.Hour))}, "")
+	k2 := change(b, cur, map[string]merge.Edit{"f1": edit(`"b2"`, t0.Add(4*time.Hour))}, "").Conflicts[0]
+	if done, res, err := s.ResolveConflict(ctx, tm.ws, b, k2.ID, v1.ChooseKept); err != nil || res != nil || !done.Resolved {
+		t.Fatalf("keep: %v %+v %+v", err, done, res)
+	}
+	if got, _, _ := s.Row(ctx, tm.ws, row); string(got.Fields["f1"].Value) != `"b2"` || got.Conflicted {
+		t.Fatalf("after keeping: %+v", got)
+	}
+
+	// A value for a deleted field can only be read, not put back.
+	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 1, []v1.SchemaOp{{Op: "delete_field", ID: "f2"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = s.Row(ctx, tm.ws, row)
+	k3 := change(a, got.Seq, map[string]merge.Edit{"f2": edit(`3`, t0)}, "").Conflicts[0]
+	if _, _, err := s.ResolveConflict(ctx, tm.ws, a, k3.ID, v1.ChooseLost); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("put back a deleted field: %v", err)
+	}
+	if _, _, err := s.ResolveConflict(ctx, tm.ws, a, k3.ID, v1.ChooseKept); err != nil {
+		t.Fatal(err)
+	}
+
+	// A delete that lost to an edit can be done again.
+	got, _, _ = s.Row(ctx, tm.ws, row)
+	change(b, got.Seq, map[string]merge.Edit{"f1": edit(`"b3"`, t0.Add(5*time.Hour))}, "")
+	k4 := change(a, got.Seq, nil, "true").Conflicts[0]
+	if k4.Kind != merge.KindDeleteRejected {
+		t.Fatalf("expected a rejected delete, got %+v", k4)
+	}
+	if _, res, err := s.ResolveConflict(ctx, tm.ws, a, k4.ID, v1.ChooseLost); err != nil || res.Status != v1.Applied {
+		t.Fatalf("delete again: %v %+v", err, res)
+	}
+	if got, _, _ := s.Row(ctx, tm.ws, row); got.Deleted == nil || string(got.Deleted.Value) != "true" {
+		t.Fatalf("not deleted: %+v", got)
+	}
+
+	// When the change is refused, the conflict stays open and says why.
+	restored := change(l, 0, nil, "false")
+	change(l, restored.Seq, map[string]merge.Edit{"f1": edit(`"lead"`, t0.Add(6*time.Hour))}, "")
+	k5 := change(b, restored.Seq, map[string]merge.Edit{"f1": edit(`"b4"`, t0)}, "").Conflicts[0]
+	own := map[string]perm.Level{}
+	for p, lv := range v1.DefaultBasePermissions {
+		own[p] = lv
+	}
+	own[perm.EditRows] = perm.Own
+	if _, err := s.UpdateRole(ctx, tm.ws, l, perm.Base, v1.RoleUpdate{Permissions: own}, 1); err != nil {
+		t.Fatal(err)
+	}
+	still, res, err := s.ResolveConflict(ctx, tm.ws, b, k5.ID, v1.ChooseLost)
+	if err != nil || still.Resolved || res == nil || res.Error != v1.RejectForbidden {
+		t.Fatalf("a refused resolution: %v %+v %+v", err, still, res)
+	}
+	if _, unresolved, _ := s.Row(ctx, tm.ws, row); len(unresolved) != 1 {
+		t.Fatalf("the conflict should stay open: %+v", unresolved)
 	}
 }

@@ -214,6 +214,26 @@ type Row struct {
 	Seq        int64
 }
 
+// MaxPull bounds a pull (protocol 3.3, max_pull_batch).
+const MaxPull = 1000
+
+// Pulled is one page of changes since a seq (protocol 8.2): the current state
+// of every layer, row and conflict record that changed, as the member may
+// see them. Seq is the next since; More means pull again at once.
+type Pulled struct {
+	Layers    []Layer
+	Rows      []Row
+	Conflicts []Conflict
+	Seq       int64
+	More      bool
+}
+
+// Ways to resolve a conflict (protocol 8.3).
+const (
+	ChooseKept = "kept" // keep the current value; only mark the conflict resolved
+	ChooseLost = "lost" // put the losing value back, as a change by the resolver
+)
+
 // AuditEntry is one line of the audit log (protocol 5.7). Target is the
 // member, device or role acted on.
 type AuditEntry struct {
@@ -368,6 +388,18 @@ type Store interface {
 	// workspace's latest seq. clientNow is the client's clock when it sent
 	// them. Two changes to one row in a push are store.ErrInvalid.
 	Push(ctx context.Context, workspaceID, actor string, clientNow time.Time, changes []Change) ([]Result, int64, error)
+	// Pull returns what changed after since, oldest first, at most limit
+	// layers and rows (1 to MaxPull). Rows and conflicts of layers actor
+	// cannot see, or of deleted layers, are left out, and so are fields
+	// deleted from a layer. A non-empty onlyLayers keeps only those layers'
+	// rows and conflicts (protocol 10.4 backfill).
+	Pull(ctx context.Context, workspaceID, actor string, since int64, limit int, onlyLayers []string) (Pulled, error)
+	// ResolveConflict resolves a conflict as protocol 8.3 says. Only the
+	// leader and the two sides may (store.ErrForbidden). Choosing lost makes
+	// a normal change, which can conflict again; when that change is
+	// refused, the conflict stays and the result says why. Resolving a
+	// resolved conflict changes nothing.
+	ResolveConflict(ctx context.Context, workspaceID, actor, id, choose string) (Conflict, *Result, error)
 	// Row returns a row with its unresolved conflicts.
 	Row(ctx context.Context, workspaceID, id string) (Row, []Conflict, error)
 
