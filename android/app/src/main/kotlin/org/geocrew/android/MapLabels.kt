@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import androidx.core.graphics.createBitmap
 import kotlin.math.ceil
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -53,10 +54,9 @@ internal object MapLabels {
         }
         val metrics = fill.fontMetrics
         val margin = halo.strokeWidth
-        val bitmap = Bitmap.createBitmap(
+        val bitmap = createBitmap(
             ceil(fill.measureText(text) + 2 * margin).toInt(),
             ceil(metrics.descent - metrics.ascent + 2 * margin).toInt(),
-            Bitmap.Config.ARGB_8888,
         )
         val canvas = Canvas(bitmap)
         canvas.drawText(text, margin, margin - metrics.ascent, halo)

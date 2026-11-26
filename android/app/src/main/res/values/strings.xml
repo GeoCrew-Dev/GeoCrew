@@ -1,59 +1,131 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- English: the default for every system language other than Chinese. -->
 <resources>
-    <string name="app_name">同勘</string>
-    <string name="ok">确定</string>
-    <string name="cancel">取消</string>
-    <string name="starting">正在准备…</string>
-    <string name="start_failed">同勘没能启动：%1$s</string>
-    <string name="action_failed">没有成功：%1$s</string>
+    <string name="app_name">GeoCrew</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="back">Back</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="close">Close</string>
+    <string name="start_failed">GeoCrew could not start: %1$s</string>
+    <string name="action_failed">That did not work: %1$s</string>
+    <string name="failure_unsaved">Save or discard the layer\'s edits first.</string>
+    <string name="failure_editing">Stop editing the layer first.</string>
 
-    <string name="storage_title">工程放在哪里</string>
-    <string name="storage_body">同勘把工程放在手机存储的 GeoCrew 文件夹里：卸载应用也不会删掉，文件管理器和电脑都能直接拿到。这需要“所有文件访问”权限。</string>
-    <string name="storage_grant">去开启权限</string>
-    <string name="storage_own_folder">先放在应用自己的目录</string>
-    <string name="storage_own_folder_warning">放在应用自己的目录里，卸载应用时工程会一起被删掉，别的应用也打不开里面的文件。</string>
+    <!-- Permissions -->
+    <string name="permissions_title">A few permissions</string>
+    <string name="permissions_body">GeoCrew works offline in the field. These let it keep your projects safe and record where you stand.</string>
+    <string name="permission_storage">Files</string>
+    <string name="permission_storage_body">Keep projects in the GeoCrew folder on the phone, where uninstalling never deletes them and a computer or file manager can reach them.</string>
+    <string name="permission_location">Location</string>
+    <string name="permission_location_body">Record points where you stand, with elevation and accuracy.</string>
+    <string name="permission_grant">Allow</string>
+    <string name="permission_granted">Allowed</string>
+    <string name="permissions_continue">Continue</string>
+    <string name="permissions_own_folder">Keep projects inside the app for now</string>
+    <string name="permissions_own_folder_warning">Projects inside the app are deleted when GeoCrew is uninstalled, and other apps cannot open them.</string>
 
-    <string name="projects_title">工程</string>
-    <string name="projects_root">工程在：%1$s</string>
-    <string name="projects_empty">还没有工程，点“新建工程”开始。</string>
-    <string name="project_new">新建工程</string>
-    <string name="project_name">工程名称</string>
-    <string name="project_create">新建</string>
-    <string name="project_layers">图层</string>
-    <string name="layer_template">模板：%1$s</string>
-    <string name="project_close">关闭工程</string>
-    <string name="map_open">打开地图</string>
-    <string name="export_gpkg">导出 GPKG</string>
-    <string name="export_kml">导出 KML</string>
-    <string name="exported">已导出到：%1$s</string>
-    <string name="share">分享</string>
-    <string name="share_title">分享导出的文件</string>
-    <string name="failure_unsaved">先保存或放弃图层里的修改。</string>
-    <string name="failure_editing">先停止编辑图层。</string>
-    <string name="back">返回</string>
+    <!-- Projects -->
+    <string name="projects_title">Projects</string>
+    <string name="projects_empty_title">No projects yet</string>
+    <string name="projects_empty_body">Create a project to start recording in the field.</string>
+    <string name="project_new">New project</string>
+    <string name="project_name">Project name</string>
+    <string name="project_create">Create</string>
+    <string name="project_modified">Changed %1$s</string>
+    <string name="project_created">Created %1$s</string>
+    <plurals name="points_count">
+        <item quantity="one">%d point</item>
+        <item quantity="other">%d points</item>
+    </plurals>
+    <plurals name="layers_count">
+        <item quantity="one">%d layer</item>
+        <item quantity="other">%d layers</item>
+    </plurals>
+    <string name="project_close">Close project</string>
+    <string name="name_taken">There is already a project with this name</string>
+    <string name="name_empty">Give the project a name</string>
+    <string name="name_space">No spaces at the start or the end</string>
+    <plurals name="name_too_long">
+        <item quantity="one">At most %d character</item>
+        <item quantity="other">At most %d characters</item>
+    </plurals>
+    <string name="name_dot">The name cannot end with a dot</string>
+    <string name="name_character">These characters cannot be used: \\ / : * ? \" &lt; &gt; |</string>
 
-    <string name="map_key">图源 Key</string>
-    <string name="map_no_key">还没有填天地图 Key，底图不显示。点右上角“图源 Key”填写。</string>
-    <string name="map_add_point">加点</string>
-    <string name="map_undo">撤销</string>
-    <string name="map_redo">重做</string>
-    <string name="map_save">保存</string>
-    <string name="map_discard">放弃</string>
-    <string name="attribution_tianditu">© 天地图</string>
-    <string name="key_title">天地图 Key</string>
-    <string name="key_hint">在天地图官网申请的 Key</string>
-    <string name="key_invalid">Key 是 32 位的数字和字母 a–f</string>
-    <string name="feature_untitled">要素 %1$d</string>
-    <string name="feature_delete">删除</string>
-    <string name="field_not_a_number">要填数字</string>
-    <string name="field_not_a_whole_number">要填整数</string>
-    <string name="unsaved_title">有没保存的修改</string>
-    <string name="unsaved_body">“%1$s”图层有没保存的修改。</string>
+    <!-- Settings -->
+    <string name="settings">Settings</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_dynamic_color">Dynamic colour</string>
+    <string name="settings_dynamic_color_body">Colours from your wallpaper</string>
+    <string name="settings_language">Language</string>
+    <string name="language_system">System</string>
+    <string name="language_zh" translatable="false">中文</string>
+    <string name="language_en" translatable="false">English</string>
+    <string name="settings_language_unavailable">Follows the system on this version of Android</string>
+    <string name="settings_map">Map</string>
+    <string name="settings_tianditu_key">Tianditu key</string>
+    <string name="key_set">Set</string>
+    <string name="key_not_set">Not set: the basemap stays empty</string>
+    <string name="key_title">Tianditu key</string>
+    <string name="key_hint">Key from the Tianditu website</string>
+    <string name="key_invalid">A key is 32 digits and letters a–f</string>
+    <string name="settings_storage">Storage</string>
+    <string name="settings_projects_folder">Projects folder</string>
 
-    <string name="name_taken">已经有叫这个名字的工程了</string>
-    <string name="name_empty">名称不能为空</string>
-    <string name="name_space">名称前后不能有空格</string>
-    <string name="name_too_long">名称最长 %1$d 个字</string>
-    <string name="name_dot">名称不能以点结尾</string>
-    <string name="name_character">名称里不能有这些字符：\\ / : * ? \" &lt; &gt; |</string>
+    <!-- About -->
+    <string name="about">About</string>
+    <string name="about_tagline">Open-source field mapping and GIS for geology, hydrogeology and other field work.</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_source">Source code</string>
+    <string name="about_licenses">Open-source licences</string>
+    <string name="about_licenses_body">GDAL, PROJ, GEOS, SQLite, MapLibre Native, Kotlin, Jetpack Compose and other libraries, each under its own open-source licence.</string>
+    <string name="about_map_data">Map data</string>
+    <string name="about_map_data_body">Basemap © Tianditu, the National Platform for Common GeoSpatial Information Services.</string>
+
+    <!-- Map -->
+    <string name="map_menu">Menu</string>
+    <string name="map_ai">AI assistant</string>
+    <string name="map_ai_coming">The AI assistant comes in a later version.</string>
+    <string name="map_layers">Layers</string>
+    <string name="map_add_point">Add point</string>
+    <string name="map_undo">Undo</string>
+    <string name="map_redo">Redo</string>
+    <string name="map_save">Save edits</string>
+    <string name="map_discard">Discard edits</string>
+    <string name="map_editing">Editing</string>
+    <string name="map_unsaved_short">Unsaved</string>
+    <string name="map_no_key">No Tianditu key: the basemap is empty.</string>
+    <string name="map_set_key">Set key</string>
+    <string name="attribution_tianditu">© Tianditu</string>
+    <string name="unsaved_title">Unsaved changes</string>
+    <string name="unsaved_body">The layer “%1$s” has changes that are not saved.</string>
+    <string name="export_gpkg">Export GeoPackage</string>
+    <string name="export_kml">Export KML</string>
+    <string name="exported">Exported to %1$s</string>
+    <string name="share">Share</string>
+    <string name="share_title">Share the exported file</string>
+
+    <!-- Feature form -->
+    <string name="feature_untitled">Point %1$d</string>
+    <string name="feature_delete">Delete point</string>
+    <string name="feature_delete_title">Delete this point?</string>
+    <string name="feature_delete_body">You can undo it until the edits are saved.</string>
+    <string name="field_not_a_number">Enter a number</string>
+    <string name="field_not_a_whole_number">Enter a whole number</string>
+    <string name="field_add">Add field</string>
+    <string name="field_name">Field name</string>
+    <string name="field_type">Type</string>
+    <string name="field_name_taken">The layer already has this field</string>
+    <string name="type_string">Text</string>
+    <string name="type_real">Number</string>
+    <string name="type_integer">Whole number</string>
+    <string name="type_date">Date</string>
+    <string name="type_datetime">Date and time</string>
+    <string name="type_boolean">Yes / no</string>
 </resources>

@@ -3,7 +3,6 @@ package org.geocrew.storage
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -32,8 +31,30 @@ class Workspace(private val projects: Projects) {
 
     /** The project actions and the editing actions, for the registry. */
     val actions: List<Action> = listOf(
-        WorkspaceAction(LIST, "List projects", "The projects in the GeoCrew folder", Risk.VIEW, NO_PARAMS, "{}") {
-            ActionResult.Done(buildJsonObject { putJsonArray("projects") { projects.list().forEach { add(it) } } })
+        WorkspaceAction(
+            LIST, "List projects", "The projects in the GeoCrew folder, latest change first, with their layers, features, size and age",
+            Risk.VIEW, NO_PARAMS, "{}",
+        ) {
+            val listed = projects.list().map { it to projects.modified(it) }.sortedByDescending { it.second }
+            ActionResult.Done(
+                buildJsonObject {
+                    putJsonArray("projects") {
+                        for ((name, modified) in listed) {
+                            val summary = projects.summary(name)
+                            addJsonObject {
+                                put("name", name)
+                                put("modified", modified)
+                                if (summary != null) {
+                                    put("layers", summary.layers)
+                                    put("features", summary.features)
+                                    put("bytes", summary.bytes)
+                                    summary.created?.let { put("created", it) }
+                                }
+                            }
+                        }
+                    }
+                },
+            )
         },
         WorkspaceAction(CREATE, "Create project", "Makes a project with the built-in layers and opens it", Risk.EDIT, NAME_PARAMS, """{"name": "测区一号"}""") { p ->
             switchTo { projects.create(p.name()) }
