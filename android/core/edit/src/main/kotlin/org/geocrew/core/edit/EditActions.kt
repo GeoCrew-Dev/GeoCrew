@@ -30,8 +30,11 @@ data class EditTarget(val store: LayerStore, val journal: Journal)
 class Editing(private val open: (String) -> EditTarget) {
     private val buffers = HashMap<String, EditBuffer>()
 
-    /** The edit buffer of [layer] while it is being edited. */
-    fun buffer(layer: String): EditBuffer? = buffers[layer]
+    /**
+     * The edit buffer of [layer] while it is being edited. Not thread-safe:
+     * outside this module, read layers through actions, which run one at a time.
+     */
+    internal fun buffer(layer: String): EditBuffer? = buffers[layer]
 
     /** The actions, for the registry. */
     val actions: List<Action> = listOf(
@@ -42,16 +45,27 @@ class Editing(private val open: (String) -> EditTarget) {
             buffers[layer] = buffer
             ActionResult.Done(buildJsonObject { put("recovered", recovered.name.lowercase()) }, endsUndo = scope(layer))
         },
-        FeatureAction(ADD, "Add feature", "Adds a feature to a layer being edited", Risk.EDIT, ADD_PARAMS) { buffer, p ->
+        FeatureAction(
+            ADD, "Add feature", "Adds a feature to a layer being edited", Risk.EDIT, ADD_PARAMS,
+            """{"layer": "地质点", "geometry": {"type": "Point", "coordinates": [500123.45, 3320113.21]}, "properties": {"岩性": "花岗岩"}}""",
+        ) { buffer, p ->
             buffer.add(p["geometry"].geometry(), (p["properties"] as? JsonObject) ?: JsonObject(emptyMap()))
         },
-        FeatureAction(GEOMETRY, "Change geometry", "Gives a feature a new geometry, or none", Risk.EDIT, GEOMETRY_PARAMS) { buffer, p ->
+        FeatureAction(
+            GEOMETRY, "Change geometry", "Gives a feature a new geometry, or none", Risk.EDIT, GEOMETRY_PARAMS,
+            """{"layer": "地质点", "fid": 12, "geometry": {"type": "Point", "coordinates": [500125.0, 3320110.5]}}""",
+        ) { buffer, p ->
             buffer.changeGeometry(p.fid(), p["geometry"].geometry())
         },
-        FeatureAction(VALUES, "Change values", "Sets fields of a feature", Risk.EDIT, VALUES_PARAMS) { buffer, p ->
+        FeatureAction(
+            VALUES, "Change values", "Sets fields of a feature", Risk.EDIT, VALUES_PARAMS,
+            """{"layer": "地质点", "fid": 12, "values": {"岩性": "片麻岩", "倾角": 35}}""",
+        ) { buffer, p ->
             buffer.changeValues(p.fid(), p.getValue("values").jsonObject)
         },
-        FeatureAction(DELETE, "Delete feature", "Deletes a feature", Risk.DELETE, FID_PARAMS) { buffer, p -> buffer.delete(p.fid()) },
+        FeatureAction(DELETE, "Delete feature", "Deletes a feature", Risk.DELETE, FID_PARAMS, """{"layer": "地质点", "fid": 12}""") { buffer, p ->
+            buffer.delete(p.fid())
+        },
         LayerAction(SAVE, "Save edits", "Writes a layer's edits to its file", Risk.EDIT) { layer, _ ->
             val ids = buffers.getValue(layer).save()
             ActionResult.Done(buildJsonObject { put("fids", JsonObject(ids.entries.associate { (k, v) -> k.toString() to JsonPrimitive(v) })) }, endsUndo = scope(layer))
@@ -78,7 +92,10 @@ class Editing(private val open: (String) -> EditTarget) {
         private val editing: Boolean = true,
         private val body: (String, JsonObject) -> ActionResult,
     ) : Action {
-        override val spec = ActionSpec(id, name, description, LAYER_PARAMS, risk, Stability.PREVIEW)
+        override val spec = ActionSpec(
+            id, name, description, LAYER_PARAMS, risk, Stability.PREVIEW,
+            inputs = listOf("vector"), examples = listOf(schema("""{"layer": "地质点"}""")),
+        )
 
         override suspend fun run(caller: Caller, params: JsonObject): ActionResult {
             val layer = params.getValue("layer").jsonPrimitive.content
@@ -95,9 +112,13 @@ class Editing(private val open: (String) -> EditTarget) {
         description: String,
         risk: Risk,
         params: JsonObject,
+        example: String,
         private val change: (EditBuffer, JsonObject) -> Edit,
     ) : Action {
-        override val spec = ActionSpec(id, name, description, params, risk, Stability.PREVIEW)
+        override val spec = ActionSpec(
+            id, name, description, params, risk, Stability.PREVIEW,
+            inputs = listOf("vector"), outputs = listOf("vector"), examples = listOf(schema(example)),
+        )
 
         override suspend fun run(caller: Caller, params: JsonObject): ActionResult {
             val layer = params.getValue("layer").jsonPrimitive.content

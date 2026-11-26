@@ -89,6 +89,14 @@ class EditActionsTest {
     }
 
     @Test
+    fun examplesFitTheirParameters() {
+        for (action in editing.actions) {
+            assertTrue(action.spec.examples.isNotEmpty(), action.spec.id)
+            for (example in action.spec.examples) assertNull(org.geocrew.core.action.Schema.check(action.spec.params, example), action.spec.id)
+        }
+    }
+
+    @Test
     fun badEditsFailWithoutHarm() = runTest {
         val a = stores.getValue("points").put("a")
         run(START)
