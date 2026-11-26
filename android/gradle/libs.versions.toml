@@ -2,9 +2,10 @@
 [versions]
 agp = "8.13.2"
 kotlin = "2.4.10"
-# Compose 1.11: from 1.12 on, Compose and androidx.core 1.18+ need AGP 9.1 and
-# compileSdk 37, an upgrade both repositories make together (backlog).
+# Compose 1.11: Compose 1.12+ and androidx.core 1.19 were seen to need AGP 9.1
+# and compileSdk 37, an upgrade both repositories make together (backlog).
 compose-bom = "2026.06.01"
+# 1.13 brings androidx.core 1.18, not tried with AGP 8.13.
 activity-compose = "1.12.4"
 coroutines = "1.11.0"
 serialization = "1.13.0"
