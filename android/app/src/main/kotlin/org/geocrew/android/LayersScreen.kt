@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Numbers
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -125,9 +128,9 @@ private data class NewField(val layer: String, val name: String, val type: Strin
  * button: each layer's fields fold open under it; fields and layers are added
  * here. Everything goes through actions (ADR 0010).
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (String) -> Unit = {}) {
+fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (String) -> Unit = {}, onTable: (String) -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var layers by remember { mutableStateOf<List<LayerInfo>>(emptyList()) }
@@ -292,7 +295,12 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
                                     modifier = Modifier.padding(top = 8.dp),
                                 )
                             }
-                            Row {
+                            FlowRow {
+                                TextButton(onClick = { onTable(layer.name) }) {
+                                    Icon(Icons.Rounded.TableChart, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.attribute_table))
+                                }
                                 TextButton(onClick = { onZoom(layer.name) }) {
                                     Icon(Icons.Rounded.ZoomIn, null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(4.dp))

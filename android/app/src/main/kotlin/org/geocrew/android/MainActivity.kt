@@ -50,11 +50,15 @@ private sealed interface Screen {
     data class ProjectSettings(val name: String) : Screen { override val key = "project-settings:$name" }
     data class Layers(val name: String) : Screen { override val key = "project-layers:$name" }
 
+    // The layer's name comes last: it may hold any character, the project's no "/".
+    data class Table(val name: String, val layer: String) : Screen { override val key = "project-table:$name/$layer" }
+
     companion object {
         fun of(key: String): Screen = when {
             key.startsWith("project:") -> Project(key.removePrefix("project:"))
             key.startsWith("project-settings:") -> ProjectSettings(key.removePrefix("project-settings:"))
             key.startsWith("project-layers:") -> Layers(key.removePrefix("project-layers:"))
+            key.startsWith("project-table:") -> key.removePrefix("project-table:").split("/", limit = 2).let { Table(it[0], it.getOrElse(1) { "" }) }
             key == Permissions.key -> Permissions
             key == Settings.key -> Settings
             key == About.key -> About
@@ -79,6 +83,13 @@ private fun App(graph: AppGraph, resumed: Int) {
     }
     fun pop() {
         if (stack.size > 1) stack = stack.dropLast(1)
+    }
+
+    // Back to the project's map, with what it should show.
+    fun backToMap(zoom: Zoom) {
+        graph.zoomTo = zoom
+        val map = stack.indexOfLast { Screen.of(it) is Screen.Project }
+        if (map >= 0) stack = stack.take(map + 1)
     }
 
     // The map asks about unsaved edits before it goes, so it handles back itself.
@@ -107,10 +118,12 @@ private fun App(graph: AppGraph, resumed: Int) {
                 onLayers = { push(Screen.Layers(screen.name)) },
             )
             is Screen.ProjectSettings -> ProjectSettingsScreen(graph, screen.name, onBack = ::pop)
-            is Screen.Layers -> LayersScreen(graph, screen.name, onBack = ::pop, onZoom = { layer ->
-                graph.zoomTo = layer
-                pop()
-            })
+            is Screen.Layers -> LayersScreen(
+                graph, screen.name, onBack = ::pop,
+                onZoom = { backToMap(Zoom(it)) },
+                onTable = { push(Screen.Table(screen.name, it)) },
+            )
+            is Screen.Table -> AttributeTableScreen(graph, screen.name, screen.layer, onBack = ::pop, onFeature = { backToMap(Zoom(screen.layer, it)) })
         }
     }
 }
