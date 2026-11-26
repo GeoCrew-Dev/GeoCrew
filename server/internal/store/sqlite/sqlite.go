@@ -298,4 +298,27 @@ var migrations = []string{
 	);
 	CREATE INDEX v1_conflicts_seq ON v1_conflicts(workspace_id, update_seq);
 	CREATE INDEX v1_conflicts_row ON v1_conflicts(workspace_id, row_id, resolved);`,
+	// Protocol v1: attachment files by hash, and uploads on their way in.
+	`CREATE TABLE v1_files (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		sha256       TEXT NOT NULL,
+		size         INTEGER NOT NULL,
+		type         TEXT NOT NULL,
+		created_at   TEXT NOT NULL,
+		created_by   TEXT NOT NULL,
+		PRIMARY KEY (workspace_id, sha256)
+	);
+	CREATE TABLE v1_uploads (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		id           TEXT PRIMARY KEY,
+		member_id    TEXT NOT NULL,
+		sha256       TEXT NOT NULL,
+		size         INTEGER NOT NULL,
+		type         TEXT NOT NULL,
+		received     INTEGER NOT NULL,
+		updated_at   TEXT NOT NULL,
+		created_at   TEXT NOT NULL
+	);
+	CREATE UNIQUE INDEX v1_uploads_member_file ON v1_uploads(workspace_id, member_id, sha256);
+	CREATE INDEX v1_uploads_updated ON v1_uploads(updated_at);`,
 }
