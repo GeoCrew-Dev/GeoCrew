@@ -33,6 +33,7 @@ func Run(t *testing.T, open Opener) {
 		{"TransferLeader", transferLeader},
 		{"Devices", devices},
 		{"TransferCode", transferCode},
+		{"TransferCodeRace", transferCodeRace},
 		{"AuditLog", auditLog},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
@@ -493,5 +494,35 @@ func auditLog(t *testing.T, open Opener) {
 	page, err := s.Audit(ctx, tm.ws, l, log[0].ID, 1)
 	if err != nil || len(page) != 1 || page[0].ID != log[1].ID {
 		t.Fatalf("next page: %v %+v", err, page)
+	}
+}
+
+// Two phones racing with one transfer code: only one signs in.
+func transferCodeRace(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	code, _, err := tm.s.CreateTransferCode(ctx, tm.ws, tm.a.Member.ID, tm.a.Member.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const phones = 8
+	errs := make(chan error, phones)
+	for i := 0; i < phones; i++ {
+		go func() {
+			_, err := tm.s.JoinWithTransferCode(ctx, code, "phone")
+			errs <- err
+		}()
+	}
+	won := 0
+	for i := 0; i < phones; i++ {
+		switch err := <-errs; {
+		case err == nil:
+			won++
+		case !errors.Is(err, store.ErrBadInvite):
+			t.Fatalf("racing phone: %v", err)
+		}
+	}
+	if won != 1 {
+		t.Fatalf("%d phones signed in with one code", won)
 	}
 }

@@ -221,8 +221,11 @@ func (v *V1) members(ctx context.Context, q querier, workspaceID, id string) ([]
 	if err != nil {
 		return nil, err
 	}
-	rows, err := q.QueryContext(ctx, `SELECT id, nickname, joined_at, access_version FROM v1_members
-		WHERE workspace_id = ? AND removed_at = '' AND (? = '' OR id = ?) ORDER BY joined_at, id`, workspaceID, id, id)
+	query, args := `SELECT id, nickname, joined_at, access_version FROM v1_members WHERE workspace_id = ? AND removed_at = ''`, []any{workspaceID}
+	if id != "" {
+		query, args = query+` AND id = ?`, append(args, id)
+	}
+	rows, err := q.QueryContext(ctx, query+` ORDER BY joined_at, id`, args...)
 	if err != nil {
 		return nil, err
 	}
