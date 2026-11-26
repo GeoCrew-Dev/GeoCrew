@@ -28,6 +28,9 @@ import org.geocrew.nativelib.VectorDataset
 class Projects(private val root: File, private val journals: File) {
     private val dir = File(root, ProjectFormat.PROJECTS)
 
+    /** Where exported copies go, next to the projects. */
+    val exports: File get() = File(root, EXPORTS)
+
     /** The names of the projects, in order. */
     fun list(): List<String> =
         dir.listFiles().orEmpty().filter { it.isDirectory && gpkg(it.name).isFile }.map { it.name }.sorted()
@@ -88,6 +91,10 @@ class Projects(private val root: File, private val journals: File) {
 
     private fun gpkg(name: String) = File(File(dir, name), "$name.gpkg")
 
+    private companion object {
+        const val EXPORTS = "导出"
+    }
+
     // A copied project folder keeps the project's id; its path tells the copies'
     // journals apart, so one copy's unsaved edits never turn up in another.
     private fun pathKey(file: File): String =
@@ -128,6 +135,17 @@ class Project internal constructor(
     data class Layer(val name: String, val id: String, val template: String?)
 
     val attachments: File get() = File(folder, ProjectFormat.ATTACHMENTS)
+
+    /** The project's GeoPackage. */
+    val file: File get() = File(folder, "$name.gpkg")
+
+    /**
+     * Moves what is in the write-ahead log into the GeoPackage itself, so a copy
+     * of the file has every saved change (ADR 0004: before exporting or sharing).
+     */
+    fun checkpoint() {
+        dataset.sql("PRAGMA wal_checkpoint(TRUNCATE)")
+    }
 
     /** What editing [layer] needs: its store, and its journal in the app's own files, named by the layer's id. */
     fun target(layer: String): EditTarget {

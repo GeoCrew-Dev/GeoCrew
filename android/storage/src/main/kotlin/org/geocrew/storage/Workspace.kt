@@ -73,6 +73,20 @@ class Workspace(private val projects: Projects) {
                 },
             )
         },
+        WorkspaceAction(
+            EXPORT, "Export project", "Writes the open project's saved data to a new GeoPackage or KML file in the export folder",
+            Risk.SEND, EXPORT_PARAMS, """{"format": "kml"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            val unsaved = editing.layersBeingEdited.filter(editing::isModified)
+            if (unsaved.isNotEmpty()) return@WorkspaceAction ActionResult.Failed("unsaved", "save or discard the edits of ${unsaved.joinToString()} first")
+            val exports = Exports(projects.exports)
+            val file = when (p.getValue("format").jsonPrimitive.content) {
+                "gpkg" -> exports.gpkg(project)
+                else -> exports.kml(project)
+            }
+            ActionResult.Done(buildJsonObject { put("path", file.path) })
+        },
         WorkspaceAction(CLOSE, "Close project", "Closes the open project", Risk.VIEW, NO_PARAMS, "{}") {
             busy() ?: ActionResult.Done().also {
                 current?.close()
@@ -124,12 +138,16 @@ class Workspace(private val projects: Projects) {
         const val CLOSE = "project.close"
         const val CURRENT = "project.current"
         const val FEATURES = "layer.features"
+        const val EXPORT = "project.export"
 
         private fun schema(s: String) = Json.parseToJsonElement(s).jsonObject
 
         private val NO_PARAMS = schema("""{"type": "object", "additionalProperties": false}""")
         private val LAYER_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer"], "properties": {"layer": {"type": "string"}}}""",
+        )
+        private val EXPORT_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"enum": ["gpkg", "kml"]}}}""",
         )
         private val NAME_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string"}}}""",

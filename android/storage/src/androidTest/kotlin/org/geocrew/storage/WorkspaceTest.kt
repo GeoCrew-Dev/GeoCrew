@@ -6,6 +6,7 @@ import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -16,6 +17,7 @@ import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
+import org.geocrew.nativelib.VectorDataset
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -77,6 +79,29 @@ class WorkspaceTest {
         val feature = edited.getValue("features").jsonArray.single().jsonObject
         assertEquals(-1, feature.getValue("id").jsonPrimitive.content.toInt(), "an unsaved feature shows with its negative fid")
         assertEquals("D001", feature.getValue("properties").jsonObject.getValue("点号").jsonPrimitive.content)
+    }
+
+    @Test
+    fun exportsHoldWhatIsSaved() {
+        run(Workspace.CREATE, """{"name": "出图"}""")
+        run(Editing.START, """{"layer": "地质点"}""")
+        run(Editing.ADD, """{"layer": "地质点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点号": "D001", "岩性": "花岗岩"}}""")
+        assertEquals("unsaved", (run(Workspace.EXPORT, """{"format": "gpkg"}""") as Outcome.Failed).code)
+        run(Editing.SAVE, """{"layer": "地质点"}""")
+
+        val gpkg = File(output(run(Workspace.EXPORT, """{"format": "gpkg"}""")).getValue("path").jsonPrimitive.content)
+        assertEquals(File(root, "导出"), gpkg.parentFile)
+        VectorDataset.open(gpkg.path).use { ds ->
+            assertEquals(1, Json.parseToJsonElement(ds.features("地质点")).jsonArray.size, "the saved point is in the copy")
+            assertEquals("delete", Json.parseToJsonElement(ds.sql("PRAGMA journal_mode")).jsonArray.single().jsonObject
+                .getValue("properties").jsonObject.getValue("journal_mode").jsonPrimitive.content)
+        }
+
+        val kml = File(output(run(Workspace.EXPORT, """{"format": "kml"}""")).getValue("path").jsonPrimitive.content)
+        val text = kml.readText()
+        assertTrue(text.contains("花岗岩") && text.contains("114.3"), text)
+        assertTrue(!text.contains("geocrew_"), "GeoCrew's own tables are not exported")
+        assertIs<Outcome.Invalid>(run(Workspace.EXPORT, """{"format": "shp"}"""))
     }
 
     @Test
