@@ -48,7 +48,7 @@ class ProjectsTest {
 
     @Test
     fun aNewProjectHasTheLayoutAndTheTemplates() {
-        projects.create("测区一号", language = "zh").use { p ->
+        projects.create("测区一号", listOf(Templates.FIELD_POINT), "zh").use { p ->
             assertEquals(listOf("野外点"), p.layers.map { it.name })
             assertEquals("field-point", p.layers.single().template)
             UUID.fromString(p.id)
@@ -65,9 +65,35 @@ class ProjectsTest {
         assertEquals(JsonPrimitive("1"), version)
     }
 
+    // The user makes the layers, the first when placing the first point.
+    @Test
+    fun aNewProjectStartsEmptyAndGetsLayersWhileOpen() {
+        projects.create("空", language = "zh").use { p ->
+            assertEquals(emptyList(), p.layers)
+            val made = p.createLayer("野外点", Templates.FIELD_POINT, "zh")
+            assertEquals("POINT" to "EPSG:4490", made.geometry to made.srs)
+            assertEquals(listOf("点名", "描述"), p.target("野外点").store.fields.map { it.name })
+            // Unsaved edits in one layer carry on while another is made.
+            val target = p.target("野外点")
+            val buffer = EditBuffer(target.store, target.journal)
+            buffer.add(null)
+            p.createLayer("泉点", Templates.FIELD_POINT, "zh")
+            buffer.save()
+            assertFailsWith<IllegalArgumentException>("taken") { p.createLayer("野外点", Templates.FIELD_POINT, "zh") }
+            p.createLayer("A", Templates.FIELD_POINT, "en")
+            assertFailsWith<IllegalArgumentException>("taken, in another case") { p.createLayer("a", Templates.FIELD_POINT, "en") }
+            assertFailsWith<IllegalArgumentException>("GeoPackage's own") { p.createLayer("gpkg_contents2", Templates.FIELD_POINT, "zh") }
+            assertFailsWith<IllegalArgumentException>("spaces at an end") { p.createLayer(" 路线", Templates.FIELD_POINT, "zh") }
+        }
+        projects.open("空").use { p ->
+            assertEquals(listOf("野外点", "泉点", "A"), p.layers.map { it.name })
+            assertEquals(1, p.target("野外点").store.features().size)
+        }
+    }
+
     @Test
     fun layerAndFieldNamesFollowTheLanguage() {
-        projects.create("English").use { p ->
+        projects.create("English", listOf(Templates.FIELD_POINT)).use { p ->
             assertEquals(listOf("Field points"), p.layers.map { it.name })
             assertEquals(listOf("Name", "Description"), p.target("Field points").store.fields.map { it.name })
         }
@@ -75,7 +101,7 @@ class ProjectsTest {
 
     @Test
     fun aProjectLayerIsEditedTheQgisWay() {
-        projects.create("编辑", language = "zh").use { p ->
+        projects.create("编辑", listOf(Templates.FIELD_POINT), "zh").use { p ->
             val target = p.target("野外点")
             val buffer = EditBuffer(target.store, target.journal)
             buffer.add(
@@ -95,7 +121,7 @@ class ProjectsTest {
 
     @Test
     fun countsAreOfTheRowsThemselves() {
-        projects.create("计数", language = "zh").use { p ->
+        projects.create("计数", listOf(Templates.FIELD_POINT), "zh").use { p ->
             val target = p.target("野外点")
             EditBuffer(target.store, target.journal).apply {
                 add(null)
@@ -112,7 +138,7 @@ class ProjectsTest {
 
     @Test
     fun aCopiedProjectHasItsOwnJournal() {
-        projects.create("原件", language = "zh").use { p ->
+        projects.create("原件", listOf(Templates.FIELD_POINT), "zh").use { p ->
             val target = p.target("野外点")
             EditBuffer(target.store, target.journal).add(null) // unsaved when the app is killed
         }

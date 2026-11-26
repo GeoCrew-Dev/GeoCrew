@@ -53,8 +53,20 @@ class AppSettings(context: Context) {
         prefs.edit { putBoolean(LOCATION_ASKED, true) }
     }
 
+    /**
+     * The layer (by id) that points of project [projectId] go into without
+     * asking, as the user chose "remember"; null to ask each time. Kept on this
+     * phone only: it is the user's habit, not the project's.
+     */
+    fun placingLayer(projectId: String): String? = prefs.getString(PLACING_LAYER + projectId, null)
+
+    fun setPlacingLayer(projectId: String, layerId: String?) {
+        prefs.edit { if (layerId == null) remove(PLACING_LAYER + projectId) else putString(PLACING_LAYER + projectId, layerId) }
+    }
+
     private companion object {
         const val THEME = "theme"
+        const val PLACING_LAYER = "placing_layer:"
         const val DYNAMIC = "dynamic_color"
         const val OWN_FOLDER = "own_folder"
         const val LOCATION_ASKED = "location_asked"

@@ -49,7 +49,10 @@ class WorkspaceTest {
     @Test
     fun aFieldDayThroughActions() {
         val created = output(run(Workspace.CREATE, """{"name": "测区", "language": "zh"}"""))
-        assertEquals("野外点", created.getValue("layers").jsonArray.single().jsonObject.getValue("name").jsonPrimitive.content)
+        assertTrue(created.getValue("layers").jsonArray.isEmpty(), "a new project starts empty")
+        val made = output(run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")).getValue("layers").jsonArray.single().jsonObject
+        assertEquals(listOf("野外点", "field-point", "POINT", "EPSG:4490"), listOf("name", "template", "geometry", "srs").map { made.getValue(it).jsonPrimitive.content })
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_CREATE, """{"name": "野外点"}"""), "the name is taken")
         run(Editing.START, """{"layer": "野外点"}""")
         run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "D001"}}""")
         assertEquals(Outcome.Failed("unsaved", "save or discard the edits of 野外点 first"), run(Workspace.CLOSE))
@@ -78,6 +81,7 @@ class WorkspaceTest {
     @Test
     fun layersReadAsGeoJson() {
         run(Workspace.CREATE, """{"name": "图", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
         val empty = output(run(Workspace.FEATURES, """{"layer": "野外点"}"""))
         assertEquals("FeatureCollection", empty.getValue("type").jsonPrimitive.content)
         assertEquals(false, empty.getValue("editing").jsonPrimitive.content.toBoolean())
@@ -95,6 +99,7 @@ class WorkspaceTest {
     @Test
     fun exportsHoldWhatIsSaved() {
         run(Workspace.CREATE, """{"name": "出图", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
         run(Editing.START, """{"layer": "野外点"}""")
         run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "D001", "描述": "花岗岩露头"}}""")
         assertEquals("unsaved", (run(Workspace.EXPORT, """{"format": "gpkg"}""") as Outcome.Failed).code)
@@ -119,6 +124,7 @@ class WorkspaceTest {
     @Test
     fun usersAddTheirOwnFields() {
         run(Workspace.CREATE, """{"name": "水文", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
         run(Editing.START, """{"layer": "野外点"}""")
         run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "S001"}}""")
         val field = """{"layer": "野外点", "name": "水位埋深", "type": "real"}"""
@@ -146,6 +152,7 @@ class WorkspaceTest {
     @Test
     fun aLayerSaysItsFieldsAndCount() {
         run(Workspace.CREATE, """{"name": "信息", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
         val empty = output(run(Workspace.LAYER_INFO, """{"layer": "野外点"}"""))
         assertEquals(listOf("点名", "描述"), empty.getValue("fields").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content })
         assertEquals(0L, empty.getValue("count").jsonPrimitive.content.toLong())

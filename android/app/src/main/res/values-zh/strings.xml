@@ -38,6 +38,9 @@
     <plurals name="points_count">
         <item quantity="other">%d 个点</item>
     </plurals>
+    <plurals name="fields_count">
+        <item quantity="other">%d 个字段</item>
+    </plurals>
     <plurals name="layers_count">
         <item quantity="other">%d 个图层</item>
     </plurals>
@@ -45,10 +48,11 @@
     <string name="project_settings">工程设置</string>
     <string name="project_section">工程</string>
     <string name="project_folder">位置</string>
-    <string name="project_fields_section">图层和字段</string>
-    <string name="fields_note">点名和描述是默认字段，坐标就是点的位置。别的字段按需要自己加。</string>
+    <string name="placing_section">定点</string>
+    <string name="placing_layer">定点图层</string>
+    <string name="placing_ask">每次询问</string>
     <string name="save_first_title">先保存修改</string>
-    <string name="save_first_body">添加字段前要先保存工程里的修改，保存后这些修改就不能再撤销了。</string>
+    <string name="save_first_body">添加字段要先保存修改，保存后不能撤销。</string>
     <string name="save_and_add">保存并添加</string>
     <string name="name_taken">已经有叫这个名字的工程了</string>
     <string name="name_empty">给工程起个名字</string>
@@ -101,7 +105,17 @@
     <string name="place_hint">移动地图，让十字对准要定点的位置</string>
     <string name="place_coordinates">经度 %1$s　纬度 %2$s</string>
     <string name="place_here">在这里定点</string>
-    <string name="place_new_point">新点</string>
+    <string name="place_into">加到「%1$s」</string>
+    <string name="place_change_layer">换</string>
+    <string name="place_new_point_in">新点 · %1$s</string>
+    <string name="place_added">已加到「%1$s」</string>
+    <string name="pick_layer_title">加到哪个图层</string>
+    <string name="pick_layer_remember">记住此选项并不再提示</string>
+    <string name="layer_new">新建图层</string>
+    <string name="layer_name">图层名称</string>
+    <string name="layer_name_taken">已经有叫这个名字的图层了</string>
+    <string name="layer_default_name">野外点</string>
+    <string name="layers_none">还没有图层</string>
     <string name="map_undo">撤销</string>
     <string name="map_redo">重做</string>
     <string name="map_unsaved_short">未保存</string>
@@ -109,7 +123,7 @@
     <string name="map_set_key">去填写</string>
     <string name="attribution_tianditu">© 天地图</string>
     <string name="unsaved_title">有未保存的修改</string>
-    <string name="unsaved_body">离开前要保存吗？不保存的话，这些修改会丢掉。</string>
+    <string name="unsaved_body">离开前保存修改吗？</string>
     <string name="export_gpkg">导出 GeoPackage</string>
     <string name="export_kml">导出 KML</string>
     <string name="exported">已导出到：%1$s</string>

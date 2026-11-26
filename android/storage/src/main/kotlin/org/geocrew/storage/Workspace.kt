@@ -20,10 +20,11 @@ import org.geocrew.core.action.Stability
 import org.geocrew.core.edit.Editing
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.project.ProjectFormat
+import org.geocrew.core.project.Templates
 
 /**
  * The project the app has open, with the actions that list, create, open and
- * close projects (ADR 0010). The open project's layers are edited through
+ * close projects and make their layers (ADR 0010). The open project's layers are edited through
  * [editing]; a project closes only when none of its layers is being edited.
  */
 class Workspace(private val projects: Projects) {
@@ -158,6 +159,17 @@ class Workspace(private val projects: Projects) {
                 },
             )
         },
+        WorkspaceAction(
+            LAYER_CREATE, "Create layer",
+            "Adds a point layer to the open project, made from a template (field-point: a name and a description), its fields named in the language given",
+            Risk.EDIT, LAYER_CREATE_PARAMS, """{"name": "野外点", "language": "zh"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            val id = (p["template"] as? JsonPrimitive)?.contentOrNull ?: Templates.FIELD_POINT.id
+            val template = requireNotNull(Templates.all.firstOrNull { it.id == id }) { "there is no template $id" }
+            project.createLayer(p.name(), template, (p["language"] as? JsonPrimitive)?.contentOrNull ?: "en")
+            ActionResult.Done(about(project))
+        },
         WorkspaceAction(CLOSE, "Close project", "Closes the open project, once no layer has unsaved edits", Risk.VIEW, NO_PARAMS, "{}") {
             unsaved() ?: run {
                 val ended = stopEditing()
@@ -193,9 +205,18 @@ class Workspace(private val projects: Projects) {
 
     private fun about(project: Project): JsonObject = buildJsonObject {
         put("name", project.name)
+        put("id", project.id)
         put("folder", project.folder.path)
         putJsonArray("layers") {
-            for (layer in project.layers) addJsonObject { put("name", layer.name); put("template", layer.template) }
+            for (layer in project.layers) {
+                addJsonObject {
+                    put("name", layer.name)
+                    put("id", layer.id)
+                    put("template", layer.template)
+                    put("geometry", layer.geometry)
+                    put("srs", layer.srs)
+                }
+            }
         }
     }
 
@@ -223,6 +244,7 @@ class Workspace(private val projects: Projects) {
         const val EXPORT = "project.export"
         const val FIELD_ADD = "layer.field.add"
         const val LAYER_INFO = "layer.info"
+        const val LAYER_CREATE = "layer.create"
 
         /** The registry scope of a project's undo history: one for all its layers. */
         const val PROJECT_SCOPE = "project"
@@ -247,6 +269,10 @@ class Workspace(private val projects: Projects) {
         )
         private val EXPORT_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"enum": ["gpkg", "kml"]}}}""",
+        )
+        private val LAYER_CREATE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["name"],
+                "properties": {"name": {"type": "string"}, "template": {"enum": ["field-point"]}, "language": {"enum": ["zh", "en"]}}}""",
         )
         private val NAME_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string"}}}""",
