@@ -18,7 +18,6 @@ import org.geocrew.core.edit.FileJournal
 import org.geocrew.core.project.LayerTemplate
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.core.project.ProjectFormat.quote
-import org.geocrew.core.project.Templates
 import org.geocrew.nativelib.VectorDataset
 
 /**
@@ -64,10 +63,12 @@ class Projects(private val root: File, private val journals: File) {
     }.getOrNull()
 
     /**
-     * Makes project [name] with a layer for each of [templates], its layer and
-     * field names in [language] ("zh" or "en"; English for any other), and opens it.
+     * Makes project [name] and opens it. It starts empty: the user makes its
+     * layers, the first when placing the first point. Each of [templates] gives
+     * it a layer, its layer and field names in [language] ("zh" or "en";
+     * English for any other).
      */
-    fun create(name: String, templates: List<LayerTemplate> = Templates.all, language: String = "en"): Project {
+    fun create(name: String, templates: List<LayerTemplate> = emptyList(), language: String = "en"): Project {
         ProjectFormat.nameProblem(name)?.let { throw IllegalArgumentException(it.message) }
         val folder = File(dir, name)
         require(!folder.exists()) { "there is already a project called $name" }
@@ -84,7 +85,7 @@ class Projects(private val root: File, private val journals: File) {
                     "created" to Instant.now().toString(),
                 )
                 for ((key, value) in about) ds.sql("INSERT INTO ${ProjectFormat.PROJECT_TABLE} VALUES (${quote(key)}, ${quote(value)})")
-                for (template in templates) addLayer(ds, template, language)
+                for (template in templates) addLayer(ds, template.name(language), template, language)
             }
         } catch (e: Exception) {
             folder.deleteRecursively() // nothing half-made stays behind
@@ -108,12 +109,8 @@ class Projects(private val root: File, private val journals: File) {
             val version = about["format_version"]?.toIntOrNull()
             check(version != null) { "$file is not a GeoCrew project" }
             check(version <= ProjectFormat.VERSION) { "the project was saved by a newer GeoCrew (format $version)" }
-            val present = ds.layers.toSet()
-            val layers = rows(ds, "SELECT table_name, id, template FROM ${ProjectFormat.LAYERS_TABLE} ORDER BY rowid")
-                .map { Project.Layer(it.getValue("table_name")!!, it.getValue("id")!!, it["template"]) }
-                .filter { it.name in present }
             val id = about.getValue("id")!!
-            return Project(name, File(dir, name), ds, id, layers, File(journals, "$id-${pathKey(file)}"))
+            return Project(name, File(dir, name), ds, id, readLayers(ds), File(journals, "$id-${pathKey(file)}"))
         } catch (e: Exception) {
             ds.close()
             throw e
@@ -137,25 +134,39 @@ class Projects(private val root: File, private val journals: File) {
     private fun pathKey(file: File): String =
         MessageDigest.getInstance("SHA-256").digest(file.canonicalPath.toByteArray()).take(6).joinToString("") { "%02x".format(it) }
 
-    private fun addLayer(ds: VectorDataset, template: LayerTemplate, language: String) {
-        val fields = buildJsonArray {
-            for (f in template.fields) add(buildJsonObject { put("name", f.name(language)); put("type", f.type.name.lowercase()) })
-        }
-        val layer = template.name(language)
-        ds.createLayer(layer, template.geometryType, template.crs, fields.toString())
-        val table = quote(layer)
-        ds.sql("INSERT INTO ${ProjectFormat.LAYERS_TABLE} VALUES ($table, ${quote(UUID.randomUUID().toString())}, ${quote(template.id)})")
-        for (f in template.fields) {
-            ds.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES ($table, ${quote(f.name(language))}, ${quote(UUID.randomUUID().toString())})")
-        }
-    }
+}
 
-    // The rows of a query, as column name to text.
-    private fun rows(ds: VectorDataset, sql: String): List<Map<String, String?>> =
-        Json.parseToJsonElement(ds.sql(sql)).jsonArray.map { row ->
-            row.jsonObject.getValue("properties").jsonObject.mapValues { (_, v) -> (v as? JsonPrimitive)?.contentOrNull }
+// Makes layer [layer] from [template], its fields named in [language], with an id for it and each field.
+private fun addLayer(ds: VectorDataset, layer: String, template: LayerTemplate, language: String) {
+    val fields = buildJsonArray {
+        for (f in template.fields) add(buildJsonObject { put("name", f.name(language)); put("type", f.type.name.lowercase()) })
+    }
+    ds.createLayer(layer, template.geometryType, template.crs, fields.toString())
+    val table = quote(layer)
+    ds.sql("INSERT INTO ${ProjectFormat.LAYERS_TABLE} VALUES ($table, ${quote(UUID.randomUUID().toString())}, ${quote(template.id)})")
+    for (f in template.fields) {
+        ds.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES ($table, ${quote(f.name(language))}, ${quote(UUID.randomUUID().toString())})")
+    }
+}
+
+// The project's layers, in the order they were made, with their geometry type and CRS.
+private fun readLayers(ds: VectorDataset): List<Project.Layer> {
+    val present = ds.layers.toSet()
+    val geometry = rows(ds, "SELECT table_name, geometry_type_name FROM gpkg_geometry_columns").associate { it["table_name"] to it["geometry_type_name"] }
+    return rows(ds, "SELECT table_name, id, template FROM ${ProjectFormat.LAYERS_TABLE} ORDER BY rowid")
+        .filter { it["table_name"] in present }
+        .map {
+            val name = it.getValue("table_name")!!
+            val srs = (Json.parseToJsonElement(ds.layerInfo(name)).jsonObject["srs"] as? JsonPrimitive)?.contentOrNull
+            Project.Layer(name, it.getValue("id")!!, it["template"], geometry[name], srs)
         }
 }
+
+// The rows of a query, as column name to text.
+private fun rows(ds: VectorDataset, sql: String): List<Map<String, String?>> =
+    Json.parseToJsonElement(ds.sql(sql)).jsonArray.map { row ->
+        row.jsonObject.getValue("properties").jsonObject.mapValues { (_, v) -> (v as? JsonPrimitive)?.contentOrNull }
+    }
 
 /**
  * How many features [layer] has, from its rows. The count a GeoPackage keeps
@@ -176,11 +187,18 @@ class Project internal constructor(
     val folder: File,
     private val dataset: VectorDataset,
     val id: String,
-    val layers: List<Layer>,
+    layers: List<Layer>,
     private val journals: File,
 ) : AutoCloseable {
-    /** A layer of the project: its table [name], stable [id] and the template it was made from. */
-    data class Layer(val name: String, val id: String, val template: String?)
+    /**
+     * A layer of the project: its table [name], stable [id], the template it was
+     * made from, its [geometry] type (such as POINT) and its CRS (such as EPSG:4490).
+     */
+    data class Layer(val name: String, val id: String, val template: String?, val geometry: String?, val srs: String?)
+
+    /** The layers, in the order they were made. */
+    var layers: List<Layer> = layers
+        private set
 
     val attachments: File get() = File(folder, ProjectFormat.ATTACHMENTS)
 
@@ -217,6 +235,21 @@ class Project internal constructor(
         dataset.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES (${quote(layer)}, ${quote(name)}, ${quote(UUID.randomUUID().toString())})")
     }
 
+    /**
+     * Makes layer [name] from [template], its fields named in [language], in the
+     * open file: layers being edited carry on, unsaved edits and all.
+     */
+    fun createLayer(name: String, template: LayerTemplate, language: String): Layer {
+        require(name.isNotBlank() && name == name.trim() && name.length <= ProjectFormat.MAX_NAME) {
+            "a layer name has 1 to ${ProjectFormat.MAX_NAME} characters, without spaces at either end"
+        }
+        require(RESERVED_PREFIXES.none { name.startsWith(it, ignoreCase = true) }) { "a layer name cannot start with ${RESERVED_PREFIXES.joinToString()}" }
+        require(dataset.layers.none { it.equals(name, ignoreCase = true) }) { "the project already has a layer $name" }
+        addLayer(dataset, name, template, language)
+        layers = readLayers(dataset)
+        return layers.single { it.name == name }
+    }
+
     /** How many features [layer] has in its file. */
     fun count(layer: String): Long = rowCount(dataset, layer)
 
@@ -228,4 +261,9 @@ class Project internal constructor(
     }
 
     override fun close() = dataset.close()
+
+    private companion object {
+        // Tables of GeoPackage, its spatial indexes, SQLite and GeoCrew itself.
+        val RESERVED_PREFIXES = listOf("gpkg_", "rtree_", "sqlite_", "geocrew_")
+    }
 }

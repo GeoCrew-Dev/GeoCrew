@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
@@ -128,31 +129,47 @@ import org.maplibre.android.style.sources.GeoJsonSource
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: () -> Unit, onProjectSettings: () -> Unit) {
+fun MapScreen(
+    graph: AppGraph,
+    project: String,
+    onBack: () -> Unit,
+    onSettings: () -> Unit,
+    onProjectSettings: () -> Unit,
+    onLayers: () -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current.density
     val mapView = rememberMapView()
     val key = remember { TiandituKey.read(context) }
+    var projectId by remember { mutableStateOf<String?>(null) }
     var layers by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
-    var layer by remember { mutableStateOf<String?>(null) }
-    var collection by remember { mutableStateOf<JsonObject?>(null) }
+    // Each layer as layer.features gives it, by name.
+    var collections by remember { mutableStateOf<Map<String, JsonObject>>(emptyMap()) }
     var styleLoads by remember { mutableIntStateOf(0) }
     var history by remember { mutableStateOf(false to false) }
     var placing by remember { mutableStateOf(false) }
+    // The layer the point being placed goes into.
+    var target by remember { mutableStateOf<String?>(null) }
+    var picking by remember { mutableStateOf(false) }
+    var naming by remember { mutableStateOf(false) }
+    var rememberNew by remember { mutableStateOf(false) }
+    var placeAfterNaming by remember { mutableStateOf(false) }
     var center by remember { mutableStateOf<LatLng?>(null) }
     var drawn by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<Draft?>(null) }
-    var selected by remember { mutableStateOf<Long?>(null) }
+    var selected by remember { mutableStateOf<Pair<String, Long>?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
     var leaving by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
-    var layerSheet by remember { mutableStateOf(false) }
     var ai by remember { mutableStateOf(false) }
     var exported by remember { mutableStateOf<File?>(null) }
     val snackbar = remember { SnackbarHostState() }
-    val modified = collection.flag("projectModified")
+    val modified = collections.values.any { it.flag("projectModified") }
+    val points = pointLayers(layers) { name -> (collections[name]?.get("features") as? JsonArray)?.size ?: 0 }
     val savedText = stringResource(R.string.saved)
+    val addedText = stringResource(R.string.place_added)
+    val suggestedLayer = stringResource(R.string.layer_default_name)
     val texts = FailureTexts(
         unsaved = stringResource(R.string.failure_unsaved),
         failed = stringResource(R.string.action_failed),
@@ -171,12 +188,24 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         }
     }
 
-    // The point layer as it is now, and what the project's undo history holds.
+    // The layers as they are now, and what the project's undo history holds.
     suspend fun reload() {
-        val name = layer ?: return
-        val loaded = graph.invoke(Workspace.FEATURES, buildJsonObject { put("layer", name) })
-        if (loaded is Outcome.Done) collection = loaded.output.jsonObject else failure = texts.of(loaded)
+        val loaded = LinkedHashMap<String, JsonObject>()
+        for (name in layers.mapNotNull { it.name() }) {
+            when (val read = graph.invoke(Workspace.FEATURES, buildJsonObject { put("layer", name) })) {
+                is Outcome.Done -> loaded[name] = read.output.jsonObject
+                else -> failure = texts.of(read)
+            }
+        }
+        collections = loaded
         history = graph.registry.canUndo(Workspace.PROJECT_SCOPE) to graph.registry.canRedo(Workspace.PROJECT_SCOPE)
+    }
+
+    // The project as project.current describes it: its id and layers.
+    suspend fun show(about: JsonObject) {
+        projectId = (about["id"] as? JsonPrimitive)?.contentOrNull
+        layers = about["layers"]?.jsonArray.orEmpty().map { it.jsonObject }
+        reload()
     }
 
     // Runs an action, then shows what it did; a failure is said in a dialog.
@@ -189,14 +218,17 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
 
     // A change starts editing its layer first, the QGIS way.
     suspend fun startEditing(name: String): Boolean =
-        collection.flag("editing") || act(Editing.START, buildJsonObject { put("layer", name) })
+        collections[name].flag("editing") || act(Editing.START, buildJsonObject { put("layer", name) })
 
     LaunchedEffect(project) {
         when (val opened = graph.open(project)) {
             is Outcome.Done -> {
-                layers = opened.output.jsonObject["layers"]?.jsonArray.orEmpty().map { it.jsonObject }
-                layer = pointLayer(layers)
-                reload()
+                show(opened.output.jsonObject)
+                // Every layer opens for editing, so edits left unsaved when the app was
+                // stopped come back at once: they show, and new points are named after them.
+                val closed = layers.mapNotNull { it.name() }.filterNot { collections[it].flag("editing") }
+                for (name in closed) graph.invoke(Editing.START, buildJsonObject { put("layer", name) })
+                if (closed.isNotEmpty()) reload()
             }
             else -> failure = texts.of(opened)
         }
@@ -213,8 +245,11 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
             val at = map.projection.toScreenLocation(point)
             val reach = 24 * density
             val hit = map.queryRenderedFeatures(RectF(at.x - reach, at.y - reach, at.x + reach, at.y + reach), POINT_SOURCE).firstOrNull()
-            hit?.id()?.toLongOrNull()?.let { selected = it }
-            hit != null
+            // Ids are "layer index/fid": points of every layer share the source.
+            val (index, fid) = hit?.id()?.split("/")?.takeIf { it.size == 2 } ?: return@addOnMapClickListener false
+            val name = layers.getOrNull(index.toIntOrNull() ?: -1)?.name()
+            if (name != null) fid.toLongOrNull()?.let { selected = name to it }
+            true
         }
         // A picture for the home screen only once the map has been drawn in full.
         mapView.addOnDidBecomeIdleListener { drawn = true }
@@ -225,7 +260,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
             style.addLayer(
                 CircleLayer(POINT_SOURCE, POINT_SOURCE).withProperties(
                     PropertyFactory.circleRadius(6f),
-                    PropertyFactory.circleColor("#e53935"),
+                    PropertyFactory.circleColor(Expression.get(COLOR)),
                     PropertyFactory.circleStrokeColor("#ffffff"),
                     PropertyFactory.circleStrokeWidth(2f),
                 ),
@@ -259,13 +294,23 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
     }
 
     var fitted by remember { mutableStateOf(graph.cameras.containsKey(project)) }
-    LaunchedEffect(styleLoads, collection) {
-        val features = collection?.get("features") as? JsonArray ?: return@LaunchedEffect
+    LaunchedEffect(styleLoads, collections) {
+        if (collections.isEmpty()) return@LaunchedEffect
         val map = mapView.awaitMap()
         val style = map.style ?: return@LaunchedEffect
+        // Every point layer in one source, each point with its layer's colour and an id that names its layer.
+        val features = JsonArray(
+            layers.flatMapIndexed { index, l ->
+                val collection = collections[l.name()] ?: return@flatMapIndexed emptyList()
+                if ((l["geometry"] as? JsonPrimitive)?.contentOrNull != "POINT") return@flatMapIndexed emptyList()
+                val own = collection["features"] as? JsonArray ?: return@flatMapIndexed emptyList()
+                val labelled = nameField(collection)?.let { MapLabels.label(own, it, style, density) } ?: own
+                labelled.map { tagged(it.jsonObject, index, layerColorHex(index)) }
+            },
+        )
         val geoJson = buildJsonObject {
             put("type", "FeatureCollection")
-            put("features", nameField(collection)?.let { MapLabels.label(features, it, style, density) } ?: features)
+            put("features", features)
         }
         style.getSourceAs<GeoJsonSource>(POINT_SOURCE)?.setGeoJson(geoJson.toString())
         // The first visit shows the points there are.
@@ -275,40 +320,74 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         }
     }
 
-    fun startPlacing() {
+    fun startPlacing(layer: String) {
+        target = layer
         placing = true
         scope.launch { center = mapView.awaitMap().cameraPosition.target?.wrap() }
     }
 
+    // Placing asks which layer the point goes into: not when the user chose to
+    // remember one that is still there; and a project with no point layer makes one first.
+    fun requestPlace() {
+        val id = projectId ?: return
+        val remembered = graph.settings.placingLayer(id)
+        val kept = points.firstOrNull { it.id == remembered }
+        if (remembered != null && kept == null) graph.settings.setPlacingLayer(id, null) // the layer has gone: ask again
+        when {
+            kept != null -> startPlacing(kept.name)
+            points.isEmpty() -> {
+                rememberNew = false
+                placeAfterNaming = true
+                naming = true
+            }
+            else -> picking = true
+        }
+    }
+
+    fun createLayer(name: String) = once {
+        val params = buildJsonObject { put("name", name); put("language", AppLanguage.speaking(context)) }
+        when (val made = graph.invoke(Workspace.LAYER_CREATE, params)) {
+            is Outcome.Done -> {
+                show(made.output.jsonObject)
+                val id = made.output.jsonObject["layers"]?.jsonArray?.map { it.jsonObject }?.firstOrNull { it.name() == name }
+                    ?.let { (it["id"] as? JsonPrimitive)?.contentOrNull }
+                if (rememberNew && id != null) projectId?.let { graph.settings.setPlacingLayer(it, id) }
+                if (placeAfterNaming) startPlacing(name)
+            }
+            else -> failure = texts.of(made)
+        }
+    }
+
     // The new point's form comes first: its save adds the point, its cancel leaves
-    // none, the QGIS way. The point is named after the last, D001 and on.
+    // none, the QGIS way. The point is named after the last in its layer, D001 and on.
     fun place() = scope.launch {
+        val layer = target ?: return@launch
         val at = mapView.awaitMap().cameraPosition.target?.wrap() ?: return@launch
         placing = false
+        val collection = collections[layer]
         val field = nameField(collection)
         val names = collection?.get("features")?.jsonArray.orEmpty().map { f ->
             field?.let { (((f as? JsonObject)?.get("properties") as? JsonObject)?.get(it) as? JsonPrimitive)?.contentOrNull }
         }
         val values = if (field == null) emptyMap() else mapOf(field to JsonPrimitive(PointNumbers.next(names)))
-        draft = Draft(round7(at.longitude), round7(at.latitude), JsonObject(values))
+        draft = Draft(layer, round7(at.longitude), round7(at.latitude), JsonObject(values))
     }
 
-    fun add(values: JsonObject, at: Pair<Double, Double>) = once {
-        val name = layer ?: return@once
-        if (!startEditing(name)) return@once
-        act(Editing.ADD, buildJsonObject { put("layer", name); put("geometry", point(at)); put("properties", values) })
+    fun add(layer: String, values: JsonObject, at: Pair<Double, Double>) = once {
+        if (!startEditing(layer)) return@once
+        if (act(Editing.ADD, buildJsonObject { put("layer", layer); put("geometry", point(at)); put("properties", values) })) {
+            scope.launch { snackbar.showSnackbar(addedText.format(layer)) }
+        }
     }
 
-    fun change(fid: Long, values: JsonObject, at: Pair<Double, Double>?) = once {
-        val name = layer ?: return@once
-        if (!startEditing(name)) return@once
-        if (at != null && !act(Editing.GEOMETRY, buildJsonObject { put("layer", name); put("fid", fid); put("geometry", point(at)) })) return@once
-        if (values.isNotEmpty()) act(Editing.VALUES, buildJsonObject { put("layer", name); put("fid", fid); put("values", values) })
+    fun change(layer: String, fid: Long, values: JsonObject, at: Pair<Double, Double>?) = once {
+        if (!startEditing(layer)) return@once
+        if (at != null && !act(Editing.GEOMETRY, buildJsonObject { put("layer", layer); put("fid", fid); put("geometry", point(at)) })) return@once
+        if (values.isNotEmpty()) act(Editing.VALUES, buildJsonObject { put("layer", layer); put("fid", fid); put("values", values) })
     }
 
-    fun delete(fid: Long) = once {
-        val name = layer ?: return@once
-        if (startEditing(name)) act(Editing.DELETE, buildJsonObject { put("layer", name); put("fid", fid) })
+    fun delete(layer: String, fid: Long) = once {
+        if (startEditing(layer)) act(Editing.DELETE, buildJsonObject { put("layer", layer); put("fid", fid) })
     }
 
     fun save() = once {
@@ -380,7 +459,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
                 }
                 if (placing) {
                     Spacer(Modifier.height(8.dp))
-                    PlacingHint(center = { center })
+                    PlacingHint(layer = target.orEmpty(), center = { center }, onChangeLayer = { picking = true })
                 } else if (key == null) {
                     Spacer(Modifier.height(8.dp))
                     NoKey(onSettings)
@@ -389,7 +468,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
 
             Column(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 val projectScope = buildJsonObject { put("scope", Workspace.PROJECT_SCOPE) }
-                RoundButton(Icons.Rounded.Layers, stringResource(R.string.map_layers), onClick = { layerSheet = true })
+                RoundButton(Icons.Rounded.Layers, stringResource(R.string.map_layers), onClick = onLayers)
                 RoundButton(
                     Icons.AutoMirrored.Rounded.Undo, stringResource(R.string.map_undo),
                     onClick = { once { act(ActionRegistry.UNDO, projectScope) } }, enabled = history.first,
@@ -425,9 +504,9 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
                         size = 56.dp, solid = true, container = MaterialTheme.colorScheme.surfaceContainerHighest,
                     )
                     RoundButton(
-                        Icons.Rounded.AddLocationAlt, stringResource(R.string.map_place), onClick = ::startPlacing,
+                        Icons.Rounded.AddLocationAlt, stringResource(R.string.map_place), onClick = ::requestPlace,
                         size = 72.dp, solid = true, container = MaterialTheme.colorScheme.primary, content = MaterialTheme.colorScheme.onPrimary,
-                        enabled = layer != null,
+                        enabled = projectId != null,
                     )
                     RoundButton(
                         Icons.Rounded.AutoAwesome, stringResource(R.string.map_ai), onClick = { ai = true },
@@ -452,7 +531,7 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
         ModalBottomSheet(onDismissRequest = { menu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(project, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-                SheetItem(Icons.Rounded.Layers, stringResource(R.string.map_layers)) { menu = false; layerSheet = true }
+                SheetItem(Icons.Rounded.Layers, stringResource(R.string.map_layers)) { menu = false; onLayers() }
                 SheetItem(Icons.Rounded.Tune, stringResource(R.string.project_settings)) { menu = false; onProjectSettings() }
                 SheetItem(Icons.Rounded.SaveAlt, stringResource(R.string.export_gpkg)) { menu = false; export("gpkg") }
                 SheetItem(Icons.Rounded.Public, stringResource(R.string.export_kml)) { menu = false; export("kml") }
@@ -461,53 +540,52 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
             }
         }
     }
-    if (layerSheet) {
-        // How many features each layer has, as edited.
-        val counts by produceState(emptyMap<String, Int>(), layers) {
-            value = layers.mapNotNull { l ->
-                val name = l.name() ?: return@mapNotNull null
-                val info = graph.invoke(Workspace.LAYER_INFO, buildJsonObject { put("layer", name) }) as? Outcome.Done
-                info?.output?.jsonObject?.get("count")?.jsonPrimitive?.longOrNull?.let { name to it.toInt() }
-            }.toMap()
-        }
-        // Fully open at once: a half-open sheet dragged open ignored the back gesture afterwards.
-        ModalBottomSheet(onDismissRequest = { layerSheet = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    stringResource(R.string.map_layers),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                )
-                for (l in layers) {
-                    val name = l.name().orEmpty()
-                    ListItem(
-                        headlineContent = { Text(name) },
-                        supportingContent = counts[name]?.let { { Text(pluralStringResource(R.plurals.points_count, it, it)) } },
-                        leadingContent = { Icon(Icons.Rounded.Place, null, tint = Color(0xFFE53935)) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-        }
+    if (picking) {
+        LayerPicker(
+            layers = points,
+            onPick = { layer, remember ->
+                picking = false
+                if (remember) projectId?.let { graph.settings.setPlacingLayer(it, layer.id) }
+                startPlacing(layer.name)
+            },
+            onNew = { remember ->
+                picking = false
+                rememberNew = remember
+                placeAfterNaming = true
+                naming = true
+            },
+            onDismiss = { picking = false },
+        )
+    }
+    if (naming) {
+        NewLayerDialog(
+            existing = layers.mapNotNull { it.name() },
+            suggested = suggestedLayer,
+            onDismiss = { naming = false },
+            onCreate = { name ->
+                naming = false
+                createLayer(name)
+            },
+        )
     }
     draft?.let { d ->
         FeatureForm(
-            title = stringResource(R.string.place_new_point),
-            fields = formFields(collection),
+            title = stringResource(R.string.place_new_point_in, d.layer),
+            fields = formFields(collections[d.layer]),
             properties = d.values,
             coordinates = d.longitude to d.latitude,
             isNew = true,
             onDismiss = { draft = null },
             onSave = { values, at ->
                 draft = null
-                add(values, at ?: (d.longitude to d.latitude))
+                add(d.layer, values, at ?: (d.longitude to d.latitude))
             },
             onDelete = null,
         )
     }
-    selected?.let { fid ->
+    selected?.let { (layer, fid) ->
         // A feature that has gone (an undone addition, say) shows no form.
+        val collection = collections[layer]
         val feature = collection?.get("features")?.jsonArray?.map { it.jsonObject }
             ?.firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() == fid }
         if (feature != null) {
@@ -522,11 +600,11 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
                 onDismiss = { selected = null },
                 onSave = { values, at ->
                     selected = null
-                    if (values.isNotEmpty() || at != null) change(fid, values, at)
+                    if (values.isNotEmpty() || at != null) change(layer, fid, values, at)
                 },
                 onDelete = {
                     selected = null
-                    delete(fid)
+                    delete(layer, fid)
                 },
             )
         }
@@ -586,8 +664,18 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
     }
 }
 
-/** A point about to be added: where it goes and its first values. The form's save adds it. */
-private data class Draft(val longitude: Double, val latitude: Double, val values: JsonObject)
+/** A point about to be added: its layer, where it goes and its first values. The form's save adds it. */
+private data class Draft(val layer: String, val longitude: Double, val latitude: Double, val values: JsonObject)
+
+// Feature properties the map reads: the colour of the point's layer.
+private const val COLOR = "_color"
+
+// A feature for the shared source: an id that names its layer, and its layer's colour.
+private fun tagged(feature: JsonObject, layer: Int, color: String): JsonObject {
+    val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
+    val fid = (feature["id"] as? JsonPrimitive)?.contentOrNull
+    return JsonObject(feature + ("id" to JsonPrimitive("$layer/$fid")) + ("properties" to JsonObject(properties + (COLOR to JsonPrimitive(color)))))
+}
 
 /** The project's name, and whether it has edits to save; fixed and opaque. */
 @Composable
@@ -616,7 +704,7 @@ private fun Title(project: String, modified: Boolean) {
 
 /** What to do while placing a point, and where the crosshair is. */
 @Composable
-private fun PlacingHint(center: () -> LatLng?) {
+private fun PlacingHint(layer: String, center: () -> LatLng?, onChangeLayer: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -624,10 +712,12 @@ private fun PlacingHint(center: () -> LatLng?) {
         shadowElevation = 3.dp,
         modifier = Modifier.widthIn(max = 560.dp),
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.OpenWith, null)
             Spacer(Modifier.width(12.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
+                // Which layer the point goes into, so it does not land in the wrong one.
+                Text(stringResource(R.string.place_into, layer), style = MaterialTheme.typography.titleSmall)
                 Text(stringResource(R.string.place_hint), style = MaterialTheme.typography.bodyMedium)
                 center()?.let {
                     Text(
@@ -637,6 +727,7 @@ private fun PlacingHint(center: () -> LatLng?) {
                     )
                 }
             }
+            TextButton(onClick = onChangeLayer) { Text(stringResource(R.string.place_change_layer)) }
         }
     }
 }

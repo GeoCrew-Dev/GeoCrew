@@ -48,11 +48,13 @@ private sealed interface Screen {
     data object About : Screen { override val key = "about" }
     data class Project(val name: String) : Screen { override val key = "project:$name" }
     data class ProjectSettings(val name: String) : Screen { override val key = "project-settings:$name" }
+    data class Layers(val name: String) : Screen { override val key = "project-layers:$name" }
 
     companion object {
         fun of(key: String): Screen = when {
             key.startsWith("project:") -> Project(key.removePrefix("project:"))
             key.startsWith("project-settings:") -> ProjectSettings(key.removePrefix("project-settings:"))
+            key.startsWith("project-layers:") -> Layers(key.removePrefix("project-layers:"))
             key == Permissions.key -> Permissions
             key == Settings.key -> Settings
             key == About.key -> About
@@ -102,8 +104,10 @@ private fun App(graph: AppGraph, resumed: Int) {
                 graph, screen.name, onBack = ::pop,
                 onSettings = { push(Screen.Settings) },
                 onProjectSettings = { push(Screen.ProjectSettings(screen.name)) },
+                onLayers = { push(Screen.Layers(screen.name)) },
             )
             is Screen.ProjectSettings -> ProjectSettingsScreen(graph, screen.name, onBack = ::pop)
+            is Screen.Layers -> LayersScreen(graph, screen.name, onBack = ::pop)
         }
     }
 }

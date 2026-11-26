@@ -77,14 +77,6 @@ internal fun SheetItem(icon: ImageVector, label: String, onClick: () -> Unit) {
     )
 }
 
-/** The layer points go into: the one made from a point template, else the first. */
-internal fun pointLayer(layers: List<JsonObject>): String? {
-    val named = layers.map { (it["name"] as? JsonPrimitive)?.contentOrNull to (it["template"] as? JsonPrimitive)?.contentOrNull }
-    return (named.firstOrNull { it.second in POINT_TEMPLATES } ?: named.firstOrNull())?.first
-}
-
-private val POINT_TEMPLATES = setOf("field-point", "geo-point")
-
 internal fun fieldNames(collection: JsonObject?): List<String> =
     collection?.get("fields")?.jsonArray.orEmpty().mapNotNull { (it.jsonObject["name"] as? JsonPrimitive)?.contentOrNull }
 
