@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">同勘</string>
     <string name="skeleton_status">新版客户端正在搭建中</string>
+    <string name="native_versions">原生库：%1$s</string>
 </resources>

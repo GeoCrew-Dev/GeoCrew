@@ -45,6 +45,8 @@
 
 已采纳（2026-11-26）。
 
+2026-11-26 补充：负责人定了 GeoCrew-Native 先不发布，等稳定了统一发。客户端用 GeoCrew-Native CI 产出的 AAR：`android/native.properties` 写明用哪一次 CI 运行和 AAR 的 SHA-256，`android/scripts/fetch-native.sh` 下载并核对。
+
 ## 相关
 
 - [ADR 0002](0002-android-baseline.md)
