@@ -46,11 +46,6 @@ object MapStyles {
         IMAGERY("img", "cia", 18),
         VECTOR("vec", "cva", 18),
         TERRAIN("ter", "cta", 14),
-        ;
-
-        companion object {
-            fun of(id: String?): Tianditu = entries.firstOrNull { it.base == id } ?: IMAGERY
-        }
     }
 
     /** Every Tianditu map with its labels, all hidden: the map shows the chosen one (layers base-img, labels-img, ...). */
