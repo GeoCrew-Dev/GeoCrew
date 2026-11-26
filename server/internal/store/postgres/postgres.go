@@ -259,4 +259,29 @@ var migrations = []string{
 		detail       TEXT NOT NULL,
 		PRIMARY KEY (workspace_id, id)
 	);`,
+	// Protocol v1: shared layers (schema and merged properties) and their per-role overrides.
+	`CREATE TABLE v1_layers (
+		workspace_id   TEXT NOT NULL REFERENCES v1_workspaces(id),
+		id             TEXT NOT NULL,
+		geometry_type  TEXT NOT NULL,
+		crs            TEXT NOT NULL,
+		fields         TEXT NOT NULL,
+		retired        TEXT NOT NULL,
+		schema_version BIGINT NOT NULL,
+		props          TEXT NOT NULL,
+		deleted        TEXT NOT NULL DEFAULT '',
+		created_by     TEXT NOT NULL,
+		seq            BIGINT NOT NULL,
+		PRIMARY KEY (workspace_id, id)
+	);
+	CREATE INDEX v1_layers_seq ON v1_layers(workspace_id, seq);
+	CREATE TABLE v1_layer_overrides (
+		workspace_id TEXT NOT NULL,
+		layer_id     TEXT NOT NULL,
+		role_id      TEXT NOT NULL,
+		permissions  TEXT NOT NULL,
+		PRIMARY KEY (workspace_id, layer_id, role_id),
+		FOREIGN KEY (workspace_id, layer_id) REFERENCES v1_layers(workspace_id, id),
+		FOREIGN KEY (workspace_id, role_id) REFERENCES v1_roles(workspace_id, id)
+	);`,
 }

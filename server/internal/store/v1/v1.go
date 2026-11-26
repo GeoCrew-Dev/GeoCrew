@@ -15,6 +15,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/merge"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/perm"
 )
 
@@ -83,6 +84,71 @@ type RoleUpdate struct {
 	Permissions map[string]perm.Level
 }
 
+// Geometry types a layer can have (protocol 7.1); None is a table without geometry.
+var GeometryTypes = map[string]bool{
+	"Point": true, "LineString": true, "Polygon": true,
+	"MultiPoint": true, "MultiLineString": true, "MultiPolygon": true, "None": true,
+}
+
+// Field types (protocol 7.2).
+var FieldTypes = map[string]bool{
+	"string": true, "integer": true, "real": true, "boolean": true, "date": true, "datetime": true, "json": true,
+}
+
+// FieldDef defines one field of a layer (protocol 7.2). Options, when set,
+// is a JSON array of the values a form offers.
+type FieldDef struct {
+	ID      string          `json:"id"`
+	Name    string          `json:"name"`
+	Type    string          `json:"type"`
+	Options json.RawMessage `json:"options,omitempty"`
+}
+
+// Layer properties merged field by field like a row's (protocol 7.1).
+const (
+	PropName  = "name"
+	PropStyle = "style"
+	PropForm  = "form"
+	PropOrder = "order"
+)
+
+// Layer is a shared layer: its schema, changed online only, and its
+// properties, merged like a row's fields. Seq is the workspace sequence
+// number of its last change.
+type Layer struct {
+	ID            string
+	GeometryType  string
+	CRS           string
+	Fields        []FieldDef
+	SchemaVersion int64
+	Props         map[string]merge.Field
+	Deleted       *merge.Field // value true or false; nil if never deleted
+	CreatedBy     string
+	Seq           int64
+}
+
+// LayerInput creates a layer (protocol 5.6). ID is the client's UUID.
+type LayerInput struct {
+	ID           string
+	Name         string
+	GeometryType string
+	CRS          string
+	Fields       []FieldDef
+	Style        json.RawMessage
+	Form         json.RawMessage
+	Order        *float64
+}
+
+// SchemaOp is one step of a schema change (protocol 7.3): add_field (Field),
+// rename_field (ID, Name), set_options (ID, Options) or delete_field (ID).
+type SchemaOp struct {
+	Op      string
+	Field   *FieldDef
+	ID      string
+	Name    string
+	Options json.RawMessage
+}
+
 // AuditEntry is one line of the audit log (protocol 5.7). Target is the
 // member, device or role acted on.
 type AuditEntry struct {
@@ -105,7 +171,8 @@ const (
 	AuditCreateRole     = "create_role"
 	AuditUpdateRole     = "update_role"
 	AuditDeleteRole     = "delete_role"
-	AuditSetRoles       = "set_roles" // Target is the member
+	AuditSetRoles       = "set_roles"    // Target is the member
+	AuditSetOverride    = "set_override" // Target is the layer
 )
 
 // ErrLeaderMustTransfer means the leader tried to leave without handing over first.
@@ -207,6 +274,29 @@ type Store interface {
 	// be able to manage target, and to give (manage_members) every role
 	// added or taken away.
 	SetMemberRoles(ctx context.Context, workspaceID, actor, target string, roles []string) (Member, error)
+
+	// Layers lists the workspace's layers, deleted ones included, oldest change first.
+	Layers(ctx context.Context, workspaceID string) ([]Layer, error)
+	// Layer returns one layer, deleted or not.
+	Layer(ctx context.Context, workspaceID, id string) (Layer, error)
+	// CreateLayer creates a shared layer with schema version 1; actor needs
+	// manage_layers. Creating an id again with the same schema returns the
+	// layer as it is (a retry); with another schema it returns the current
+	// layer and store.ErrStale.
+	CreateLayer(ctx context.Context, workspaceID, actor string, in LayerInput) (Layer, error)
+	// DeleteLayer marks a layer deleted and RestoreLayer brings it back; both
+	// need manage_layers and leave its rows in place.
+	DeleteLayer(ctx context.Context, workspaceID, actor, id string) (Layer, error)
+	RestoreLayer(ctx context.Context, workspaceID, actor, id string) (Layer, error)
+	// ChangeSchema applies ops in order, all or none, and raises the schema
+	// version; actor needs edit_schema and must see the layer. A baseVersion
+	// that is not the current one returns the current layer and store.ErrStale.
+	ChangeSchema(ctx context.Context, workspaceID, actor, id string, baseVersion int64, ops []SchemaOp) (Layer, error)
+	// LayerOverrides returns the layer's overrides: role -> permission -> level.
+	LayerOverrides(ctx context.Context, workspaceID, layer string) (map[string]map[string]perm.Level, error)
+	// SetLayerOverride replaces role's overrides on a layer (an empty set
+	// removes them), as perm's CanSetOverride allows.
+	SetLayerOverride(ctx context.Context, workspaceID, actor, layer, role string, set map[string]perm.Level) error
 
 	// Audit lists the audit log newest first, starting below id before (0 for
 	// the newest), at most limit entries (1 to 100). Only the leader may read it.

@@ -4,6 +4,7 @@ package v1test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -36,6 +37,8 @@ func Run(t *testing.T, open Opener) {
 		{"TransferCodeRace", transferCodeRace},
 		{"AuditLog", auditLog},
 		{"Roles", roles},
+		{"Layers", layers},
+		{"Overrides", overrides},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -702,4 +705,234 @@ func copyLevels(in map[string]perm.Level) map[string]perm.Level {
 		out[p] = l
 	}
 	return out
+}
+
+const (
+	layerA = "4f0e3c1a-7b2d-4e8f-9a10-1b2c3d4e5f60"
+	layerB = "5a1f4d2b-8c3e-4f90-8b21-2c3d4e5f6071"
+)
+
+func geoPoints() v1.LayerInput {
+	order := 2.0
+	return v1.LayerInput{
+		ID: layerA, Name: " 地质点 ", GeometryType: "Point", CRS: "EPSG:4490",
+		Fields: []v1.FieldDef{
+			{ID: "f1", Name: "岩性", Type: "string", Options: json.RawMessage(`["花岗岩", "灰岩"]`)},
+			{ID: "f2", Name: "层号", Type: "integer"},
+		},
+		Style: json.RawMessage(`{"color": "#c00"}`), Order: &order,
+	}
+}
+
+func layers(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a := tm.s, tm.lead.Member.ID, tm.a.Member.ID
+	if _, err := s.CreateLayer(ctx, tm.ws, a, geoPoints()); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member creates a layer: %v", err)
+	}
+	for i, change := range []func(*v1.LayerInput){
+		func(in *v1.LayerInput) { in.ID = "not-a-uuid" },
+		func(in *v1.LayerInput) { in.ID = strings.ToUpper(layerA) },
+		func(in *v1.LayerInput) { in.Name = "" },
+		func(in *v1.LayerInput) { in.GeometryType = "Circle" },
+		func(in *v1.LayerInput) { in.CRS = "EPSG:abc" },
+		func(in *v1.LayerInput) { in.CRS = " " },
+		func(in *v1.LayerInput) { in.Fields[0].ID = "geom" },
+		func(in *v1.LayerInput) { in.Fields[1].ID = "f1" },
+		func(in *v1.LayerInput) { in.Fields[0].Type = "float" },
+		func(in *v1.LayerInput) { in.Fields[0].Options = json.RawMessage(`"花岗岩"`) },
+		func(in *v1.LayerInput) { in.Style = json.RawMessage(`{`) },
+	} {
+		in := geoPoints()
+		change(&in)
+		if _, err := s.CreateLayer(ctx, tm.ws, l, in); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("bad layer %d: %v", i, err)
+		}
+	}
+	lay, err := s.CreateLayer(ctx, tm.ws, l, geoPoints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lay.SchemaVersion != 1 || lay.Seq == 0 || lay.Deleted != nil || lay.CreatedBy != l || len(lay.Fields) != 2 ||
+		string(lay.Props[v1.PropName].Value) != `"地质点"` || lay.Props[v1.PropName].By != l || lay.Props[v1.PropName].Seq != lay.Seq ||
+		string(lay.Props[v1.PropStyle].Value) != `{"color":"#c00"}` || string(lay.Props[v1.PropOrder].Value) != `2` {
+		t.Fatalf("created %+v", lay)
+	}
+	if again, err := s.CreateLayer(ctx, tm.ws, l, geoPoints()); err != nil || again.Seq != lay.Seq {
+		t.Fatalf("a retry returns the layer as it is: %v %+v", err, again)
+	}
+	other := geoPoints()
+	other.Fields = other.Fields[:1]
+	if cur, err := s.CreateLayer(ctx, tm.ws, l, other); !errors.Is(err, store.ErrStale) || len(cur.Fields) != 2 {
+		t.Fatalf("the same id with another schema: %v %+v", err, cur)
+	}
+	if got, err := s.Layer(ctx, tm.ws, layerA); err != nil || got.Seq != lay.Seq || len(got.Fields) != 2 || string(got.Fields[0].Options) != `["花岗岩","灰岩"]` {
+		t.Fatalf("read back: %v %+v", err, got)
+	}
+	if _, err := s.Layer(ctx, tm.ws, layerB); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("an unknown layer: %v", err)
+	}
+
+	// Schema changes: online, by version, all or nothing.
+	if _, err := s.ChangeSchema(ctx, tm.ws, a, layerA, 1, []v1.SchemaOp{{Op: "rename_field", ID: "f1", Name: "x"}}); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member without edit_schema: %v", err)
+	}
+	if cur, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 3, []v1.SchemaOp{{Op: "rename_field", ID: "f1", Name: "x"}}); !errors.Is(err, store.ErrStale) || cur.SchemaVersion != 1 {
+		t.Fatalf("a stale change: %v %+v", err, cur)
+	}
+	changed, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 1, []v1.SchemaOp{
+		{Op: "add_field", Field: &v1.FieldDef{ID: "f3", Name: "采样编号", Type: "string"}},
+		{Op: "rename_field", ID: "f1", Name: " 岩石名称 "},
+		{Op: "set_options", ID: "f1", Options: json.RawMessage(`["花岗岩","灰岩","砂岩"]`)},
+		{Op: "delete_field", ID: "f2"},
+	})
+	if err != nil || changed.SchemaVersion != 2 || changed.Seq <= lay.Seq || len(changed.Fields) != 2 ||
+		changed.Fields[0].Name != "岩石名称" || string(changed.Fields[0].Options) != `["花岗岩","灰岩","砂岩"]` || changed.Fields[1].ID != "f3" {
+		t.Fatalf("change: %v %+v", err, changed)
+	}
+	for i, ops := range [][]v1.SchemaOp{
+		nil,
+		{{Op: "drop_table"}},
+		{{Op: "rename_field", ID: "nope", Name: "x"}},
+		{{Op: "add_field", Field: &v1.FieldDef{ID: "f4", Name: "x", Type: "string"}}, {Op: "add_field", Field: &v1.FieldDef{ID: "f2", Name: "x", Type: "string"}}},
+	} {
+		if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 2, ops); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("bad ops %d: %v", i, err)
+		}
+	}
+	if got, _ := s.Layer(ctx, tm.ws, layerA); got.SchemaVersion != 2 || len(got.Fields) != 2 {
+		t.Fatalf("a refused change left a trace (f4, or f2 back): %+v", got)
+	}
+
+	// Deleting keeps the layer as a tombstone, which can come back.
+	if _, err := s.DeleteLayer(ctx, tm.ws, a, layerA); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member deletes: %v", err)
+	}
+	gone, err := s.DeleteLayer(ctx, tm.ws, l, layerA)
+	if err != nil || gone.Deleted == nil || string(gone.Deleted.Value) != "true" || gone.Seq <= changed.Seq {
+		t.Fatalf("delete: %v %+v", err, gone)
+	}
+	if again, err := s.DeleteLayer(ctx, tm.ws, l, layerA); err != nil || again.Seq != gone.Seq {
+		t.Fatalf("delete twice: %v %+v", err, again)
+	}
+	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 2, []v1.SchemaOp{{Op: "delete_field", ID: "f3"}}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("change a deleted layer: %v", err)
+	}
+	back, err := s.RestoreLayer(ctx, tm.ws, l, layerA)
+	if err != nil || string(back.Deleted.Value) != "false" || back.Seq <= gone.Seq {
+		t.Fatalf("restore: %v %+v", err, back)
+	}
+	all, err := s.Layers(ctx, tm.ws)
+	if err != nil || len(all) != 1 || all[0].Seq != back.Seq {
+		t.Fatalf("layers: %v %+v", err, all)
+	}
+
+	yes := true
+	if _, err := s.UpdateWorkspace(ctx, tm.ws, l, v1.WorkspaceUpdate{Archived: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	in := geoPoints()
+	in.ID = layerB
+	if _, err := s.CreateLayer(ctx, tm.ws, l, in); !errors.Is(err, store.ErrArchived) {
+		t.Fatalf("create in an archived workspace: %v", err)
+	}
+}
+
+func overrides(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	if _, err := s.CreateLayer(ctx, tm.ws, l, geoPoints()); err != nil {
+		t.Fatal(err)
+	}
+	guest, err := s.CreateRole(ctx, tm.ws, l, "访客", 5, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapper, err := s.CreateRole(ctx, tm.ws, l, "制图", 10, map[string]perm.Level{perm.EditSchema: perm.All})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetMemberRoles(ctx, tm.ws, l, b, []string{guest.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetMemberRoles(ctx, tm.ws, l, a, []string{mapper.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	hide := map[string]perm.Level{perm.ViewLayer: perm.None}
+	if err := s.SetLayerOverride(ctx, tm.ws, a, layerA, guest.ID, hide); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("a member without manage_roles: %v", err)
+	}
+	for _, bad := range []map[string]perm.Level{{perm.ExportData: perm.None}, {perm.ViewLayer: perm.Own}} {
+		if err := s.SetLayerOverride(ctx, tm.ws, l, layerA, guest.ID, bad); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("override %v: %v", bad, err)
+		}
+	}
+	if err := s.SetLayerOverride(ctx, tm.ws, l, layerB, guest.ID, hide); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("an unknown layer: %v", err)
+	}
+	if err := s.SetLayerOverride(ctx, tm.ws, l, layerA, "nope", hide); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("an unknown role: %v", err)
+	}
+
+	// Hidden from everyone through the base role...
+	before := tm.versions(t)
+	if err := s.SetLayerOverride(ctx, tm.ws, l, layerA, perm.Base, hide); err != nil {
+		t.Fatal(err)
+	}
+	if got := tm.bumped(t, before); !got[a] || !got[b] || got[l] {
+		t.Fatalf("access versions bumped for %v, want a and b", got)
+	}
+	w, _ := s.Access(ctx, tm.ws)
+	if w.Level(a, perm.ViewLayer, layerA) != perm.None || w.Level(l, perm.ViewLayer, layerA) != perm.All {
+		t.Fatal("the base override does not reach the rules")
+	}
+	// ...so the mapper cannot change a schema they cannot see.
+	if _, err := s.ChangeSchema(ctx, tm.ws, a, layerA, 1, []v1.SchemaOp{{Op: "rename_field", ID: "f1", Name: "x"}}); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("change a hidden layer's schema: %v", err)
+	}
+	// A role's own override brings it back for that role only.
+	before = tm.versions(t)
+	if err := s.SetLayerOverride(ctx, tm.ws, l, layerA, guest.ID, map[string]perm.Level{perm.ViewLayer: perm.All, perm.EditRows: perm.None}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tm.bumped(t, before); !got[b] || len(got) != 1 {
+		t.Fatalf("access versions bumped for %v, want only b", got)
+	}
+	got, err := s.LayerOverrides(ctx, tm.ws, layerA)
+	if err != nil || got[perm.Base][perm.ViewLayer] != perm.None || got[guest.ID][perm.ViewLayer] != perm.All || got[guest.ID][perm.EditRows] != perm.None {
+		t.Fatalf("overrides: %v %+v", err, got)
+	}
+	// An empty set removes the role's override.
+	if err := s.SetLayerOverride(ctx, tm.ws, l, layerA, guest.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.LayerOverrides(ctx, tm.ws, layerA); len(got) != 1 {
+		t.Fatalf("after removing: %+v", got)
+	}
+	// Deleting a role deletes its overrides.
+	if err := s.SetLayerOverride(ctx, tm.ws, l, layerA, guest.ID, hide); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteRole(ctx, tm.ws, l, guest.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.LayerOverrides(ctx, tm.ws, layerA); got[guest.ID] != nil {
+		t.Fatalf("a deleted role's override stays: %+v", got)
+	}
+	if _, err := s.LayerOverrides(ctx, tm.ws, layerB); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("overrides of an unknown layer: %v", err)
+	}
+	log, _ := s.Audit(ctx, tm.ws, l, 0, 100)
+	n := 0
+	for _, e := range log {
+		if e.Action == v1.AuditSetOverride && e.Target == layerA {
+			n++
+		}
+	}
+	if n != 4 {
+		t.Fatalf("%d override entries in the audit log, want 4", n)
+	}
 }
