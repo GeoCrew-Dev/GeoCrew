@@ -14,8 +14,18 @@ object Degrees {
     // Marks people put after degrees, minutes and seconds; all are separators here.
     private val MARKS = Regex("""[°º˚度′'’分″"”秒:\s]+""")
 
-    /** The degrees [text] says, or null when it says none. */
-    fun parse(text: String): Double? {
+    /** Which coordinate a text is: a hemisphere letter of the other one is refused. */
+    enum class Axis { LONGITUDE, LATITUDE }
+
+    private val LETTERS = mapOf(Axis.LONGITUDE to "EW东西", Axis.LATITUDE to "NS北南")
+
+    /** The degrees [text] says, or null when it says none; with [axis], hemisphere letters must fit it. */
+    fun parse(text: String, axis: Axis? = null): Double? {
+        if (axis != null) {
+            val upper = text.uppercase()
+            val wrong = LETTERS.getValue(if (axis == Axis.LONGITUDE) Axis.LATITUDE else Axis.LONGITUDE)
+            if (upper.any { it in wrong }) return null
+        }
         var t = text.trim().uppercase().replace('，', '.').replace("''", "\"")
         if (t.isEmpty()) return null
         var sign = 1
