@@ -22,11 +22,12 @@ private val pointParams = json(
                       "kind": {"enum": ["rock", "water"]}, "tags": {"type": "array", "items": {"type": "string"}}}}""",
 )
 
-/** A counter the tests act on: add moves it up, and its undo moves it back. */
+/** A counter the tests act on: add moves it up, its undo moves it back and redo up again. */
 private class Counter(
     private val stability: Stability = Stability.STABLE,
     private val id: String = "counter.add",
     private val aliases: List<String> = emptyList(),
+    private val scope: String? = null,
 ) : Action {
     var value = 0
     val callers = mutableListOf<Caller>()
@@ -36,7 +37,7 @@ private class Counter(
         if (params["name"] == JsonPrimitive("boom")) error("it broke")
         if (params["name"] == JsonPrimitive("no")) return ActionResult.Failed("refused", "not today")
         value++
-        return ActionResult.Done(JsonPrimitive(value)) { value-- }
+        return ActionResult.Done(JsonPrimitive(value), Undo(scope, redo = { value++ }) { value-- })
     }
 }
 
@@ -50,7 +51,7 @@ class ActionRegistryTest {
         assertEquals(Outcome.Done(JsonPrimitive(1)), registry.invoke(Caller.USER, "counter.add", ok))
         assertEquals(Outcome.Done(JsonPrimitive(2)), registry.invoke(Caller.USER, "counter.plus", ok))
         assertEquals(Outcome.Unknown, registry.invoke(Caller.USER, "counter.fly", ok))
-        assertEquals(listOf("counter.add"), registry.specs().map { it.id })
+        assertEquals(listOf(ActionRegistry.UNDO, ActionRegistry.REDO, "counter.add"), registry.specs().map { it.id })
     }
 
     @Test
@@ -110,20 +111,55 @@ class ActionRegistryTest {
         val registry = ActionRegistry().apply { register(Counter()) }
         assertEquals(Outcome.Failed("refused", "not today"), registry.invoke(Caller.USER, "counter.add", json("""{"name": "no"}""")))
         assertEquals(Outcome.Failed("error", "it broke"), registry.invoke(Caller.USER, "counter.add", json("""{"name": "boom"}""")))
-        assertFalse(registry.canUndo, "nothing to take back after failures")
+        assertFalse(registry.canUndo(), "nothing to take back after failures")
     }
 
+    private suspend fun ActionRegistry.undo(scope: String? = null) =
+        invoke(Caller.USER, ActionRegistry.UNDO, scope?.let { json("""{"scope": "$it"}""") } ?: JsonObject(emptyMap()))
+
+    private suspend fun ActionRegistry.redo(scope: String? = null) =
+        invoke(Caller.USER, ActionRegistry.REDO, scope?.let { json("""{"scope": "$it"}""") } ?: JsonObject(emptyMap()))
+
     @Test
-    fun undoTakesBackTheLatestRun() = runTest {
+    fun undoAndRedoWalkTheHistory() = runTest {
         val counter = Counter()
         val registry = ActionRegistry().apply { register(counter) }
         repeat(2) { registry.invoke(Caller.USER, "counter.add", ok) }
-        assertTrue(registry.canUndo)
-        assertTrue(registry.undo())
+        assertTrue(registry.canUndo())
+        assertFalse(registry.canRedo())
+        assertIs<Outcome.Done>(registry.undo())
         assertEquals(1, counter.value)
-        assertTrue(registry.undo())
+        assertIs<Outcome.Done>(registry.undo())
         assertEquals(0, counter.value)
-        assertFalse(registry.undo())
+        assertEquals(Outcome.Failed("nothing", "there is nothing to undo"), registry.undo())
+        assertIs<Outcome.Done>(registry.redo())
+        assertEquals(1, counter.value)
+        assertTrue(registry.canUndo() && registry.canRedo())
+        registry.invoke(Caller.USER, "counter.add", ok)
+        assertFalse(registry.canRedo(), "a new run starts a new line of history")
+        assertEquals(Outcome.Failed("nothing", "there is nothing to redo"), registry.redo())
+    }
+
+    @Test
+    fun eachScopeKeepsItsOwnHistory() = runTest {
+        val a = Counter(id = "a.add", scope = "layer:a")
+        val b = Counter(id = "b.add", scope = "layer:b")
+        val save = object : Action {
+            override val spec = ActionSpec("a.save", "Save", "", json("""{"type": "object"}"""), Risk.EDIT, Stability.STABLE)
+            override suspend fun run(caller: Caller, params: JsonObject) = ActionResult.Done(endsUndo = "layer:a")
+        }
+        val registry = ActionRegistry().apply { register(a); register(b); register(save) }
+        registry.invoke(Caller.USER, "a.add", ok)
+        registry.invoke(Caller.USER, "b.add", ok)
+        registry.invoke(Caller.USER, "a.add", ok)
+        assertFalse(registry.canUndo(), "nothing in the general scope")
+        assertIs<Outcome.Done>(registry.undo("layer:b"))
+        assertEquals(2 to 0, a.value to b.value)
+        registry.invoke(Caller.USER, "a.save")
+        assertFalse(registry.canUndo("layer:a"), "saving ends the layer's undo history")
+        assertTrue(registry.canRedo("layer:b"))
+        assertIs<Outcome.Failed>(registry.undo("layer:a"))
+        assertEquals(2, a.value)
     }
 
     @Test
@@ -132,9 +168,27 @@ class ActionRegistryTest {
         val registry = ActionRegistry().apply { register(counter) }
         repeat(ActionRegistry.MAX_UNDO + 5) { registry.invoke(Caller.USER, "counter.add", ok) }
         var undone = 0
-        while (registry.undo()) undone++
+        while (registry.undo() is Outcome.Done) undone++
         assertEquals(ActionRegistry.MAX_UNDO, undone)
         assertEquals(5, counter.value)
+    }
+
+    @Test
+    fun undoGoesThroughTheGateAndTheLog() = runTest {
+        val log = mutableListOf<LogEntry>()
+        val counter = Counter()
+        val registry = ActionRegistry(
+            gate = { caller, spec, _ -> if (caller == Caller.AI && spec.id == ActionRegistry.UNDO) "not for the AI" else null },
+            log = { log += it },
+        ).apply { register(counter) }
+        registry.invoke(Caller.USER, "counter.add", ok)
+        assertEquals(Outcome.Denied("not for the AI"), registry.invoke(Caller.AI, ActionRegistry.UNDO))
+        assertEquals(Outcome.Denied("app.undo is preview, not open to plugin"), registry.invoke(Caller.PLUGIN, ActionRegistry.UNDO))
+        assertEquals(1, counter.value)
+        registry.undo()
+        assertEquals(0, counter.value)
+        assertEquals(listOf("counter.add", "app.undo", "app.undo", "app.undo"), log.map { it.action })
+        assertIs<Outcome.Invalid>(registry.invoke(Caller.USER, ActionRegistry.UNDO, json("""{"scope": 3}""")))
     }
 
     @Test

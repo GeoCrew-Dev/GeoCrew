@@ -36,15 +36,21 @@ data class ActionSpec(
     val examples: List<JsonObject> = emptyList(),
 )
 
-/** Takes back what a run did. */
-fun interface Undo {
-    suspend fun undo()
-}
+/**
+ * Takes back what a run did ([undo]) and makes it again afterwards ([redo];
+ * null when it cannot be). Each [scope] keeps its own undo history, the QGIS
+ * way: one layer's editing has its own (ADR 0005), and null is the general one.
+ */
+class Undo(val scope: String? = null, val redo: (suspend () -> Unit)? = null, val undo: suspend () -> Unit)
 
 /** What a run of an action ended with. */
 sealed interface ActionResult {
-    /** It worked; [undo] takes it back, when the action can be undone. */
-    data class Done(val output: JsonElement = JsonNull, val undo: Undo? = null) : ActionResult
+    /**
+     * It worked. [undo] takes it back, when the action can be undone.
+     * [endsUndo] names a scope whose undo history ends with this run, as saving
+     * or discarding a layer's edits ends that layer's.
+     */
+    data class Done(val output: JsonElement = JsonNull, val undo: Undo? = null, val endsUndo: String? = null) : ActionResult
 
     /** It could not be done; [code] is for programs, [message] for people. */
     data class Failed(val code: String, val message: String) : ActionResult
