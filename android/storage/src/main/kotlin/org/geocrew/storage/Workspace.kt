@@ -111,8 +111,11 @@ class Workspace(private val projects: Projects) {
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
             unsaved()?.let { return@WorkspaceAction it }
+            val format = p.getValue("format").jsonPrimitive.content
+            // GDAL makes no KML of a GeoPackage without layers, as a new project is.
+            if (format == "kml" && project.layers.isEmpty()) return@WorkspaceAction ActionResult.Failed("empty", "the project has no layers")
             val exports = Exports(projects.exports)
-            val file = when (p.getValue("format").jsonPrimitive.content) {
+            val file = when (format) {
                 "gpkg" -> exports.gpkg(project)
                 else -> exports.kml(project)
             }

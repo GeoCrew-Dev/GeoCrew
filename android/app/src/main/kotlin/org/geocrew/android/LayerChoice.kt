@@ -132,7 +132,9 @@ fun NewLayerDialog(existing: List<String>, suggested: String, onDismiss: () -> U
     var name by remember { mutableStateOf(start) }
     val trimmed = name.trim()
     val taken = existing.any { it.equals(trimmed, ignoreCase = true) }
-    val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && !taken
+    // Names of GeoPackage's, SQLite's and GeoCrew's own tables.
+    val reserved = listOf("gpkg_", "rtree_", "sqlite_", "geocrew_").any { trimmed.startsWith(it, ignoreCase = true) }
+    val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && !taken && !reserved
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.AddLocationAlt, null) },
@@ -143,8 +145,13 @@ fun NewLayerDialog(existing: List<String>, suggested: String, onDismiss: () -> U
                 onValueChange = { name = it },
                 label = { Text(stringResource(R.string.layer_name)) },
                 singleLine = true,
-                isError = taken,
-                supportingText = { if (taken) Text(stringResource(R.string.layer_name_taken)) },
+                isError = taken || reserved,
+                supportingText = {
+                    when {
+                        taken -> Text(stringResource(R.string.layer_name_taken))
+                        reserved -> Text(stringResource(R.string.layer_name_reserved))
+                    }
+                },
             )
         },
         confirmButton = { TextButton(onClick = { onCreate(trimmed) }, enabled = valid) { Text(stringResource(R.string.project_create)) } },

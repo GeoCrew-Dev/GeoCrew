@@ -56,10 +56,11 @@ internal const val POINT_SOURCE = "geocrew-points"
 internal const val POINT_LABELS = "geocrew-point-labels"
 
 /** Failures said in the user's language when their code is known. */
-internal class FailureTexts(val unsaved: String, val failed: String, val start: String) {
+internal class FailureTexts(val unsaved: String, val failed: String, val start: String, val empty: String = failed) {
     fun of(outcome: Outcome): String = when (outcome) {
         is Outcome.Failed -> when (outcome.code) {
             "unsaved" -> unsaved
+            "empty" -> empty.format(outcome.message)
             AppGraph.START_FAILED -> start.format(outcome.message)
             else -> failed.format(outcome.message)
         }

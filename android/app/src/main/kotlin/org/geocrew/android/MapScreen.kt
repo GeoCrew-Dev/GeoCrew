@@ -154,7 +154,6 @@ fun MapScreen(
     var picking by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
     var rememberNew by remember { mutableStateOf(false) }
-    var placeAfterNaming by remember { mutableStateOf(false) }
     var center by remember { mutableStateOf<LatLng?>(null) }
     var drawn by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<Draft?>(null) }
@@ -174,6 +173,7 @@ fun MapScreen(
         unsaved = stringResource(R.string.failure_unsaved),
         failed = stringResource(R.string.action_failed),
         start = stringResource(R.string.start_failed),
+        empty = stringResource(R.string.failure_empty),
     )
 
     // One operation at a time: a tap while one runs is ignored, so a quick
@@ -227,7 +227,10 @@ fun MapScreen(
                 // Every layer opens for editing, so edits left unsaved when the app was
                 // stopped come back at once: they show, and new points are named after them.
                 val closed = layers.mapNotNull { it.name() }.filterNot { collections[it].flag("editing") }
-                for (name in closed) graph.invoke(Editing.START, buildJsonObject { put("layer", name) })
+                for (name in closed) {
+                    val started = graph.invoke(Editing.START, buildJsonObject { put("layer", name) })
+                    if (started !is Outcome.Done) failure = texts.of(started)
+                }
                 if (closed.isNotEmpty()) reload()
             }
             else -> failure = texts.of(opened)
@@ -337,7 +340,6 @@ fun MapScreen(
             kept != null -> startPlacing(kept.name)
             points.isEmpty() -> {
                 rememberNew = false
-                placeAfterNaming = true
                 naming = true
             }
             else -> picking = true
@@ -352,7 +354,7 @@ fun MapScreen(
                 val id = made.output.jsonObject["layers"]?.jsonArray?.map { it.jsonObject }?.firstOrNull { it.name() == name }
                     ?.let { (it["id"] as? JsonPrimitive)?.contentOrNull }
                 if (rememberNew && id != null) projectId?.let { graph.settings.setPlacingLayer(it, id) }
-                if (placeAfterNaming) startPlacing(name)
+                startPlacing(name)
             }
             else -> failure = texts.of(made)
         }
@@ -551,7 +553,6 @@ fun MapScreen(
             onNew = { remember ->
                 picking = false
                 rememberNew = remember
-                placeAfterNaming = true
                 naming = true
             },
             onDismiss = { picking = false },
