@@ -170,6 +170,12 @@
     <string name="basemap_section">底图</string>
     <string name="basemap_img">天地图影像</string>
     <string name="basemap_cia">天地图注记</string>
+    <string name="basemap_vec">天地图矢量</string>
+    <string name="basemap_ter">天地图地形</string>
+    <string name="tool_basemap">底图</string>
+    <string name="basemap_kind_img">影像</string>
+    <string name="basemap_kind_vec">矢量</string>
+    <string name="basemap_kind_ter">地形</string>
     <string name="my_position">我的位置</string>
     <string name="position_accuracy">精度 ±%1$s m</string>
     <string name="no_fix">没有定到位置</string>

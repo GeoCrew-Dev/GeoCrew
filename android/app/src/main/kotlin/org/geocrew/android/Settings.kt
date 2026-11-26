@@ -68,6 +68,13 @@ class AppSettings(context: Context) {
         prefs.edit { putString(RECENT_CRS, recentCrs.joinToString(",")) }
     }
 
+    /** Which Tianditu map project [projectId] shows (img, vec or ter); imagery by default. */
+    fun basemapKind(projectId: String): String = prefs.getString(BASEMAP_KIND + projectId, null) ?: "img"
+
+    fun setBasemapKind(projectId: String, kind: String) {
+        prefs.edit { putString(BASEMAP_KIND + projectId, kind) }
+    }
+
     fun markLocationAsked() {
         locationAsked = true
         prefs.edit { putBoolean(LOCATION_ASKED, true) }
@@ -90,6 +97,7 @@ class AppSettings(context: Context) {
         const val DYNAMIC = "dynamic_color"
         const val OWN_FOLDER = "own_folder"
         const val LOCATION_ASKED = "location_asked"
+        const val BASEMAP_KIND = "basemap_kind:"
         const val ROTATION_LOCKED = "rotation_locked"
         const val RECENT_CRS = "recent_crs"
         const val RECENT_CRS_KEPT = 8

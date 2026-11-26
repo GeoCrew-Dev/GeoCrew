@@ -180,6 +180,12 @@
     <string name="move_down">Move down</string>
     <string name="basemap_section">Basemaps</string>
     <string name="basemap_img">Tianditu imagery</string>
+    <string name="basemap_vec">Tianditu map</string>
+    <string name="basemap_ter">Tianditu terrain</string>
+    <string name="tool_basemap">Basemap</string>
+    <string name="basemap_kind_img">Imagery</string>
+    <string name="basemap_kind_vec">Map</string>
+    <string name="basemap_kind_ter">Terrain</string>
     <string name="basemap_cia">Tianditu labels</string>
     <string name="my_position">My position</string>
     <string name="position_accuracy">Accuracy ±%1$s m</string>
