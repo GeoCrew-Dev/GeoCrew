@@ -21,8 +21,10 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -74,6 +76,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import org.geocrew.core.edit.FieldType
+import org.geocrew.core.project.Degrees
 
 /** A field of a layer, as layer.features describes it. */
 data class FormField(val name: String, val type: String)
@@ -100,6 +103,8 @@ private const val DEGREES_CRS = "EPSG:4490"
  * has a value and the position. For a feature already there [onSave] gets the
  * fields that changed, a cleared one as null, and the position only when it
  * changed; [onDelete] deletes it and [onMove] moves it to another layer.
+ * Longitude and latitude also take degrees, minutes and seconds; with [locate]
+ * the position can come from the phone's GNSS.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,6 +119,7 @@ fun FeatureForm(
     onDelete: (() -> Unit)?,
     onMove: (() -> Unit)? = null,
     crs: FormCrs? = null,
+    locate: (suspend () -> Fix?)? = null,
 ) {
     val original = remember(properties) { fields.associate { it.name to text(properties[it.name]) } }
     val texts = remember(properties) { mutableStateMapOf<String, String>().apply { putAll(original) } }
@@ -146,14 +152,32 @@ fun FeatureForm(
     val canSave = problems.values.all { it == null } && (start == null || positionOk)
     val locale = LocalConfiguration.current.locales[0]
     var confirmDelete by remember { mutableStateOf(false) }
+    var locating by remember { mutableStateOf(false) }
+    var accuracy by remember { mutableStateOf<Float?>(null) }
+
+    // The phone's position goes into the fields shown: longitude and latitude, or X and Y converted.
+    fun useMyPosition() {
+        val find = locate ?: return
+        if (locating) return
+        locating = true
+        scope.launch {
+            val fix = find()
+            locating = false
+            if (fix == null) return@launch
+            accuracy = fix.accuracy
+            longitude = degrees(round7(fix.longitude))
+            latitude = degrees(round7(fix.latitude))
+            if (byXY && crs != null) crs.convert(DEGREES_CRS, crs.srs, fix.longitude, fix.latitude)?.let { (x, y) -> easting = metres(x); northing = metres(y) }
+        }
+    }
 
     // Switching shows the same spot in the other system, when what is typed is a position.
     fun switchTo(xy: Boolean) {
         if (xy == byXY || crs == null) return
         scope.launch {
             if (xy) {
-                val lon = longitude.trim().toDoubleOrNull()
-                val lat = latitude.trim().toDoubleOrNull()
+                val lon = Degrees.parse(longitude)
+                val lat = Degrees.parse(latitude)
                 if (lon != null && lat != null) crs.convert(DEGREES_CRS, crs.srs, lon, lat)?.let { (x, y) -> easting = metres(x); northing = metres(y) }
             } else {
                 val x = easting.trim().toDoubleOrNull()
@@ -179,7 +203,7 @@ fun FeatureForm(
             }
             else -> {
                 val moved = isNew || longitude != start.first || latitude != start.second
-                if (moved) Position(longitude.trim().toDouble(), latitude.trim().toDouble(), DEGREES_CRS) else null
+                if (moved) Position(Degrees.parse(longitude)!!, Degrees.parse(latitude)!!, DEGREES_CRS) else null
             }
         }
         onSave(JsonObject(values.associate { it.name to value(it.type, texts[it.name].orEmpty()) }), position)
@@ -214,7 +238,22 @@ fun FeatureForm(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (start != null) {
-                        FormHeader(if (byXY && crs != null) stringResource(R.string.coordinates_in, crs.srs) else stringResource(R.string.coordinates))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) {
+                                FormHeader(if (byXY && crs != null) stringResource(R.string.coordinates_in, crs.srs) else stringResource(R.string.coordinates))
+                            }
+                            if (locate != null) {
+                                TextButton(onClick = ::useMyPosition, enabled = !locating) {
+                                    if (locating) {
+                                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(Icons.Rounded.MyLocation, null, modifier = Modifier.size(18.dp))
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(stringResource(R.string.my_position))
+                                }
+                            }
+                        }
                         if (crs != null) {
                             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
                                 SegmentedButton(selected = !byXY, onClick = { switchTo(false) }, shape = SegmentedButtonDefaults.itemShape(0, 2)) {
@@ -230,9 +269,16 @@ fun FeatureForm(
                                 CoordinateField(northing, { northing = it }, stringResource(R.string.northing), northingProblem, Modifier.weight(1f))
                                 CoordinateField(easting, { easting = it }, stringResource(R.string.easting), eastingProblem, Modifier.weight(1f))
                             } else {
-                                CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f))
-                                CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f))
+                                CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f), degrees = true)
+                                CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f), degrees = true)
                             }
+                        }
+                        accuracy?.let {
+                            Text(
+                                stringResource(R.string.position_accuracy, String.format(Locale.ROOT, "%.1f", it)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                     if (fields.isNotEmpty()) FormHeader(stringResource(R.string.attributes))
@@ -326,12 +372,12 @@ fun GoToDialog(onDismiss: () -> Unit, onGo: (longitude: Double, latitude: Double
         title = { Text(stringResource(R.string.tool_go_to)) },
         text = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f))
-                CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f))
+                CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f), degrees = true)
+                CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f), degrees = true)
             }
         },
         confirmButton = {
-            TextButton(onClick = { onGo(longitude.trim().toDouble(), latitude.trim().toDouble()) }, enabled = ready) {
+            TextButton(onClick = { onGo(Degrees.parse(longitude)!!, Degrees.parse(latitude)!!) }, enabled = ready) {
                 Text(stringResource(R.string.go))
             }
         },
@@ -340,15 +386,21 @@ fun GoToDialog(onDismiss: () -> Unit, onGo: (longitude: Double, latitude: Double
 }
 
 @Composable
-private fun CoordinateField(value: String, onChange: (String) -> Unit, label: String, problem: Int?, modifier: Modifier) {
+private fun CoordinateField(value: String, onChange: (String) -> Unit, label: String, problem: Int?, modifier: Modifier, degrees: Boolean = false) {
+    // Degrees may come as 114°18′18.5″: the full keyboard has the marks, and the decimal value shows below.
+    val decimal = if (degrees && problem == null && Degrees.isSexagesimal(value)) Degrees.parse(value) else null
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
         singleLine = true,
         isError = problem != null,
-        supportingText = problem?.let { { Text(stringResource(it)) } },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        supportingText = when {
+            problem != null -> ({ Text(stringResource(problem)) })
+            decimal != null -> ({ Text("= " + BigDecimal.valueOf(decimal).setScale(7, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString() + "°") })
+            else -> null
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = if (degrees) KeyboardType.Text else KeyboardType.Decimal),
         modifier = modifier,
     )
 }
@@ -398,7 +450,7 @@ private fun problem(type: String, text: String): Int? {
 
 // What is wrong with a coordinate, as a string resource: a point always has both.
 private fun coordinateProblem(text: String, limit: Double, outOfRange: Int): Int? {
-    val degrees = text.trim().toDoubleOrNull()
+    val degrees = Degrees.parse(text)
     return when {
         text.isBlank() -> R.string.coordinate_missing
         degrees == null || !degrees.isFinite() -> R.string.field_not_a_number

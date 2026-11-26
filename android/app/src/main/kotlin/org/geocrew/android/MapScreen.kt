@@ -1,9 +1,12 @@
 package org.geocrew.android
 
+import android.Manifest
 import android.app.Activity
 import android.graphics.RectF
 import android.view.Gravity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +49,7 @@ import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Public
@@ -53,7 +57,9 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -194,6 +200,19 @@ fun MapScreen(
     // One per layer, kept while the layers stay: the form keys its state on it.
     val formCrs = remember(projected) { projected.mapValues { (_, srs) -> FormCrs(srs, convert) } }
     var failure by remember { mutableStateOf<String?>(null) }
+    // The phone's position: the system asks for permission the first time; no fix is said plainly.
+    val noFixText = stringResource(R.string.no_fix)
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val locate: suspend () -> Fix? = {
+        if (!mayLocate(context)) {
+            askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            null
+        } else {
+            currentFix(context).also { if (it == null) failure = noFixText }
+        }
+    }
+    var locating by remember { mutableStateOf(false) }
+    var placingAccuracy by remember { mutableStateOf<Float?>(null) }
     var leaving by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     // The measuring tool: what it measures and the points tapped so far.
@@ -627,7 +646,28 @@ fun MapScreen(
                 }
                 if (placing) {
                     Spacer(Modifier.height(8.dp))
-                    PlacingHint(layer = target.orEmpty(), center = { center }, onChangeLayer = { picking = true })
+                    PlacingHint(
+                        layer = target.orEmpty(),
+                        center = { center },
+                        onChangeLayer = { picking = true },
+                        locating = locating,
+                        accuracy = placingAccuracy,
+                        onLocate = {
+                            // The crosshair goes to where the phone is.
+                            if (!locating) {
+                                locating = true
+                                scope.launch {
+                                    val fix = locate()
+                                    locating = false
+                                    if (fix != null) {
+                                        placingAccuracy = fix.accuracy
+                                        val map = mapView.awaitMap()
+                                        map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(fix.latitude, fix.longitude), maxOf(map.cameraPosition.zoom, 17.0)))
+                                    }
+                                }
+                            }
+                        },
+                    )
                 } else if (measuring != null) {
                     Spacer(Modifier.height(8.dp))
                     MeasurePanel(
@@ -840,6 +880,7 @@ fun MapScreen(
             },
             onDelete = null,
             crs = formCrs[d.layer],
+            locate = locate,
         )
     }
     selected?.let { (layer, fid) ->
@@ -870,6 +911,7 @@ fun MapScreen(
                     moving = layer to fid
                 },
                 crs = formCrs[layer],
+                locate = locate,
             )
         }
     }
@@ -975,7 +1017,7 @@ private fun Title(project: String, modified: Boolean) {
 
 /** What to do while placing a point, and where the crosshair is. */
 @Composable
-private fun PlacingHint(layer: String, center: () -> LatLng?, onChangeLayer: () -> Unit) {
+private fun PlacingHint(layer: String, center: () -> LatLng?, onChangeLayer: () -> Unit, locating: Boolean, accuracy: Float?, onLocate: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -998,7 +1040,13 @@ private fun PlacingHint(layer: String, center: () -> LatLng?, onChangeLayer: () 
                     )
                 }
             }
-            TextButton(onClick = onChangeLayer) { Text(stringResource(R.string.place_change_layer)) }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                TextButton(onClick = onChangeLayer) { Text(stringResource(R.string.place_change_layer)) }
+                IconButton(onClick = onLocate, enabled = !locating) {
+                    if (locating) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.MyLocation, stringResource(R.string.my_position))
+                }
+                accuracy?.let { Text(String.format(Locale.ROOT, "±%.0f m", it), style = MaterialTheme.typography.labelSmall) }
+            }
         }
     }
 }
