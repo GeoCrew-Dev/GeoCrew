@@ -277,7 +277,7 @@ class WorkspaceTest {
     @Test
     fun bookmarksAreSavedInTheProject() {
         run(Workspace.CREATE, """{"name": "书签", "language": "zh"}""")
-        assertEquals(0, output(run(Workspace.BOOKMARKS)).getValue("bookmarks").jsonArray.size, "an older project has none and is not written to")
+        assertEquals(0, output(run(Workspace.BOOKMARKS)).getValue("bookmarks").jsonArray.size, "none yet")
         run(Workspace.BOOKMARK_ADD, """{"name": "一号剖面", "longitude": 114.3, "latitude": 30.6, "zoom": 15}""")
         val added = output(run(Workspace.BOOKMARK_ADD, """{"name": " 二号 ", "longitude": 114.4, "latitude": 30.7, "zoom": 12.5, "bearing": 30}"""))
         val second = added.getValue("bookmarks").jsonArray[1].jsonObject
