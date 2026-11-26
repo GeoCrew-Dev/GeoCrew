@@ -237,6 +237,34 @@ const (
 	ChooseLost = "lost" // put the losing value back, as a change by the resolver
 )
 
+// File uploads (protocol 9.2).
+const (
+	MaxFileSize  = 1 << 30            // bytes; max_file_size
+	ChunkSize    = 1 << 20            // bytes the server takes per chunk
+	UploadExpiry = 7 * 24 * time.Hour // an upload untouched this long is dropped
+)
+
+var (
+	// ErrTooLarge means a file is over MaxFileSize.
+	ErrTooLarge = errors.New("file too large")
+	// ErrOffsetMismatch means a chunk does not start where the upload stands;
+	// the current offset comes with it.
+	ErrOffsetMismatch = errors.New("offset mismatch")
+)
+
+// Upload is a file on its way in, by chunks (protocol 9.2). The bytes are
+// the caller's to keep; the store tracks how far they got.
+type Upload struct {
+	ID          string
+	WorkspaceID string
+	MemberID    string
+	SHA256      string
+	Size        int64
+	Type        string
+	Offset      int64 // bytes received so far
+	UpdatedAt   time.Time
+}
+
 // AuditEntry is one line of the audit log (protocol 5.7). Target is the
 // member, device or role acted on.
 type AuditEntry struct {
@@ -405,6 +433,28 @@ type Store interface {
 	ResolveConflict(ctx context.Context, workspaceID, actor, id, choose string) (Conflict, *Result, error)
 	// Row returns a row with its unresolved conflicts.
 	Row(ctx context.Context, workspaceID, id string) (Row, []Conflict, error)
+
+	// StartUpload begins, or picks up, actor's upload of a file. exists is
+	// true when the workspace already has the file and nothing is to be sent.
+	// Actor needs edit_rows on some layer; an archived workspace refuses
+	// with store.ErrArchived, a file over MaxFileSize with ErrTooLarge.
+	StartUpload(ctx context.Context, workspaceID, actor, sha256 string, size int64, mimeType string) (u Upload, exists bool, err error)
+	// Received records n bytes that actor added at offset and returns the new
+	// offset. An offset other than the current one returns that one and
+	// ErrOffsetMismatch; going past the declared size is store.ErrInvalid; an
+	// upload that is finished, dropped or not actor's is store.ErrNotFound.
+	Received(ctx context.Context, workspaceID, actor, uploadID string, offset, n int64) (int64, error)
+	// FinishUpload ends a complete upload: with hashOK the file is stored,
+	// otherwise the upload is dropped.
+	FinishUpload(ctx context.Context, workspaceID, actor, uploadID string, hashOK bool) error
+	// ExpiredUploads lists uploads untouched since before, for the cleaner;
+	// DropUpload removes one.
+	ExpiredUploads(ctx context.Context, before time.Time) ([]Upload, error)
+	DropUpload(ctx context.Context, workspaceID, uploadID string) error
+	// FileAccess tells whether actor may download a file: some attachment row
+	// referring to it (as file or thumb) is one actor can see. uploaded is
+	// whether the bytes are here yet (protocol 9.2, not_uploaded).
+	FileAccess(ctx context.Context, workspaceID, actor, sha256 string) (visible, uploaded bool, err error)
 
 	// Audit lists the audit log newest first, starting below id before (0 for
 	// the newest), at most limit entries (1 to 100). Only the leader may read it.

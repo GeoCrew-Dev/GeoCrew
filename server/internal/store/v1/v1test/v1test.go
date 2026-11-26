@@ -46,6 +46,7 @@ func Run(t *testing.T, open Opener) {
 		{"Pull", pull},
 		{"Resolve", resolve},
 		{"Attachments", attachments},
+		{"Uploads", uploads},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -1505,4 +1506,143 @@ func countLayer(rows []v1.Row, layer string) int {
 		}
 	}
 	return n
+}
+
+func uploads(t *testing.T, open Opener) {
+	ctx := context.Background()
+	c := newClock()
+	tm := newTeam(t, open(t, c.Now))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	size := int64(v1.ChunkSize + 10)
+
+	for _, bad := range []struct {
+		sha, typ string
+		size     int64
+	}{{"abc", "image/jpeg", 1}, {photoSHA, "jpeg", 1}, {photoSHA, "image/jpeg", -1}} {
+		if _, _, err := s.StartUpload(ctx, tm.ws, a, bad.sha, bad.size, bad.typ); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("upload %+v: %v", bad, err)
+		}
+	}
+	if _, _, err := s.StartUpload(ctx, tm.ws, a, photoSHA, v1.MaxFileSize+1, "video/mp4"); !errors.Is(err, v1.ErrTooLarge) {
+		t.Fatalf("too large: %v", err)
+	}
+	u, exists, err := s.StartUpload(ctx, tm.ws, a, photoSHA, size, "image/jpeg")
+	if err != nil || exists || u.ID == "" || u.Offset != 0 || u.Size != size {
+		t.Fatalf("start: %v %v %+v", err, exists, u)
+	}
+	// Starting again (say after the app restarted) picks the same upload up.
+	if again, _, err := s.StartUpload(ctx, tm.ws, a, photoSHA, size, "image/jpeg"); err != nil || again.ID != u.ID {
+		t.Fatalf("start again: %v %+v", err, again)
+	}
+	if _, err := s.Received(ctx, tm.ws, b, u.ID, 0, 10); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("someone else's upload: %v", err)
+	}
+	if _, err := s.Received(ctx, tm.ws, a, u.ID, 0, v1.ChunkSize+1); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("a chunk over the size: %v", err)
+	}
+	off, err := s.Received(ctx, tm.ws, a, u.ID, 0, v1.ChunkSize)
+	if err != nil || off != v1.ChunkSize {
+		t.Fatalf("first chunk: %v %d", err, off)
+	}
+	if cur, err := s.Received(ctx, tm.ws, a, u.ID, 0, 10); !errors.Is(err, v1.ErrOffsetMismatch) || cur != v1.ChunkSize {
+		t.Fatalf("a chunk sent twice: %v %d", err, cur)
+	}
+	if _, err := s.Received(ctx, tm.ws, a, u.ID, off, 11); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("past the declared size: %v", err)
+	}
+	if err := s.FinishUpload(ctx, tm.ws, a, u.ID, true); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("finish before the end: %v", err)
+	}
+	if off, err = s.Received(ctx, tm.ws, a, u.ID, off, 10); err != nil || off != size {
+		t.Fatalf("last chunk: %v %d", err, off)
+	}
+
+	// Nobody can fetch it before an attachment refers to it.
+	if visible, _, err := s.FileAccess(ctx, tm.ws, a, photoSHA); err != nil || visible {
+		t.Fatalf("an unreferenced file: %v %v", err, visible)
+	}
+	t0 := time.Date(2026, 11, 26, 7, 0, 0, 0, time.UTC)
+	if _, err := s.CreateLayer(ctx, tm.ws, l, geoPoints()); err != nil {
+		t.Fatal(err)
+	}
+	point, att := uuid(60), uuid(61)
+	pushOne(t, s, tm.ws, a, t0, v1.Change{ID: uuid(600), Layer: layerA, Row: point, Set: map[string]merge.Edit{"f1": edit(`"p"`, t0)}})
+	if r := pushOne(t, s, tm.ws, a, t0, v1.Change{ID: uuid(601), Layer: v1.TableAttachments, Row: att, Set: map[string]merge.Edit{
+		"target_layer": edit(`"`+layerA+`"`, t0), "target_row": edit(`"`+point+`"`, t0),
+		"file": edit(`"`+photoSHA+`"`, t0), "type": edit(`"image/jpeg"`, t0)}}); r.Status != v1.Applied {
+		t.Fatalf("attachment: %+v", r)
+	}
+	if visible, uploaded, err := s.FileAccess(ctx, tm.ws, b, photoSHA); err != nil || !visible || uploaded {
+		t.Fatalf("referenced, not yet uploaded: %v %v %v", err, visible, uploaded)
+	}
+	if err := s.FinishUpload(ctx, tm.ws, a, u.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if visible, uploaded, err := s.FileAccess(ctx, tm.ws, b, photoSHA); err != nil || !visible || !uploaded {
+		t.Fatalf("after the upload: %v %v %v", err, visible, uploaded)
+	}
+	if _, err := s.Received(ctx, tm.ws, a, u.ID, size, 0); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("send to a finished upload: %v", err)
+	}
+	if _, exists, err := s.StartUpload(ctx, tm.ws, b, photoSHA, size, "image/jpeg"); err != nil || !exists {
+		t.Fatalf("the file is here already: %v %v", err, exists)
+	}
+	if err := s.SetLayerOverride(ctx, tm.ws, l, layerA, perm.Base, map[string]perm.Level{perm.ViewLayer: perm.None}); err != nil {
+		t.Fatal(err)
+	}
+	if visible, _, _ := s.FileAccess(ctx, tm.ws, b, photoSHA); visible {
+		t.Fatal("a file of a hidden layer is downloadable")
+	}
+
+	// A wrong hash drops the upload.
+	other := strings.Repeat("ab", 32)
+	bad, _, err := s.StartUpload(ctx, tm.ws, a, other, 3, "audio/mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Received(ctx, tm.ws, a, bad.ID, 0, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishUpload(ctx, tm.ws, a, bad.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Received(ctx, tm.ws, a, bad.ID, 3, 0); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("send to a dropped upload: %v", err)
+	}
+	// Uploads left alone for a week are cleaned up.
+	stale, _, err := s.StartUpload(ctx, tm.ws, a, other, 3, "audio/mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Advance(v1.UploadExpiry + time.Hour)
+	old, err := s.ExpiredUploads(ctx, c.Now().Add(-v1.UploadExpiry))
+	if err != nil || len(old) != 1 || old[0].ID != stale.ID || old[0].WorkspaceID != tm.ws {
+		t.Fatalf("expired: %v %+v", err, old)
+	}
+	if err := s.DropUpload(ctx, tm.ws, stale.ID); err != nil {
+		t.Fatal(err)
+	}
+	if old, _ := s.ExpiredUploads(ctx, c.Now()); len(old) != 0 {
+		t.Fatalf("still there: %+v", old)
+	}
+
+	// Uploading needs edit_rows somewhere, and an open workspace.
+	none := map[string]perm.Level{}
+	for p, lv := range v1.DefaultBasePermissions {
+		none[p] = lv
+	}
+	delete(none, perm.EditRows)
+	if _, err := s.UpdateRole(ctx, tm.ws, l, perm.Base, v1.RoleUpdate{Permissions: none}, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.StartUpload(ctx, tm.ws, b, other, 3, "audio/mp4"); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("upload without edit_rows: %v", err)
+	}
+	yes := true
+	if _, err := s.UpdateWorkspace(ctx, tm.ws, l, v1.WorkspaceUpdate{Archived: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.StartUpload(ctx, tm.ws, l, other, 3, "audio/mp4"); !errors.Is(err, store.ErrArchived) {
+		t.Fatalf("upload to an archived workspace: %v", err)
+	}
 }
