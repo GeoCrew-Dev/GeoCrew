@@ -70,9 +70,9 @@ fun rememberPhonePosition(enabled: Boolean): State<Location?> {
 }
 
 /**
- * Where the top of the screen points while [enabled], in degrees clockwise
- * from magnetic north, as the rotation-vector sensor gives it. Null without
- * the sensor.
+ * Where the phone points while [enabled], in degrees clockwise from magnetic
+ * north, as the rotation-vector sensor gives it: the top of the screen when
+ * the phone lies flat, its back when it is held up. Null without the sensor.
  */
 @Composable
 fun rememberHeading(enabled: Boolean): State<Float?> {
@@ -90,7 +90,8 @@ fun rememberHeading(enabled: Boolean): State<Float?> {
                 SensorManager.getRotationMatrixFromVector(rotation, event.values)
                 // The screen's own rotation, so the heading is that of the screen's top in landscape too.
                 @Suppress("DEPRECATION")
-                val (x, y) = when (context.getSystemService(WindowManager::class.java)?.defaultDisplay?.rotation) {
+                val screen = context.getSystemService(WindowManager::class.java)?.defaultDisplay?.rotation
+                val (x, y) = when (screen) {
                     Surface.ROTATION_90 -> SensorManager.AXIS_Y to SensorManager.AXIS_MINUS_X
                     Surface.ROTATION_180 -> SensorManager.AXIS_MINUS_X to SensorManager.AXIS_MINUS_Y
                     Surface.ROTATION_270 -> SensorManager.AXIS_MINUS_Y to SensorManager.AXIS_X
@@ -98,6 +99,17 @@ fun rememberHeading(enabled: Boolean): State<Float?> {
                 }
                 SensorManager.remapCoordinateSystem(rotation, x, y, turned)
                 SensorManager.getOrientation(turned, orientation)
+                // Held up rather than flat, the heading is where the back of the phone looks, as a compass app takes it.
+                if (abs(orientation[1]) > Math.toRadians(45.0)) {
+                    val (ux, uy) = when (screen) {
+                        Surface.ROTATION_90 -> SensorManager.AXIS_Z to SensorManager.AXIS_MINUS_X
+                        Surface.ROTATION_180 -> SensorManager.AXIS_MINUS_X to SensorManager.AXIS_MINUS_Z
+                        Surface.ROTATION_270 -> SensorManager.AXIS_MINUS_Z to SensorManager.AXIS_X
+                        else -> SensorManager.AXIS_X to SensorManager.AXIS_Z
+                    }
+                    SensorManager.remapCoordinateSystem(rotation, ux, uy, turned)
+                    SensorManager.getOrientation(turned, orientation)
+                }
                 val degrees = ((Math.toDegrees(orientation[0].toDouble()) + 360) % 360).toFloat()
                 // Small turns are left out, so the map is not redrawn many times a second for nothing.
                 val last = heading.value
