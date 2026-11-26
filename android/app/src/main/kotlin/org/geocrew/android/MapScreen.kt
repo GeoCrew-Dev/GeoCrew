@@ -1,15 +1,19 @@
 package org.geocrew.android
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.RectF
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -58,16 +63,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -303,8 +311,25 @@ fun MapScreen(graph: AppGraph, project: String, onBack: () -> Unit, onSettings: 
 
     BackHandler { requestLeave() }
 
+    // The map runs under the status bar, and imagery is mostly dark: light icons there,
+    // whatever the theme; the theme's own come back when the map goes.
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.context as? Activity)?.window
+        val bars = window?.let { WindowCompat.getInsetsController(it, view) }
+        val wasLight = bars?.isAppearanceLightStatusBars
+        bars?.isAppearanceLightStatusBars = false
+        onDispose { if (wasLight != null) bars.isAppearanceLightStatusBars = wasLight }
+    }
+
     Box(Modifier.fillMaxSize()) {
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+        // A soft shade under the status bar keeps its light icons readable on any imagery.
+        Box(
+            Modifier.fillMaxWidth()
+                .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 24.dp)
+                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent))),
+        )
         Crosshair(Modifier.align(Alignment.Center))
 
         Column(Modifier.align(Alignment.TopStart).fillMaxWidth().statusBarsPadding().padding(12.dp)) {
@@ -569,10 +594,14 @@ private fun fit(map: MapLibreMap, features: JsonArray, density: Float) {
         val xy = ((f as? JsonObject)?.get("geometry") as? JsonObject)?.get("coordinates") as? JsonArray ?: return@mapNotNull null
         if (xy.size < 2) null else LatLng(xy[1].jsonPrimitive.double, xy[0].jsonPrimitive.double)
     }
-    when {
-        points.isEmpty() -> Unit
-        points.size == 1 -> map.cameraPosition = CameraPosition.Builder().target(points.single()).zoom(15.0).build()
-        else -> map.moveCamera(CameraUpdateFactory.newLatLngBounds(LatLngBounds.fromLatLngs(points), (64 * density).toInt()))
+    if (points.isEmpty()) return
+    // Points that span no distance (all in one place) are shown like a single one:
+    // a box of no size would zoom in past the basemap's last level.
+    val spread = points.maxOf { it.latitude } - points.minOf { it.latitude } + points.maxOf { it.longitude } - points.minOf { it.longitude }
+    if (spread < 1e-6) {
+        map.cameraPosition = CameraPosition.Builder().target(points.first()).zoom(15.0).build()
+    } else {
+        map.moveCamera(CameraUpdateFactory.newLatLngBounds(LatLngBounds.fromLatLngs(points), (64 * density).toInt()))
     }
 }
 
