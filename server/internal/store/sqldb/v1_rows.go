@@ -548,6 +548,14 @@ func (p *push) attachment(ctx context.Context, c v1.Change) (v1.Result, error) {
 	if target["target_layer"] == "" || target["target_row"] == "" {
 		return rejected(c, v1.RejectInvalidValue, "an attachment needs target_layer and target_row"), nil
 	}
+	if cur == nil {
+		if _, ok := c.Set["file"]; !ok {
+			return rejected(c, v1.RejectInvalidValue, "a new attachment needs its file"), nil
+		}
+		if _, ok := c.Set["type"]; !ok {
+			return rejected(c, v1.RejectInvalidValue, "a new attachment needs its type"), nil
+		}
+	}
 	if l, ok := p.layers[target["target_layer"]]; !ok || isDeleted(l) {
 		return rejected(c, v1.RejectUnknownLayer, "no such target layer"), nil
 	}

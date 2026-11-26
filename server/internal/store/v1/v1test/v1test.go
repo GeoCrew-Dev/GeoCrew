@@ -1440,6 +1440,7 @@ func attachments(t *testing.T, open Opener) {
 		func(m map[string]merge.Edit) { m["size"] = edit(`-1`, t0) },
 		func(m map[string]merge.Edit) { m["type"] = edit(`"jpeg"`, t0) },
 		func(m map[string]merge.Edit) { m["colour"] = edit(`"red"`, t0) },
+		func(m map[string]merge.Edit) { delete(m, "file") },
 	} {
 		set := photo(pointOfA)
 		change(set)
