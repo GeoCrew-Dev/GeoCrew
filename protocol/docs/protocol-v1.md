@@ -228,7 +228,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<邀请码>&pin=<公钥指�
 
 - `GET /roles`：`[{id, name, position, permissions, version}]`，所有成员都能读。基础身份的 `id` 固定是 `member`，位置固定是 0。
 - `POST /roles` `{name, position, permissions}`：新建身份，返回新身份，要 `manage_roles`。`position` 必须低于自己的级别，大于 0；`permissions` 里的每一项都要自己能授出（4.5）。
-- `PATCH /roles/{id}` `{name?, position?, permissions?, base_version}`：修改身份，要能管理这个身份（`CanManageRole`），新的 `position` 也要低于自己的级别；改到的权限要能授出。基础身份只能改 `permissions`。`base_version` 和当前的 `version` 不同时，返回 `409 stale`，带上当前的身份。
+- `PATCH /roles/{id}` `{name?, position?, permissions?, base_version}`：修改身份，要能管理这个身份（`CanManageRole`），新的 `position` 也要低于自己的级别；改到的权限要能授出。基础身份只能改 `permissions`，而且只有组长能改：每个人都有基础身份，包括排在修改人上面的人（和 5.5 的覆盖一样）。`base_version` 和当前的 `version` 不同时，返回 `409 stale`，带上当前的身份。
 - `DELETE /roles/{id}`：删除身份，要能管理它。基础身份不能删（`400 invalid`）。删掉后，成员身上的这个身份一并去掉，图层覆盖里的也一并删除。
 - `permissions` 里的值按 4.2：`edit_rows`、`delete_rows` 取 `"none"`、`"own"`、`"all"`，其余取 `true` / `false`；不认识的权限名返回 `400 invalid`。
 

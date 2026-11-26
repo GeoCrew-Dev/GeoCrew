@@ -128,8 +128,15 @@ func (v *V1) UpdateRole(ctx context.Context, workspaceID, actor, id string, u v1
 		return cur, store.ErrStale
 	}
 	next := cur
-	if (u.Name != nil || u.Position != nil) && id == perm.Base {
-		return v1.Role{}, store.ErrInvalid // the base role keeps its name and place
+	if id == perm.Base {
+		if u.Name != nil || u.Position != nil {
+			return v1.Role{}, store.ErrInvalid // the base role keeps its name and place
+		}
+		// Everyone holds the base role, people ranked above actor included,
+		// so only the leader may change it (as with its layer overrides).
+		if actor != ws.Leader {
+			return v1.Role{}, store.ErrForbidden
+		}
 	}
 	if u.Name != nil {
 		if next.Name, err = clean(*u.Name, 32); err != nil {

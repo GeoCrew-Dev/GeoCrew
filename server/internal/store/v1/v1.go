@@ -196,7 +196,7 @@ type Store interface {
 	// the level given. Unknown permissions and levels are store.ErrInvalid.
 	CreateRole(ctx context.Context, workspaceID, actor, name string, position int, perms map[string]perm.Level) (Role, error)
 	// UpdateRole changes a role actor can manage (perm's CanManageRole). The
-	// base role only takes Permissions. Permissions actor does not hold at
+	// base role only takes Permissions, and only from the leader. Permissions actor does not hold at
 	// the old and new level cannot be changed. When baseVersion is not the
 	// role's version it returns the current role and store.ErrStale.
 	UpdateRole(ctx context.Context, workspaceID, actor, id string, u RoleUpdate, baseVersion int64) (Role, error)
