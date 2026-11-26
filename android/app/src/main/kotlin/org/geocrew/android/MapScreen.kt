@@ -200,6 +200,7 @@ fun MapScreen(
     // A line or an area being drawn, and one drawn, waiting for its form.
     var drawing by remember { mutableStateOf<Drawing?>(null) }
     var shapeDraft by remember { mutableStateOf<Drawing?>(null) }
+    var droppingDrawing by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Pair<String, Long>?>(null) }
     // Layers in a projected CRS, by name: their points can be entered as X and Y.
     var projected by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -581,15 +582,24 @@ fun MapScreen(
         }
     }
 
-    fun createLayer(name: String, srs: String?) = once {
-        val params = buildJsonObject { put("name", name); put("language", AppLanguage.speaking(context)); if (srs != null) put("srs", srs) }
+    fun createLayer(name: String, srs: String?, template: String? = null) = once {
+        val params = buildJsonObject {
+            put("name", name)
+            put("language", AppLanguage.speaking(context))
+            if (srs != null) put("srs", srs)
+            if (template != null) put("template", template)
+        }
         when (val made = graph.invoke(Workspace.LAYER_CREATE, params)) {
             is Outcome.Done -> {
                 show(made.output.jsonObject)
                 val id = made.output.jsonObject["layers"]?.jsonArray?.map { it.jsonObject }?.firstOrNull { it.name() == name }
                     ?.let { (it["id"] as? JsonPrimitive)?.contentOrNull }
                 if (rememberNew && id != null) projectId?.let { graph.settings.setPlacingLayer(it, id) }
-                startPlacing(name)
+                when (template) {
+                    "field-line" -> startDrawing(name, area = false)
+                    "field-polygon" -> startDrawing(name, area = true)
+                    else -> startPlacing(name)
+                }
             }
             else -> failure = texts.of(made)
         }
@@ -730,7 +740,11 @@ fun MapScreen(
     }
 
     fun requestLeave() {
-        if (modified) leaving = true else once { close() }
+        when {
+            drawing?.vertices?.isNotEmpty() == true -> droppingDrawing = true // a shape half drawn is asked about first
+            modified -> leaving = true
+            else -> once { close() }
+        }
     }
 
     // Every point of every layer in view.
@@ -791,6 +805,7 @@ fun MapScreen(
 
     fun measure(mode: MeasureMode) {
         placing = false
+        drawing = null // one tool at a time
         measuring = mode
         measured = emptyList()
     }
@@ -1147,12 +1162,13 @@ fun MapScreen(
             existing = layers.mapNotNull { it.name() },
             suggested = suggestedLayer,
             onDismiss = { naming = false },
-            onCreate = { name, srs, _ ->
+            onCreate = { name, srs, template ->
                 naming = false
-                createLayer(name, srs)
+                createLayer(name, srs, template)
             },
             graph = graph,
             near = mapCenter?.let { it.longitude to it.latitude },
+            kinds = true,
         )
     }
     shapeDraft?.let { d ->
@@ -1224,6 +1240,20 @@ fun MapScreen(
                     ?.takeUnless { it.endsWith("Point") }?.contains("Polygon"),
             )
         }
+    }
+    if (droppingDrawing) {
+        AlertDialog(
+            onDismissRequest = { droppingDrawing = false },
+            title = { Text(stringResource(R.string.draw_drop_title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    droppingDrawing = false
+                    drawing = null
+                    requestLeave()
+                }) { Text(stringResource(R.string.draw_drop), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { droppingDrawing = false }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
     if (leaving) {
         AlertDialog(
