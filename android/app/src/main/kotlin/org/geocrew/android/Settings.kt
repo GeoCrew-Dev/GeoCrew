@@ -48,6 +48,15 @@ class AppSettings(context: Context) {
         prefs.edit { putBoolean(OWN_FOLDER, true) }
     }
 
+    /** Whether the map keeps north up: two fingers no longer turn it. */
+    var rotationLocked by mutableStateOf(prefs.getBoolean(ROTATION_LOCKED, false))
+        private set
+
+    fun lockRotation(on: Boolean) {
+        rotationLocked = on
+        prefs.edit { putBoolean(ROTATION_LOCKED, on) }
+    }
+
     fun markLocationAsked() {
         locationAsked = true
         prefs.edit { putBoolean(LOCATION_ASKED, true) }
@@ -70,6 +79,7 @@ class AppSettings(context: Context) {
         const val DYNAMIC = "dynamic_color"
         const val OWN_FOLDER = "own_folder"
         const val LOCATION_ASKED = "location_asked"
+        const val ROTATION_LOCKED = "rotation_locked"
     }
 }
 
