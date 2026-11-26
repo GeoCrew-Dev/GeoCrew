@@ -149,6 +149,71 @@ type SchemaOp struct {
 	Options json.RawMessage
 }
 
+// System tables whose rows are not in a layer of their own (protocol 7.1, 9.1).
+const (
+	TableLayers = "layers" // a change here edits a layer's merged properties; Row is the layer id
+)
+
+// Change is one row's edits from a client (protocol 6.2, 8.1). ID is the
+// client's UUID for the change, kept so a retry is recognised.
+type Change struct {
+	ID      string
+	Layer   string
+	Row     string
+	BaseSeq int64
+	Set     map[string]merge.Edit
+	Delete  *merge.Edit
+}
+
+// Push outcomes (protocol 8.1).
+const (
+	Applied   = "applied"
+	Duplicate = "duplicate"
+	Rejected  = "rejected"
+)
+
+// Machine codes of a rejected change (protocol 8.1).
+const (
+	RejectUnknownLayer = "unknown_layer"
+	RejectInvalidValue = "invalid_value"
+	RejectForbidden    = "forbidden"
+	RejectArchived     = "archived"
+)
+
+// Result is what became of one pushed change.
+type Result struct {
+	ID        string
+	Status    string
+	Seq       int64      // applied: the change's seq; duplicate: the seq it got then
+	Conflicts []Conflict // applied: the conflicts it made, possibly none
+	Error     string     // rejected: one of the Reject codes
+	Message   string     // rejected: for people
+}
+
+// Conflict is a conflict record (protocol 6.5): a value that did not make it
+// into the row, kept so nothing is lost.
+type Conflict struct {
+	ID       string
+	Layer    string // the row's layer, or TableLayers
+	Row      string
+	Seq      int64 // the change that made it
+	Resolved bool
+	merge.Conflict
+}
+
+// Row is a row as stored: every field with who set it, when and at which
+// seq; deleted rows keep their fields. Owner is the member who first
+// submitted it. Conflicted is set while it has unresolved conflicts.
+type Row struct {
+	Layer      string
+	ID         string
+	Owner      string
+	Fields     map[string]merge.Field
+	Deleted    *merge.Field
+	Conflicted bool
+	Seq        int64
+}
+
 // AuditEntry is one line of the audit log (protocol 5.7). Target is the
 // member, device or role acted on.
 type AuditEntry struct {
@@ -297,6 +362,14 @@ type Store interface {
 	// SetLayerOverride replaces role's overrides on a layer (an empty set
 	// removes them), as perm's CanSetOverride allows.
 	SetLayerOverride(ctx context.Context, workspaceID, actor, layer, role string, set map[string]perm.Level) error
+
+	// Push applies changes from actor in one transaction, each merged field
+	// by field (protocol 6.4), and returns one result per change and the
+	// workspace's latest seq. clientNow is the client's clock when it sent
+	// them. Two changes to one row in a push are store.ErrInvalid.
+	Push(ctx context.Context, workspaceID, actor string, clientNow time.Time, changes []Change) ([]Result, int64, error)
+	// Row returns a row with its unresolved conflicts.
+	Row(ctx context.Context, workspaceID, id string) (Row, []Conflict, error)
 
 	// Audit lists the audit log newest first, starting below id before (0 for
 	// the newest), at most limit entries (1 to 100). Only the leader may read it.

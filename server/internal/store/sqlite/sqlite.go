@@ -258,4 +258,44 @@ var migrations = []string{
 		FOREIGN KEY (workspace_id, layer_id) REFERENCES v1_layers(workspace_id, id),
 		FOREIGN KEY (workspace_id, role_id) REFERENCES v1_roles(workspace_id, id)
 	);`,
+	// Protocol v1: rows merged field by field, every change kept, and the conflict records.
+	`CREATE TABLE v1_rows (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		layer_id     TEXT NOT NULL,
+		id           TEXT NOT NULL,
+		owner        TEXT NOT NULL,
+		fields       TEXT NOT NULL,
+		deleted      TEXT NOT NULL DEFAULT '',
+		conflicted   INTEGER NOT NULL DEFAULT 0,
+		seq          INTEGER NOT NULL,
+		PRIMARY KEY (workspace_id, id)
+	);
+	CREATE INDEX v1_rows_seq ON v1_rows(workspace_id, seq);
+	CREATE TABLE v1_changes (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		id           TEXT NOT NULL,
+		row_id       TEXT NOT NULL,
+		seq          INTEGER NOT NULL,
+		by_member    TEXT NOT NULL,
+		at           TEXT NOT NULL,
+		body         TEXT NOT NULL,
+		PRIMARY KEY (workspace_id, id)
+	);
+	CREATE INDEX v1_changes_row ON v1_changes(workspace_id, row_id, seq);
+	CREATE TABLE v1_conflicts (
+		workspace_id TEXT NOT NULL REFERENCES v1_workspaces(id),
+		id           TEXT NOT NULL,
+		layer_id     TEXT NOT NULL,
+		row_id       TEXT NOT NULL,
+		seq          INTEGER NOT NULL,
+		kind         TEXT NOT NULL,
+		field        TEXT NOT NULL,
+		kept         TEXT NOT NULL,
+		lost         TEXT NOT NULL,
+		resolved     INTEGER NOT NULL DEFAULT 0,
+		update_seq   INTEGER NOT NULL,
+		PRIMARY KEY (workspace_id, id)
+	);
+	CREATE INDEX v1_conflicts_seq ON v1_conflicts(workspace_id, update_seq);
+	CREATE INDEX v1_conflicts_row ON v1_conflicts(workspace_id, row_id, resolved);`,
 }

@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/merge"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/perm"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
 	v1 "github.com/GeoCrew-Dev/GeoCrew/server/internal/store/v1"
@@ -39,6 +41,8 @@ func Run(t *testing.T, open Opener) {
 		{"Roles", roles},
 		{"Layers", layers},
 		{"Overrides", overrides},
+		{"PushRows", pushRows},
+		{"PushLayerProps", pushLayerProps},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -934,5 +938,227 @@ func overrides(t *testing.T, open Opener) {
 	}
 	if n != 4 {
 		t.Fatalf("%d override entries in the audit log, want 4", n)
+	}
+}
+
+// uuid makes the n-th test id, a lowercase UUID as clients write them.
+func uuid(n int) string { return fmt.Sprintf("00000000-0000-4000-8000-%012d", n) }
+
+func edit(value string, at time.Time) merge.Edit {
+	return merge.Edit{Value: json.RawMessage(value), EditedAt: at}
+}
+
+// pushOne pushes one change and returns its result, failing on a request error.
+func pushOne(t *testing.T, s v1.Store, ws, actor string, now time.Time, c v1.Change) v1.Result {
+	t.Helper()
+	rs, _, err := s.Push(context.Background(), ws, actor, now, []v1.Change{c})
+	if err != nil || len(rs) != 1 {
+		t.Fatalf("push %+v: %v %+v", c, err, rs)
+	}
+	return rs[0]
+}
+
+func pushRows(t *testing.T, open Opener) {
+	ctx := context.Background()
+	c := newClock()
+	tm := newTeam(t, open(t, c.Now))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	in := geoPoints()
+	in.Fields = append(in.Fields, v1.FieldDef{ID: "f3", Name: "日期", Type: "date"})
+	if _, err := s.CreateLayer(ctx, tm.ws, l, in); err != nil {
+		t.Fatal(err)
+	}
+	row := uuid(1)
+	t0 := time.Date(2026, 11, 26, 7, 0, 0, 0, time.UTC)
+	point := `{"type":"Point","coordinates":[114.0,30.0]}`
+
+	// A new row: every field taken, its pusher owns it.
+	first := v1.Change{ID: uuid(100), Layer: layerA, Row: row, Set: map[string]merge.Edit{"f1": edit(`"D001"`, t0), "geom": edit(point, t0)}}
+	res := pushOne(t, s, tm.ws, a, t0, first)
+	if res.Status != v1.Applied || res.Seq == 0 || len(res.Conflicts) != 0 {
+		t.Fatalf("new row: %+v", res)
+	}
+	got, cs, err := s.Row(ctx, tm.ws, row)
+	if err != nil || got.Owner != a || got.Layer != layerA || got.Seq != res.Seq || got.Conflicted || len(cs) != 0 ||
+		string(got.Fields["f1"].Value) != `"D001"` || got.Fields["f1"].By != a || got.Fields["geom"].Seq != res.Seq {
+		t.Fatalf("stored: %v %+v %+v", err, got, cs)
+	}
+	if again := pushOne(t, s, tm.ws, a, t0, first); again.Status != v1.Duplicate || again.Seq != res.Seq {
+		t.Fatalf("a retry: %+v", again)
+	}
+
+	// Edit times move to the server's clock: a phone 1 h fast that edited 10 min before sending.
+	fast := c.Now().Add(time.Hour)
+	at := pushOne(t, s, tm.ws, a, fast, v1.Change{ID: uuid(101), Layer: layerA, Row: row, BaseSeq: res.Seq,
+		Set: map[string]merge.Edit{"f3": edit(`"2026-11-26"`, fast.Add(-10*time.Minute))}})
+	got, _, _ = s.Row(ctx, tm.ws, row)
+	if want := c.at.Add(-10 * time.Minute); at.Status != v1.Applied || !got.Fields["f3"].At.Equal(want) {
+		t.Fatalf("edit time %v, want %v (%+v)", got.Fields["f3"].At, want, at)
+	}
+
+	// Rejections leave no trace.
+	for i, bad := range []struct {
+		c    v1.Change
+		code string
+	}{
+		{v1.Change{ID: "c1", Layer: layerA, Row: row, Set: map[string]merge.Edit{"f1": edit(`"x"`, t0)}}, v1.RejectInvalidValue},
+		{v1.Change{ID: uuid(102), Layer: layerA, Row: row}, v1.RejectInvalidValue},
+		{v1.Change{ID: uuid(103), Layer: layerA, Row: row, Set: map[string]merge.Edit{"geom": edit(`{"type":"LineString","coordinates":[[1,2],[3,4]]}`, t0)}}, v1.RejectInvalidValue},
+		{v1.Change{ID: uuid(104), Layer: layerA, Row: row, Set: map[string]merge.Edit{"geom": edit(`{"type":"Point","coordinates":[1]}`, t0)}}, v1.RejectInvalidValue},
+		{v1.Change{ID: uuid(105), Layer: layerA, Row: row, Set: map[string]merge.Edit{"f2": edit(`"three"`, t0)}}, v1.RejectInvalidValue},
+		{v1.Change{ID: uuid(106), Layer: layerA, Row: row, Set: map[string]merge.Edit{"f2": edit(`9007199254740993`, t0)}}, v1.RejectInvalidValue},
+		{v1.Change{ID: uuid(107), Layer: layerA, Row: row, Set: map[string]merge.Edit{"f3": edit(`"2026-13-40"`, t0)}}, v1.RejectInvalidValue},
+		{v1.Change{ID: uuid(108), Layer: layerA, Row: row, Delete: &merge.Edit{Value: json.RawMessage(`"yes"`), EditedAt: t0}}, v1.RejectInvalidValue},
+		{v1.Change{ID: uuid(109), Layer: layerB, Row: row, Set: map[string]merge.Edit{"f1": edit(`"x"`, t0)}}, v1.RejectUnknownLayer},
+	} {
+		if r := pushOne(t, s, tm.ws, a, t0, bad.c); r.Status != v1.Rejected || r.Error != bad.code || r.Message == "" {
+			t.Fatalf("bad change %d: %+v, want %s", i, r, bad.code)
+		}
+	}
+	if after, _, _ := s.Row(ctx, tm.ws, row); after.Seq != at.Seq {
+		t.Fatalf("a rejected change moved the row to seq %d", after.Seq)
+	}
+	if _, _, err := s.Push(ctx, tm.ws, a, t0, []v1.Change{
+		{ID: uuid(110), Layer: layerA, Row: row, Set: map[string]merge.Edit{"f1": edit(`"x"`, t0)}},
+		{ID: uuid(111), Layer: layerA, Row: row, Set: map[string]merge.Edit{"f1": edit(`"y"`, t0)}},
+	}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("one row twice in a push: %v", err)
+	}
+
+	// Two members edit offline from the same base.
+	base := at.Seq
+	r1 := pushOne(t, s, tm.ws, a, t0, v1.Change{ID: uuid(112), Layer: layerA, Row: row, BaseSeq: base,
+		Set: map[string]merge.Edit{"f1": edit(`"from a"`, t0.Add(time.Minute))}})
+	r2 := pushOne(t, s, tm.ws, b, t0, v1.Change{ID: uuid(113), Layer: layerA, Row: row, BaseSeq: base,
+		Set: map[string]merge.Edit{"f1": edit(`"from b"`, t0.Add(2*time.Minute)), "f2": edit(`7`, t0)}})
+	if r1.Status != v1.Applied || r2.Status != v1.Applied || len(r2.Conflicts) != 1 {
+		t.Fatalf("concurrent edits: %+v %+v", r1, r2)
+	}
+	k := r2.Conflicts[0]
+	if k.Kind != merge.KindValue || k.Field != "f1" || k.Row != row || k.Layer != layerA || k.Seq != r2.Seq ||
+		string(k.Kept.Value) != `"from b"` || string(k.Lost.Value) != `"from a"` || k.Lost.By != a {
+		t.Fatalf("conflict: %+v", k)
+	}
+	got, cs, _ = s.Row(ctx, tm.ws, row)
+	if !got.Conflicted || len(cs) != 1 || cs[0].ID != k.ID || string(got.Fields["f2"].Value) != "7" {
+		t.Fatalf("after the conflict: %+v %+v", got, cs)
+	}
+
+	// A field deleted from the layer keeps the value as a conflict.
+	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 1, []v1.SchemaOp{{Op: "delete_field", ID: "f2"}}); err != nil {
+		t.Fatal(err)
+	}
+	gone := pushOne(t, s, tm.ws, a, t0, v1.Change{ID: uuid(114), Layer: layerA, Row: row, BaseSeq: r2.Seq,
+		Set: map[string]merge.Edit{"f2": edit(`8`, t0), "f1": edit(`"again"`, t0.Add(time.Hour))}})
+	if gone.Status != v1.Applied || len(gone.Conflicts) != 1 || gone.Conflicts[0].Kind != merge.KindDeletedField {
+		t.Fatalf("an edit to a deleted field: %+v", gone)
+	}
+
+	// A delete loses to an edit made meanwhile.
+	edited := pushOne(t, s, tm.ws, b, t0, v1.Change{ID: uuid(115), Layer: layerA, Row: row, BaseSeq: gone.Seq,
+		Set: map[string]merge.Edit{"f3": edit(`"2026-11-27"`, t0.Add(time.Hour))}})
+	del := pushOne(t, s, tm.ws, a, t0, v1.Change{ID: uuid(116), Layer: layerA, Row: row, BaseSeq: gone.Seq,
+		Delete: &merge.Edit{Value: json.RawMessage("true"), EditedAt: t0.Add(time.Hour)}})
+	if edited.Status != v1.Applied || del.Status != v1.Applied || len(del.Conflicts) != 1 || del.Conflicts[0].Kind != merge.KindDeleteRejected {
+		t.Fatalf("delete after an edit: %+v %+v", edited, del)
+	}
+
+	// Rows of someone else need "all"; deleting needs delete_rows.
+	own := map[string]perm.Level{}
+	for p, lv := range v1.DefaultBasePermissions {
+		own[p] = lv
+	}
+	own[perm.EditRows], own[perm.DeleteRows] = perm.Own, perm.Own
+	if _, err := s.UpdateRole(ctx, tm.ws, l, perm.Base, v1.RoleUpdate{Permissions: own}, 1); err != nil {
+		t.Fatal(err)
+	}
+	if r := pushOne(t, s, tm.ws, b, t0, v1.Change{ID: uuid(117), Layer: layerA, Row: row, BaseSeq: del.Seq,
+		Set: map[string]merge.Edit{"f1": edit(`"b's"`, t0)}}); r.Error != v1.RejectForbidden {
+		t.Fatalf("edit someone else's row with own: %+v", r)
+	}
+	if r := pushOne(t, s, tm.ws, b, t0, v1.Change{ID: uuid(118), Layer: layerA, Row: row, BaseSeq: del.Seq,
+		Delete: &merge.Edit{Value: json.RawMessage("true"), EditedAt: t0}}); r.Error != v1.RejectForbidden {
+		t.Fatalf("delete someone else's row with own: %+v", r)
+	}
+	if r := pushOne(t, s, tm.ws, b, t0, v1.Change{ID: uuid(119), Layer: layerA, Row: uuid(2),
+		Set: map[string]merge.Edit{"f1": edit(`"b's"`, t0)}}); r.Status != v1.Applied {
+		t.Fatalf("a new row of one's own: %+v", r)
+	}
+	if r := pushOne(t, s, tm.ws, l, t0, v1.Change{ID: uuid(120), Layer: layerA, Row: uuid(2), BaseSeq: 0,
+		Delete: &merge.Edit{Value: json.RawMessage("true"), EditedAt: t0.Add(2 * time.Hour)}}); r.Status != v1.Applied {
+		t.Fatalf("the leader deletes anything: %+v", r)
+	}
+
+	// A row id stays in its layer.
+	other := geoPoints()
+	other.ID = layerB
+	if _, err := s.CreateLayer(ctx, tm.ws, l, other); err != nil {
+		t.Fatal(err)
+	}
+	if r := pushOne(t, s, tm.ws, l, t0, v1.Change{ID: uuid(121), Layer: layerB, Row: row, Set: map[string]merge.Edit{"f1": edit(`"x"`, t0)}}); r.Error != v1.RejectInvalidValue {
+		t.Fatalf("a row moved to another layer: %+v", r)
+	}
+
+	// Several changes in one push get rising seqs; the reply gives the latest.
+	rs, last, err := s.Push(ctx, tm.ws, l, t0, []v1.Change{
+		{ID: uuid(122), Layer: layerB, Row: uuid(3), Set: map[string]merge.Edit{"f1": edit(`"p"`, t0)}},
+		{ID: uuid(123), Layer: layerB, Row: uuid(4), Set: map[string]merge.Edit{"f1": edit(`"q"`, t0)}},
+	})
+	if err != nil || len(rs) != 2 || rs[1].Seq != rs[0].Seq+1 || last != rs[1].Seq {
+		t.Fatalf("batch: %v %+v %d", err, rs, last)
+	}
+
+	yes := true
+	if _, err := s.UpdateWorkspace(ctx, tm.ws, l, v1.WorkspaceUpdate{Archived: &yes}); err != nil {
+		t.Fatal(err)
+	}
+	if r := pushOne(t, s, tm.ws, l, t0, v1.Change{ID: uuid(124), Layer: layerB, Row: uuid(5), Set: map[string]merge.Edit{"f1": edit(`"x"`, t0)}}); r.Error != v1.RejectArchived {
+		t.Fatalf("push to an archived workspace: %+v", r)
+	}
+}
+
+func pushLayerProps(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a := tm.s, tm.lead.Member.ID, tm.a.Member.ID
+	lay, err := s.CreateLayer(ctx, tm.ws, l, geoPoints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 11, 26, 7, 0, 0, 0, time.UTC)
+	if r := pushOne(t, s, tm.ws, a, t0, v1.Change{ID: uuid(200), Layer: v1.TableLayers, Row: layerA, BaseSeq: lay.Seq,
+		Set: map[string]merge.Edit{v1.PropName: edit(`"新名"`, t0)}}); r.Error != v1.RejectForbidden {
+		t.Fatalf("a member without edit_schema renames: %+v", r)
+	}
+	for i, set := range []map[string]merge.Edit{
+		{v1.PropName: edit(`""`, t0)},
+		{v1.PropStyle: edit(`[1]`, t0)},
+		{v1.PropOrder: edit(`"first"`, t0)},
+		{"colour": edit(`"red"`, t0)},
+	} {
+		if r := pushOne(t, s, tm.ws, l, t0, v1.Change{ID: uuid(201 + i), Layer: v1.TableLayers, Row: layerA, BaseSeq: lay.Seq, Set: set}); r.Error != v1.RejectInvalidValue {
+			t.Fatalf("bad property %d: %+v", i, r)
+		}
+	}
+	if r := pushOne(t, s, tm.ws, l, t0, v1.Change{ID: uuid(210), Layer: v1.TableLayers, Row: layerA, BaseSeq: lay.Seq,
+		Delete: &merge.Edit{Value: json.RawMessage("true"), EditedAt: t0}}); r.Error != v1.RejectInvalidValue {
+		t.Fatalf("delete a layer through a change: %+v", r)
+	}
+	r := pushOne(t, s, tm.ws, l, t0, v1.Change{ID: uuid(211), Layer: v1.TableLayers, Row: layerA, BaseSeq: lay.Seq,
+		Set: map[string]merge.Edit{v1.PropName: edit(`"新名"`, t0), v1.PropOrder: edit(`5`, t0)}})
+	got, _ := s.Layer(ctx, tm.ws, layerA)
+	if r.Status != v1.Applied || got.Seq != r.Seq || string(got.Props[v1.PropName].Value) != `"新名"` || string(got.Props[v1.PropOrder].Value) != `5` ||
+		string(got.Props[v1.PropStyle].Value) != `{"color":"#c00"}` || got.SchemaVersion != 1 {
+		t.Fatalf("layer properties: %+v %+v", r, got)
+	}
+	// Two offline renames: the later edit wins, the other is kept as a conflict.
+	r2 := pushOne(t, s, tm.ws, l, t0, v1.Change{ID: uuid(212), Layer: v1.TableLayers, Row: layerA, BaseSeq: lay.Seq,
+		Set: map[string]merge.Edit{v1.PropName: edit(`"更早的名字"`, t0.Add(-time.Hour))}})
+	if len(r2.Conflicts) != 1 || r2.Conflicts[0].Layer != v1.TableLayers || r2.Conflicts[0].Row != layerA || string(r2.Conflicts[0].Lost.Value) != `"更早的名字"` {
+		t.Fatalf("concurrent renames: %+v", r2)
+	}
+	if r := pushOne(t, s, tm.ws, l, t0, v1.Change{ID: uuid(213), Layer: v1.TableLayers, Row: layerB,
+		Set: map[string]merge.Edit{v1.PropName: edit(`"x"`, t0)}}); r.Error != v1.RejectUnknownLayer {
+		t.Fatalf("an unknown layer: %+v", r)
 	}
 }

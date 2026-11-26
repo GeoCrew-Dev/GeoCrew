@@ -19,6 +19,7 @@ var tables = []string{
 var v1Tables = []string{
 	"v1_workspaces", "v1_members", "v1_roles", "v1_devices", "v1_member_roles",
 	"v1_transfer_codes", "v1_audit", "v1_layers", "v1_layer_overrides",
+	"v1_rows", "v1_changes", "v1_conflicts",
 }
 
 // ErrNotEmpty means a copy's target already holds workspaces.
