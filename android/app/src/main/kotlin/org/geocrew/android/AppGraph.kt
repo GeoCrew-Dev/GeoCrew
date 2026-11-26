@@ -21,6 +21,9 @@ import org.geocrew.storage.Projects
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
 
+/** A layer to show in full, or one feature of it ([fid]), which the map then opens. */
+data class Zoom(val layer: String, val fid: Long? = null)
+
 /** The application: it keeps the app's parts for as long as the process lives. */
 class GeoCrewApplication : Application() {
     val graph by lazy { AppGraph(this) }
@@ -38,8 +41,8 @@ class AppGraph(private val app: Application) {
     /** Where each project's map was looking, for the next visit in this session. */
     val cameras = HashMap<String, CameraPosition>()
 
-    /** A layer the map shows in full when it comes back, as asked from the layers page; it is taken once. */
-    var zoomTo: String? = null
+    /** What the map shows when it comes back, as asked from the layers page or a table; it is taken once. */
+    var zoomTo: Zoom? = null
     private var workspace: Workspace? = null
     private var workspaceRoot: File? = null
 

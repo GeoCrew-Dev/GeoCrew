@@ -193,6 +193,10 @@
     <string name="feature_delete_body">保存修改之前还能撤销。</string>
     <string name="coordinates">坐标（CGCS2000，度）</string>
     <string name="attributes">属性</string>
+    <string name="attribute_table">属性表</string>
+    <string name="no_features">没有要素</string>
+    <string name="yes">是</string>
+    <string name="no">否</string>
     <string name="longitude">经度</string>
     <string name="latitude">纬度</string>
     <string name="coordinate_missing">必填</string>

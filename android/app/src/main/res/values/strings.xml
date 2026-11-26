@@ -201,6 +201,10 @@
     <string name="feature_delete_body">You can undo it until the edits are saved.</string>
     <string name="coordinates">Coordinates (CGCS2000, degrees)</string>
     <string name="attributes">Attributes</string>
+    <string name="attribute_table">Attribute table</string>
+    <string name="no_features">No features</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
     <string name="longitude">Longitude</string>
     <string name="latitude">Latitude</string>
     <string name="coordinate_missing">Required</string>

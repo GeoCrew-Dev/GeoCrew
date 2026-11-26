@@ -315,10 +315,13 @@ fun MapScreen(
                     if (started !is Outcome.Done) failure = texts.of(started)
                 }
                 if (closed.isNotEmpty()) reload()
-                // Back from the layers page with a layer to show in full.
-                graph.zoomTo?.let { layer ->
+                // Back from the layers page with a layer to show in full, or from a table with a feature to open.
+                graph.zoomTo?.let { zoom ->
                     graph.zoomTo = null
-                    (collections[layer]?.get("features") as? JsonArray)?.let { fit(mapView.awaitMap(), it, density) }
+                    val features = (collections[zoom.layer]?.get("features") as? JsonArray).orEmpty()
+                    val shown = if (zoom.fid == null) features else features.filter { (it as? JsonObject)?.get("id")?.jsonPrimitive?.longOrNull == zoom.fid }
+                    fit(mapView.awaitMap(), JsonArray(shown), density)
+                    if (zoom.fid != null && shown.isNotEmpty()) selected = zoom.layer to zoom.fid
                 }
             }
             else -> failure = texts.of(opened)
