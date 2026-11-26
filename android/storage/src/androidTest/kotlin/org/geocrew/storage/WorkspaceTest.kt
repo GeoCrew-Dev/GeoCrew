@@ -185,6 +185,35 @@ class WorkspaceTest {
         assertEquals(0L, workspace.current!!.count("野外点"))
     }
 
+    // Gauss-Kruger is stored as such; the map gets longitude and latitude.
+    @Test
+    fun aLayerInAnotherCrsShowsInLongitudeAndLatitude() {
+        run(Workspace.CREATE, """{"name": "高斯", "language": "zh"}""")
+        val made = output(run(Workspace.LAYER_CREATE, """{"name": "测点", "language": "zh", "srs": "EPSG:4547"}"""))
+        assertEquals("EPSG:4547", made.getValue("layers").jsonArray.single().jsonObject.getValue("srs").jsonPrimitive.content)
+        run(Editing.START, """{"layer": "测点"}""")
+        run(Editing.ADD, """{"layer": "测点", "geometry": {"type": "Point", "coordinates": [500000, 3320000]}, "properties": {"点名": "G1"}}""")
+        val shown = output(run(Workspace.FEATURES, """{"layer": "测点", "srs": "EPSG:4490"}"""))
+        assertEquals("EPSG:4490", shown.getValue("srs").jsonPrimitive.content)
+        val xy = shown.getValue("features").jsonArray.single().jsonObject.getValue("geometry").jsonObject.getValue("coordinates").jsonArray
+        assertEquals(114.0, xy[0].jsonPrimitive.content.toDouble(), 1e-9, "the central meridian")
+        assertTrue(xy[1].jsonPrimitive.content.toDouble() in 29.9..30.1)
+        val stored = output(run(Workspace.FEATURES, """{"layer": "测点"}"""))
+        assertEquals("EPSG:4547", stored.getValue("srs").jsonPrimitive.content)
+
+        val back = output(run(Workspace.CRS_TRANSFORM, """{"from": "EPSG:4490", "to": "EPSG:4547", "xy": [114.0, 30.0]}"""))
+        assertEquals(500000.0, back.getValue("xy").jsonArray[0].jsonPrimitive.content.toDouble(), 1e-6)
+        assertEquals(true, output(run(Workspace.CRS_DESCRIBE, """{"srs": "EPSG:4547"}""")).getValue("projected").jsonPrimitive.content.toBoolean())
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_CREATE, """{"name": "坏", "srs": "EPSG:999999"}"""), "an unknown CRS")
+        assertIs<Outcome.Failed>(run(Workspace.CRS_DESCRIBE, """{"srs": "nonsense"}"""))
+        // The CGCS2000 Gauss-Kruger codes the new-layer dialog picks from the map's longitude.
+        fun name(code: Int) = output(run(Workspace.CRS_DESCRIBE, """{"srs": "EPSG:$code"}""")).getValue("name").jsonPrimitive.content
+        assertEquals("CGCS2000 / 3-degree Gauss-Kruger zone 38", name(4526))
+        assertEquals("CGCS2000 / 3-degree Gauss-Kruger CM 114E", name(4547))
+        assertEquals("CGCS2000 / Gauss-Kruger zone 19", name(4497))
+        assertEquals("CGCS2000 / Gauss-Kruger CM 111E", name(4508))
+    }
+
     @Test
     fun theOpenProjectCanBeAskedFor() {
         assertEquals(JsonObject(emptyMap()), output(run(Workspace.CURRENT)))

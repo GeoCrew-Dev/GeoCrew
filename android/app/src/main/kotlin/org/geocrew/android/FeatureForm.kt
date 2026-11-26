@@ -31,11 +31,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -62,6 +67,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -72,17 +78,28 @@ import org.geocrew.core.edit.FieldType
 /** A field of a layer, as layer.features describes it. */
 data class FormField(val name: String, val type: String)
 
+/** A point's position: [x] is the longitude or easting, [y] the latitude or northing, in CRS [srs]. */
+data class Position(val x: Double, val y: Double, val srs: String)
+
+/**
+ * A layer's own projected CRS, for entering a point's X and Y in it, and how to
+ * convert a position between two CRSs (null when it cannot be converted).
+ */
+class FormCrs(val srs: String, val convert: suspend (from: String, to: String, x: Double, y: Double) -> Pair<Double, Double>?)
+
+private const val DEGREES_CRS = "EPSG:4490"
+
 /**
  * A feature's fields to read and change, like QGIS's attribute form: full
  * screen, with close and save in the top bar, where the keyboard never covers
- * them. A point's coordinates come first, in CGCS2000 degrees. Text fields take
- * text, number fields numbers; dates are shown, in local time, but not changed
- * here yet.
+ * them. A point's coordinates come first, in CGCS2000 degrees, or for a layer
+ * in a projected CRS ([crs]) also as X and Y in it. Text fields take text,
+ * number fields numbers; dates are shown, in local time, but not changed here yet.
  *
  * A new point ([isNew]) is added only by its save, which gets every field that
- * has a value and the coordinates. For a feature already there [onSave] gets
- * the fields that changed, a cleared one as null, and the coordinates only when
- * they changed; [onDelete] deletes it and [onMove] moves it to another layer.
+ * has a value and the position. For a feature already there [onSave] gets the
+ * fields that changed, a cleared one as null, and the position only when it
+ * changed; [onDelete] deletes it and [onMove] moves it to another layer.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,9 +110,10 @@ fun FeatureForm(
     coordinates: Pair<Double, Double>?,
     isNew: Boolean,
     onDismiss: () -> Unit,
-    onSave: (values: JsonObject, coordinates: Pair<Double, Double>?) -> Unit,
+    onSave: (values: JsonObject, position: Position?) -> Unit,
     onDelete: (() -> Unit)?,
     onMove: (() -> Unit)? = null,
+    crs: FormCrs? = null,
 ) {
     val original = remember(properties) { fields.associate { it.name to text(properties[it.name]) } }
     val texts = remember(properties) { mutableStateMapOf<String, String>().apply { putAll(original) } }
@@ -103,23 +121,66 @@ fun FeatureForm(
     var longitude by remember(coordinates) { mutableStateOf(start?.first.orEmpty()) }
     var latitude by remember(coordinates) { mutableStateOf(start?.second.orEmpty()) }
     val problems = fields.associate { it.name to problem(it.type, texts[it.name].orEmpty()) }
-    val longitudeProblem = start?.let { coordinateProblem(longitude, 180.0, R.string.longitude_range) }
-    val latitudeProblem = start?.let { coordinateProblem(latitude, 90.0, R.string.latitude_range) }
-    val canSave = problems.values.all { it == null } && longitudeProblem == null && latitudeProblem == null
+    // X and Y in the layer's projected CRS, entered there when chosen; X is the northing, as surveyors write it.
+    var byXY by remember(coordinates, crs) { mutableStateOf(crs != null) }
+    var startXY by remember(coordinates, crs) { mutableStateOf<Pair<String, String>?>(null) }
+    var easting by remember(coordinates, crs) { mutableStateOf("") }
+    var northing by remember(coordinates, crs) { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(coordinates, crs) {
+        if (crs == null || coordinates == null) return@LaunchedEffect
+        val xy = crs.convert(DEGREES_CRS, crs.srs, coordinates.first, coordinates.second) ?: return@LaunchedEffect
+        val shown = metres(xy.first) to metres(xy.second)
+        startXY = shown
+        easting = shown.first
+        northing = shown.second
+    }
+    val xyReady = crs != null && startXY != null
+    val eastingProblem = if (byXY) numberProblem(easting) else null
+    val northingProblem = if (byXY) numberProblem(northing) else null
+    val longitudeProblem = if (start == null || byXY) null else coordinateProblem(longitude, 180.0, R.string.longitude_range)
+    val latitudeProblem = if (start == null || byXY) null else coordinateProblem(latitude, 90.0, R.string.latitude_range)
+    val positionOk = if (byXY) xyReady && eastingProblem == null && northingProblem == null else longitudeProblem == null && latitudeProblem == null
+    val canSave = problems.values.all { it == null } && (start == null || positionOk)
     val locale = LocalConfiguration.current.locales[0]
     var confirmDelete by remember { mutableStateOf(false) }
+
+    // Switching shows the same spot in the other system, when what is typed is a position.
+    fun switchTo(xy: Boolean) {
+        if (xy == byXY || crs == null) return
+        scope.launch {
+            if (xy) {
+                val lon = longitude.trim().toDoubleOrNull()
+                val lat = latitude.trim().toDoubleOrNull()
+                if (lon != null && lat != null) crs.convert(DEGREES_CRS, crs.srs, lon, lat)?.let { (x, y) -> easting = metres(x); northing = metres(y) }
+            } else {
+                val x = easting.trim().toDoubleOrNull()
+                val y = northing.trim().toDoubleOrNull()
+                if (x != null && y != null) crs.convert(crs.srs, DEGREES_CRS, x, y)?.let { (lon, lat) -> longitude = degrees(lon); latitude = degrees(lat) }
+            }
+            byXY = xy
+        }
+    }
 
     fun save() {
         val values = fields.filter {
             val text = texts[it.name].orEmpty()
             editable(it.type) && if (isNew) text.isNotBlank() else text != original[it.name]
         }
-        // Coordinates compare as typed: a value read with more decimals than shown is no change.
-        val moved = start != null && (isNew || longitude != start.first || latitude != start.second)
-        onSave(
-            JsonObject(values.associate { it.name to value(it.type, texts[it.name].orEmpty()) }),
-            if (moved) longitude.trim().toDouble() to latitude.trim().toDouble() else null,
-        )
+        // Positions compare as typed: a value read with more decimals than shown is no change.
+        val position = when {
+            start == null -> null
+            byXY && crs != null -> {
+                val first = startXY
+                val moved = isNew || first == null || easting != first.first || northing != first.second
+                if (moved) Position(easting.trim().toDouble(), northing.trim().toDouble(), crs.srs) else null
+            }
+            else -> {
+                val moved = isNew || longitude != start.first || latitude != start.second
+                if (moved) Position(longitude.trim().toDouble(), latitude.trim().toDouble(), DEGREES_CRS) else null
+            }
+        }
+        onSave(JsonObject(values.associate { it.name to value(it.type, texts[it.name].orEmpty()) }), position)
     }
 
     // Edge to edge like the app's screens: the map does not show above the form.
@@ -151,10 +212,25 @@ fun FeatureForm(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (start != null) {
-                        FormHeader(stringResource(R.string.coordinates))
+                        FormHeader(if (byXY && crs != null) stringResource(R.string.coordinates_in, crs.srs) else stringResource(R.string.coordinates))
+                        if (crs != null) {
+                            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+                                SegmentedButton(selected = !byXY, onClick = { switchTo(false) }, shape = SegmentedButtonDefaults.itemShape(0, 2)) {
+                                    Text(stringResource(R.string.coord_degrees))
+                                }
+                                SegmentedButton(selected = byXY, onClick = { switchTo(true) }, shape = SegmentedButtonDefaults.itemShape(1, 2), enabled = xyReady) {
+                                    Text(stringResource(R.string.coord_xy))
+                                }
+                            }
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f))
-                            CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f))
+                            if (byXY) {
+                                CoordinateField(northing, { northing = it }, stringResource(R.string.northing), northingProblem, Modifier.weight(1f))
+                                CoordinateField(easting, { easting = it }, stringResource(R.string.easting), eastingProblem, Modifier.weight(1f))
+                            } else {
+                                CoordinateField(longitude, { longitude = it }, stringResource(R.string.longitude), longitudeProblem, Modifier.weight(1f))
+                                CoordinateField(latitude, { latitude = it }, stringResource(R.string.latitude), latitudeProblem, Modifier.weight(1f))
+                            }
                         }
                     }
                     if (fields.isNotEmpty()) FormHeader(stringResource(R.string.attributes))
@@ -289,6 +365,16 @@ private fun keyboard(type: String) = when (type) {
     "real" -> KeyboardType.Decimal
     "integer", "integer64" -> KeyboardType.Number
     else -> KeyboardType.Text
+}
+
+// Metres as surveyors write them: to the millimetre.
+private fun metres(value: Double): String = BigDecimal.valueOf(value).setScale(3, RoundingMode.HALF_UP).toPlainString()
+
+// What is wrong with a projected coordinate, as a string resource.
+private fun numberProblem(text: String): Int? = when {
+    text.isBlank() -> R.string.coordinate_missing
+    text.trim().toDoubleOrNull()?.isFinite() != true -> R.string.field_not_a_number
+    else -> null
 }
 
 // Degrees as the user reads them: to the seventh decimal (about a centimetre), no trailing zeros.

@@ -240,12 +240,14 @@ class Project internal constructor(
     }
 
     /**
-     * Makes layer [name] from [template], its fields named in [language], in the
-     * open file: layers being edited carry on, unsaved edits and all.
+     * Makes layer [name] from [template], its fields named in [language], in CRS
+     * [srs] (the template's when null), in the open file: layers being edited
+     * carry on, unsaved edits and all.
      */
-    fun createLayer(name: String, template: LayerTemplate, language: String): Layer {
+    fun createLayer(name: String, template: LayerTemplate, language: String, srs: String? = null): Layer {
         checkNewName(name)
-        addLayer(dataset, name, template.geometryType, template.crs, template.id, template.fields(language))
+        if (srs != null) Crs.describe(srs) // a CRS GDAL does not know is refused before anything is made
+        addLayer(dataset, name, template.geometryType, srs ?: template.crs, template.id, template.fields(language))
         layers = readLayers(dataset)
         return layers.single { it.name == name }
     }

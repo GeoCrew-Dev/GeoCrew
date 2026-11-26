@@ -107,6 +107,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -118,6 +119,7 @@ import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.project.PointNumbers
+import org.geocrew.storage.Crs
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -177,6 +179,20 @@ fun MapScreen(
     var drawn by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf<Draft?>(null) }
     var selected by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    // Layers in a projected CRS, by name: their points can be entered as X and Y.
+    var projected by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    // Where the map looks, as it settles: the Gauss-Kruger zone of a new layer follows it.
+    var mapCenter by remember { mutableStateOf<LatLng?>(null) }
+    val convert: suspend (String, String, Double, Double) -> Pair<Double, Double>? = { from, to, x, y ->
+        val moved = graph.invoke(Workspace.CRS_TRANSFORM, buildJsonObject { put("from", from); put("to", to); putJsonArray("xy") { add(x); add(y) } })
+        val xy = ((moved as? Outcome.Done)?.output?.jsonObject?.get("xy") as? JsonArray)?.map { (it as? JsonPrimitive)?.doubleOrNull }
+        if (xy != null && xy.size == 2 && xy[0] != null && xy[1] != null) xy[0]!! to xy[1]!! else null
+    }
+    val describeCrs: suspend (String) -> String? = { srs ->
+        ((graph.invoke(Workspace.CRS_DESCRIBE, buildJsonObject { put("srs", srs) }) as? Outcome.Done)?.output as? JsonObject)?.text("name")
+    }
+    // One per layer, kept while the layers stay: the form keys its state on it.
+    val formCrs = remember(projected) { projected.mapValues { (_, srs) -> FormCrs(srs, convert) } }
     var failure by remember { mutableStateOf<String?>(null) }
     var leaving by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -199,6 +215,7 @@ fun MapScreen(
         failed = stringResource(R.string.action_failed),
         start = stringResource(R.string.start_failed),
         empty = stringResource(R.string.failure_empty),
+        crs = stringResource(R.string.failure_crs),
     )
 
     // One operation at a time: a tap while one runs is ignored, so a quick
@@ -217,7 +234,8 @@ fun MapScreen(
     suspend fun reload() {
         val loaded = LinkedHashMap<String, JsonObject>()
         for (name in layers.mapNotNull { it.name() }) {
-            when (val read = graph.invoke(Workspace.FEATURES, buildJsonObject { put("layer", name) })) {
+            // In longitude and latitude, as the map wants, whatever CRS the layer is in.
+            when (val read = graph.invoke(Workspace.FEATURES, buildJsonObject { put("layer", name); put("srs", Crs.LONGITUDE_LATITUDE) })) {
                 is Outcome.Done -> loaded[name] = read.output.jsonObject
                 else -> failure = texts.of(read)
             }
@@ -226,11 +244,29 @@ fun MapScreen(
         history = graph.registry.canUndo(Workspace.PROJECT_SCOPE) to graph.registry.canRedo(Workspace.PROJECT_SCOPE)
     }
 
-    // The project as project.current describes it: its id and layers.
+    // The project as project.current describes it: its id and layers, and which layers are in a projected CRS.
     suspend fun show(about: JsonObject) {
         projectId = (about["id"] as? JsonPrimitive)?.contentOrNull
         layers = about["layers"]?.jsonArray.orEmpty().map { it.jsonObject }
+        val kinds = HashMap<String, String>()
+        for (l in layers) {
+            val name = l.name() ?: continue
+            val srs = l.text("srs") ?: continue
+            if (Crs.same(srs, Crs.LONGITUDE_LATITUDE)) continue
+            val described = graph.invoke(Workspace.CRS_DESCRIBE, buildJsonObject { put("srs", srs) }) as? Outcome.Done
+            if (described?.output?.jsonObject?.text("projected") == "true") kinds[name] = srs
+        }
+        projected = kinds
         reload()
+    }
+
+    // A position as a point in [layer]'s own CRS, converted when it is in another; null with the failure said.
+    suspend fun inLayer(layer: String, position: Position): JsonObject? {
+        val own = layers.firstOrNull { it.name() == layer }?.text("srs")
+        if (own == null || Crs.same(own, position.srs)) return point(position.x to position.y)
+        val moved = convert(position.srs, own, position.x, position.y)
+        if (moved == null) failure = texts.failed.format(position.srs)
+        return moved?.let(::point)
     }
 
     // Runs an action, then shows what it did; a failure is said in a dialog.
@@ -284,6 +320,7 @@ fun MapScreen(
             if (name != null) fid.toLongOrNull()?.let { selected = name to it }
             true
         }
+        map.addOnCameraIdleListener { mapCenter = map.cameraPosition.target?.wrap() }
         // A picture for the home screen only once the map has been drawn in full.
         mapView.addOnDidBecomeIdleListener { drawn = true }
         // While a point is being placed, where the crosshair is.
@@ -407,8 +444,8 @@ fun MapScreen(
         }
     }
 
-    fun createLayer(name: String) = once {
-        val params = buildJsonObject { put("name", name); put("language", AppLanguage.speaking(context)) }
+    fun createLayer(name: String, srs: String?) = once {
+        val params = buildJsonObject { put("name", name); put("language", AppLanguage.speaking(context)); if (srs != null) put("srs", srs) }
         when (val made = graph.invoke(Workspace.LAYER_CREATE, params)) {
             is Outcome.Done -> {
                 show(made.output.jsonObject)
@@ -437,9 +474,10 @@ fun MapScreen(
     }
 
     // After adding, the snackbar names the layer and offers to change it: the quick way back from the wrong one.
-    fun add(layer: String, values: JsonObject, at: Pair<Double, Double>) = once {
+    fun add(layer: String, values: JsonObject, at: Position) = once {
         if (!startEditing(layer)) return@once
-        val added = graph.invoke(Editing.ADD, buildJsonObject { put("layer", layer); put("geometry", point(at)); put("properties", values) })
+        val geometry = inLayer(layer, at) ?: return@once
+        val added = graph.invoke(Editing.ADD, buildJsonObject { put("layer", layer); put("geometry", geometry); put("properties", values) })
         reload()
         if (added !is Outcome.Done) {
             failure = texts.of(added)
@@ -487,9 +525,12 @@ fun MapScreen(
         }
     }
 
-    fun change(layer: String, fid: Long, values: JsonObject, at: Pair<Double, Double>?) = once {
+    fun change(layer: String, fid: Long, values: JsonObject, at: Position?) = once {
         if (!startEditing(layer)) return@once
-        if (at != null && !act(Editing.GEOMETRY, buildJsonObject { put("layer", layer); put("fid", fid); put("geometry", point(at)) })) return@once
+        if (at != null) {
+            val geometry = inLayer(layer, at) ?: return@once
+            if (!act(Editing.GEOMETRY, buildJsonObject { put("layer", layer); put("fid", fid); put("geometry", geometry) })) return@once
+        }
         if (values.isNotEmpty()) act(Editing.VALUES, buildJsonObject { put("layer", layer); put("fid", fid); put("values", values) })
     }
 
@@ -751,7 +792,7 @@ fun MapScreen(
             existing = layers.mapNotNull { it.name() },
             suggested = like,
             onDismiss = { movingNew = null },
-            onCreate = { name ->
+            onCreate = { name, _ ->
                 movingNew = null
                 moveToNewLayer(name, like, fid)
             },
@@ -776,10 +817,12 @@ fun MapScreen(
             existing = layers.mapNotNull { it.name() },
             suggested = suggestedLayer,
             onDismiss = { naming = false },
-            onCreate = { name ->
+            onCreate = { name, srs ->
                 naming = false
-                createLayer(name)
+                createLayer(name, srs)
             },
+            centerLongitude = mapCenter?.longitude,
+            describe = describeCrs,
         )
     }
     draft?.let { d ->
@@ -792,9 +835,10 @@ fun MapScreen(
             onDismiss = { draft = null },
             onSave = { values, at ->
                 draft = null
-                add(d.layer, values, at ?: (d.longitude to d.latitude))
+                add(d.layer, values, at ?: Position(d.longitude, d.latitude, Crs.LONGITUDE_LATITUDE))
             },
             onDelete = null,
+            crs = formCrs[d.layer],
         )
     }
     selected?.let { (layer, fid) ->
@@ -824,6 +868,7 @@ fun MapScreen(
                     selected = null
                     moving = layer to fid
                 },
+                crs = formCrs[layer],
             )
         }
     }
@@ -987,6 +1032,8 @@ private const val THUMBNAIL_WAIT_MS = 2_000L
 private fun JsonObject?.flag(name: String): Boolean = (this?.get(name) as? JsonPrimitive)?.booleanOrNull == true
 
 private fun JsonObject.name(): String? = (this["name"] as? JsonPrimitive)?.contentOrNull
+
+private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
 // GNSS and the map are WGS84, taken as CGCS2000 (ADR 0015).
 private fun point(at: Pair<Double, Double>): JsonObject = buildJsonObject {
