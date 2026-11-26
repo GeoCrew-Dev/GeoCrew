@@ -152,6 +152,9 @@ type SchemaOp struct {
 // System tables whose rows are not in a layer of their own (protocol 7.1, 9.1).
 const (
 	TableLayers = "layers" // a change here edits a layer's merged properties; Row is the layer id
+	// TableAttachments holds attachment rows: target_layer and target_row say
+	// which row a file belongs to, and that row's permissions apply.
+	TableAttachments = "attachments"
 )
 
 // Change is one row's edits from a client (protocol 6.2, 8.1). ID is the
