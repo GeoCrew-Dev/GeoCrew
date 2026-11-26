@@ -32,16 +32,28 @@ object ProjectFormat {
     /** [s] as an SQL identifier. */
     fun identifier(s: String): String = "\"" + s.replace("\"", "\"\"") + "\""
 
+    /** The longest project name. */
+    const val MAX_NAME = 64
+
+    /** Why a name cannot name a project folder; [message] is for programs and logs. */
+    enum class NameProblem(val message: String) {
+        EMPTY("the name is empty"),
+        SPACE("the name starts or ends with a space"),
+        TOO_LONG("the name is longer than $MAX_NAME characters"),
+        DOT("the name cannot end with a dot"),
+        CHARACTER("the name has a character folders cannot have: \\ / : * ? \" < > |"),
+    }
+
     /**
      * Why [name] cannot name a project folder, or null when it can. The rules are
      * those of FAT and exFAT memory cards, which are the strictest.
      */
-    fun nameProblem(name: String): String? = when {
-        name.isBlank() -> "the name is empty"
-        name != name.trim() -> "the name starts or ends with a space"
-        name.length > 64 -> "the name is longer than 64 characters"
-        name == "." || name == ".." || name.endsWith(".") -> "the name cannot end with a dot"
-        name.any { it < ' ' || it == '\u007f' || it in "\\/:*?\"<>|" } -> "the name has a character folders cannot have: \\ / : * ? \" < > |"
+    fun nameProblem(name: String): NameProblem? = when {
+        name.isBlank() -> NameProblem.EMPTY
+        name != name.trim() -> NameProblem.SPACE
+        name.length > MAX_NAME -> NameProblem.TOO_LONG
+        name.endsWith(".") -> NameProblem.DOT
+        name.any { it < ' ' || it == '\u007f' || it in "\\/:*?\"<>|" } -> NameProblem.CHARACTER
         else -> null
     }
 }

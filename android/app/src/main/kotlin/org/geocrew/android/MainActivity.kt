@@ -1,33 +1,56 @@
 package org.geocrew.android
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import org.geocrew.nativelib.GeoCrewNative
 
 /** The app's only activity (ADR 0016): every screen is a Compose destination inside it. */
 class MainActivity : ComponentActivity() {
+    private val graph get() = (application as GeoCrewApplication).graph
+    private var hasAccess by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { GeoCrewTheme { Skeleton() } }
+        hasAccess = graph.hasAllFilesAccess
+        setContent { GeoCrewTheme { App(graph, hasAccess, onGrant = ::askForAllFilesAccess) } }
+    }
+
+    // The user may come back from the system settings with all-files access.
+    override fun onResume() {
+        super.onResume()
+        hasAccess = graph.hasAllFilesAccess
+    }
+
+    private fun askForAllFilesAccess() {
+        startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.fromParts("package", packageName, null)))
+    }
+}
+
+@Composable
+private fun App(graph: AppGraph, hasAccess: Boolean, onGrant: () -> Unit) {
+    var ownFolder by remember { mutableStateOf(graph.ownFolderChosen) }
+    if (hasAccess || ownFolder) {
+        ProjectsRoute(graph)
+    } else {
+        StorageScreen(onGrant = onGrant, onOwnFolder = {
+            graph.ownFolderChosen = true
+            ownFolder = true
+        })
     }
 }
 
@@ -40,20 +63,4 @@ fun GeoCrewTheme(content: @Composable () -> Unit) {
         else -> dynamicLightColorScheme(context)
     }
     MaterialTheme(colorScheme = colors, content = content)
-}
-
-@Composable
-private fun Skeleton() {
-    // Loading GeoCrew-Native here shows the AAR works on the phone.
-    val versions = remember { runCatching { GeoCrewNative.versions() }.getOrElse { it.toString() } }
-    Scaffold { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(stringResource(R.string.skeleton_status), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.native_versions, versions), style = MaterialTheme.typography.bodySmall)
-        }
-    }
 }

@@ -1,6 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">同勘</string>
-    <string name="skeleton_status">新版客户端正在搭建中</string>
-    <string name="native_versions">原生库：%1$s</string>
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="starting">正在准备…</string>
+    <string name="action_failed">没有成功：%1$s</string>
+
+    <string name="storage_title">工程放在哪里</string>
+    <string name="storage_body">同勘把工程放在手机存储的 GeoCrew 文件夹里：卸载应用也不会删掉，文件管理器和电脑都能直接拿到。这需要“所有文件访问”权限。</string>
+    <string name="storage_grant">去开启权限</string>
+    <string name="storage_own_folder">先放在应用自己的目录</string>
+    <string name="storage_own_folder_warning">放在应用自己的目录里，卸载应用时工程会一起被删掉，别的应用也打不开里面的文件。</string>
+
+    <string name="projects_title">工程</string>
+    <string name="projects_root">工程在：%1$s</string>
+    <string name="projects_empty">还没有工程，点“新建工程”开始。</string>
+    <string name="project_new">新建工程</string>
+    <string name="project_name">工程名称</string>
+    <string name="project_create">新建</string>
+    <string name="project_layers">图层</string>
+    <string name="layer_template">模板：%1$s</string>
+    <string name="project_close">关闭工程</string>
+
+    <string name="name_taken">已经有叫这个名字的工程了</string>
+    <string name="name_empty">名称不能为空</string>
+    <string name="name_space">名称前后不能有空格</string>
+    <string name="name_too_long">名称最长 %1$d 个字</string>
+    <string name="name_dot">名称不能以点结尾</string>
+    <string name="name_character">名称里不能有这些字符：\\ / : * ? \" &lt; &gt; |</string>
 </resources>
