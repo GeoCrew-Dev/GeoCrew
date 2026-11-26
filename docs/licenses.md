@@ -29,6 +29,9 @@
 | MNN | Apache-2.0 | 手机端模型，以后再用 |
 | sherpa-onnx、Vosk | Apache-2.0 | 语音模型本身的许可待核实 |
 | ZXing、CameraX 等 AndroidX 库 | Apache-2.0 | |
+| Kotlin 标准库、kotlinx.coroutines、kotlinx.serialization | Apache-2.0 | 安卓客户端的基础库，见 ADR 0016 |
+| Jetpack Compose、Material 3 | Apache-2.0 | 安卓客户端的界面，见 ADR 0016 |
+| JUnit 4 | EPL-1.0 | 只在测试时用，不随应用发布 |
 | UnifiedPush 连接库 | Apache-2.0 | 待核实 |
 | coder/websocket | ISC | 服务端 |
 | pgx | MIT | 服务端 |

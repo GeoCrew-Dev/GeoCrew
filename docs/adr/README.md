@@ -19,6 +19,7 @@
 | [0013](0013-server-gdal-helper.md) | 服务端的 GDAL 辅助程序 | 已采纳 |
 | [0014](0014-certificates.md) | 服务端证书 | 已采纳 |
 | [0015](0015-map-sources.md) | 地图图源 | 已采纳 |
+| [0016](0016-android-stack.md) | 安卓客户端的技术栈与模块 | 已采纳 |
 
 状态说明：
 
