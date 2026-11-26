@@ -700,7 +700,7 @@ fun MapScreen(
 
     fun goToBookmark(b: MapBookmark) = scope.launch {
         bookmarks = null
-        val position = CameraPosition.Builder().target(LatLng(b.latitude, b.longitude)).zoom(b.zoom).bearing(b.bearing).build()
+        val position = CameraPosition.Builder().target(LatLng(b.latitude, b.longitude)).zoom(b.zoom).bearing(if (graph.settings.rotationLocked) 0.0 else b.bearing).build()
         mapView.awaitMap().animateCamera(CameraUpdateFactory.newCameraPosition(position))
     }
 
@@ -877,10 +877,11 @@ fun MapScreen(
                 MenuTool(stringResource(R.string.map_layers), Icons.Rounded.Layers, onLayers),
                 MenuGroup(
                     stringResource(R.string.menu_map), Icons.Rounded.Map,
-                    listOf(
+                    listOfNotNull(
                         MenuTool(stringResource(R.string.tool_show_all), Icons.Rounded.ZoomOutMap, ::showAll),
                         MenuTool(stringResource(R.string.tool_go_to), Icons.Rounded.NearMe) { goingTo = true },
-                        MenuTool(stringResource(R.string.tool_north_up), Icons.Rounded.Explore, ::northUp),
+                        // A locked map is always north up.
+                        MenuTool(stringResource(R.string.tool_north_up), Icons.Rounded.Explore, ::northUp).takeUnless { graph.settings.rotationLocked },
                         MenuTool(stringResource(R.string.tool_bookmarks), Icons.Rounded.Bookmarks) { bookmarkAction(Workspace.BOOKMARKS) },
                         if (graph.settings.rotationLocked) {
                             MenuTool(stringResource(R.string.tool_unlock_rotation), Icons.Rounded.ScreenRotation) { graph.settings.lockRotation(false) }
