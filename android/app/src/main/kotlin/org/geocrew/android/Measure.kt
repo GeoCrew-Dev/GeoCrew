@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Backspace
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.PinDrop
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.SquareFoot
 import androidx.compose.material3.Icon
@@ -21,7 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlin.math.abs
@@ -35,10 +40,31 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import org.geocrew.core.project.Degrees
 import org.maplibre.android.geometry.LatLng
 
-/** What the measuring tool measures. */
-enum class MeasureMode { DISTANCE, AREA }
+/** What the measuring tool measures: a line's length, an area, the azimuth from one point to another, or a point's coordinates. */
+enum class MeasureMode { DISTANCE, AREA, AZIMUTH, PICK }
+
+/** The points after a tap at [point]: an azimuth takes two, then starts again; a picked point replaces the last. */
+fun withPoint(mode: MeasureMode, points: List<LatLng>, point: LatLng): List<LatLng> = when (mode) {
+    MeasureMode.AZIMUTH -> if (points.size >= 2) listOf(point) else points + point
+    MeasureMode.PICK -> listOf(point)
+    else -> points + point
+}
+
+/** The azimuth from [from] to [to], in degrees clockwise from north (0 to 360), along the WGS84 ellipsoid. */
+fun azimuthOf(from: LatLng, to: LatLng): Double {
+    val results = FloatArray(2)
+    Location.distanceBetween(from.latitude, from.longitude, to.latitude, to.longitude, results)
+    return (results[1].toDouble() + 360) % 360
+}
+
+/** 123.4°. */
+fun azimuthText(degrees: Double): String = String.format(Locale.ROOT, "%.1f°", degrees)
+
+/** A coordinate in decimal degrees to about a centimetre. */
+fun degreesText(degrees: Double): String = String.format(Locale.ROOT, "%.7f°", degrees)
 
 /** The length of the line through [points], in metres, along the WGS84 ellipsoid. */
 fun lengthOf(points: List<LatLng>): Double {
@@ -115,9 +141,10 @@ fun measureGeoJson(mode: MeasureMode, points: List<LatLng>): JsonObject = buildJ
     }
 }
 
-/** The measurement so far, with undoing the last point, clearing, and closing the tool. */
+/** The measurement so far, with undoing the last point, clearing (or copying a picked point), and closing the tool. */
 @Composable
 fun MeasurePanel(mode: MeasureMode, points: List<LatLng>, onUndo: () -> Unit, onClear: () -> Unit, onClose: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -126,18 +153,43 @@ fun MeasurePanel(mode: MeasureMode, points: List<LatLng>, onUndo: () -> Unit, on
         modifier = Modifier.widthIn(max = 560.dp),
     ) {
         Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (mode == MeasureMode.DISTANCE) Icons.Rounded.Straighten else Icons.Rounded.SquareFoot, null)
+            val icon = when (mode) {
+                MeasureMode.DISTANCE -> Icons.Rounded.Straighten
+                MeasureMode.AREA -> Icons.Rounded.SquareFoot
+                MeasureMode.AZIMUTH -> Icons.Rounded.Explore
+                MeasureMode.PICK -> Icons.Rounded.PinDrop
+            }
+            Icon(icon, null)
             Spacer(Modifier.width(12.dp))
+            val picked = points.lastOrNull()?.takeIf { mode == MeasureMode.PICK }
+            val pickedText = picked?.let { stringResource(R.string.pick_value, degreesText(it.longitude), degreesText(it.latitude)) }
             Column(Modifier.weight(1f)) {
-                val value = when (mode) {
-                    MeasureMode.DISTANCE -> stringResource(R.string.measure_distance_value, distanceText(lengthOf(points)))
-                    MeasureMode.AREA -> stringResource(R.string.measure_area_value, areaText(areaOf(points)))
+                when (mode) {
+                    MeasureMode.DISTANCE -> Text(stringResource(R.string.measure_distance_value, distanceText(lengthOf(points))), style = MaterialTheme.typography.titleMedium)
+                    MeasureMode.AREA -> Text(stringResource(R.string.measure_area_value, areaText(areaOf(points))), style = MaterialTheme.typography.titleMedium)
+                    MeasureMode.AZIMUTH -> if (points.size == 2) {
+                        Text(stringResource(R.string.measure_azimuth_value, azimuthText(azimuthOf(points[0], points[1]))), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.measure_distance_value, distanceText(lengthOf(points))), style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text(stringResource(R.string.tool_azimuth), style = MaterialTheme.typography.titleMedium)
+                    }
+                    MeasureMode.PICK -> if (picked != null) {
+                        Text(pickedText.orEmpty(), style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.pick_value, Degrees.dms(picked.longitude), Degrees.dms(picked.latitude)), style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text(stringResource(R.string.tool_pick), style = MaterialTheme.typography.titleMedium)
+                    }
                 }
-                Text(value, style = MaterialTheme.typography.titleMedium)
                 if (points.isEmpty()) Text(stringResource(R.string.measure_hint), style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = onUndo, enabled = points.isNotEmpty()) { Icon(Icons.AutoMirrored.Rounded.Backspace, stringResource(R.string.measure_undo)) }
-            IconButton(onClick = onClear, enabled = points.isNotEmpty()) { Icon(Icons.Rounded.DeleteSweep, stringResource(R.string.measure_clear)) }
+            if (mode == MeasureMode.PICK) {
+                IconButton(onClick = { pickedText?.let { clipboard.setText(AnnotatedString(it)) } }, enabled = picked != null) {
+                    Icon(Icons.Rounded.ContentCopy, stringResource(R.string.copy))
+                }
+            } else {
+                IconButton(onClick = onUndo, enabled = points.isNotEmpty()) { Icon(Icons.AutoMirrored.Rounded.Backspace, stringResource(R.string.measure_undo)) }
+                IconButton(onClick = onClear, enabled = points.isNotEmpty()) { Icon(Icons.Rounded.DeleteSweep, stringResource(R.string.measure_clear)) }
+            }
             IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, stringResource(R.string.close)) }
         }
     }
