@@ -1,11 +1,5 @@
 package org.geocrew.android
 
-import org.geocrew.storage.Crs
-import org.geocrew.storage.Workspace
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import org.geocrew.core.action.Outcome
-import kotlinx.serialization.json.jsonObject
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
