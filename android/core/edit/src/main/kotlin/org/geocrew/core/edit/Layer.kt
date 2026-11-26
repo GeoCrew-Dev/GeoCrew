@@ -39,7 +39,7 @@ enum class FieldType {
             }
         }
         if (value.booleanOrNull != null) return this == BOOLEAN
-        val d = value.doubleOrNull ?: return false
+        val d = value.doubleOrNull?.takeIf { it.isFinite() } ?: return false
         return when (this) {
             REAL, STRING -> true
             INTEGER -> value.longOrNull?.let { it in Int.MIN_VALUE..Int.MAX_VALUE }
