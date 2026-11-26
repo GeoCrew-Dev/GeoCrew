@@ -76,6 +76,13 @@ func (v *V1) Pull(ctx context.Context, workspaceID, actor string, since int64, l
 		if err != nil {
 			return v1.Pulled{}, err
 		}
+		if r.Layer == v1.TableAttachments {
+			// An attachment goes where its target layer goes (protocol 9.1).
+			if target := jsonString(r.Fields["target_layer"].Value); sees(target) && wanted(target) {
+				out.Rows = append(out.Rows, r)
+			}
+			continue
+		}
 		if !sees(r.Layer) || !wanted(r.Layer) {
 			continue
 		}
@@ -86,26 +93,50 @@ func (v *V1) Pull(ctx context.Context, workspaceID, actor string, since int64, l
 		return v1.Pulled{}, err
 	}
 
+	// Read the conflicts first: SQLite runs on one connection, so the lookups
+	// below cannot happen while this cursor is open.
+	var conflicts []v1.Conflict
 	cs, err := v.d.db.QueryContext(ctx, `SELECT `+conflictCols+` FROM v1_conflicts WHERE workspace_id = ? AND update_seq > ? AND update_seq <= ?
 		ORDER BY update_seq, id`, workspaceID, since, upto)
 	if err != nil {
 		return v1.Pulled{}, err
 	}
-	defer cs.Close()
 	for cs.Next() {
 		c, err := scanConflict(cs)
 		if err != nil {
+			cs.Close()
 			return v1.Pulled{}, err
 		}
+		conflicts = append(conflicts, c)
+	}
+	cs.Close()
+	if err := cs.Err(); err != nil {
+		return v1.Pulled{}, err
+	}
+	for _, c := range conflicts {
 		layer := c.Layer
-		if layer == v1.TableLayers {
+		switch layer {
+		case v1.TableLayers:
 			layer = c.Row
+		case v1.TableAttachments:
+			if layer, err = v.attachmentTarget(ctx, workspaceID, c.Row); err != nil {
+				return v1.Pulled{}, err
+			}
 		}
 		if sees(layer) && wanted(layer) {
 			out.Conflicts = append(out.Conflicts, c)
 		}
 	}
-	return out, cs.Err()
+	return out, nil
+}
+
+// attachmentTarget reads which layer an attachment row belongs to.
+func (v *V1) attachmentTarget(ctx context.Context, workspaceID, id string) (string, error) {
+	r, err := scanRow(v.d.db.QueryRowContext(ctx, `SELECT `+rowCols+` FROM v1_rows WHERE workspace_id = ? AND id = ?`, workspaceID, id))
+	if errors.Is(err, store.ErrNotFound) {
+		return "", nil
+	}
+	return jsonString(r.Fields["target_layer"].Value), err
 }
 
 func (v *V1) int64s(ctx context.Context, q string, args ...any) ([]int64, error) {

@@ -45,6 +45,7 @@ func Run(t *testing.T, open Opener) {
 		{"PushLayerProps", pushLayerProps},
 		{"Pull", pull},
 		{"Resolve", resolve},
+		{"Attachments", attachments},
 	} {
 		t.Run(c.name, func(t *testing.T) { c.fn(t, open) })
 	}
@@ -1385,4 +1386,122 @@ func resolve(t *testing.T, open Opener) {
 	if _, unresolved, _ := s.Row(ctx, tm.ws, row); len(unresolved) != 1 {
 		t.Fatalf("the conflict should stay open: %+v", unresolved)
 	}
+}
+
+const photoSHA = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+
+func attachments(t *testing.T, open Opener) {
+	ctx := context.Background()
+	tm := newTeam(t, open(t, clock()))
+	s, l, a, b := tm.s, tm.lead.Member.ID, tm.a.Member.ID, tm.b.Member.ID
+	t0 := time.Date(2026, 11, 26, 7, 0, 0, 0, time.UTC)
+	if _, err := s.CreateLayer(ctx, tm.ws, l, geoPoints()); err != nil {
+		t.Fatal(err)
+	}
+	other := geoPoints()
+	other.ID = layerB
+	if _, err := s.CreateLayer(ctx, tm.ws, l, other); err != nil {
+		t.Fatal(err)
+	}
+	pointOfA, pointOfB, inB := uuid(30), uuid(31), uuid(32)
+	for i, c := range []struct{ who, layer, row string }{{a, layerA, pointOfA}, {b, layerA, pointOfB}, {l, layerB, inB}} {
+		if r := pushOne(t, s, tm.ws, c.who, t0, v1.Change{ID: uuid(500 + i), Layer: c.layer, Row: c.row,
+			Set: map[string]merge.Edit{"f1": edit(`"p"`, t0)}}); r.Status != v1.Applied {
+			t.Fatal(r)
+		}
+	}
+	photo := func(target string) map[string]merge.Edit {
+		return map[string]merge.Edit{
+			"target_layer": edit(`"`+layerA+`"`, t0), "target_row": edit(`"`+target+`"`, t0),
+			"file": edit(`"`+photoSHA+`"`, t0), "thumb": edit(`null`, t0), "type": edit(`"image/jpeg"`, t0),
+			"size": edit(`4718592`, t0), "name": edit(`"IMG_0001.jpg"`, t0), "meta": edit(`{"azimuth": 120}`, t0),
+		}
+	}
+	att := uuid(40)
+	first := pushOne(t, s, tm.ws, a, t0, v1.Change{ID: uuid(510), Layer: v1.TableAttachments, Row: att, Set: photo(pointOfA)})
+	if first.Status != v1.Applied {
+		t.Fatalf("attach a photo: %+v", first)
+	}
+	got, _, err := s.Row(ctx, tm.ws, att)
+	if err != nil || got.Layer != v1.TableAttachments || got.Owner != a || string(got.Fields["target_row"].Value) != `"`+pointOfA+`"` {
+		t.Fatalf("stored attachment: %v %+v", err, got)
+	}
+
+	n := 520
+	try := func(who string, set map[string]merge.Edit, row string) v1.Result {
+		n++
+		return pushOne(t, s, tm.ws, who, t0, v1.Change{ID: uuid(n), Layer: v1.TableAttachments, Row: row, BaseSeq: first.Seq, Set: set})
+	}
+	for i, change := range []func(map[string]merge.Edit){
+		func(m map[string]merge.Edit) { delete(m, "target_row") },
+		func(m map[string]merge.Edit) { m["target_row"] = edit(`"`+uuid(99)+`"`, t0) },
+		func(m map[string]merge.Edit) { m["target_row"] = edit(`"`+inB+`"`, t0) }, // a row of another layer
+		func(m map[string]merge.Edit) { m["file"] = edit(`"not a hash"`, t0) },
+		func(m map[string]merge.Edit) { m["size"] = edit(`-1`, t0) },
+		func(m map[string]merge.Edit) { m["type"] = edit(`"jpeg"`, t0) },
+		func(m map[string]merge.Edit) { m["colour"] = edit(`"red"`, t0) },
+	} {
+		set := photo(pointOfA)
+		change(set)
+		if r := try(a, set, uuid(41+i)); r.Error != v1.RejectInvalidValue {
+			t.Fatalf("bad attachment %d: %+v", i, r)
+		}
+	}
+	gone := photo(pointOfA)
+	gone["target_layer"] = edit(`"`+uuid(98)+`"`, t0)
+	if r := try(a, gone, uuid(48)); r.Error != v1.RejectUnknownLayer {
+		t.Fatalf("an unknown target layer: %+v", r)
+	}
+	// The target is set once.
+	if r := try(a, map[string]merge.Edit{"target_row": edit(`"`+pointOfB+`"`, t0)}, att); r.Error != v1.RejectInvalidValue {
+		t.Fatalf("move an attachment: %+v", r)
+	}
+	if r := try(a, map[string]merge.Edit{"target_row": edit(`"`+pointOfA+`"`, t0), "name": edit(`"renamed.jpg"`, t0.Add(time.Minute))}, att); r.Status != v1.Applied {
+		t.Fatalf("rename it, target unchanged: %+v", r)
+	}
+
+	// Permissions are those of the target row.
+	own := map[string]perm.Level{}
+	for p, lv := range v1.DefaultBasePermissions {
+		own[p] = lv
+	}
+	own[perm.EditRows] = perm.Own
+	if _, err := s.UpdateRole(ctx, tm.ws, l, perm.Base, v1.RoleUpdate{Permissions: own}, 1); err != nil {
+		t.Fatal(err)
+	}
+	if r := try(b, photo(pointOfA), uuid(49)); r.Error != v1.RejectForbidden {
+		t.Fatalf("attach to someone else's row with own: %+v", r)
+	}
+	if r := try(b, photo(pointOfB), uuid(50)); r.Status != v1.Applied {
+		t.Fatalf("attach to one's own row: %+v", r)
+	}
+	del := pushOne(t, s, tm.ws, a, t0, v1.Change{ID: uuid(590), Layer: v1.TableAttachments, Row: att, BaseSeq: first.Seq,
+		Delete: &merge.Edit{Value: json.RawMessage("true"), EditedAt: t0.Add(time.Hour)}})
+	if del.Status != v1.Applied {
+		t.Fatalf("delete the attachment: %+v", del)
+	}
+
+	// Attachments go where their target layer goes.
+	if p, _ := s.Pull(ctx, tm.ws, b, 0, 0, nil); countLayer(p.Rows, v1.TableAttachments) != 2 {
+		t.Fatalf("b sees %d attachments, want 2", countLayer(p.Rows, v1.TableAttachments))
+	}
+	if p, _ := s.Pull(ctx, tm.ws, l, 0, 0, []string{layerB}); countLayer(p.Rows, v1.TableAttachments) != 0 {
+		t.Fatal("attachments of layer A in a pull of layer B")
+	}
+	if err := s.SetLayerOverride(ctx, tm.ws, l, layerA, perm.Base, map[string]perm.Level{perm.ViewLayer: perm.None}); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := s.Pull(ctx, tm.ws, b, 0, 0, nil); countLayer(p.Rows, v1.TableAttachments) != 0 {
+		t.Fatal("attachments of a hidden layer reached b")
+	}
+}
+
+func countLayer(rows []v1.Row, layer string) int {
+	n := 0
+	for _, r := range rows {
+		if r.Layer == layer {
+			n++
+		}
+	}
+	return n
 }

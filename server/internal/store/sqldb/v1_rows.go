@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/merge"
@@ -180,6 +182,8 @@ func (p *push) one(ctx context.Context, c v1.Change) (v1.Result, error) {
 		return rejected(c, v1.RejectInvalidValue, "delete is true or false"), nil
 	case c.Layer == v1.TableLayers:
 		return p.layerProps(ctx, c)
+	case c.Layer == v1.TableAttachments:
+		return p.attachment(ctx, c)
 	}
 	l, ok := p.layers[c.Layer]
 	if !ok || isDeleted(l) {
@@ -222,7 +226,14 @@ func (p *push) one(ctx context.Context, c v1.Change) (v1.Result, error) {
 			return rejected(c, v1.RejectInvalidValue, msg), nil
 		}
 	}
-	if seq, err = nextSeq(ctx, p.tx, p.ws.ID); err != nil {
+	return p.apply(ctx, c, row, cur, owner, live)
+}
+
+// apply merges a checked change into its row (cur is nil for a new row) on a
+// new seq, and stores the row, the conflicts and the change.
+func (p *push) apply(ctx context.Context, c v1.Change, row v1.Row, cur *merge.Row, owner string, live map[string]bool) (v1.Result, error) {
+	seq, err := nextSeq(ctx, p.tx, p.ws.ID)
+	if err != nil {
 		return v1.Result{}, err
 	}
 	merged, cs := merge.Apply(cur, merge.Change{By: p.actor, BaseSeq: c.BaseSeq, ClientNow: p.clientNow, Set: c.Set, Delete: c.Delete}, live, seq, p.serverNow)
@@ -499,4 +510,117 @@ func checkLayerProp(id string, raw json.RawMessage) string {
 		return "order must be a number"
 	}
 	return "layers have no property " + id
+}
+
+// attachmentFields are an attachment row's fields (protocol 9.1).
+var attachmentFields = map[string]bool{
+	"target_layer": true, "target_row": true, "file": true, "thumb": true, "type": true, "size": true, "name": true, "meta": true,
+}
+
+var shaPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// attachment merges a change to an attachment row. Its target is fixed at
+// creation, and its permissions are edit_rows on the target row (protocol 9.1).
+func (p *push) attachment(ctx context.Context, c v1.Change) (v1.Result, error) {
+	row, err := scanRow(p.tx.QueryRowContext(ctx, `SELECT `+rowCols+` FROM v1_rows WHERE workspace_id = ? AND id = ?`, p.ws.ID, c.Row))
+	var cur *merge.Row
+	switch {
+	case err == nil && row.Layer != v1.TableAttachments:
+		return rejected(c, v1.RejectInvalidValue, "the row belongs to another layer"), nil
+	case err == nil:
+		cur = &merge.Row{Fields: row.Fields, Deleted: row.Deleted}
+	case !errors.Is(err, store.ErrNotFound):
+		return v1.Result{}, err
+	}
+	target := map[string]string{}
+	for _, k := range []string{"target_layer", "target_row"} {
+		if cur != nil {
+			target[k] = jsonString(cur.Fields[k].Value)
+		}
+		if e, ok := c.Set[k]; ok {
+			s := jsonString(e.Value)
+			if s == "" || (cur != nil && s != target[k]) {
+				return rejected(c, v1.RejectInvalidValue, "target_layer and target_row are set once, as text"), nil
+			}
+			target[k] = s
+		}
+	}
+	if target["target_layer"] == "" || target["target_row"] == "" {
+		return rejected(c, v1.RejectInvalidValue, "an attachment needs target_layer and target_row"), nil
+	}
+	if l, ok := p.layers[target["target_layer"]]; !ok || isDeleted(l) {
+		return rejected(c, v1.RejectUnknownLayer, "no such target layer"), nil
+	}
+	tr, err := scanRow(p.tx.QueryRowContext(ctx, `SELECT `+rowCols+` FROM v1_rows WHERE workspace_id = ? AND id = ?`, p.ws.ID, target["target_row"]))
+	if errors.Is(err, store.ErrNotFound) || (err == nil && tr.Layer != target["target_layer"]) {
+		return rejected(c, v1.RejectInvalidValue, "no such target row"), nil
+	}
+	if err != nil {
+		return v1.Result{}, err
+	}
+	if !p.acc.CanTouchRow(p.actor, perm.EditRows, tr.Layer, tr.Owner) {
+		return rejected(c, v1.RejectForbidden, "edit_rows on the target row is required"), nil
+	}
+	for id, e := range c.Set {
+		if !attachmentFields[id] {
+			return rejected(c, v1.RejectInvalidValue, "attachments have no field "+id), nil
+		}
+		if msg := checkAttachmentField(id, e.Value); msg != "" {
+			return rejected(c, v1.RejectInvalidValue, msg), nil
+		}
+	}
+	owner := p.actor
+	if cur != nil {
+		owner = row.Owner
+	}
+	return p.apply(ctx, c, row, cur, owner, attachmentFields)
+}
+
+// jsonString reads a JSON string, or "" when the value is not one.
+func jsonString(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return ""
+	}
+	return s
+}
+
+// checkAttachmentField tells why an attachment field does not fit, or "".
+func checkAttachmentField(id string, raw json.RawMessage) string {
+	if len(raw) > maxValue || !json.Valid(raw) {
+		return id + " is not JSON of at most 1 MiB"
+	}
+	null := string(raw) == "null"
+	s := jsonString(raw)
+	switch id {
+	case "file":
+		if shaPattern.MatchString(s) {
+			return ""
+		}
+		return "file must be a lowercase hex SHA-256"
+	case "thumb":
+		if null || shaPattern.MatchString(s) {
+			return ""
+		}
+		return "thumb must be a lowercase hex SHA-256 or null"
+	case "type":
+		if len(s) <= 127 && strings.Count(s, "/") == 1 && !strings.HasPrefix(s, "/") && !strings.HasSuffix(s, "/") {
+			return ""
+		}
+		return "type must be a MIME type"
+	case "size":
+		var n json.Number
+		if json.Unmarshal(raw, &n) == nil {
+			if i, err := strconv.ParseInt(n.String(), 10, 64); err == nil && i >= 0 {
+				return ""
+			}
+		}
+		return "size must be a whole number of bytes"
+	case "name":
+		if null || (s != "" && len([]rune(s)) <= 255) {
+			return ""
+		}
+		return "name must be a text of at most 255 characters"
+	}
+	return "" // target_layer and target_row are checked above; meta is any JSON
 }
