@@ -384,6 +384,8 @@ fun MapScreen(
 
     fun startPlacing(layer: String) {
         target = layer
+        measuring = null // one tool at a time: placing ends a measurement
+        measured = emptyList()
         placing = true
         scope.launch { center = mapView.awaitMap().cameraPosition.target?.wrap() }
     }

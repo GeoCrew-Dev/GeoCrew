@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.automirrored.rounded.Backspace
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Straighten
@@ -136,7 +136,7 @@ fun MeasurePanel(mode: MeasureMode, points: List<LatLng>, onUndo: () -> Unit, on
                 Text(value, style = MaterialTheme.typography.titleMedium)
                 if (points.isEmpty()) Text(stringResource(R.string.measure_hint), style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = onUndo, enabled = points.isNotEmpty()) { Icon(Icons.AutoMirrored.Rounded.Undo, stringResource(R.string.measure_undo)) }
+            IconButton(onClick = onUndo, enabled = points.isNotEmpty()) { Icon(Icons.AutoMirrored.Rounded.Backspace, stringResource(R.string.measure_undo)) }
             IconButton(onClick = onClear, enabled = points.isNotEmpty()) { Icon(Icons.Rounded.DeleteSweep, stringResource(R.string.measure_clear)) }
             IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, stringResource(R.string.close)) }
         }
