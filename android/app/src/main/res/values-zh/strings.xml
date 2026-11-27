@@ -431,4 +431,6 @@
     <string name="color_blue">蓝</string>
     <string name="color_fewer">收起</string>
     <string name="color_percent">%1$d%%</string>
+    <string name="style_label">标注</string>
+    <string name="style_label_none">无</string>
 </resources>

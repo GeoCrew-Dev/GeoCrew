@@ -202,7 +202,7 @@ private fun readDisplay(ds: VectorDataset): Map<String, Project.Display> {
 }
 
 // What a layer's style may say (ADR 0006): one symbol, or a colour for each value of a field.
-private val STYLE_KEYS = setOf("color", "size", "width", "fill", "field", "classes")
+private val STYLE_KEYS = setOf("color", "size", "width", "fill", "field", "classes", "label")
 
 // The most values a categorized style may colour.
 private const val MAX_CLASSES = 100
@@ -271,8 +271,10 @@ class Project internal constructor(
      * and a line's width in dp, an area's fill opacity; what is left out takes
      * its default. With a "field" of the layer and "classes" ([{"value",
      * "color"}], each value once, at most 100) features are coloured by that
-     * field's value, the rest in the colour. An empty [style] goes back to the
-     * default style. Saved at once, not undone, like the display.
+     * field's value, the rest in the colour. "label" names the field whose
+     * values label the features, empty for none; without it the name field
+     * labels them. An empty [style] goes back to the default style. Saved at
+     * once, not undone, like the display.
      */
     fun setStyle(layer: String, style: JsonObject) {
         val id = layers.firstOrNull { it.name == layer }?.id ?: throw IllegalArgumentException("there is no layer $layer")
@@ -304,10 +306,13 @@ class Project internal constructor(
                 value to shown.lowercase()
             }.also { pairs -> require(pairs.map { it.first }.toSet().size == pairs.size) { "each value has one class" } }
         }
-        if (field != null) {
+        val label = style["label"]?.let { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        require(style["label"] == null || label != null) { "label is a field's name, or empty for none" }
+        if (field != null || !label.isNullOrEmpty()) {
             val fields = Json.parseToJsonElement(dataset.layerInfo(layer)).jsonObject["fields"]?.jsonArray.orEmpty()
                 .mapNotNull { (it.jsonObject["name"] as? JsonPrimitive)?.contentOrNull }
-            require(field in fields) { "$layer has no field $field" }
+            require(field == null || field in fields) { "$layer has no field $field" }
+            require(label.isNullOrEmpty() || label in fields) { "$layer has no field $label" }
         }
         dataset.sql(ProjectFormat.STYLE_SCHEMA)
         if (style.isEmpty()) {
@@ -326,6 +331,7 @@ class Project internal constructor(
                     for ((value, shown) in classes.orEmpty()) addJsonObject { put("value", value); put("color", shown) }
                 }
             }
+            label?.let { put("label", it) }
         }
         dataset.sql("INSERT OR REPLACE INTO ${ProjectFormat.STYLE_TABLE} (layer_id, style) VALUES (${quote(id)}, ${quote(stored.toString())})")
     }

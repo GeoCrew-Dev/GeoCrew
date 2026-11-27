@@ -36,8 +36,9 @@ object ProjectFormat {
      * fill opacity from 0 to 1}. A categorized style is {"kind":
      * "categorized", the same keys, "field": a field of the layer, "classes":
      * [{"value", "color"}]}: features whose field has one of the values take
-     * its colour, the rest the style's colour. Graduated and rule-based styles
-     * come as other kinds.
+     * its colour, the rest the style's colour. Any style may have "label": the
+     * field whose values label the features, empty for none (without it, the
+     * name field). Graduated and rule-based styles come as other kinds.
      */
     const val STYLE_TABLE = "geocrew_layer_style"
     const val STYLE_SCHEMA = "CREATE TABLE IF NOT EXISTS $STYLE_TABLE (layer_id TEXT PRIMARY KEY NOT NULL, style TEXT NOT NULL)"

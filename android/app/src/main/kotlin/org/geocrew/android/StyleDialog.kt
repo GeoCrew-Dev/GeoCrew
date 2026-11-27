@@ -68,7 +68,8 @@ data class StyleClass(val value: String, val color: Color)
  * How a layer is drawn (ADR 0006): its colour, a point's radius and a line's
  * width in dp, an area's fill opacity. A categorized style also has a [field]
  * and a colour for each of its values ([classes]); features with any other
- * value keep [color].
+ * value keep [color]. [label] is the field whose values label the features:
+ * null for the layer's name field, empty for no labels.
  */
 data class LayerStyle(
     val color: Color,
@@ -77,6 +78,7 @@ data class LayerStyle(
     val fill: Float = DEFAULT_FILL,
     val field: String? = null,
     val classes: List<StyleClass> = emptyList(),
+    val label: String? = null,
 ) {
     private val byValue: Map<String, String> by lazy { classes.associate { it.value to mapColor(it.color) } }
 
@@ -100,6 +102,7 @@ data class LayerStyle(
                 for (c in classes) addJsonObject { put("value", c.value); put("color", colorHex(c.color)) }
             }
         }
+        if (label != null) put("label", label)
     }
 
     companion object {
@@ -128,7 +131,15 @@ fun styleOf(layer: JsonObject, fallback: Color): LayerStyle {
         number("fill") ?: LayerStyle.DEFAULT_FILL,
         field,
         if (field == null) emptyList() else classes,
+        (style?.get("label") as? JsonPrimitive)?.takeIf { it.isString }?.content,
     )
+}
+
+/** The field that labels a layer's features on the map, by its [style]: null for none. */
+fun labelField(style: LayerStyle, collection: JsonObject?): String? = when (val label = style.label) {
+    null -> nameField(collection)
+    "" -> null
+    else -> label.takeIf { it in fieldNames(collection) }
 }
 
 private fun colorOf(hex: String): Color? = if (hex.startsWith("#")) colorOfCode(hex.substring(1)) else null
@@ -167,10 +178,10 @@ private val CLASS_COLORS = listOf(5, 0, 9, 14, 2, 7, 12, 16, 3, 10, 1, 13, 6, 18
 /**
  * A layer's style to change: one colour from the palette, or a colour for each
  * value of a field of [collection] (the layer's features as layer.features
- * gives them, null while they load) with the layer's colour for the rest; and,
- * by what the layer holds ([geometry], an OGC name), a point's size, a line's
- * width, an area's fill, with a preview. [onSave] gets the style; [onReset]
- * goes back to the default.
+ * gives them, null while they load) with the layer's colour for the rest; by
+ * what the layer holds ([geometry], an OGC name), a point's size, a line's
+ * width, an area's fill, with a preview; and which field labels the features,
+ * if any. [onSave] gets the style; [onReset] goes back to the default.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -189,6 +200,7 @@ fun StyleDialog(
     var fill by remember { mutableFloatStateOf(style.fill) }
     var field by remember { mutableStateOf(style.field) }
     var classes by remember { mutableStateOf(style.classes) }
+    var label by remember { mutableStateOf(style.label) }
     // Whose colour is being chosen: a class by its index, OTHER for the rest; null for no one.
     var picking by remember { mutableStateOf<Int?>(null) }
     val point = geometry == null || geometry.contains("POINT")
@@ -242,10 +254,19 @@ fun StyleDialog(
                 if (point) StyleSlider(stringResource(R.string.style_size), size, 2f..16f) { size = it }
                 if (!point) StyleSlider(stringResource(R.string.style_width), width, 1f..10f) { width = it }
                 if (area) StyleSlider(stringResource(R.string.style_fill), fill, 0f..1f, percent = true) { fill = it }
+                if (collection != null) {
+                    // Which field labels the features: the name field until another is chosen, or none.
+                    val labelled = labelField(LayerStyle(color, label = label), collection)
+                    Text(stringResource(R.string.style_label), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = labelled == null, onClick = { label = "" }, label = { Text(stringResource(R.string.style_label_none)) })
+                        for (f in fields) FilterChip(selected = f == labelled, onClick = { label = f }, label = { Text(f) })
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(LayerStyle(color, size, width, fill, field, if (field == null) emptyList() else classes)) }) {
+            TextButton(onClick = { onSave(LayerStyle(color, size, width, fill, field, if (field == null) emptyList() else classes, label)) }) {
                 Text(stringResource(R.string.save))
             }
         },

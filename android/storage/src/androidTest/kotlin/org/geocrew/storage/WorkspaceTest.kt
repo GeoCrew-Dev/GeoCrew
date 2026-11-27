@@ -421,6 +421,9 @@ class WorkspaceTest {
             run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"field": "点名", "classes": [{"value": "a", "color": "#000000"}, {"value": "a", "color": "#ffffff"}]}}"""),
             "one class a value",
         )
+        assertEquals("描述", style(output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"label": "描述"}}""")))!!.getValue("label").jsonPrimitive.content)
+        assertEquals("", style(output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"label": ""}}""")))!!.getValue("label").jsonPrimitive.content, "no labels")
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"label": "岩性"}}"""), "no such field to label")
         run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1E88E5", "size": 8, "fill": 0.4}}""")
 
         run(Workspace.CLOSE)
