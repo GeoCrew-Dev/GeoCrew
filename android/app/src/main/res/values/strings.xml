@@ -454,4 +454,12 @@
     <string name="style_label">Label</string>
     <string name="style_label_none">None</string>
     <string name="tool_snap">Snap</string>
+    <string name="style_graduated">Ranges</string>
+    <string name="style_count">Classes</string>
+    <string name="style_equal">Equal interval</string>
+    <string name="style_quantile">Quantile</string>
+    <string name="style_ramp">Colour ramp</string>
+    <string name="legend">Legend</string>
+    <string name="line_untitled">Line %1$d</string>
+    <string name="area_untitled">Area %1$d</string>
 </resources>

@@ -424,6 +424,27 @@ class WorkspaceTest {
         assertEquals("描述", style(output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"label": "描述"}}""")))!!.getValue("label").jsonPrimitive.content)
         assertEquals("", style(output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"label": ""}}""")))!!.getValue("label").jsonPrimitive.content, "no labels")
         assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"label": "岩性"}}"""), "no such field to label")
+
+        assertIs<Outcome.Done>(run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "深度", "type": "real"}"""))
+        val graded = style(
+            output(
+                run(
+                    Workspace.LAYER_STYLE,
+                    """{"layer": "野外点", "style": {"field": "深度", "ranges": [{"from": 0, "to": 5, "color": "#FFF59D"}, {"from": 5, "to": 10, "color": "#C62828"}]}}""",
+                ),
+            ),
+        )!!
+        assertEquals("graduated", graded.getValue("kind").jsonPrimitive.content)
+        assertEquals("#c62828", graded.getValue("ranges").jsonArray.last().jsonObject.getValue("color").jsonPrimitive.content)
+        assertIs<Outcome.Failed>(
+            run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"field": "点名", "ranges": [{"from": 0, "to": 5, "color": "#000000"}]}}"""),
+            "ranges need a number field",
+        )
+        assertIs<Outcome.Failed>(
+            run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"field": "深度", "ranges": [{"from": 5, "to": 1, "color": "#000000"}]}}"""),
+            "from no more than to",
+        )
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"field": "深度", "classes": [], "ranges": []}}"""), "not both")
         run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1E88E5", "size": 8, "fill": 0.4}}""")
 
         run(Workspace.CLOSE)

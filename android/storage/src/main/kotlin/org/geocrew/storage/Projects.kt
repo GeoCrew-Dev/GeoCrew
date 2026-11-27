@@ -202,7 +202,10 @@ private fun readDisplay(ds: VectorDataset): Map<String, Project.Display> {
 }
 
 // What a layer's style may say (ADR 0006): one symbol, or a colour for each value of a field.
-private val STYLE_KEYS = setOf("color", "size", "width", "fill", "field", "classes", "label")
+private val STYLE_KEYS = setOf("color", "size", "width", "fill", "field", "classes", "ranges", "label")
+
+// The field types a graduated style can range over.
+private val NUMBER_TYPES = setOf("integer", "integer64", "real")
 
 // The most values a categorized style may colour.
 private const val MAX_CLASSES = 100
@@ -271,7 +274,9 @@ class Project internal constructor(
      * and a line's width in dp, an area's fill opacity; what is left out takes
      * its default. With a "field" of the layer and "classes" ([{"value",
      * "color"}], each value once, at most 100) features are coloured by that
-     * field's value, the rest in the colour. "label" names the field whose
+     * field's value, the rest in the colour; with a number field and "ranges"
+     * ([{"from", "to", "color"}], at most 100) by the range the value falls
+     * in. "label" names the field whose
      * values label the features, empty for none; without it the name field
      * labels them. An empty [style] goes back to the default style. Saved at
      * once, not undone, like the display.
@@ -293,7 +298,22 @@ class Project internal constructor(
         val fill = number("fill", 0.0..1.0)
         val field = style["field"]?.let { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
         require(style["field"] == null || field != null) { "field is a field's name" }
-        require((field == null) == (style["classes"] == null)) { "field and classes go together" }
+        require((field == null) == (style["classes"] == null && style["ranges"] == null)) { "a field goes with classes or ranges" }
+        require(style["classes"] == null || style["ranges"] == null) { "a style has classes or ranges, not both" }
+        val ranges = style["ranges"]?.let { r ->
+            val listed = (r as? JsonArray)?.map { it as? JsonObject } ?: throw IllegalArgumentException("ranges is a list")
+            require(listed.size <= MAX_CLASSES) { "a style has at most $MAX_CLASSES ranges" }
+            listed.map { o ->
+                fun bound(key: String) = (o?.get(key) as? JsonPrimitive)?.takeUnless { it.isString }?.contentOrNull?.toDoubleOrNull()
+                val from = bound("from")
+                val to = bound("to")
+                val shown = (o?.get("color") as? JsonPrimitive)?.contentOrNull
+                require(o != null && o.keys == setOf("from", "to", "color") && from != null && to != null && from <= to && shown != null && STYLE_COLOR.matches(shown)) {
+                    "each range is {\"from\", \"to\", \"color\"}, from no more than to"
+                }
+                Triple(from, to, shown.lowercase())
+            }
+        }
         val classes = style["classes"]?.let { c ->
             val listed = (c as? JsonArray)?.map { it as? JsonObject } ?: throw IllegalArgumentException("classes is a list")
             require(listed.size <= MAX_CLASSES) { "a style colours at most $MAX_CLASSES values" }
@@ -309,10 +329,13 @@ class Project internal constructor(
         val label = style["label"]?.let { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
         require(style["label"] == null || label != null) { "label is a field's name, or empty for none" }
         if (field != null || !label.isNullOrEmpty()) {
-            val fields = Json.parseToJsonElement(dataset.layerInfo(layer)).jsonObject["fields"]?.jsonArray.orEmpty()
-                .mapNotNull { (it.jsonObject["name"] as? JsonPrimitive)?.contentOrNull }
-            require(field == null || field in fields) { "$layer has no field $field" }
-            require(label.isNullOrEmpty() || label in fields) { "$layer has no field $label" }
+            val types = Json.parseToJsonElement(dataset.layerInfo(layer)).jsonObject["fields"]?.jsonArray.orEmpty().mapNotNull {
+                val name = (it.jsonObject["name"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                name to (it.jsonObject["type"] as? JsonPrimitive)?.contentOrNull
+            }.toMap()
+            require(field == null || field in types) { "$layer has no field $field" }
+            require(ranges == null || types[field] in NUMBER_TYPES) { "$field is not a number field" }
+            require(label.isNullOrEmpty() || label in types) { "$layer has no field $label" }
         }
         dataset.sql(ProjectFormat.STYLE_SCHEMA)
         if (style.isEmpty()) {
@@ -320,15 +343,21 @@ class Project internal constructor(
             return
         }
         val stored = buildJsonObject {
-            put("kind", if (field == null) "single" else "categorized")
+            put("kind", if (field == null) "single" else if (ranges != null) "graduated" else "categorized")
             color?.let { put("color", it.lowercase()) }
             size?.let { put("size", it) }
             width?.let { put("width", it) }
             fill?.let { put("fill", it) }
             if (field != null) {
                 put("field", field)
-                putJsonArray("classes") {
-                    for ((value, shown) in classes.orEmpty()) addJsonObject { put("value", value); put("color", shown) }
+                if (ranges != null) {
+                    putJsonArray("ranges") {
+                        for ((from, to, shown) in ranges) addJsonObject { put("from", from); put("to", to); put("color", shown) }
+                    }
+                } else {
+                    putJsonArray("classes") {
+                        for ((value, shown) in classes.orEmpty()) addJsonObject { put("value", value); put("color", shown) }
+                    }
                 }
             }
             label?.let { put("label", it) }

@@ -1613,7 +1613,15 @@ fun MapScreen(
             val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
             val name = nameField(collection)?.let { (properties[it] as? JsonPrimitive)?.contentOrNull }?.takeIf { it.isNotBlank() }
             FeatureForm(
-                title = name ?: stringResource(R.string.feature_untitled, fid),
+                // Without a name, what it is and its number: point, line or area.
+                title = name ?: stringResource(
+                    when (((feature["geometry"] as? JsonObject)?.get("type") as? JsonPrimitive)?.contentOrNull.orEmpty()) {
+                        "LineString", "MultiLineString" -> R.string.line_untitled
+                        "Polygon", "MultiPolygon" -> R.string.area_untitled
+                        else -> R.string.feature_untitled
+                    },
+                    fid,
+                ),
                 fields = formFields(collection),
                 properties = properties,
                 coordinates = coordinatesOf(feature),
