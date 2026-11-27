@@ -164,7 +164,9 @@ class EditBufferTest {
         val restarted = EditBuffer(store, journal)
         assertEquals(Recovery.RESTORED, restarted.recover())
         assertEquals(listOf("a", "b"), rocks(restarted))
-        assertEquals(listOf(JournalEntry.Set(-1, Slot(added = restarted.feature(-1)))), journal.entries(), "the journal is compacted")
+        // Compared without the edit times, which come from the clock.
+        val compacted = journal.entries().map { e -> (e as JournalEntry.Set).let { it.copy(slot = it.slot.copy(times = emptyMap(), geometryTime = null)) } }
+        assertEquals(listOf(JournalEntry.Set(-1, Slot(added = restarted.feature(-1)))), compacted, "the journal is compacted")
         assertEquals(a, store.lastFid())
     }
 

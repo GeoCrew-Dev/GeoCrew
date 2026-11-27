@@ -177,6 +177,12 @@ interface LayerStore {
         require(attachments.isEmpty()) { "this layer keeps no attachments" }
     }
 
+    /**
+     * What a save wrote, before it commits (in its transaction where the store
+     * has them), for sync to send (ADR 0008); nothing to do by default.
+     */
+    fun saved(changes: List<Saved>) {}
+
     /** Adds a feature and returns the fid the store gave it. */
     fun add(geometry: JsonObject?, properties: JsonObject): Long
 

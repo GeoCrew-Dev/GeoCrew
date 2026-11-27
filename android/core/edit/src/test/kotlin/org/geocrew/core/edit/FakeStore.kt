@@ -25,6 +25,13 @@ internal class FakeStore(
     val attached = sortedMapOf<Long, List<Attachment>>()
     val writes = mutableListOf<String>()
     var failOn: String? = null
+    val recorded = mutableListOf<Saved>()
+
+    // Not among [writes], whose order the tests check; it can fail like them.
+    override fun saved(changes: List<Saved>) {
+        if (failOn == "saved") error("saved failed")
+        recorded += changes
+    }
     private var sequence = 0L // like AUTOINCREMENT: fids are never reused
     private var saved: Triple<Map<Long, Feature>, Long, Map<Long, List<Attachment>>>? = null
 

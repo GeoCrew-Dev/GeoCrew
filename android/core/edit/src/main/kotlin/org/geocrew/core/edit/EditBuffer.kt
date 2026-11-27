@@ -12,7 +12,9 @@ private val NO_VALUES = JsonObject(emptyMap())
  * fid), or a stored one that is [deleted] or has a new geometry
  * ([geometryChanged]) and new [values]; either with its [attachments] when
  * they changed (a new feature's, when it has any). The empty slot means
- * nothing unsaved.
+ * nothing unsaved. For sync (ADR 0008), when each field was last edited, in
+ * milliseconds on the phone's clock: [times] by field name, [geometryTime] and
+ * [deletedTime].
  */
 @Serializable
 data class Slot(
@@ -22,6 +24,9 @@ data class Slot(
     val geometry: JsonObject? = null,
     val values: JsonObject = NO_VALUES,
     val attachments: List<Attachment>? = null,
+    val times: Map<String, Long> = emptyMap(),
+    val geometryTime: Long? = null,
+    val deletedTime: Long? = null,
 ) {
     val isEmpty: Boolean get() = this == EMPTY
 
@@ -38,6 +43,24 @@ data class Slot(
 
 /** One change: feature [fid] went from [before] to [after]. Undo puts [before] back. */
 data class Edit(val fid: Long, val before: Slot, val after: Slot)
+
+/**
+ * What a save wrote of one feature, for sync (ADR 0008): its [fid] in the
+ * store, whether it was [added] (every field given) or [deleted], the [values]
+ * set by field name and the [geometry] when [geometrySet], with when each was
+ * edited ([times], [geometryTime], [deletedTime]; milliseconds, phone's clock).
+ */
+data class Saved(
+    val fid: Long,
+    val added: Boolean = false,
+    val deleted: Boolean = false,
+    val values: JsonObject = NO_VALUES,
+    val geometrySet: Boolean = false,
+    val geometry: JsonObject? = null,
+    val times: Map<String, Long> = emptyMap(),
+    val geometryTime: Long? = null,
+    val deletedTime: Long? = null,
+)
 
 /** A line of the journal. */
 @Serializable
@@ -112,7 +135,7 @@ enum class Recovery {
  *
  * Not thread-safe; the action registry runs one action at a time.
  */
-class EditBuffer(private val store: LayerStore, private val journal: Journal) {
+class EditBuffer(private val store: LayerStore, private val journal: Journal, private val clock: () -> Long = System::currentTimeMillis) {
     private val slots = LinkedHashMap<Long, Slot>()
     private var nextNew = -1L
     private var stale = false // the journal still holds edits a save wrote
@@ -148,7 +171,14 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
         checkAttachments(attachments)
         val fid = nextNew--
         val all = JsonObject(store.fields.associate { it.name to (properties[it.name] ?: JsonNull) })
-        return change(fid, Slot(added = Feature(fid, geometry, all), attachments = attachments.ifEmpty { null }))
+        val now = clock()
+        return change(
+            fid,
+            Slot(
+                added = Feature(fid, geometry, all), attachments = attachments.ifEmpty { null },
+                times = properties.keys.associateWith { now }, geometryTime = geometry?.let { now },
+            ),
+        )
     }
 
     /** Feature [fid]'s attachments as edited. */
@@ -170,9 +200,9 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
         val before = existing(fid)
         val added = before.added
         val after = if (added != null) {
-            before.copy(added = added.copy(geometry = geometry))
+            before.copy(added = added.copy(geometry = geometry), geometryTime = clock())
         } else {
-            before.copy(geometryChanged = true, geometry = geometry)
+            before.copy(geometryChanged = true, geometry = geometry, geometryTime = clock())
         }
         return change(fid, after)
     }
@@ -182,10 +212,12 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
         checkValues(values)
         val before = existing(fid)
         val added = before.added
+        val now = clock()
+        val times = before.times + values.keys.associateWith { now }
         val after = if (added != null) {
-            before.copy(added = added.copy(properties = JsonObject(added.properties + values)))
+            before.copy(added = added.copy(properties = JsonObject(added.properties + values)), times = times)
         } else {
-            before.copy(values = JsonObject(before.values + values))
+            before.copy(values = JsonObject(before.values + values), times = times)
         }
         return change(fid, after)
     }
@@ -193,7 +225,7 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
     /** Deletes feature [fid]; a new one simply goes away. */
     fun delete(fid: Long): Edit {
         existing(fid, allowed = store.capabilities.delete, what = "deleting")
-        return change(fid, if (fid < 0) Slot.EMPTY else Slot(deleted = true))
+        return change(fid, if (fid < 0) Slot.EMPTY else Slot(deleted = true, deletedTime = clock()))
     }
 
     /** Takes [edit] back. It must be the latest change to its feature that is still in effect. */
@@ -223,6 +255,7 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
         val transaction = store.capabilities.transactions
         val written = mutableListOf<Long>()
         val ids = LinkedHashMap<Long, Long>()
+        val saved = mutableListOf<Saved>()
         try {
             if (transaction) store.begin()
             for ((fid, slot) in slots) {
@@ -230,12 +263,14 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
                 if (slot.values.isNotEmpty() || slot.geometryChanged) store.update(fid, slot.values, slot.geometryChanged, slot.geometry)
                 slot.attachments?.let { store.setAttachments(fid, it) }
                 written += fid
+                saved += Saved(fid, values = slot.values, geometrySet = slot.geometryChanged, geometry = slot.geometry, times = slot.times, geometryTime = slot.geometryTime)
             }
             for ((fid, slot) in slots) {
                 if (!slot.deleted) continue
                 store.setAttachments(fid, emptyList()) // a deleted feature's attachments go with it
                 store.delete(fid)
                 written += fid
+                saved += Saved(fid, deleted = true, deletedTime = slot.deletedTime)
             }
             for (fid in newOnes()) {
                 val slot = slots.getValue(fid)
@@ -244,7 +279,13 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
                 ids[fid] = stored
                 slot.attachments?.takeIf { it.isNotEmpty() }?.let { store.setAttachments(stored, it) }
                 written += fid
+                saved += Saved(
+                    stored, added = true, values = f.properties, geometrySet = true, geometry = f.geometry,
+                    times = slot.times, geometryTime = slot.geometryTime,
+                )
             }
+            // With the features, in the same transaction: what sync is to send never misses a save (ADR 0008).
+            store.saved(saved)
             if (transaction) store.commit()
         } catch (e: Exception) {
             runCatching {

@@ -1214,6 +1214,24 @@ class Project internal constructor(
         return EditTarget(VectorLayerStore(dataset, found.name, found.id), FileJournal(File(journals, "${found.id}.jsonl")), found.srs)
     }
 
+    /**
+     * Links the project to team workspace [workspace] (protocol v1): from then
+     * on every save records what the workspace is to be sent ([Outbox]). For
+     * the join flow (M3).
+     */
+    internal fun link(workspace: String) {
+        dataset.sql("INSERT OR REPLACE INTO ${ProjectFormat.PROJECT_TABLE} (key, value) VALUES (${quote(Outbox.WORKSPACE_KEY)}, ${quote(workspace)})")
+    }
+
+    /** What the project has to send its workspace, oldest edit first: row id, layer id, field id, value (JSON) and edit time. */
+    internal val outbox: List<Map<String, String?>> get() = Outbox.pending(dataset)
+
+    /** The row id of feature [fid] of layer [layerId] in the workspace, once it has one. */
+    internal fun rowId(layerId: String, fid: Long): String? = Outbox.rowId(dataset, layerId, fid)
+
+    /** Layer [layer]'s fields by name, to the stable ids sync knows them by. */
+    internal fun fieldIds(layer: String): Map<String, String> = Outbox.fieldIds(dataset, layer)
+
     /** Whether the project has been closed: its file is no longer open. */
     var closed = false
         private set
