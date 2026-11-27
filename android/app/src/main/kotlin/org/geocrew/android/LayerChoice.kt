@@ -105,7 +105,7 @@ fun LayerPicker(
             Text(
                 title,
                 style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
             for (layer in layers) {
                 ListItem(
@@ -123,13 +123,17 @@ fun LayerPicker(
                 modifier = Modifier.fillMaxWidth().clickable { onNew(remember) },
             )
             if (showRemember) {
-                Row(
-                    Modifier.fillMaxWidth().clickable { remember = !remember }.padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(checked = remember, onCheckedChange = { remember = it })
-                    Text(stringResource(R.string.pick_layer_remember), style = MaterialTheme.typography.bodyMedium)
-                }
+                // A row like the others, its box where their dots are.
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.pick_layer_remember), style = MaterialTheme.typography.bodyMedium) },
+                    leadingContent = {
+                        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                            Checkbox(checked = remember, onCheckedChange = null)
+                        }
+                    },
+                    colors = clear,
+                    modifier = Modifier.fillMaxWidth().clickable { remember = !remember },
+                )
             }
             Spacer(Modifier.height(16.dp))
         }

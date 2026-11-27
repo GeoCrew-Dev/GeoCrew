@@ -1372,8 +1372,9 @@ fun MapScreen(
                 }
             }
 
+            // As tall in every mode as the place button, so the buttons beside it stay where they are when it changes.
             Row(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp).height(72.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1949,27 +1950,36 @@ private fun PlacingHint(layer: String, center: () -> LatLng?, onChangeLayer: () 
         shadowElevation = 3.dp,
         modifier = Modifier.widthIn(max = 560.dp),
     ) {
-        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.OpenWith, null)
+        // Each control beside what it is about: the change of layer by the layer's name, "my position" by the
+        // coordinates, which go one to a line, label and value together.
+        Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 12.dp)) {
+            Icon(Icons.Rounded.OpenWith, null, modifier = Modifier.padding(top = 12.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                // Which layer the point goes into, so it does not land in the wrong one.
-                Text(stringResource(R.string.place_into, layer), style = MaterialTheme.typography.titleSmall)
-                Text(stringResource(R.string.place_hint), style = MaterialTheme.typography.bodyMedium)
-                center()?.let {
-                    Text(
-                        stringResource(R.string.place_coordinates, DEGREES.format(Locale.ROOT, it.longitude), DEGREES.format(Locale.ROOT, it.latitude)),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontFamily = FontFamily.Monospace,
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Which layer the point goes into, so it does not land in the wrong one.
+                    Text(stringResource(R.string.place_into, layer), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onChangeLayer) { Text(stringResource(R.string.place_change_layer)) }
                 }
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                TextButton(onClick = onChangeLayer) { Text(stringResource(R.string.place_change_layer)) }
-                IconButton(onClick = onLocate, enabled = !locating) {
-                    if (locating) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.MyLocation, stringResource(R.string.my_position))
+                Text(stringResource(R.string.place_hint), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        center()?.let {
+                            for (line in listOf(
+                                stringResource(R.string.place_longitude, DEGREES.format(Locale.ROOT, it.longitude)),
+                                stringResource(R.string.place_latitude, DEGREES.format(Locale.ROOT, it.latitude)),
+                            )) {
+                                Text(line, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        IconButton(onClick = onLocate, enabled = !locating) {
+                            if (locating) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Rounded.MyLocation, stringResource(R.string.my_position))
+                        }
+                        accuracy?.let { Text(String.format(Locale.ROOT, "±%.0f m", it), style = MaterialTheme.typography.labelSmall) }
+                    }
                 }
-                accuracy?.let { Text(String.format(Locale.ROOT, "±%.0f m", it), style = MaterialTheme.typography.labelSmall) }
             }
         }
     }

@@ -93,8 +93,8 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
             item { SectionHeader(stringResource(R.string.project_section)) }
             item {
                 ListItem(
-                    headlineContent = { Text(project) },
-                    overlineContent = { Text(stringResource(R.string.project_name)) },
+                    headlineContent = { Text(stringResource(R.string.project_name)) },
+                    supportingContent = { Text(project) },
                     leadingContent = { Icon(Icons.Rounded.Map, null) },
                     colors = clear,
                 )
@@ -102,8 +102,8 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
             folder?.let { path ->
                 item {
                     ListItem(
-                        headlineContent = { Text(path) },
-                        overlineContent = { Text(stringResource(R.string.project_folder)) },
+                        headlineContent = { Text(stringResource(R.string.project_folder)) },
+                        supportingContent = { Text(path) },
                         leadingContent = { Icon(Icons.Rounded.Folder, null) },
                         colors = clear,
                     )
