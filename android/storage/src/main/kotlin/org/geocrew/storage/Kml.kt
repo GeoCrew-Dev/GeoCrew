@@ -146,8 +146,7 @@ internal class Kml(private val project: Project, private val photos: Boolean) {
         }
 
         // [s] as XML text: characters XML cannot hold (control characters other than tab and line breaks) left out.
-        fun xml(s: String): String = s.filter { it == '	' || it == '
-' || it == '' || it >= ' ' }
+        fun xml(s: String): String = s.filter { it == '\t' || it == '\n' || it == '\r' || it >= ' ' }
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     }
 }
