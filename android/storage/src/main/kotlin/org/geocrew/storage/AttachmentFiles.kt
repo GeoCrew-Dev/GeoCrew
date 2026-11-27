@@ -51,6 +51,9 @@ internal object AttachmentFiles {
     // Writes [input] to the folder under its hash, by way of another name, so a copy cut short never looks whole.
     private fun keep(folder: File, input: InputStream, type: String): String {
         check(folder.isDirectory || folder.mkdirs()) { "cannot make the folder $folder" }
+        // Copies cut short by the app being stopped are cleared away once they are an hour old.
+        val stale = System.currentTimeMillis() - 3_600_000
+        folder.listFiles { f -> f.name.startsWith(".part-") && f.lastModified() < stale }?.forEach { it.delete() }
         val part = File(folder, ".part-" + UUID.randomUUID())
         try {
             val digest = MessageDigest.getInstance("SHA-256")
