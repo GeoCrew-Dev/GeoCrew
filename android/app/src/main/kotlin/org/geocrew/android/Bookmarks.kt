@@ -15,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -114,8 +113,9 @@ fun BookmarksSheet(
     }
     if (naming) {
         var name by remember { mutableStateOf("") }
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { naming = false },
+            twoPane = true,
             title = { Text(stringResource(R.string.bookmark_add_title)) },
             text = {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.bookmark_name)) }, singleLine = true)
@@ -127,7 +127,7 @@ fun BookmarksSheet(
         )
     }
     deleting?.let { b ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { deleting = null },
             title = { Text(stringResource(R.string.bookmark_delete_title, b.name)) },
             confirmButton = {

@@ -14,7 +14,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Map
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -126,7 +125,7 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
     if (choosingPlacing) {
         // Ask each time, or one of the point layers, as "remember" on the map chose.
         val choices = listOf<LayerInfo?>(null) + layers
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { choosingPlacing = false },
             title = { Text(stringResource(R.string.placing_layer)) },
             text = {
@@ -151,7 +150,7 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
         )
     }
     failure?.let { message ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { failure = null },
             confirmButton = { TextButton(onClick = { failure = null }) { Text(stringResource(R.string.ok)) } },
             text = { Text(message) },

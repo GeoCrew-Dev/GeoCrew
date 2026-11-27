@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,8 +37,9 @@ fun AddFieldDialog(existing: List<String>, onDismiss: () -> Unit, onAdd: (name: 
     val trimmed = name.trim()
     val taken = (existing + Workspace.RESERVED).any { it.equals(trimmed, ignoreCase = true) }
     val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && !taken
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         icon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) },
         title = { Text(stringResource(R.string.field_add)) },
         text = {

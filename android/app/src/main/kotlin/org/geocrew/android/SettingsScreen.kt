@@ -23,7 +23,6 @@ import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material.icons.rounded.Translate
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -180,7 +179,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
     }
 
     if (askCache) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { askCache = false },
             title = { Text(stringResource(R.string.map_cache_limit)) },
             text = {
@@ -205,7 +204,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
         )
     }
     if (clearingCache) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { clearingCache = false },
             title = { Text(stringResource(R.string.map_cache_clear_title)) },
             confirmButton = {
@@ -221,7 +220,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
         )
     }
     if (cacheFailed) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { cacheFailed = false },
             text = { Text(stringResource(R.string.map_cache_clear_failed)) },
             confirmButton = { TextButton(onClick = { cacheFailed = false }) { Text(stringResource(R.string.ok)) } },
@@ -235,7 +234,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
         })
     }
     if (askLanguage) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { askLanguage = false },
             icon = { Icon(Icons.Rounded.Translate, null) },
             title = { Text(stringResource(R.string.settings_language)) },
@@ -274,8 +273,9 @@ private fun languageName(choice: AppLanguage.Choice): String = when (choice) {
 fun KeyDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var text by remember { mutableStateOf(current) }
     val valid = TiandituKey.isValid(text.trim())
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         icon = { Icon(Icons.Rounded.Key, null) },
         title = { Text(stringResource(R.string.key_title)) },
         text = {

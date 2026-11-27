@@ -26,7 +26,6 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.SelectAll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -486,7 +485,7 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
     }
     deleting?.let { entries ->
         val one = entries.singleOrNull()
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { deleting = null },
             title = {
                 Text(if (one != null) stringResource(R.string.files_delete_title, one.name) else pluralStringResource(R.plurals.files_delete_many, entries.size, entries.size))
@@ -530,7 +529,7 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
         ) { details = null }
     }
     failure?.let { message ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { failure = null },
             confirmButton = { TextButton(onClick = { failure = null }) { Text(stringResource(R.string.ok)) } },
             text = { Text(message) },

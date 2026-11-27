@@ -27,7 +27,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
@@ -49,7 +48,6 @@ import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.LibraryAdd
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Terrain
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -400,11 +398,12 @@ internal fun ClipBar(clip: Clip, canPaste: Boolean, onCancel: () -> Unit, onPast
 internal fun ImportDialog(layers: List<JsonObject>, onDismiss: () -> Unit, onImport: (List<String>) -> Unit) {
     val names = layers.mapNotNull { (it["name"] as? JsonPrimitive)?.contentOrNull }
     var ticked by remember { mutableStateOf(names.toSet()) }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         title = { Text(stringResource(R.string.import_which)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column {
                 for (layer in layers) {
                     val name = (layer["name"] as? JsonPrimitive)?.contentOrNull ?: continue
                     val count = (layer["features"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
@@ -453,8 +452,9 @@ internal fun NameDialog(
     val name = value.text.trim()
     val clash = taken.any { it.equals(name, ignoreCase = true) }
     val valid = name.isNotEmpty() && name != "." && name != ".." && !name.contains('/') && !clash
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         title = { Text(title) },
         text = {
             OutlinedTextField(
@@ -493,8 +493,9 @@ internal fun DetailsDialog(
     LaunchedEffect(entries) { counted = entries.mapNotNull { info(it.path) } }
     val one = entries.singleOrNull()
     fun total(key: String) = counted?.sumOf { (it[key] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: 0L }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         icon = { if (one != null) KindIcon(one.kind) else Icon(Icons.Rounded.Info, null) },
         title = {
             Text(
@@ -504,8 +505,7 @@ internal fun DetailsDialog(
             )
         },
         text = {
-            // A file with many layers says a lot: it scrolls.
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (one != null) {
                     Detail(stringResource(R.string.files_location), File(one.path).parent.orEmpty()) {
                         IconButton(onClick = { clipboard.setText(AnnotatedString(one.path)) }) {

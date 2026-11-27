@@ -13,37 +13,28 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material3.AlertDialogDefaults
-import androidx.compose.material3.BasicAlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,17 +55,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -177,58 +164,34 @@ fun colorOfCode(code: String): Color? {
  * A colour to choose for [title], starting from [selected]: saturation and
  * brightness on a square, the hue on a bar under it and, when [alpha], the
  * opacity on a bar beside it; red, green and blue on sliders; the hex code; or
- * a colour of the palette. When the window is wider than it is tall (a phone
- * on its side) the square is on the left, filling the height, and the rest on
- * the right, scrolling above the buttons. [onPick] gets the colour when it is
- * confirmed.
+ * a colour of the palette. On a phone in landscape the square is on the left,
+ * filling the height, and the rest on the right, scrolling above the buttons
+ * (AppDialog). [onPick] gets the colour when it is confirmed.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ColorPickerDialog(title: String, selected: Color, onDismiss: () -> Unit, alpha: Boolean = true, onPick: (Color) -> Unit) {
     val state = remember { PickerState(selected, alpha) }
-    val confirm = { onPick(state.color) }
-    // The part of the window clear of the system bars and cutouts, which the dialog has to fit in.
-    val density = LocalDensity.current
-    val window = LocalWindowInfo.current.containerSize
-    val clear = WindowInsets.safeDrawing
-    val clearWidth = with(density) { (window.width - clear.getLeft(this, LayoutDirection.Ltr) - clear.getRight(this, LayoutDirection.Ltr)).toDp() }
-    val clearHeight = with(density) { (window.height - clear.getTop(this) - clear.getBottom(this)).toDp() }
-    val sideBySide = clearWidth > clearHeight && clearHeight >= SIDE_BY_SIDE_MIN
-    // Side by side the dialog is wider than a dialog usually is, so it sets its own width and height.
-    BasicAlertDialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = !sideBySide)) {
-        Surface(shape = AlertDialogDefaults.shape, color = AlertDialogDefaults.containerColor, tonalElevation = AlertDialogDefaults.TonalElevation) {
-            CompositionLocalProvider(LocalContentColor provides AlertDialogDefaults.textContentColor) {
-                if (sideBySide) {
-                    // 16 dp clear above and below the dialog, 24 dp of padding inside it.
-                    Row(Modifier.padding(24.dp).height((clearHeight - 32.dp - 48.dp).coerceAtMost(SIDE_BY_SIDE_HEIGHT))) {
-                        ColorArea(state, Modifier.weight(1f).fillMaxHeight(), fillHeight = true)
-                        Spacer(Modifier.width(24.dp))
-                        Column(Modifier.weight(1f).fillMaxHeight()) {
-                            DialogTitle(title)
-                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                                HexRow(state)
-                                Spacer(Modifier.height(8.dp))
-                                Channels(state)
-                                ColorPalette(state.color, folded = true) { state.setColor(it) }
-                            }
-                            DialogButtons(12.dp, onDismiss, confirm)
-                        }
-                    }
-                } else {
-                    Column(Modifier.padding(24.dp)) {
-                        DialogTitle(title)
-                        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-                            HexRow(state)
-                            Spacer(Modifier.height(16.dp))
-                            ColorArea(state, Modifier.fillMaxWidth(), fillHeight = false)
-                            Spacer(Modifier.height(8.dp))
-                            Channels(state)
-                            ColorPalette(state.color, folded = true) { state.setColor(it) }
-                        }
-                        DialogButtons(24.dp, onDismiss, confirm)
-                    }
+    AppDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        side = { sideBySide ->
+            if (sideBySide) {
+                ColorArea(state, Modifier.fillMaxSize(), fillHeight = true)
+            } else {
+                Column {
+                    ColorArea(state, Modifier.fillMaxWidth(), fillHeight = false)
+                    Spacer(Modifier.height(16.dp))
                 }
             }
+        },
+        confirmButton = { TextButton(onClick = { onPick(state.color) }) { Text(stringResource(R.string.ok)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    ) {
+        Column {
+            HexRow(state)
+            Spacer(Modifier.height(8.dp))
+            Channels(state)
+            ColorPalette(state.color, folded = true) { state.setColor(it) }
         }
     }
 }
@@ -236,10 +199,6 @@ fun ColorPickerDialog(title: String, selected: Color, onDismiss: () -> Unit, alp
 // The bars beside and under the square, and the gaps between.
 private val BAR = 28.dp
 private val GAP = 12.dp
-
-// The most the side-by-side picker grows to between its padding, and the least clear height it needs.
-private val SIDE_BY_SIDE_HEIGHT = 360.dp
-private val SIDE_BY_SIDE_MIN = 280.dp
 
 /**
  * What the picker holds: the colour as hue, saturation, brightness and alpha,
@@ -290,25 +249,7 @@ private class PickerState(start: Color, val withAlpha: Boolean) {
     }
 }
 
-@Composable
-private fun DialogTitle(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.headlineSmall,
-        color = AlertDialogDefaults.titleContentColor,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(bottom = 16.dp),
-    )
-}
 
-@Composable
-private fun DialogButtons(above: Dp, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(top = above), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-        TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        TextButton(onClick = onConfirm) { Text(stringResource(R.string.ok)) }
-    }
-}
 
 // The colour as it is, and its hex code to read or type.
 @Composable
