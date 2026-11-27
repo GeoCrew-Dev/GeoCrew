@@ -90,11 +90,15 @@ class FileActions(private val geocrew: File, private val top: () -> File, privat
             ActionResult.Done(buildJsonObject { put("path", renamed.path) })
         },
         FileAction(
-            COPY, "Copy file", "Copies the file or folder at [path] into folder [to]; a name already there gets a number, as a (2).kml",
+            COPY, "Copy file", "Copies the file or folder at [path] into folder [to]; a name already there gets a number, as a (2).kml. The open project's files are not copied while it is open",
             Risk.EDIT, MOVE_PARAMS, """{"path": "/storage/emulated/0/Download/影像.tif", "to": "/storage/emulated/0/GeoCrew"}""",
         ) { caller, p ->
             val file = resolve(caller, p.text("path"))
             if (!file.exists()) refuse(NOT_FOUND, "${file.path} is not there")
+            // An open project's GeoPackage keeps saved edits in its -wal file for a while: a copy of it would miss them.
+            busy()?.canonicalFile?.let { open ->
+                if (within(file, open) || within(open, file)) refuse(BUSY, "${file.path} belongs to the open project")
+            }
             val into = destination(caller, file, p.text("to"))
             val copy = free(into, file.name)
             if (!file.copyRecursively(copy)) refuse(FAILED, "${file.path} could not be copied")

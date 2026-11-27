@@ -348,4 +348,5 @@
         <item quantity="one">The %d item in it goes too</item>
         <item quantity="other">The %d items in it go too</item>
     </plurals>
+    <string name="files_gone">It is no longer there</string>
 </resources>

@@ -159,6 +159,7 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
         busy = stringResource(R.string.files_busy),
         protected = stringResource(R.string.files_protected),
         inside = stringResource(R.string.files_inside),
+        gone = stringResource(R.string.files_gone),
         failed = stringResource(R.string.action_failed),
     )
     val copiedText = stringResource(R.string.files_copied)
@@ -208,9 +209,11 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
         }
     }
 
+    // Back to the last folder still there: one renamed, moved or deleted since is passed over.
     BackHandler(enabled = history.isNotEmpty()) {
-        path = history.last()
-        history = history.dropLast(1)
+        val back = history.dropLastWhile { !File(it).isDirectory }
+        path = back.lastOrNull() ?: graph.root.path
+        history = back.dropLast(1)
     }
 
     val sort = graph.settings.fileSort
@@ -408,13 +411,14 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
 }
 
 /** How the file actions' refusals are said. */
-private class FileTexts(val taken: String, val busy: String, val protected: String, val inside: String, val failed: String) {
+private class FileTexts(val taken: String, val busy: String, val protected: String, val inside: String, val gone: String, val failed: String) {
     fun of(outcome: Outcome): String = when (outcome) {
         is Outcome.Failed -> when (outcome.code) {
             FileActions.EXISTS -> taken
             FileActions.BUSY -> busy
             FileActions.PROTECTED -> protected
             FileActions.INSIDE -> inside
+            FileActions.NOT_FOUND -> gone
             else -> failed.format(outcome.message)
         }
         else -> failed.format(outcome.toString())
