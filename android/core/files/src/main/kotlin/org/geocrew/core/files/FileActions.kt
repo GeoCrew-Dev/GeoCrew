@@ -60,6 +60,39 @@ class FileActions(private val geocrew: File, private val top: () -> File, privat
             )
         },
         FileAction(
+            INFO, "File info",
+            "What the file or folder at [path] holds: its size in bytes (a folder's, of everything in it, hidden files too), " +
+                "how many files and folders are in it, its kind and last change (ms since 1970)",
+            Risk.VIEW, PATH_PARAMS, """{"path": "/storage/emulated/0/GeoCrew/导出"}""",
+        ) { caller, p ->
+            val file = resolve(caller, p.text("path"))
+            if (!file.exists()) refuse(NOT_FOUND, "${file.path} is not there")
+            var size = if (file.isDirectory) 0L else file.length()
+            var files = 0
+            var folders = 0
+            if (file.isDirectory) {
+                for (f in file.walkTopDown().drop(1)) {
+                    if (f.isDirectory) {
+                        folders++
+                    } else {
+                        files++
+                        size += f.length()
+                    }
+                }
+            }
+            ActionResult.Done(
+                buildJsonObject {
+                    put("path", file.path)
+                    put("name", file.name)
+                    put("kind", FileKind.of(file).name.lowercase())
+                    put("modified", file.lastModified())
+                    put("size", size)
+                    put("files", files)
+                    put("folders", folders)
+                },
+            )
+        },
+        FileAction(
             MAKE_FOLDER, "Make folder", "Makes folder [name] in folder [path]; a name already there is refused",
             Risk.EDIT, NAMED_PARAMS, """{"path": "/storage/emulated/0/GeoCrew", "name": "影像"}""",
         ) { caller, p ->
@@ -207,6 +240,7 @@ class FileActions(private val geocrew: File, private val top: () -> File, privat
 
     companion object {
         const val LIST = "file.list"
+        const val INFO = "file.info"
         const val MAKE_FOLDER = "file.folder.make"
         const val RENAME = "file.rename"
         const val COPY = "file.copy"

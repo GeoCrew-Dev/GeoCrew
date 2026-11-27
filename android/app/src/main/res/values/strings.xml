@@ -349,4 +349,42 @@
         <item quantity="other">The %d items in it go too</item>
     </plurals>
     <string name="files_gone">It is no longer there</string>
+    <string name="files_pick">Select</string>
+    <string name="files_pick_all">Select all</string>
+    <string name="files_search">Search</string>
+    <string name="files_search_hint">Search this folder</string>
+    <string name="files_clear">Clear</string>
+    <string name="files_not_found">Nothing found</string>
+    <string name="files_details">Details</string>
+    <string name="files_location">Location</string>
+    <string name="files_modified">Modified</string>
+    <string name="files_size">Size</string>
+    <string name="files_contains">Contains</string>
+    <string name="files_contains_value">%1$s, %2$s</string>
+    <string name="files_counting">Counting…</string>
+    <string name="files_copy_path">Copy path</string>
+    <plurals name="files_picked">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="files_count_files">
+        <item quantity="one">%d file</item>
+        <item quantity="other">%d files</item>
+    </plurals>
+    <plurals name="files_count_folders">
+        <item quantity="one">%d folder</item>
+        <item quantity="other">%d folders</item>
+    </plurals>
+    <plurals name="files_delete_many">
+        <item quantity="one">Delete %d item?</item>
+        <item quantity="other">Delete %d items?</item>
+    </plurals>
+    <plurals name="files_copying_many">
+        <item quantity="one">Copy %d item</item>
+        <item quantity="other">Copy %d items</item>
+    </plurals>
+    <plurals name="files_moving_many">
+        <item quantity="one">Move %d item</item>
+        <item quantity="other">Move %d items</item>
+    </plurals>
 </resources>
