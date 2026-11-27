@@ -503,6 +503,7 @@ fun LayersScreen(
         var collection by remember(layer.name) { mutableStateOf<JsonObject?>(null) }
         LaunchedEffect(layer.name) {
             val read = graph.invoke(Workspace.FEATURES, buildJsonObject { put("layer", layer.name) })
+            if (read !is Outcome.Done) failure = texts.of(read)
             collection = (read as? Outcome.Done)?.output as? JsonObject ?: JsonObject(emptyMap())
         }
         StyleDialog(

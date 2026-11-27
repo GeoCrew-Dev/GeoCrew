@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Colorize
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -66,32 +69,53 @@ internal val PALETTE = listOf(
 /**
  * The [PALETTE] as round swatches, [selected] ticked; a tap gives [onPick] the
  * colour. With [onMore], a last swatch opens the full picker; it shows
- * [selected] when that is not in the palette.
+ * [selected] when that is not in the palette. A [folded] palette shows one
+ * row, its last swatch opening the rest.
  */
 @Composable
-fun ColorPalette(selected: Color, modifier: Modifier = Modifier, onMore: (() -> Unit)? = null, onPick: (Color) -> Unit) {
+fun ColorPalette(selected: Color, modifier: Modifier = Modifier, folded: Boolean = false, onMore: (() -> Unit)? = null, onPick: (Color) -> Unit) {
     val inPalette = PALETTE.any { it.toArgb() == selected.toArgb() }
-    FlowRow(
-        modifier.fillMaxWidth().padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        for (c in PALETTE) Swatch(c, c.toArgb() == selected.toArgb()) { onPick(c) }
-        if (onMore != null) {
-            val custom = if (inPalette) null else selected
-            Box(
-                Modifier.size(36.dp).clip(CircleShape)
-                    .background(custom ?: MaterialTheme.colorScheme.surfaceContainerHighest)
-                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                    .clickable(onClick = onMore),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    if (custom != null) Icons.Rounded.Check else Icons.Rounded.Colorize,
-                    stringResource(R.string.color_more),
-                    tint = custom?.let(::onColor) ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
+    var open by remember { mutableStateOf(!folded) }
+    BoxWithConstraints(modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        // How many swatches fit in a row: 36 dp each, 8 dp apart.
+        val perRow = ((maxWidth + 8.dp) / 44.dp).toInt().coerceAtLeast(2)
+        val shown = if (open) PALETTE else PALETTE.take(perRow - 1)
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            for (c in shown) Swatch(c, c.toArgb() == selected.toArgb()) { onPick(c) }
+            if (folded) {
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                        .clickable { open = !open },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        stringResource(if (open) R.string.color_fewer else R.string.color_more),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (onMore != null) {
+                val custom = if (inPalette) null else selected
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape)
+                        .background(custom ?: MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                        .clickable(onClick = onMore),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (custom != null) Icons.Rounded.Check else Icons.Rounded.Colorize,
+                        stringResource(R.string.color_more),
+                        tint = custom?.let(::onColor) ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }
@@ -158,7 +182,6 @@ fun ColorPickerDialog(title: String, selected: Color, onDismiss: () -> Unit, onP
                         prefix = { Text("#") },
                         label = { Text(stringResource(R.string.color_hex)) },
                         singleLine = true,
-                        isError = parseHex(typed) == null,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, keyboardType = KeyboardType.Ascii),
                         modifier = Modifier.weight(1f),
                     )
@@ -178,7 +201,7 @@ fun ColorPickerDialog(title: String, selected: Color, onDismiss: () -> Unit, onP
                         valueRange = 0f..255f,
                     )
                 }
-                ColorPalette(color) { set(it) }
+                ColorPalette(color, folded = true) { set(it) }
             }
         },
         confirmButton = { TextButton(onClick = { onPick(color) }) { Text(stringResource(R.string.ok)) } },
