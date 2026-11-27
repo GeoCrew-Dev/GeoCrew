@@ -113,6 +113,19 @@ class FileActionsTest {
     }
 
     @Test
+    fun infoCountsWhatAFolderHolds() {
+        val folder = File(geocrew, "影像").apply { mkdir() }
+        File(folder, "a.tif").writeText("12345")
+        File(folder, "子文件夹").mkdir()
+        File(folder, "子文件夹/b.tif").writeText("123")
+        val info = done(FileActions.INFO, """{"path": ${json(folder)}}""")
+        assertEquals(listOf(8L, 2L, 1L), listOf("size", "files", "folders").map { info.getValue(it).jsonPrimitive.content.toLong() })
+        assertEquals("folder", info.getValue("kind").jsonPrimitive.content)
+        assertEquals(5L, done(FileActions.INFO, """{"path": ${json(File(folder, "a.tif"))}}""").getValue("size").jsonPrimitive.content.toLong())
+        assertEquals(FileActions.NOT_FOUND, failed(FileActions.INFO, """{"path": ${json(File(folder, "c.tif"))}}"""))
+    }
+
+    @Test
     fun kindsAndOrder() {
         assertEquals(FileKind.VECTOR, FileKind.of(File("a.GPKG")))
         assertEquals(FileKind.OTHER, FileKind.of(File("a.dbf")), "a Shapefile's parts are not layers")

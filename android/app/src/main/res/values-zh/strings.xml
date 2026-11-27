@@ -336,4 +336,36 @@
         <item quantity="other">里面的 %d 项也会删除</item>
     </plurals>
     <string name="files_gone">它已经不在了</string>
+    <string name="files_pick">选择</string>
+    <string name="files_pick_all">全选</string>
+    <string name="files_search">搜索</string>
+    <string name="files_search_hint">在这个文件夹里找</string>
+    <string name="files_clear">清除</string>
+    <string name="files_not_found">没有找到</string>
+    <string name="files_details">属性</string>
+    <string name="files_location">位置</string>
+    <string name="files_modified">修改时间</string>
+    <string name="files_size">大小</string>
+    <string name="files_contains">包含</string>
+    <string name="files_contains_value">%1$s，%2$s</string>
+    <string name="files_counting">正在统计…</string>
+    <string name="files_copy_path">复制路径</string>
+    <plurals name="files_picked">
+        <item quantity="other">已选择 %d 项</item>
+    </plurals>
+    <plurals name="files_count_files">
+        <item quantity="other">%d 个文件</item>
+    </plurals>
+    <plurals name="files_count_folders">
+        <item quantity="other">%d 个文件夹</item>
+    </plurals>
+    <plurals name="files_delete_many">
+        <item quantity="other">删除这 %d 项？</item>
+    </plurals>
+    <plurals name="files_copying_many">
+        <item quantity="other">复制 %d 项</item>
+    </plurals>
+    <plurals name="files_moving_many">
+        <item quantity="other">移动 %d 项</item>
+    </plurals>
 </resources>
