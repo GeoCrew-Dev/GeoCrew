@@ -430,4 +430,5 @@
     <string name="color_green">绿</string>
     <string name="color_blue">蓝</string>
     <string name="color_fewer">收起</string>
+    <string name="color_percent">%1$d%%</string>
 </resources>
