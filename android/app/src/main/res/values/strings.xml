@@ -406,4 +406,14 @@
         <item quantity="one">%d feature</item>
         <item quantity="other">%d features</item>
     </plurals>
+    <string name="raster_section">Rasters</string>
+    <string name="raster_missing">File not found</string>
+    <string name="raster_remove">Remove</string>
+    <string name="raster_remove_title">Remove “%1$s” from the project?</string>
+    <string name="raster_remove_body">The file is not deleted</string>
+    <string name="raster_not_raster">This is not a raster</string>
+    <string name="raster_no_crs">This raster does not say where it is</string>
+    <string name="layer_from_file">From file</string>
+    <string name="files_add_to">Add to “%1$s”</string>
+    <string name="files_added_to">Added to “%1$s”</string>
 </resources>

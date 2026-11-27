@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.FolderZip
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.LibraryAdd
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material3.AlertDialog
@@ -104,6 +105,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.files.FileActions
+import org.geocrew.storage.RasterActions
 
 /** A file or folder as file.list gives it. */
 internal data class FileEntry(val name: String, val path: String, val kind: String, val modified: Long, val size: Long?, val items: Int?) {
@@ -120,7 +122,17 @@ internal data class Clip(val entries: List<FileEntry>, val move: Boolean)
 internal data class Place(val label: Int, val folder: File)
 
 /** How the file actions' refusals are said. */
-internal class FileTexts(val taken: String, val busy: String, val protected: String, val inside: String, val gone: String, val failed: String) {
+internal class FileTexts(
+    val taken: String,
+    val busy: String,
+    val protected: String,
+    val inside: String,
+    val gone: String,
+    val failed: String,
+    val notRaster: String,
+    val noCrs: String,
+    val unreadable: String,
+) {
     fun of(outcome: Outcome): String = when (outcome) {
         is Outcome.Failed -> when (outcome.code) {
             FileActions.EXISTS -> taken
@@ -128,6 +140,9 @@ internal class FileTexts(val taken: String, val busy: String, val protected: Str
             FileActions.PROTECTED -> protected
             FileActions.INSIDE -> inside
             FileActions.NOT_FOUND -> gone
+            RasterActions.NOT_RASTER -> notRaster
+            RasterActions.NO_CRS -> noCrs
+            RasterActions.UNREADABLE -> unreadable
             else -> failed.format(outcome.message)
         }
         else -> failed.format(outcome.toString())
@@ -265,6 +280,8 @@ internal fun FileSheet(
     onRename: () -> Unit,
     onDetails: () -> Unit,
     onDelete: () -> Unit,
+    addTo: String? = null,
+    onAdd: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -284,6 +301,15 @@ internal fun FileSheet(
                 colors = clear,
                 modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
             )
+            // Into the open project first: what a GIS user came for.
+            if (addTo != null) {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.files_add_to, addTo), color = MaterialTheme.colorScheme.primary) },
+                    leadingContent = { Icon(Icons.Rounded.LibraryAdd, null, tint = MaterialTheme.colorScheme.primary) },
+                    colors = clear,
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onAdd),
+                )
+            }
             item(R.string.files_open, if (entry.folder) Icons.Rounded.FolderOpen else Icons.AutoMirrored.Rounded.OpenInNew, onOpen)
             item(R.string.files_pick, Icons.Rounded.CheckCircleOutline, onPick)
             if (!entry.folder) item(R.string.share, Icons.Rounded.Share, onShare)

@@ -215,6 +215,8 @@ internal fun rememberMapView(): MapView {
     val mapView = remember {
         MapLibre.getInstance(context)
         HttpRequestUtil.setLogEnabled(false) // MapLibre logs the URLs of failed requests, and Tianditu's carry the key
+        // The project's rasters are drawn by GDAL as MapLibre asks for their tiles; other requests go out as before.
+        HttpRequestUtil.setOkHttpClient(RasterTiles.client)
         MapView(context).apply { onCreate(null) }
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
