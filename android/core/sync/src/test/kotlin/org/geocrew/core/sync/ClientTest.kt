@@ -68,7 +68,7 @@ class ClientTest {
                     """{"layers": [{"id": "L1", "geometry_type": "Point", "crs": "EPSG:4490", "fields": [{"id": "f1", "name": "点名", "type": "string"}],
                           "schema_version": 2, "name": {"value": "野外点", "by": "m1", "at": "2026-11-28T10:00:00Z", "seq": 3}, "deleted": null, "seq": 3}],
                         "rows": [{"layer": "L1", "id": "r1", "conflicted": true, "deleted": {"value": false, "by": "m1", "at": "2026-11-28T12:00:00Z", "seq": 18},
-                          "fields": {"f1": {"value": "D001", "by": "m1", "at": "2026-11-28T11:50:00Z", "seq": 17}, "geom": {"value": {"type": "Point", "coordinates": [114.3, 30.6]}, "by": "m1", "at": "2026-11-28T11:50:00Z", "seq": 17}}}],
+                          "fields": {"f1": {"value": "D001", "by": "m1", "at": "2026-11-28T19:50:00.5+08:00", "seq": 17}, "geom": {"value": {"type": "Point", "coordinates": [114.3, 30.6]}, "by": "m1", "at": "2026-11-28T11:50:00Z", "seq": 17}}}],
                         "conflicts": [{"id": "k1", "layer": "L1", "row": "r1", "seq": 18, "resolved": false, "kind": "value", "field": "f1"}],
                         "seq": 25, "more": true}""",
                 ),
@@ -100,6 +100,7 @@ class ClientTest {
         val row = page.rows.single()
         assertTrue(row.conflicted && !row.deleted, "restored, not deleted")
         assertEquals(17L, row.fields.getValue("geom").seq)
+        assertEquals(Instant.parse("2026-11-28T11:50:00.5Z"), row.fields.getValue("f1").at, "an offset is read as well as Z")
         assertEquals("k1", page.conflicts.single().id)
     }
 
