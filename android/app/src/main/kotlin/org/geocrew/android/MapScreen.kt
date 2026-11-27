@@ -128,6 +128,7 @@ import org.geocrew.core.edit.Editing
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.project.PointNumbers
 import org.geocrew.core.project.Templates
+import org.geocrew.storage.AttachmentActions
 import org.geocrew.storage.Crs
 import org.geocrew.storage.Projects
 import org.geocrew.storage.Workspace
@@ -218,6 +219,14 @@ fun MapScreen(
     // Cancelling a drawing that has changes asks first.
     var cancellingDrawing by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    // The selected feature's attachments, once read (feature.attachments).
+    var selectedFiles by remember { mutableStateOf<List<JsonObject>?>(null) }
+    LaunchedEffect(selected) {
+        selectedFiles = null
+        val (layer, fid) = selected ?: return@LaunchedEffect
+        val listed = graph.invoke(AttachmentActions.LIST, buildJsonObject { put("layer", layer); put("fid", fid) })
+        selectedFiles = ((listed as? Outcome.Done)?.output as? JsonObject)?.get("attachments")?.jsonArray?.map { it.jsonObject }
+    }
     // Layers in a projected CRS, by name: their points can be entered as X and Y.
     var projected by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var basemaps by remember { mutableStateOf<List<BasemapInfo>>(emptyList()) }
@@ -834,10 +843,18 @@ fun MapScreen(
     }
 
     // After adding, the snackbar names the layer and offers to change it: the quick way back from the wrong one.
-    fun add(layer: String, values: JsonObject, at: Position) = once {
+    // What feature.add takes: the layer, the geometry in its CRS, the values and, if any, the attachments.
+    fun featureParams(layer: String, geometry: JsonObject, values: JsonObject, attachments: List<JsonObject>?) = buildJsonObject {
+        put("layer", layer)
+        put("geometry", geometry)
+        put("properties", values)
+        if (!attachments.isNullOrEmpty()) put("attachments", JsonArray(attachments))
+    }
+
+    fun add(layer: String, values: JsonObject, at: Position, attachments: List<JsonObject>? = null) = once {
         if (!startEditing(layer)) return@once
         val geometry = inLayer(layer, at) ?: return@once
-        val added = graph.invoke(Editing.ADD, buildJsonObject { put("layer", layer); put("geometry", geometry); put("properties", values) })
+        val added = graph.invoke(Editing.ADD, featureParams(layer, geometry, values, attachments))
         reload()
         if (added !is Outcome.Done) {
             failure = texts.of(added)
@@ -884,10 +901,10 @@ fun MapScreen(
         act(Editing.GEOMETRY, buildJsonObject { put("layer", d.layer); put("fid", fid); put("geometry", geometry) })
     }
 
-    fun addShape(d: Drawing, values: JsonObject, onAdded: () -> Unit = {}) = once {
+    fun addShape(d: Drawing, values: JsonObject, attachments: List<JsonObject>? = null, onAdded: () -> Unit = {}) = once {
         if (!startEditing(d.layer)) return@once
         val geometry = shapeInLayer(d) ?: return@once
-        val added = graph.invoke(Editing.ADD, buildJsonObject { put("layer", d.layer); put("geometry", geometry); put("properties", values) })
+        val added = graph.invoke(Editing.ADD, featureParams(d.layer, geometry, values, attachments))
         reload()
         if (added !is Outcome.Done) {
             failure = texts.of(added)
@@ -934,13 +951,14 @@ fun MapScreen(
         }
     }
 
-    fun change(layer: String, fid: Long, values: JsonObject, at: Position?) = once {
+    fun change(layer: String, fid: Long, values: JsonObject, at: Position?, attachments: List<JsonObject>?) = once {
         if (!startEditing(layer)) return@once
         if (at != null) {
             val geometry = inLayer(layer, at) ?: return@once
             if (!act(Editing.GEOMETRY, buildJsonObject { put("layer", layer); put("fid", fid); put("geometry", geometry) })) return@once
         }
-        if (values.isNotEmpty()) act(Editing.VALUES, buildJsonObject { put("layer", layer); put("fid", fid); put("values", values) })
+        if (values.isNotEmpty() && !act(Editing.VALUES, buildJsonObject { put("layer", layer); put("fid", fid); put("values", values) })) return@once
+        if (attachments != null) act(Editing.ATTACHMENTS, buildJsonObject { put("layer", layer); put("fid", fid); put("attachments", JsonArray(attachments)) })
     }
 
     fun delete(layer: String, fid: Long) = once {
@@ -1579,11 +1597,13 @@ fun MapScreen(
                 shapeDraft = null
                 drawing = d
             },
-            onSave = { values, _ ->
+            onSave = { values, _, files ->
                 shapeDraft = null
-                addShape(d, values)
+                addShape(d, values, files)
             },
             onDelete = null,
+            attachments = emptyList(),
+            importFile = { importAttachment(context, graph, it) },
         )
     }
     draft?.let { d ->
@@ -1594,13 +1614,15 @@ fun MapScreen(
             coordinates = d.longitude to d.latitude,
             isNew = true,
             onDismiss = { draft = null },
-            onSave = { values, at ->
+            onSave = { values, at, files ->
                 draft = null
-                add(d.layer, values, at ?: Position(d.longitude, d.latitude, Crs.LONGITUDE_LATITUDE))
+                add(d.layer, values, at ?: Position(d.longitude, d.latitude, Crs.LONGITUDE_LATITUDE), files)
             },
             onDelete = null,
             crs = formCrs[d.layer],
             locate = locate,
+            attachments = emptyList(),
+            importFile = { importAttachment(context, graph, it) },
         )
     }
     selected?.let { (layer, fid) ->
@@ -1626,9 +1648,9 @@ fun MapScreen(
                 coordinates = coordinatesOf(feature),
                 isNew = false,
                 onDismiss = { selected = null },
-                onSave = { values, at ->
+                onSave = { values, at, files ->
                     selected = null
-                    if (values.isNotEmpty() || at != null) change(layer, fid, values, at)
+                    if (values.isNotEmpty() || at != null || files != null) change(layer, fid, values, at, files)
                 },
                 onDelete = {
                     selected = null
@@ -1650,6 +1672,8 @@ fun MapScreen(
                 // A line or an area says so when deleted.
                 area = (feature["geometry"] as? JsonObject)?.let { g -> (g["type"] as? JsonPrimitive)?.contentOrNull }
                     ?.takeUnless { it.endsWith("Point") }?.contains("Polygon"),
+                attachments = selectedFiles,
+                importFile = { importAttachment(context, graph, it) },
             )
         }
     }
@@ -1693,7 +1717,7 @@ fun MapScreen(
                 coordinates = null,
                 isNew = true,
                 onDismiss = { trackLayer = null },
-                onSave = { entered, _ ->
+                onSave = { entered, _, _ ->
                     trackLayer = null
                     // Its times are not entered in the form: they come with the track.
                     val times = values.filterKeys { k -> fields.firstOrNull { it.name == k }?.type == "datetime" }

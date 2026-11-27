@@ -488,4 +488,12 @@
     <string name="range_to">≤ %1$s</string>
     <string name="range_below">&lt; %1$s</string>
     <string name="range_both">%1$s，%2$s</string>
+    <string name="attachments">照片和文件</string>
+    <string name="attachment_add">添加</string>
+    <string name="attachment_gallery">从相册选</string>
+    <string name="attachment_file">选文件</string>
+    <string name="attachment_remove">移除</string>
+    <string name="attachment_missing">不在这台手机上</string>
+    <string name="attachment_open_with">用其他应用打开</string>
+    <string name="attachment_failed">添加不了这个文件。</string>
 </resources>

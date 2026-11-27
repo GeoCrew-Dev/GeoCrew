@@ -510,4 +510,12 @@
     <string name="range_to">≤ %1$s</string>
     <string name="range_below">&lt; %1$s</string>
     <string name="range_both">%1$s, %2$s</string>
+    <string name="attachments">Photos and files</string>
+    <string name="attachment_add">Add</string>
+    <string name="attachment_gallery">From photos</string>
+    <string name="attachment_file">Choose a file</string>
+    <string name="attachment_remove">Remove</string>
+    <string name="attachment_missing">Not on this phone</string>
+    <string name="attachment_open_with">Open with</string>
+    <string name="attachment_failed">This file cannot be added.</string>
 </resources>
