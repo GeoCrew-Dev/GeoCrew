@@ -18,8 +18,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
@@ -28,8 +30,16 @@ import org.geocrew.core.project.Numbers
 /** The date a date field's [text] says (2026-11-27, typed full-width too), or null. */
 fun dateOf(text: String): LocalDate? = runCatching { LocalDate.parse(Numbers.plain(text)) }.getOrNull()
 
-/** The moment a date-and-time field's [text] says (ISO 8601 with its offset, as stored), or null. */
-fun instantOf(text: String): Instant? = runCatching { Instant.parse(text.trim()) }.getOrNull()
+/**
+ * The moment a date-and-time field's [text] says, or null: ISO 8601 with its
+ * offset (as GeoCrew stores it, in UTC), or without one, as some files keep
+ * local times, which are then taken as in [zone].
+ */
+fun instantOf(text: String, zone: ZoneId = ZoneId.systemDefault()): Instant? {
+    val t = text.trim()
+    return runCatching { OffsetDateTime.parse(t).toInstant() }.getOrNull()
+        ?: runCatching { LocalDateTime.parse(t).atZone(zone).toInstant() }.getOrNull()
+}
 
 /** [date] at [time] where the phone is, as a date-and-time field keeps it: ISO 8601 in UTC. */
 fun storedDateTime(date: LocalDate, time: LocalTime, zone: ZoneId = ZoneId.systemDefault()): String =

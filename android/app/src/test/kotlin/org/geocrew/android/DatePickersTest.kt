@@ -22,6 +22,8 @@ class DatePickersTest {
         val stored = storedDateTime(LocalDate.of(2026, 11, 27), LocalTime.of(10, 15), shanghai)
         assertEquals("2026-11-27T02:15:00Z", stored)
         assertEquals(LocalTime.of(10, 15), instantOf(stored)!!.atZone(shanghai).toLocalTime(), "read back where the phone is")
-        assertNull(instantOf("2026-11-27 10:15"), "not as stored")
+        assertEquals(stored, instantOf("2026-11-27T10:15:00+08:00").toString(), "with an offset")
+        assertEquals(stored, instantOf("2026-11-27T10:15", shanghai).toString(), "local, without a zone")
+        assertNull(instantOf("2026-11-27 10:15"), "not ISO 8601")
     }
 }
