@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // Only a fresh start: brought back after the system stopped it, the files were taken in already.
-        if (savedInstanceState == null) received = receivedUris(intent)
+        if (savedInstanceState == null) received = receivedUris(this, intent)
         setContent { GeoCrewTheme(graph.settings) { App(graph, resumed, received, onReceived = { received = emptyList() }) } }
     }
 
@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        receivedUris(intent).takeIf { it.isNotEmpty() }?.let { received = it }
+        receivedUris(this, intent).takeIf { it.isNotEmpty() }?.let { received = it }
     }
 
     override fun onResume() {
