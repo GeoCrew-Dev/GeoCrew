@@ -55,15 +55,19 @@ class RasterActions(private val workspace: Workspace, private val geocrew: File,
             ActionResult.Done(workspace.about())
         },
         RasterAction(
-            DISPLAY, "Raster display", "Shows or hides raster [name] of the open project and sets its opacity (0 to 1); saved at once, not undone",
+            DISPLAY, "Raster display",
+            "Shows or hides raster [name] of the open project, sets its opacity (0 to 1) and, for a single band such as a DEM, how it is " +
+                "drawn (render: default, hillshade, relief); saved at once, not undone",
             Risk.EDIT, DISPLAY_PARAMS, """{"name": "影像", "opacity": 0.6}""",
         ) { _, p ->
             val project = workspace.current ?: return@RasterAction ActionResult.Failed(NO_PROJECT, "no project is open")
+            val name = p.text("name").orEmpty()
             project.setDisplay(
-                raster = p.text("name").orEmpty(),
+                raster = name,
                 visible = (p["visible"] as? JsonPrimitive)?.booleanOrNull,
                 opacity = (p["opacity"] as? JsonPrimitive)?.doubleOrNull,
             )
+            p.text("render")?.let { project.setRasterRender(name, it) }
             ActionResult.Done(workspace.about())
         },
         RasterAction(
@@ -112,7 +116,8 @@ class RasterActions(private val workspace: Workspace, private val geocrew: File,
         )
         private val DISPLAY_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"],
-                "properties": {"name": {"type": "string"}, "visible": {"type": "boolean"}, "opacity": {"type": "number"}}}""",
+                "properties": {"name": {"type": "string"}, "visible": {"type": "boolean"}, "opacity": {"type": "number"},
+                "render": {"enum": ["default", "hillshade", "relief"]}}}""",
         )
         private val NAME_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string"}}}""",

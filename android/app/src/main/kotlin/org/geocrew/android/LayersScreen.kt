@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,6 +48,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -422,6 +426,19 @@ fun LayersScreen(
                             Column(Modifier.padding(start = 56.dp, end = 16.dp)) {
                                 OpacitySlider(raster.opacity) { opacity ->
                                     display(RasterActions.DISPLAY, buildJsonObject { put("name", raster.name); put("opacity", opacity.toDouble()) })
+                                }
+                                // A single band (a DEM) can be drawn in grey, shaded, or coloured by height.
+                                if (raster.single && !raster.missing) {
+                                    val renders = listOf(RENDER_DEFAULT to R.string.raster_grey, RENDER_HILLSHADE to R.string.raster_hillshade, RENDER_RELIEF to R.string.raster_relief)
+                                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                                        renders.forEachIndexed { i, (render, label) ->
+                                            SegmentedButton(
+                                                selected = raster.render == render,
+                                                onClick = { display(RasterActions.DISPLAY, buildJsonObject { put("name", raster.name); put("render", render) }) },
+                                                shape = SegmentedButtonDefaults.itemShape(i, renders.size),
+                                            ) { Text(stringResource(label), maxLines = 1) }
+                                        }
+                                    }
                                 }
                                 Row {
                                     TextButton(onClick = { raster.extent?.let(onZoomTo) }, enabled = raster.extent != null && !raster.missing) {

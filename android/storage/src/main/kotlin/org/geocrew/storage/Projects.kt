@@ -207,6 +207,10 @@ private val STYLE_KEYS = setOf("color", "size", "width", "fill", "field", "class
 // The field types a graduated style can range over.
 private val NUMBER_TYPES = setOf("integer", "integer64", "real")
 
+/** How a raster may be drawn: as it is, its hillshade, or coloured by height (for single-band rasters, such as DEMs). */
+val RENDERS = listOf("default", "hillshade", "relief")
+const val DEFAULT_RENDER = "default"
+
 // The most values a categorized style may colour.
 private const val MAX_CLASSES = 100
 
@@ -370,7 +374,16 @@ class Project internal constructor(
      * the [file] it shows, what the probe made of it ([info], see Probe), how
      * it shows, and when it was [added].
      */
-    data class Raster(val id: String, val name: String, val file: File, val info: JsonObject, val display: Display, val added: String)
+    data class Raster(
+        val id: String,
+        val name: String,
+        val file: File,
+        val info: JsonObject,
+        val display: Display,
+        val added: String,
+        /** How a single-band raster is drawn: one of [RENDERS]. */
+        val render: String = DEFAULT_RENDER,
+    )
 
     /** The rasters, newest on top: the first is drawn over the others. */
     val rasters: List<Raster>
@@ -378,12 +391,14 @@ class Project internal constructor(
             val made = rows(dataset, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${ProjectFormat.RASTERS_TABLE}'").isNotEmpty()
             if (!made) return emptyList()
             val display = readDisplay(dataset)
+            val looks = styles
             return rows(dataset, "SELECT id, name, path, added, info FROM ${ProjectFormat.RASTERS_TABLE} ORDER BY rowid DESC").mapNotNull { row ->
                 val id = row["id"] ?: return@mapNotNull null
                 val path = row["path"] ?: return@mapNotNull null
                 val info = runCatching { Json.parseToJsonElement(row["info"].orEmpty()).jsonObject }.getOrNull() ?: return@mapNotNull null
                 val file = File(path).let { if (it.isAbsolute) it else File(folder, path) }
-                Raster(id, row["name"].orEmpty(), file, info, display[id] ?: Display(), row["added"].orEmpty())
+                val render = (looks[id]?.get("render") as? JsonPrimitive)?.contentOrNull?.takeIf { it in RENDERS } ?: DEFAULT_RENDER
+                Raster(id, row["name"].orEmpty(), file, info, display[id] ?: Display(), row["added"].orEmpty(), render)
             }
         }
 
@@ -420,6 +435,25 @@ class Project internal constructor(
         dataset.sql("DELETE FROM ${ProjectFormat.RASTERS_TABLE} WHERE id = ${quote(found.id)}")
         dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
         dataset.sql("DELETE FROM ${ProjectFormat.DISPLAY_TABLE} WHERE layer_id = ${quote(found.id)}")
+        dataset.sql(ProjectFormat.STYLE_SCHEMA)
+        dataset.sql("DELETE FROM ${ProjectFormat.STYLE_TABLE} WHERE layer_id = ${quote(found.id)}")
+    }
+
+    /**
+     * Draws raster [name] as [render] (one of [RENDERS]): as it is, a
+     * single band in grey; its hillshade; or coloured by height. Kept in the
+     * style table under the raster's id; saved at once, not undone.
+     */
+    fun setRasterRender(name: String, render: String) {
+        val found = rasters.firstOrNull { it.name == name } ?: throw IllegalArgumentException("there is no raster $name")
+        require(render in RENDERS) { "render is one of ${RENDERS.joinToString()}" }
+        dataset.sql(ProjectFormat.STYLE_SCHEMA)
+        if (render == DEFAULT_RENDER) {
+            dataset.sql("DELETE FROM ${ProjectFormat.STYLE_TABLE} WHERE layer_id = ${quote(found.id)}")
+        } else {
+            val style = buildJsonObject { put("kind", "raster"); put("render", render) }
+            dataset.sql("INSERT OR REPLACE INTO ${ProjectFormat.STYLE_TABLE} (layer_id, style) VALUES (${quote(found.id)}, ${quote(style.toString())})")
+        }
     }
 
     /** A saved map view: where the map looked, how far in (zoom) and how turned (bearing, degrees). */

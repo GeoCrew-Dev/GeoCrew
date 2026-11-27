@@ -443,4 +443,7 @@
     <string name="line_untitled">线 %1$d</string>
     <string name="area_untitled">面 %1$d</string>
     <string name="style_range">%1$s – %2$s</string>
+    <string name="raster_grey">灰度</string>
+    <string name="raster_hillshade">山体阴影</string>
+    <string name="raster_relief">分层设色</string>
 </resources>

@@ -34,7 +34,8 @@ import org.maplibre.android.style.sources.TileSet
 /**
  * A raster of the open project as project.current lists it: its id and name,
  * its file, whether that file has gone, how it shows, and what the probe made
- * of it ([info]: bands, palette, CRS, pixel size, WGS84 extent).
+ * of it ([info]: bands, palette, CRS, pixel size, WGS84 extent). [render] says
+ * how a single band is drawn: as it is, its hillshade, or coloured by height.
  */
 data class RasterInfo(
     val id: String,
@@ -44,10 +45,20 @@ data class RasterInfo(
     val visible: Boolean,
     val opacity: Float,
     val info: JsonObject,
+    val render: String = RENDER_DEFAULT,
 ) {
     /** Where it is: west, south, east, north in WGS84 degrees; null when the probe did not say. */
     val extent: List<Double>? get() = (info["extent"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.doubleOrNull }?.takeIf { it.size == 4 }
+
+    /** Whether it has a single band of values (a DEM, say), which can be shaded or coloured by height. */
+    val single: Boolean
+        get() = (info["bands"] as? JsonArray)?.size == 1 && (info["palette"] as? JsonPrimitive)?.booleanOrNull != true
 }
+
+/** How a single-band raster can be drawn: as it is (grey), its hillshade, or coloured by height. */
+const val RENDER_DEFAULT = "default"
+const val RENDER_HILLSHADE = "hillshade"
+const val RENDER_RELIEF = "relief"
 
 fun listedRasters(about: JsonObject): List<RasterInfo> = about["rasters"]?.jsonArray.orEmpty().mapNotNull { r ->
     val o = r as? JsonObject ?: return@mapNotNull null
@@ -60,6 +71,7 @@ fun listedRasters(about: JsonObject): List<RasterInfo> = about["rasters"]?.jsonA
         visible = text("visible") != "false",
         opacity = text("opacity")?.toFloatOrNull() ?: 1f,
         info = o["info"] as? JsonObject ?: JsonObject(emptyMap()),
+        render = text("render") ?: RENDER_DEFAULT,
     )
 }
 
@@ -76,7 +88,7 @@ object RasterTiles : Interceptor {
     /** The client MapLibre makes all its requests with: one for the app, answering raster tiles itself. */
     val client: OkHttpClient by lazy { OkHttpClient.Builder().addInterceptor(this).build() }
 
-    // What each raster draws, by raster id: the file, or the VRT that makes it 8-bit RGB.
+    // What each raster draws, by raster id: the file, or the pipeline that makes it 8-bit grey, RGB or RGBA.
     private val drawn = ConcurrentHashMap<String, File>()
 
     /** The tile address of raster [id] at [version], as MapLibre's sources take it. */
@@ -116,33 +128,58 @@ object RasterTiles : Interceptor {
 
     /**
      * What the map draws for [raster]: the file itself when GDAL's tiles of
-     * it come out right (8-bit grey, RGB or RGBA), else a VRT made once in the
-     * app's own folder that turns it so: a palette into RGB, other types
-     * (16-bit, floats) stretched to 8 bits. Blocks: call it off the main thread.
+     * it come out right (8-bit grey, RGB or RGBA), else a file made once in
+     * the app's own folder that turns it so: a palette into RGB, other types
+     * (16-bit, floats) stretched to 8 bits; a single band shaded (a GDAL
+     * pipeline that shades each tile as it is drawn) or coloured by height
+     * when its [RasterInfo.render] says so. Blocks: call it off the main thread.
      */
     fun fileFor(context: Context, raster: RasterInfo): File {
         val bands = (raster.info["bands"] as? JsonArray).orEmpty().map { it.jsonObject }
         val palette = (raster.info["palette"] as? JsonPrimitive)?.booleanOrNull == true
         val types = bands.mapNotNull { (it["type"] as? JsonPrimitive)?.contentOrNull }
         val how = when {
+            raster.single && raster.render == RENDER_HILLSHADE -> "hillshade"
+            raster.single && raster.render == RENDER_RELIEF -> "relief"
             palette -> "color-map"
             types.any { it != "Byte" } -> "scale"
             else -> return raster.file
         }
         val dir = File(context.noBackupFilesDir, "raster-display").apply { mkdirs() }
-        val vrt = File(dir, "${raster.id}-${version(raster.file)}.vrt")
-        if (!vrt.exists()) {
-            // One made for an earlier version of the file goes.
-            dir.listFiles { f -> f.name.startsWith("${raster.id}-") }?.forEach { it.delete() }
-            val args = if (how == "color-map") {
-                arrayOf("raster", "color-map", "--of", "VRT", raster.file.path, vrt.path)
-            } else {
-                arrayOf("raster", "scale", "--of", "VRT", "--ot", "Byte", raster.file.path, vrt.path)
+        val current = version(raster.file)
+        // Each a GDAL pipeline (GDALG) that GDAL runs as the tiles are drawn: a VRT made in a running app was
+        // sometimes not drawn until the app started again, a pipeline always is.
+        val made = File(dir, "${raster.id}-$how-$current.gdalg.json")
+        if (!made.exists()) {
+            // What was made for an earlier version of the file goes. What was made for another way of drawing this
+            // version stays: the native library keeps what it opened by path, so a path is never made twice.
+            dir.listFiles { f -> f.name.startsWith("${raster.id}-") && !(f.name.contains("-$current.") && f.name.endsWith(".gdalg.json")) }
+                ?.forEach { it.delete() }
+            val args = when (how) {
+                "color-map" -> arrayOf("raster", "color-map", "--of", "GDALG", raster.file.path, made.path)
+                // Lit from several directions, so no slope is lost in a shadow; GDAL scales degrees to metres itself.
+                "hillshade" -> arrayOf("raster", "hillshade", "--of", "GDALG", "--variant", "multidirectional", raster.file.path, made.path)
+                "relief" -> {
+                    val ramp = File(dir, "relief.txt").apply { writeText(RELIEF_RAMP) }
+                    arrayOf("raster", "color-map", "--color-map", ramp.path, "--add-alpha", "--of", "GDALG", raster.file.path, made.path)
+                }
+                else -> arrayOf("raster", "scale", "--of", "GDALG", "--ot", "Byte", raster.file.path, made.path)
             }
-            GeoCrewNative.run(args)
+            // GDAL may raise a warning (a colour for no data in a raster without it) and still write the file: the file is what counts.
+            val failure = runCatching { GeoCrewNative.run(args) }.exceptionOrNull()
+            if (!made.exists()) {
+                // Shading or colouring that GDAL could not do falls back to the plain way of drawing it.
+                if (raster.render != RENDER_DEFAULT) return fileFor(context, raster.copy(render = RENDER_DEFAULT))
+                throw failure ?: IllegalStateException("GDAL made no ${made.name}")
+            }
         }
-        return vrt
+        return made
     }
+
+    // Heights from the lowest to the highest of the raster: green lowlands, yellow, brown, and white at the top.
+    private val RELIEF_RAMP = listOf(
+        "0% 0 97 71", "20% 16 122 47", "40% 232 215 125", "60% 161 67 0", "80% 130 30 30", "100% 255 255 255", "nv 0 0 0 0",
+    ).joinToString("\n", postfix = "\n")
 
     /** The version of [file] the map shows: its size and when it last changed. */
     fun version(file: File): String = "${file.length().toString(36)}-${file.lastModified().toString(36)}"

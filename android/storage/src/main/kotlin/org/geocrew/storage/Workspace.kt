@@ -400,6 +400,7 @@ class Workspace(private val projects: Projects) {
                     if (!raster.file.exists()) put("missing", true)
                     put("visible", raster.display.visible)
                     put("opacity", raster.display.opacity)
+                    put("render", raster.render)
                     put("info", raster.info)
                 }
             }
