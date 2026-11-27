@@ -1430,6 +1430,7 @@ fun MapScreen(
             onDismiss = { trackNaming = false },
             onCreate = { name, _, _ ->
                 trackNaming = false
+                rememberNew = false // a track layer never becomes the layer points go into
                 createLayer(name, null, Templates.TRACK.id)
             },
         )
