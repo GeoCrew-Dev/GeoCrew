@@ -1,6 +1,6 @@
 # 同勘 GeoCrew 协同协议 v1（草案）
 
-> 状态：草案，M2 期间逐节写，M3 实现。依据 [ADR 0008](../../docs/adr/0008-sync-and-merge.md)（同步与合并）和 [ADR 0009](../../docs/adr/0009-roles-and-permissions.md)（身份与权限）。v1 不兼容 v0，v0 的客户端不再支持；[v0 文档](protocol-v0.md)在 v1 写完之前只作参考。v1 的接口在 M3 实现时一并写进 [`openapi.yaml`](openapi.yaml)；在那之前，`openapi.yaml` 描述的仍是现行的 v0。
+> 状态：草案，M2 期间逐节写，M3 实现。依据 [ADR 0008](../../docs/adr/0008-sync-and-merge.md)（同步与合并）和 [ADR 0009](../../docs/adr/0009-roles-and-permissions.md)（身份与权限）。v1 不兼容 v0，v0 的客户端不再支持；[v0 文档](protocol-v0.md)在 v1 写完之前只作参考。v1 的接口在 M3 实现时逐个写进 [`openapi.yaml`](openapi.yaml)（标签 `v1`），和 v0 的并存；已经写进去的有信息、建工作区、加入、工作区（2026-11-28）。
 
 ## 1. 和 v0 的主要区别
 
@@ -202,7 +202,7 @@ geocrew://join?server=<URL 编码的根地址>&code=<邀请码>&pin=<公钥指�
 ### 5.1 工作区
 
 - `GET /api/v1/workspaces/{ws}`：工作区信息 `{id, name, archived_at?, leader, fingerprint, invite_code?, access_version}`。
-  - `fingerprint` 是服务端证书的公钥指纹（3.4），组长核对用。
+  - `fingerprint` 是服务端证书的公钥指纹（3.4），组长核对用；服务端没有自己的证书（比如放在反向代理后面）时不带。
   - `invite_code` 只返回给有 `manage_members` 的人。
   - `access_version` 是请求人自己的权限版本（10.2）。
 - `PATCH /api/v1/workspaces/{ws}` `{name?, archived?}`：改名、归档或重新打开，要 `manage_workspace`。归档期间不能修改的范围和 v0 相同：提交、上传、改设置、发言都返回 `409 archived`；读取、拉取、实时通道和成员管理照常。

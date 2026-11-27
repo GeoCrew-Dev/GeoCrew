@@ -43,7 +43,7 @@ func newEnvWith(t *testing.T, adjust func(*Server)) *env {
 	hub := realtime.NewHub()
 	hub.MinPositionInterval = 0
 	s := &Server{
-		Name: "test", Version: "test", Store: db, Hub: hub,
+		Name: "test", Version: "test", Store: db, V1: db.V1(), Hub: hub,
 		Files: &blob.Disk{Root: t.TempDir(), MaxSize: 1 << 20},
 		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}

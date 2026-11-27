@@ -146,6 +146,7 @@ func serve(cfg config.Config, log *slog.Logger, trial *trialRun) error {
 		Name:    cfg.Name,
 		Version: version,
 		Store:   db,
+		V1:      db.V1(),
 		Files:   files,
 		Hub:     realtime.NewHub(),
 		Log:     log,

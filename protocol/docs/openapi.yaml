@@ -25,6 +25,8 @@ tags:
   - name: push
   - name: view
   - name: mcp
+  - name: v1
+    description: Protocol v1, being implemented (M3)
 
 paths:
   /healthz:
@@ -826,6 +828,138 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
 
+  # Protocol v1 (protocol-v1.md), served next to v0 while clients move over (M3).
+  /api/v1/info:
+    get:
+      tags: [v1]
+      operationId: v1GetInfo
+      summary: Protocol version, capabilities and limits (v1 3.3)
+      security: []
+      responses:
+        "200":
+          description: Server information
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/V1Info" }
+
+  /api/v1/workspaces:
+    post:
+      tags: [v1]
+      operationId: v1CreateWorkspace
+      summary: Create a workspace; the caller becomes its leader (v1 3.4). Needs the create capability
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, nickname, device]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 64 }
+                nickname: { type: string, minLength: 1, maxLength: 64 }
+                device: { type: string, minLength: 1, maxLength: 64, description: Device name shown to people }
+      responses:
+        "201":
+          description: Created; the token is shown only here
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/V1Joined" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/v1/join:
+    post:
+      tags: [v1]
+      operationId: v1Join
+      summary: Join with an invite code as a new member, or sign a new device in with a transfer code (v1 3.4, 5.3)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [invite_code, nickname, device]
+                  properties:
+                    invite_code: { type: string, description: "8 characters, case-insensitive" }
+                    nickname: { type: string, minLength: 1, maxLength: 64 }
+                    device: { type: string, minLength: 1, maxLength: 64 }
+                - type: object
+                  required: [transfer_code, device]
+                  properties:
+                    transfer_code: { type: string, description: "12 characters, case-insensitive; spaces and dashes allowed" }
+                    device: { type: string, minLength: 1, maxLength: 64 }
+      responses:
+        "200":
+          description: Joined; the token is shown only here
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/V1Joined" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+    get:
+      tags: [v1]
+      operationId: v1GetWorkspace
+      summary: The workspace as the caller sees it (v1 5.1)
+      responses:
+        "200":
+          description: Workspace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/V1Workspace" }
+        "401": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [v1]
+      operationId: v1UpdateWorkspace
+      summary: Rename, archive or reopen the workspace; needs manage_workspace (v1 5.1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 64 }
+                archived: { type: boolean }
+      responses:
+        "200":
+          description: Workspace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/V1Workspace" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/invite/reset:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+    post:
+      tags: [v1]
+      operationId: v1ResetInvite
+      summary: Replace the invite code; the old one stops working. Needs manage_members (v1 5.1)
+      responses:
+        "200":
+          description: New invite code
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invite_code]
+                properties:
+                  invite_code: { type: string }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearer:
@@ -1230,3 +1364,51 @@ components:
           properties:
             type: { type: string, const: error }
             error: { type: string }
+
+    V1Info:
+      type: object
+      required: [protocol, server, version, capabilities, limits]
+      properties:
+        protocol: { type: integer, const: 1 }
+        server: { type: string }
+        version: { type: string }
+        capabilities:
+          type: array
+          items: { type: string, examples: [sync, create, files, realtime, gdal] }
+        limits:
+          type: object
+          required: [max_push_batch, max_pull_batch, max_file_size]
+          properties:
+            max_push_batch: { type: integer }
+            max_pull_batch: { type: integer }
+            max_file_size: { type: integer, format: int64 }
+
+    V1Workspace:
+      type: object
+      required: [id, name, leader, created_at, access_version]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        leader: { type: string, description: The leader's member id }
+        created_at: { type: string, format: date-time }
+        archived_at: { type: string, format: date-time }
+        invite_code: { type: string, description: Only for those with manage_members }
+        fingerprint: { type: string, description: "SHA-256 of the server certificate's public key, base64url; absent while the server has no certificate of its own (v1 3.4)" }
+        access_version: { type: integer, format: int64, description: The caller's own access version (v1 10.2) }
+
+    V1Member:
+      type: object
+      required: [id, nickname, roles, joined_at]
+      properties:
+        id: { type: string }
+        nickname: { type: string }
+        roles: { type: array, items: { type: string }, description: Roles besides the base role member }
+        joined_at: { type: string, format: date-time }
+
+    V1Joined:
+      type: object
+      required: [workspace, member, token]
+      properties:
+        workspace: { $ref: "#/components/schemas/V1Workspace" }
+        member: { $ref: "#/components/schemas/V1Member" }
+        token: { type: string, description: "Device token for Authorization: Bearer; shown once" }
