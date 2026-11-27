@@ -3,6 +3,7 @@ package org.geocrew.storage
 import java.io.File
 import java.io.IOException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -63,18 +64,66 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
             }
         },
         SyncAction(
+            JOIN, "Join workspace",
+            "Joins the team workspace on the server at [server] with an [invite_code] as a new member ([nickname], on [device]), or with " +
+                "a [transfer_code] as the member it was issued for, makes a new project for it (named in [language]) and brings in its " +
+                "layers and features; the open project closes, and nothing in it may be unsaved",
+            Risk.SEND, JOIN_PARAMS, """{"server": "https://geo.example.org", "invite_code": "K7QX2MPA", "nickname": "李四", "device": "Mate 60"}""",
+        ) { p ->
+            unsaved()?.let { return@SyncAction it }
+            val server = p.text("server")!!.trim()
+            val invite = p.text("invite_code")?.takeIf { it.isNotBlank() }
+            val transfer = p.text("transfer_code")?.takeIf { it.isNotBlank() }
+            if ((invite == null) == (transfer == null)) return@SyncAction ActionResult.Failed(BAD_REQUEST, "an invite code or a transfer code, one of them")
+            if (invite != null && p.text("nickname").isNullOrBlank()) return@SyncAction ActionResult.Failed(BAD_REQUEST, "a nickname comes with an invite code")
+            remote {
+                val client = SyncClient(transport(server))
+                val info = client.info()
+                if (info.protocol != 1 || "sync" !in info.capabilities) return@remote ActionResult.Failed(UNSUPPORTED, "the server does not speak protocol v1 sync")
+                val joined = if (transfer != null) client.joinWithTransferCode(transfer, p.text("device")!!) else client.join(invite!!, p.text("nickname")!!, p.text("device")!!)
+                val opened = workspace.createAndOpen(joined.workspaceName, p.text("language") ?: "en")
+                if (opened !is ActionResult.Done) return@remote opened
+                val project = checkNotNull(workspace.current)
+                val account = SyncAccount(server, joined.workspace, joined.member, joined.token)
+                accounts.put(project.id, account)
+                project.link(joined.workspace)
+                val pulled = ProjectSync(project, client, account).pull(info.maxPullBatch)
+                ActionResult.Done(
+                    buildJsonObject {
+                        put("project", project.name)
+                        put("workspace", joined.workspace)
+                        put("pulled", pulled.rows)
+                        put("layers", pulled.layers)
+                    },
+                    endsUndo = opened.endsUndo,
+                )
+            }
+        },
+        SyncAction(
             NOW, "Sync now",
-            "Sends the open project's saved edits to the workspace it syncs with; a share cut short is finished first",
+            "Sends the open project's saved edits to the workspace it syncs with, then brings in the workspace's changes; a share cut " +
+                "short is finished first. Changes come in only while nothing is unsaved (pulled is null then)",
             Risk.SEND, NO_PARAMS, "{}",
         ) { _ ->
             val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
             val account = accounts.of(project.id) ?: return@SyncAction ActionResult.Failed(NOT_LINKED, "the project syncs with no workspace")
             remote {
                 val client = SyncClient(transport(account.server))
+                val info = client.info()
                 val sync = ProjectSync(project, client, account)
                 if (!project.data(Outbox::linked)) sync.share()
-                val pushed = sync.push(client.info().maxPushBatch)
-                ActionResult.Done(buildJsonObject { put("sent", pushed.sent); put("rejected", pushed.rejected); put("conflicts", pushed.conflicts) })
+                val pushed = sync.push(info.maxPushBatch)
+                // Rows written into the file under an edit buffer with unsaved edits could clash with them on save.
+                val pulled = if (unsaved() == null) sync.pull(info.maxPullBatch) else null
+                ActionResult.Done(
+                    buildJsonObject {
+                        put("sent", pushed.sent)
+                        put("rejected", pushed.rejected)
+                        put("conflicts", pushed.conflicts + (pulled?.conflicts ?: 0))
+                        if (pulled == null) put("pulled", JsonNull) else put("pulled", pulled.rows)
+                        put("layers", pulled?.layers ?: 0)
+                    },
+                )
             }
         },
         SyncAction(
@@ -98,6 +147,12 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
             )
         },
     )
+
+    // Unsaved edits in the open project, which a pull must not write under.
+    private fun unsaved(): ActionResult.Failed? {
+        val layers = workspace.editing.layersBeingEdited.filter(workspace.editing::isModified)
+        return if (layers.isEmpty()) null else ActionResult.Failed(UNSAVED, "save or discard the edits of ${layers.joinToString()} first")
+    }
 
     // A call to the server: a refusal and a network failure each become a failure of the action, with what to tell the user.
     private inline fun remote(block: () -> ActionResult): ActionResult = try {
@@ -126,6 +181,7 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
 
     companion object {
         const val SHARE = "sync.share"
+        const val JOIN = "sync.join"
         const val NOW = "sync.now"
         const val STATUS = "sync.status"
 
@@ -135,12 +191,19 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
         const val NOT_LINKED = "not_linked"
         const val UNSUPPORTED = "unsupported"
         const val OFFLINE = "offline"
+        const val UNSAVED = "unsaved"
+        const val BAD_REQUEST = "invalid"
 
         private fun schema(s: String) = Json.parseToJsonElement(s).jsonObject
 
         private val SHARE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["server", "nickname", "device"],
                 "properties": {"server": {"type": "string"}, "name": {"type": "string"}, "nickname": {"type": "string"}, "device": {"type": "string"}}}""",
+        )
+        private val JOIN_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["server", "device"],
+                "properties": {"server": {"type": "string"}, "invite_code": {"type": "string"}, "transfer_code": {"type": "string"},
+                "nickname": {"type": "string"}, "device": {"type": "string"}, "language": {"enum": ["zh", "en"]}}}""",
         )
         private val NO_PARAMS = schema("""{"type": "object", "additionalProperties": false, "properties": {}}""")
     }

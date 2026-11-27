@@ -472,6 +472,21 @@ class Workspace(private val projects: Projects) {
         }
     }
 
+    /**
+     * Makes a new project named after [wanted] (characters no name takes as
+     * "_", numbered when taken) and opens it, closing the open one: for joining
+     * a team's workspace (SyncActions). Fails, leaving the open project as it
+     * is, while that has unsaved edits.
+     */
+    internal fun createAndOpen(wanted: String, language: String): ActionResult {
+        val taken = projects.list().map { it.lowercase() }.toSet()
+        val base = wanted.replace(Regex("""[\\/:*?"<>|]"""), "_").trim().take(ProjectFormat.MAX_NAME - 4).trim().ifEmpty { "workspace" }
+        val name = generateSequence(1) { it + 1 }.take(1000).map { if (it == 1) base else "$base $it" }
+            .firstOrNull { it.lowercase() !in taken && ProjectFormat.nameProblem(it) == null }
+            ?: return ActionResult.Failed("bad_name", "no project name can be made of $wanted")
+        return switchTo { projects.create(name, language = language) }
+    }
+
     // The project's file opened again, as GDAL learns of changed tables when it opens the file; closed if that fails.
     private fun reopen(project: Project): Project = runCatching { projects.reopen(project) }.getOrElse {
         current = null
