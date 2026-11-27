@@ -36,6 +36,15 @@ internal object MapLabels {
 
     private const val PREFIX = "label:"
 
+    // The most characters a label shows; longer values end in an ellipsis.
+    private const val MOST = 40
+
+    /** What a label shows of [value]: its first line, cut to [MOST] characters; null when there is nothing to show. */
+    internal fun shown(value: String): String? {
+        val line = value.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return null
+        return if (line.length > MOST) line.take(MOST - 1).trimEnd() + "…" else line
+    }
+
     /**
      * [features] with each one's [field] as its label, and the label images
      * added to [style] that it does not have yet.
@@ -44,7 +53,7 @@ internal object MapLabels {
         features.map { feature ->
             val f = feature as? JsonObject ?: return@map feature
             val properties = f["properties"] as? JsonObject ?: return@map feature
-            val text = (properties[field] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@map feature
+            val text = (properties[field] as? JsonPrimitive)?.contentOrNull?.let(::shown) ?: return@map feature
             val image = PREFIX + text
             if (style.getImage(image) == null) style.addImage(image, draw(text, density))
             JsonObject(f + ("properties" to JsonObject(properties + (PROPERTY to JsonPrimitive(image)))))
@@ -66,7 +75,7 @@ internal object MapLabels {
     fun shapes(features: JsonArray, field: String, style: Style, density: Float, tag: (JsonObject) -> JsonObject): List<JsonObject> =
         features.mapNotNull { feature ->
             val f = feature as? JsonObject ?: return@mapNotNull null
-            val text = ((f["properties"] as? JsonObject)?.get(field) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val text = ((f["properties"] as? JsonObject)?.get(field) as? JsonPrimitive)?.contentOrNull?.let(::shown) ?: return@mapNotNull null
             val (at, rotate, kind) = anchor(f["geometry"] as? JsonObject) ?: return@mapNotNull null
             val image = PREFIX + text
             if (style.getImage(image) == null) style.addImage(image, draw(text, density))
