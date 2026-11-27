@@ -630,9 +630,9 @@ fun MapScreen(
                 val collection = collections[l.name()] ?: return@flatMap emptyList()
                 val own = collection["features"] as? JsonArray ?: return@flatMap emptyList()
                 val point = (l["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT"
-                val labelled = nameField(collection)?.takeIf { point }?.let { MapLabels.label(own, it, style, density) } ?: own
-                val style = styleOf(l, layerColor(madeIndex(l)))
-                labelled.map { tagged(it.jsonObject, index, style, opacity) }
+                val look = styleOf(l, layerColor(madeIndex(l)))
+                val labelled = labelField(look, collection)?.takeIf { point }?.let { MapLabels.label(own, it, style, density) } ?: own
+                labelled.map { tagged(it.jsonObject, index, look, opacity) }
             },
         )
         val geoJson = buildJsonObject {
@@ -645,7 +645,7 @@ fun MapScreen(
             if ((l["visible"] as? JsonPrimitive)?.contentOrNull == "false") return@flatMap emptyList()
             if ((l["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT") return@flatMap emptyList()
             val collection = collections[l.name()] ?: return@flatMap emptyList()
-            val field = nameField(collection) ?: return@flatMap emptyList()
+            val field = labelField(styleOf(l, layerColor(madeIndex(l))), collection) ?: return@flatMap emptyList()
             val opacity = (l["opacity"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() ?: 1.0
             MapLabels.shapes(collection["features"] as? JsonArray ?: return@flatMap emptyList(), field, style, density) { label ->
                 JsonObject(label + ("properties" to JsonObject((label["properties"] as JsonObject) + (OPACITY to JsonPrimitive(opacity)))))

@@ -496,7 +496,7 @@ class Workspace(private val projects: Projects) {
         private val STYLE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer", "style"], "properties": {"layer": {"type": "string"},
                 "style": {"type": "object", "additionalProperties": false, "properties": {"color": {"type": "string"}, "size": {"type": "number"},
-                "width": {"type": "number"}, "fill": {"type": "number"}, "field": {"type": "string"},
+                "width": {"type": "number"}, "fill": {"type": "number"}, "field": {"type": "string"}, "label": {"type": "string"},
                 "classes": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["value", "color"],
                 "properties": {"value": {"type": "string"}, "color": {"type": "string"}}}}}}}}""",
         )

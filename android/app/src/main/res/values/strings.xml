@@ -451,4 +451,6 @@
     <string name="color_blue">Blue</string>
     <string name="color_fewer">Fewer colours</string>
     <string name="color_percent">%1$d%%</string>
+    <string name="style_label">Label</string>
+    <string name="style_label_none">None</string>
 </resources>
