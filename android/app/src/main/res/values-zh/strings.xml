@@ -409,4 +409,9 @@
     <string name="import_which">导入哪些图层</string>
     <string name="import_go">导入</string>
     <string name="import_not_vector">里面没有矢量数据</string>
+    <string name="draw_vertex">第 %1$d 个节点</string>
+    <string name="draw_moving_vertex">移动第 %1$d 个节点</string>
+    <string name="draw_move">移动</string>
+    <string name="draw_unpick">取消选择</string>
+    <string name="draw_put_here">放在这里</string>
 </resources>
