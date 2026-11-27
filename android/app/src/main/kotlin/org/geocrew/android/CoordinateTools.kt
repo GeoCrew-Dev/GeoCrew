@@ -45,6 +45,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.project.Degrees
+import org.geocrew.core.project.Numbers
 import org.geocrew.storage.Crs
 import org.geocrew.storage.Workspace
 
@@ -76,8 +77,8 @@ suspend fun convertPosition(graph: AppGraph, position: Position, to: String): Po
 
 /** The position [texts] give in [srs], or null while one is missing or wrong. */
 fun positionOf(texts: CoordinateTexts, projected: Boolean, srs: String): Position? = if (projected) {
-    val north = texts.first.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
-    val east = texts.second.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
+    val north = Numbers.double(texts.first)
+    val east = Numbers.double(texts.second)
     if (north == null || east == null) null else Position(east, north, srs)
 } else {
     val longitude = Degrees.parse(texts.first, Degrees.Axis.LONGITUDE)?.takeIf { it.isFinite() && kotlin.math.abs(it) <= 180 }

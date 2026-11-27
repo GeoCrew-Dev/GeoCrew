@@ -77,6 +77,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.project.Degrees
+import org.geocrew.core.project.Numbers
 
 /** A field of a layer, as layer.features describes it. */
 data class FormField(val name: String, val type: String)
@@ -185,8 +186,8 @@ fun FeatureForm(
                 val lat = Degrees.parse(latitude, Degrees.Axis.LATITUDE)
                 if (lon != null && lat != null) crs.convert(DEGREES_CRS, crs.srs, lon, lat)?.let { (x, y) -> easting = metres(x); northing = metres(y) }
             } else {
-                val x = easting.trim().toDoubleOrNull()
-                val y = northing.trim().toDoubleOrNull()
+                val x = Numbers.double(easting)
+                val y = Numbers.double(northing)
                 if (x != null && y != null) crs.convert(crs.srs, DEGREES_CRS, x, y)?.let { (lon, lat) -> longitude = degrees(lon); latitude = degrees(lat) }
             }
             byXY = xy
@@ -204,7 +205,7 @@ fun FeatureForm(
             byXY && crs != null -> {
                 val first = startXY
                 val moved = isNew || first == null || easting != first.first || northing != first.second
-                if (moved) Position(easting.trim().toDouble(), northing.trim().toDouble(), crs.srs) else null
+                if (moved) Position(Numbers.double(easting)!!, Numbers.double(northing)!!, crs.srs) else null
             }
             else -> {
                 val moved = isNew || longitude != start.first || latitude != start.second
@@ -414,7 +415,7 @@ private fun metres(value: Double): String = BigDecimal.valueOf(value).setScale(3
 // What is wrong with a projected coordinate, as a string resource.
 internal fun numberProblem(text: String): Int? = when {
     text.isBlank() -> R.string.coordinate_missing
-    text.trim().toDoubleOrNull()?.isFinite() != true -> R.string.field_not_a_number
+    Numbers.double(text) == null -> R.string.field_not_a_number
     else -> null
 }
 
@@ -427,10 +428,10 @@ private fun text(value: JsonElement?): String = (value as? JsonPrimitive)?.takeU
 private fun problem(type: String, text: String): Int? {
     if (text.isBlank()) return null
     return when (type) {
-        "real" -> if (text.trim().toDoubleOrNull()?.isFinite() == true) null else R.string.field_not_a_number
-        "integer" -> if (text.trim().toIntOrNull() != null) null else R.string.field_not_a_whole_number
-        "integer64" -> if (text.trim().toLongOrNull() != null) null else R.string.field_not_a_whole_number
-        "date" -> if (FieldType.DATE.accepts(JsonPrimitive(text.trim()))) null else R.string.field_not_a_date
+        "real" -> if (Numbers.double(text) != null) null else R.string.field_not_a_number
+        "integer" -> if (Numbers.int(text) != null) null else R.string.field_not_a_whole_number
+        "integer64" -> if (Numbers.long(text) != null) null else R.string.field_not_a_whole_number
+        "date" -> if (FieldType.DATE.accepts(JsonPrimitive(Numbers.plain(text)))) null else R.string.field_not_a_date
         else -> null
     }
 }
@@ -446,11 +447,12 @@ internal fun coordinateProblem(text: String, limit: Double, outOfRange: Int): In
     }
 }
 
+// Numbers and dates as typed, full-width too (Numbers.plain); what is still no number goes as text, for the layer to refuse.
 private fun value(type: String, text: String): JsonElement = when {
     text.isBlank() -> JsonNull
-    type == "real" -> JsonPrimitive(text.trim().toDouble())
-    type == "integer" || type == "integer64" -> JsonPrimitive(text.trim().toLong())
+    type == "real" -> Numbers.double(text)?.let { JsonPrimitive(it) } ?: JsonPrimitive(text.trim())
+    type == "integer" || type == "integer64" -> Numbers.long(text)?.let { JsonPrimitive(it) } ?: JsonPrimitive(text.trim())
     type == "boolean" -> JsonPrimitive(text == "true")
-    type == "date" -> JsonPrimitive(text.trim())
+    type == "date" -> JsonPrimitive(Numbers.plain(text))
     else -> JsonPrimitive(text)
 }
