@@ -148,14 +148,35 @@ class Workspace(private val projects: Projects) {
             require(existing.none { it.equals(name, ignoreCase = true) } && RESERVED.none { it.equals(name, ignoreCase = true) }) {
                 "the layer already has a field $name"
             }
-            // The project's file is opened again: every layer stops being edited, with nothing unsaved.
-            val ended = (stopEditing() + editing.scopeOf(layer)).distinct()
-            project.addField(layer, name, type)
-            current = runCatching { projects.reopen(project) }.getOrElse {
-                current = null // closed, and not open again
-                throw it
-            }
+            val ended = changeFields(project, layer) { project.addField(layer, name, type) }
             ActionResult.Done(buildJsonObject { put("layer", layer); put("field", name) }, endsUndo = ended)
+        },
+        WorkspaceAction(
+            FIELD_RENAME, "Rename field",
+            "Renames a field of a layer of the open project; its values stay, and the layer's style and label follow it. No layer may have unsaved edits",
+            Risk.EDIT, FIELD_RENAME_PARAMS, """{"layer": "野外点", "field": "描述", "to": "备注"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            val layer = p.getValue("layer").jsonPrimitive.content
+            val field = p.getValue("field").jsonPrimitive.content
+            val to = p.getValue("to").jsonPrimitive.content.trim()
+            unsaved()?.let { return@WorkspaceAction it }
+            project.checkFieldRename(layer, field, to)
+            val ended = changeFields(project, layer) { project.renameField(layer, field, to) }
+            ActionResult.Done(buildJsonObject { put("layer", layer); put("field", to) }, endsUndo = ended)
+        },
+        WorkspaceAction(
+            FIELD_DELETE, "Delete field",
+            "Deletes a field of a layer of the open project with every value in it; it cannot be undone. No layer may have unsaved edits",
+            Risk.DELETE, FIELD_DELETE_PARAMS, """{"layer": "野外点", "field": "备注"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            val layer = p.getValue("layer").jsonPrimitive.content
+            val field = p.getValue("field").jsonPrimitive.content
+            unsaved()?.let { return@WorkspaceAction it }
+            project.checkFieldDelete(layer, field)
+            val ended = changeFields(project, layer) { project.deleteField(layer, field) }
+            ActionResult.Done(buildJsonObject { put("layer", layer); put("field", field) }, endsUndo = ended)
         },
         WorkspaceAction(
             LAYER_INFO, "Layer info", "A layer of the open project: its fields with their types, and how many features it has, as edited",
@@ -354,6 +375,18 @@ class Workspace(private val projects: Projects) {
         return ActionResult.Done(about(next), endsUndo = ended)
     }
 
+    // A change to [layer]'s fields: every layer stops being edited, with nothing unsaved, and the project's file is
+    // opened again afterwards, failed or not, as GDAL reads a layer's fields when it opens the file. The undo histories that end.
+    private fun changeFields(project: Project, layer: String, change: () -> Unit): List<String> {
+        val ended = (stopEditing() + editing.scopeOf(layer)).distinct()
+        try {
+            change()
+        } finally {
+            current = reopen(project)
+        }
+        return ended
+    }
+
     // Unsaved edits are saved or discarded before the project's file closes, as QGIS asks.
     private fun unsaved(): ActionResult.Failed? {
         val layers = editing.layersBeingEdited.filter(editing::isModified)
@@ -439,6 +472,8 @@ class Workspace(private val projects: Projects) {
         const val FEATURES = "layer.features"
         const val EXPORT = "project.export"
         const val FIELD_ADD = "layer.field.add"
+        const val FIELD_RENAME = "layer.field.rename"
+        const val FIELD_DELETE = "layer.field.delete"
         const val LAYER_INFO = "layer.info"
         const val LAYER_CREATE = "layer.create"
         const val CRS_DESCRIBE = "crs.describe"
@@ -474,6 +509,14 @@ class Workspace(private val projects: Projects) {
             """{"type": "object", "additionalProperties": false, "required": ["layer", "name", "type"],
                 "properties": {"layer": {"type": "string"}, "name": {"type": "string"},
                                "type": {"enum": ["string", "real", "integer", "date", "datetime", "boolean"]}}}""",
+        )
+        private val FIELD_RENAME_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "field", "to"],
+                "properties": {"layer": {"type": "string"}, "field": {"type": "string"}, "to": {"type": "string"}}}""",
+        )
+        private val FIELD_DELETE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "field"],
+                "properties": {"layer": {"type": "string"}, "field": {"type": "string"}}}""",
         )
         private val EXPORT_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"enum": ["gpkg", "kml"]}}}""",

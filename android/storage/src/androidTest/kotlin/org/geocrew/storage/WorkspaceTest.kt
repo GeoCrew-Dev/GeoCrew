@@ -150,6 +150,65 @@ class WorkspaceTest {
         assertIs<Outcome.Invalid>(run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "x", "type": "blob"}"""))
     }
 
+    // A field is renamed or deleted as in QGIS: renamed, it keeps its values, its id and its place in the style.
+    @Test
+    fun fieldsAreRenamedAndDeleted() {
+        run(Workspace.CREATE, """{"name": "改字段", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "岩性", "type": "string"}""")
+        fun ids(): Map<String, String> = VectorDataset.open(File(root, "工程/改字段/改字段.gpkg").path).use { ds ->
+            Json.parseToJsonElement(ds.sql("SELECT column_name, id FROM geocrew_fields WHERE table_name = '野外点'")).jsonArray.associate { row ->
+                val p = row.jsonObject.getValue("properties").jsonObject
+                p.getValue("column_name").jsonPrimitive.content to p.getValue("id").jsonPrimitive.content
+            }
+        }
+        fun fields() = output(run(Workspace.LAYER_INFO, """{"layer": "野外点"}""")).getValue("fields").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content }
+        fun style() = output(run(Workspace.CURRENT)).getValue("layers").jsonArray.single().jsonObject.getValue("style").jsonObject
+        val id = ids().getValue("岩性")
+        run(Editing.START, """{"layer": "野外点"}""")
+        run(Editing.ADD, """{"layer": "野外点", "properties": {"点名": "D001", "岩性": "花岗岩"}}""")
+        val rename = """{"layer": "野外点", "field": "岩性", "to": "岩石"}"""
+        assertEquals("unsaved", (run(Workspace.FIELD_RENAME, rename) as Outcome.Failed).code, "not with unsaved edits")
+        assertEquals("unsaved", (run(Workspace.FIELD_DELETE, """{"layer": "野外点", "field": "岩性"}""") as Outcome.Failed).code)
+        run(Editing.SAVE, """{"layer": "野外点"}""")
+        val classes = """[{"value": "花岗岩", "color": "#e53935"}]"""
+        run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1e88e5", "field": "岩性", "classes": $classes, "label": "岩性"}}""")
+
+        assertIs<Outcome.Done>(run(Workspace.FIELD_RENAME, rename))
+        assertEquals(listOf("点名", "描述", "岩石"), fields(), "in its place")
+        val saved = output(run(Workspace.FEATURES, """{"layer": "野外点"}""")).getValue("features").jsonArray.single().jsonObject
+        assertEquals("花岗岩", saved.getValue("properties").jsonObject.getValue("岩石").jsonPrimitive.content, "its values stay")
+        assertEquals(id, ids()["岩石"], "and its id")
+        assertEquals(listOf("岩石", "岩石"), listOf("field", "label").map { style().getValue(it).jsonPrimitive.content }, "the style follows it")
+        assertIs<Outcome.Done>(
+            run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1e88e5", "field": "岩石", "classes": $classes, "label": "岩石"}}"""),
+            "and can be set again",
+        )
+
+        assertIs<Outcome.Done>(run(Workspace.FIELD_RENAME, """{"layer": "野外点", "field": "描述", "to": "Note"}"""))
+        assertIs<Outcome.Done>(run(Workspace.FIELD_RENAME, """{"layer": "野外点", "field": "Note", "to": "NOTE"}"""), "a change of case")
+        assertEquals(listOf("点名", "NOTE", "岩石"), fields())
+        for (to in listOf("点名", "岩石", "FID", "geom", "", "NOTE")) {
+            assertIs<Outcome.Failed>(run(Workspace.FIELD_RENAME, """{"layer": "野外点", "field": "NOTE", "to": "$to"}"""), "not to $to")
+        }
+        assertIs<Outcome.Failed>(run(Workspace.FIELD_RENAME, """{"layer": "野外点", "field": "描述", "to": "说明"}"""), "no such field")
+        assertIs<Outcome.Invalid>(run(Workspace.FIELD_RENAME, """{"layer": "野外点", "field": "NOTE"}"""))
+
+        assertIs<Outcome.Done>(run(Workspace.FIELD_DELETE, """{"layer": "野外点", "field": "岩石"}"""))
+        assertEquals(listOf("点名", "NOTE"), fields())
+        assertNull(ids()["岩石"], "its id goes with it")
+        val plain = style()
+        assertEquals("single", plain.getValue("kind").jsonPrimitive.content, "drawn in one colour again")
+        assertEquals("#1e88e5", plain.getValue("color").jsonPrimitive.content)
+        assertTrue(listOf("field", "classes", "label").none { it in plain }, "labelled as by default")
+        assertIs<Outcome.Failed>(run(Workspace.FIELD_DELETE, """{"layer": "野外点", "field": "岩石"}"""), "gone")
+        assertIs<Outcome.Failed>(run(Workspace.FIELD_DELETE, """{"layer": "野外点", "field": "fid"}"""), "not the fid")
+
+        run(Workspace.CLOSE)
+        assertIs<Outcome.Done>(run(Workspace.OPEN, """{"name": "改字段"}"""), "the project opens as before")
+        assertEquals(listOf("点名", "NOTE"), fields())
+    }
+
     @Test
     fun aLayerSaysItsFieldsAndCount() {
         run(Workspace.CREATE, """{"name": "信息", "language": "zh"}""")

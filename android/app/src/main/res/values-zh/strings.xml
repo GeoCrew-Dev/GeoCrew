@@ -461,4 +461,11 @@
     <string name="clear">清空</string>
     <string name="table_search_hint">搜索要素</string>
     <string name="table_no_matches">没有匹配的要素</string>
+    <string name="field_rename">字段改名</string>
+    <string name="field_delete_title">删除字段「%1$s」？</string>
+    <string name="field_delete_body">所有要素的这个字段的值都会删掉，不能撤销。</string>
+    <string name="save_first_rename_body">字段改名要先保存修改，保存后不能撤销。</string>
+    <string name="save_first_delete_body">删除字段要先保存修改，保存后不能撤销。</string>
+    <string name="save_and_rename">保存并改名</string>
+    <string name="save_and_delete">保存并删除</string>
 </resources>
