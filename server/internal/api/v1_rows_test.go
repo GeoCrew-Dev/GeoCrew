@@ -130,6 +130,8 @@ func TestV1LayersPushPullAndConflicts(t *testing.T) {
 		code   string
 	}{
 		{map[string]any{"changes": []any{}}, 400, "invalid"},
+		{map[string]any{"client_now": now, "changes": []any{map[string]any{"id": "00000000-0000-4000-8000-000000000009", "layer": v1LayerID, "row": v1RowID,
+			"set": map[string]any{"f1": map[string]any{"value": "no time"}}}}}, 400, "invalid"},
 		{map[string]any{"client_now": now, "changes": []any{v1Change("00000000-0000-4000-8000-000000000003", v1RowID, 0, "a", now), v1Change("00000000-0000-4000-8000-000000000004", v1RowID, 0, "b", now)}}, 400, "invalid"},
 		{map[string]any{"client_now": now, "changes": []any{v1Change("00000000-0000-4000-8000-000000000005", v1RowID, 0, "a", now), v1Change("00000000-0000-4000-8000-000000000006", v1RowID, 0, "b", now), v1Change("00000000-0000-4000-8000-000000000007", v1RowID, 0, "c", now)}}, 413, "batch_too_large"},
 	} {
