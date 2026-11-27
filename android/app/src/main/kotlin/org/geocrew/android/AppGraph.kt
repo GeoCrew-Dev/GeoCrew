@@ -38,6 +38,9 @@ class AppGraph(private val app: Application) {
     val settings = AppSettings(app)
     val registry = ActionRegistry()
 
+    /** The GPS track being recorded or paused, whichever screen is showing. */
+    val tracks = TrackRecorder(app)
+
     /** Where each project's map was looking, for the next visit in this session. */
     val cameras = HashMap<String, CameraPosition>()
 

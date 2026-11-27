@@ -1,5 +1,13 @@
 package org.geocrew.android
 
+import org.geocrew.core.project.Templates
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Route
+import androidx.compose.material.icons.rounded.GpsFixed
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.content.pm.PackageManager
+import android.os.Build
+import android.location.LocationManager
 import org.geocrew.storage.Projects
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Satellite
@@ -223,6 +231,10 @@ fun MapScreen(
     val goToOutsideText = stringResource(R.string.go_to_outside)
     val screenshotFailedText = stringResource(R.string.map_screenshot_failed)
     val attributionText = stringResource(R.string.attribution_tianditu)
+    val trackFailedText = stringResource(R.string.track_failed)
+    val trackEmptyText = stringResource(R.string.track_empty)
+    val trackOtherText = stringResource(R.string.track_other_project)
+    val locationOffText = stringResource(R.string.location_off)
     // Whether the map may show where the phone is; granted later, it shows from then on.
     var located by remember { mutableStateOf(mayLocate(context)) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) located = true }
@@ -256,6 +268,14 @@ fun MapScreen(
     LaunchedEffect(projectId) { projectId?.let { basemapKind = graph.settings.basemapKind(it) } }
     // The bookmarks sheet: shown with the project's saved views once read.
     var bookmarks by remember { mutableStateOf<List<MapBookmark>?>(null) }
+    // The GPS track recording or paused; the map shows it when it goes into this project.
+    val track by graph.tracks.track.collectAsStateWithLifecycle()
+    val ownTrack = track?.takeIf { it.projectId == projectId }
+    // Saving a finished track: which layer it goes into (or a new track layer), then its form.
+    var trackPicking by remember { mutableStateOf(false) }
+    var trackNaming by remember { mutableStateOf(false) }
+    var trackLayer by remember { mutableStateOf<String?>(null) }
+    var discardingTrack by remember { mutableStateOf(false) }
     var ai by remember { mutableStateOf(false) }
     var exported by remember { mutableStateOf<File?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -461,6 +481,7 @@ fun MapScreen(
                     PropertyFactory.circleStrokeWidth(2f),
                 ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Point"))),
             )
+            addTrackLayers(style)
             addMyLocationLayers(style)
             styleLoads++
         }
@@ -492,6 +513,12 @@ fun MapScreen(
             else -> measureGeoJson(mode, measured)
         }
         style.getSourceAs<GeoJsonSource>(MEASURE_SOURCE)?.setGeoJson(shown.toString())
+    }
+
+    // The track as it grows; it goes when it is saved or thrown away.
+    LaunchedEffect(styleLoads, ownTrack?.points) {
+        val style = mapView.awaitMap().style ?: return@LaunchedEffect
+        showTrack(style, ownTrack?.points)
     }
 
     // The phone's position and heading on the map; the compass gives magnetic north, the map wants true north.
@@ -615,6 +642,7 @@ fun MapScreen(
                 when (template) {
                     "field-line" -> startDrawing(name, area = false)
                     "field-polygon" -> startDrawing(name, area = true)
+                    Templates.TRACK.id -> trackLayer = name
                     else -> startPlacing(name)
                 }
             }
@@ -688,7 +716,7 @@ fun MapScreen(
         act(Editing.GEOMETRY, buildJsonObject { put("layer", d.layer); put("fid", fid); put("geometry", geometry) })
     }
 
-    fun addShape(d: Drawing, values: JsonObject) = once {
+    fun addShape(d: Drawing, values: JsonObject, onAdded: () -> Unit = {}) = once {
         if (!startEditing(d.layer)) return@once
         val geometry = shapeInLayer(d) ?: return@once
         val added = graph.invoke(Editing.ADD, buildJsonObject { put("layer", d.layer); put("geometry", geometry); put("properties", values) })
@@ -697,6 +725,7 @@ fun MapScreen(
             failure = texts.of(added)
             return@once
         }
+        onAdded()
         scope.launch {
             snackbar.currentSnackbarData?.dismiss()
             snackbar.showSnackbar(addedText.format(d.layer))
@@ -832,6 +861,66 @@ fun MapScreen(
         mapView.awaitMap().animateCamera(CameraUpdateFactory.newCameraPosition(position))
     }
 
+    // A track records with location granted (asked for first) and on.
+    fun mayRecord(): Boolean {
+        if (!mayLocate(context)) {
+            askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            return false
+        }
+        if (context.getSystemService(LocationManager::class.java)?.isLocationEnabled != true) {
+            failure = locationOffText
+            return false
+        }
+        return true
+    }
+
+    fun startTrack() {
+        val id = projectId ?: return
+        if (mayRecord() && !graph.tracks.start(id, project)) failure = trackFailedText
+    }
+
+    fun resumeTrack() {
+        if (mayRecord() && !graph.tracks.resume()) failure = trackFailedText
+    }
+
+    // The notification that a track records is asked for once; the track records either way.
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { startTrack() }
+
+    // One track at a time: one going into another project is said, and stays.
+    fun requestTrack() {
+        val other = track
+        when {
+            other != null && other.projectId != projectId -> failure = trackOtherText.format(other.projectName)
+            other != null -> Unit
+            mayLocate(context) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED ->
+                askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            else -> startTrack()
+        }
+    }
+
+    // Line layers a track can go into, track layers first.
+    val trackIds = layers.filter { it.text("template") == Templates.TRACK.id }.mapNotNull { it.text("id") }.toSet()
+    val trackLines = drawables.filter { it.visible && sameKind(it.geometry, "LINESTRING") }.sortedBy { it.id !in trackIds }
+
+    // Ends the recording and asks where the track goes; until it is saved it stays, paused.
+    fun finishTrack() {
+        val t = ownTrack ?: return
+        graph.tracks.pause()
+        if (t.points.size < 2) {
+            graph.tracks.discard()
+            scope.launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(trackEmptyText) }
+            return
+        }
+        if (trackLines.isEmpty()) trackNaming = true else trackPicking = true
+    }
+
+    // The track as a line of [layer], like one drawn; once it is in, the recording is gone.
+    fun saveTrack(layer: String, values: JsonObject) {
+        val t = ownTrack ?: return
+        addShape(Drawing(layer, area = false, vertices = t.points.map { LatLng(it.latitude, it.longitude) }), values) { graph.tracks.discard() }
+    }
+
     fun measure(mode: MeasureMode) {
         placing = false
         drawing = null // one tool at a time
@@ -934,6 +1023,16 @@ fun MapScreen(
                 } else if (key == null) {
                     Spacer(Modifier.height(8.dp))
                     NoKey(onSettings)
+                }
+                ownTrack?.takeIf { !placing && drawing == null && measuring == null }?.let { t ->
+                    Spacer(Modifier.height(8.dp))
+                    TrackPanel(
+                        t,
+                        onPause = { graph.tracks.pause() },
+                        onResume = ::resumeTrack,
+                        onFinish = ::finishTrack,
+                        onDiscard = { discardingTrack = true },
+                    )
                 }
             }
 
@@ -1086,6 +1185,16 @@ fun MapScreen(
                         MenuTool(stringResource(R.string.tool_measure_area), Icons.Rounded.SquareFoot) { measure(MeasureMode.AREA) },
                         MenuTool(stringResource(R.string.tool_azimuth), Icons.Rounded.Explore) { measure(MeasureMode.AZIMUTH) },
                         MenuTool(stringResource(R.string.tool_pick), Icons.Rounded.PinDrop) { measure(MeasureMode.PICK) },
+                    ),
+                ),
+                MenuGroup(
+                    stringResource(R.string.menu_location), Icons.Rounded.GpsFixed,
+                    listOf(
+                        if (ownTrack == null) {
+                            MenuTool(stringResource(R.string.tool_track), Icons.Rounded.Route, ::requestTrack)
+                        } else {
+                            MenuTool(stringResource(R.string.tool_track_finish), Icons.Rounded.Stop, ::finishTrack)
+                        },
                     ),
                 ),
                 MenuGroup(
@@ -1297,6 +1406,68 @@ fun MapScreen(
                     ?.takeUnless { it.endsWith("Point") }?.contains("Polygon"),
             )
         }
+    }
+    if (trackPicking) {
+        LayerPicker(
+            title = stringResource(R.string.track_save_title),
+            layers = trackLines,
+            showRemember = false,
+            onPick = { layer, _ ->
+                trackPicking = false
+                trackLayer = layer.name
+            },
+            onNew = { _ ->
+                trackPicking = false
+                trackNaming = true
+            },
+            onDismiss = { trackPicking = false },
+        )
+    }
+    if (trackNaming) {
+        NewLayerDialog(
+            existing = layers.mapNotNull { it.name() },
+            suggested = stringResource(R.string.layer_default_track),
+            onDismiss = { trackNaming = false },
+            onCreate = { name, _, _ ->
+                trackNaming = false
+                createLayer(name, null, Templates.TRACK.id)
+            },
+        )
+    }
+    trackLayer?.let { layer ->
+        val t = ownTrack
+        if (t != null) {
+            val fields = formFields(collections[layer])
+            val values = trackValues(layers.firstOrNull { it.name() == layer }, collections[layer], t)
+            FeatureForm(
+                title = stringResource(R.string.track_new_in, layer),
+                fields = fields,
+                properties = values,
+                coordinates = null,
+                isNew = true,
+                onDismiss = { trackLayer = null },
+                onSave = { entered, _ ->
+                    trackLayer = null
+                    // Its times are not entered in the form: they come with the track.
+                    val times = values.filterKeys { k -> fields.firstOrNull { it.name == k }?.type == "datetime" }
+                    saveTrack(layer, JsonObject(times + entered))
+                },
+                onDelete = null,
+            )
+        }
+    }
+    if (discardingTrack) {
+        AlertDialog(
+            onDismissRequest = { discardingTrack = false },
+            title = { Text(stringResource(R.string.track_discard_title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    discardingTrack = false
+                    graph.tracks.discard()
+                }) { Text(stringResource(R.string.track_discard), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { discardingTrack = false }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
     if (droppingDrawing) {
         AlertDialog(

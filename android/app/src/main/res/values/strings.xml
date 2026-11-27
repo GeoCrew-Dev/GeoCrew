@@ -290,4 +290,23 @@
     <string name="type_date">Date</string>
     <string name="type_datetime">Date and time</string>
     <string name="type_boolean">Yes / no</string>
+    <string name="menu_location">Location</string>
+    <string name="tool_track">Record track</string>
+    <string name="tool_track_finish">Finish track</string>
+    <string name="track_channel">Track recording</string>
+    <string name="track_recording">Recording track</string>
+    <string name="track_paused">Track paused</string>
+    <string name="track_waiting">Waiting for GPS</string>
+    <string name="track_pause">Pause</string>
+    <string name="track_resume">Resume</string>
+    <string name="track_finish">Finish</string>
+    <string name="track_discard">Discard</string>
+    <string name="track_discard_title">Discard this track?</string>
+    <string name="track_empty">No track recorded</string>
+    <string name="track_failed">Could not start recording</string>
+    <string name="track_other_project">“%1$s” is recording a track</string>
+    <string name="track_save_title">Save track to which layer</string>
+    <string name="track_new_in">New track · %1$s</string>
+    <string name="layer_default_track">Tracks</string>
+    <string name="location_off">Location is off</string>
 </resources>

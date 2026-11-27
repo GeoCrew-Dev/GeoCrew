@@ -71,6 +71,8 @@
 
 2026-11-26 再补充：图层样式存在新表 `geocrew_layer_style`（图层 ID、样式 JSON），第一次设样式时才建，删图层时一起删，见 ADR 0006。
 
+2026-11-27 再补充：新加轨迹模板 `track`（中文"轨迹"，英文 Tracks；线，CGCS2000 经纬度），字段是名称、描述、开始时间、结束时间（日期时间，按 UTC 存）、长度（米，保存时沿 WGS84 椭球算），字段键 `name`、`description`、`started`、`ended`、`length`。正在记的轨迹不进工程文件：点先写进应用私有目录的 `no_backup/track.csv`，结束并保存后才作为一条线加进图层（`feature.add`，能撤销）。逐点时间（协议 v0 §6.13 的 `times_s`）和高程先不存。
+
 ## 相关
 
 - [ADR 0002](0002-android-baseline.md)
