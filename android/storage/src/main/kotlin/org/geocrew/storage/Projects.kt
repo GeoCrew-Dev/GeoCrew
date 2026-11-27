@@ -245,16 +245,16 @@ internal fun rowCount(ds: VectorDataset, layer: String): Long {
     return (row?.jsonObject?.get("properties")?.jsonObject?.get("n") as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: 0L
 }
 
-/**
- * An open project: its [layers] and where its attachments go. Close it when done;
- * its layers are edited through [target].
- */
 /** How many daily snapshots a project keeps: a week of field days. */
 const val SNAPSHOTS_KEPT = 7
 
 // A snapshot's name: its date.
 private val SNAPSHOT = Regex("""\d{4}-\d{2}-\d{2}\.gpkg""")
 
+/**
+ * An open project: its [layers] and where its attachments go. Close it when done;
+ * its layers are edited through [target].
+ */
 class Project internal constructor(
     val name: String,
     val folder: File,
@@ -568,6 +568,9 @@ class Project internal constructor(
     /** Why the day's snapshot could not be made when the project opened; null when it was, or was there already. */
     var snapshotFailure: String? = null
         internal set
+
+    /** [snapshotFailure], said once: later calls give null. */
+    fun takeSnapshotFailure(): String? = snapshotFailure.also { snapshotFailure = null }
 
     /**
      * Makes the snapshot of [day] unless there is one (ADR 0004): a consistent
