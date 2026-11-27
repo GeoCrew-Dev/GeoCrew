@@ -122,6 +122,19 @@ class WorkspaceTest {
         assertTrue(text.contains("花岗岩露头") && text.contains("114.3"), text)
         assertTrue(!text.contains("geocrew_"), "GeoCrew's own tables are not exported")
         assertIs<Outcome.Invalid>(run(Workspace.EXPORT, """{"format": "shp"}"""))
+
+        // One layer on its own, from its ⋮ menu (ADR 0017).
+        run(Workspace.LAYER_CREATE, """{"name": "野外线", "language": "zh", "template": "field-line"}""")
+        val one = File(output(run(Workspace.EXPORT, """{"format": "gpkg", "layer": "野外点"}""")).getValue("path").jsonPrimitive.content)
+        assertTrue(one.name.startsWith("出图-野外点-") && one.name.endsWith(".gpkg"), one.name)
+        VectorDataset.open(one.path).use { ds ->
+            assertEquals(listOf("野外点"), ds.layers.toList(), "only that layer")
+            assertEquals(1, Json.parseToJsonElement(ds.features("野外点")).jsonArray.size)
+        }
+        val oneKml = File(output(run(Workspace.EXPORT, """{"format": "kml", "layer": "野外点"}""")).getValue("path").jsonPrimitive.content)
+        assertTrue(oneKml.readText().contains("花岗岩露头"))
+        assertEquals(listOf(gpkg.name, kml.name, one.name, oneKml.name).sorted(), File(root, "导出").list()!!.sorted(), "nothing half-written stays")
+        assertIs<Outcome.Failed>(run(Workspace.EXPORT, """{"format": "gpkg", "layer": "没有"}"""))
     }
 
     // Users add the fields they need: a hydrogeologist the depth to water, say.

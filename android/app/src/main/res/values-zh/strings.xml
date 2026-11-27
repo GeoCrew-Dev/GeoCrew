@@ -521,4 +521,14 @@
     <string name="type_attitude">产状</string>
     <string name="clino_hold">定住</string>
     <string name="clino_release">松开</string>
+    <string name="layer_fields">字段</string>
+    <string name="layer_fields_of">「%1$s」的字段</string>
+    <string name="layer_like">建一个同样的图层</string>
+    <string name="layer_properties">图层信息</string>
+    <string name="layer_property_kind">几何类型</string>
+    <string name="layer_property_count">要素数</string>
+    <string name="layer_property_fields">字段数</string>
+    <string name="layer_kind_mixed">混合</string>
+    <string name="layer_export">导出</string>
+    <string name="layer_export_title">导出「%1$s」</string>
 </resources>

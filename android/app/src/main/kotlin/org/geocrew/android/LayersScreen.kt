@@ -1,6 +1,5 @@
 package org.geocrew.android
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,20 +19,25 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Landscape
 import androidx.compose.material.icons.rounded.LinearScale
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Numbers
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material.icons.rounded.TextFields
@@ -72,7 +76,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -200,6 +204,13 @@ fun LayersScreen(
     // Which Tianditu map the base row is: imagery, vector or terrain.
     var kind by remember { mutableStateOf("img") }
     val open = remember { mutableStateMapOf<String, Boolean>() }
+    // Which raster and basemap rows are open, by id.
+    val folds = remember { mutableStateMapOf<String, Boolean>() }
+    var fieldsOf by remember { mutableStateOf<String?>(null) }
+    var describing by remember { mutableStateOf<LayerInfo?>(null) }
+    var liking by remember { mutableStateOf<LayerInfo?>(null) }
+    var exporting by remember { mutableStateOf<LayerInfo?>(null) }
+    var exported by remember { mutableStateOf<java.io.File?>(null) }
     var naming by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<LayerInfo?>(null) }
     var styling by remember { mutableStateOf<LayerInfo?>(null) }
@@ -240,12 +251,14 @@ fun LayersScreen(
         }
     }
 
-    fun createLayer(name: String, srs: String?, template: String?) = scope.launch {
+    // A new layer from a template, or [like] another one: its fields, geometry type and CRS.
+    fun createLayer(name: String, srs: String?, template: String?, like: String? = null) = scope.launch {
         val params = buildJsonObject {
             put("name", name)
             put("language", AppLanguage.speaking(context))
             if (srs != null) put("srs", srs)
             if (template != null) put("template", template)
+            if (like != null) put("like", like)
         }
         when (val made = graph.invoke(Workspace.LAYER_CREATE, params)) {
             is Outcome.Done -> loads++
@@ -341,62 +354,50 @@ fun LayersScreen(
                     )
                 }
             }
+            // One row a layer, folded (ADR 0017): shown or hidden, its look in small, its name and count, and the ⋮ with
+            // everything else. Opened, the row shows the full legend and how opaque the layer is.
             for (layer in layers) {
                 val expanded = open[layer.name] == true
+                val at = layers.indexOf(layer)
                 item(key = "layer:${layer.name}") {
-                    val turn by animateFloatAsState(if (expanded) 180f else 0f, label = "arrow")
-                    ListItem(
-                        headlineContent = { Text(layer.name, style = MaterialTheme.typography.titleMedium) },
-                        supportingContent = {
-                            Text(
-                                pluralStringResource(countOf(layer.geometry), layer.count, layer.count) + " · " +
-                                    pluralStringResource(R.plurals.fields_count, layer.fields.size, layer.fields.size),
+                    LayerRow(
+                        title = layer.name,
+                        detail = pluralStringResource(countOf(layer.geometry), layer.count, layer.count),
+                        visible = layer.visible,
+                        onToggle = { display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("visible", !layer.visible) }) },
+                        swatch = { LegendSwatch(layer.geometry, legendColors(layer), layer.visible) },
+                        onClick = { open[layer.name] = !expanded },
+                        modifier = Modifier.animateItem(),
+                        more = {
+                            MoreMenu(
+                                listOf(
+                                    MoreItem(R.string.zoom_to_layer, Icons.Rounded.ZoomIn) { onZoom(layer.name) },
+                                    MoreItem(R.string.attribute_table, Icons.Rounded.TableChart) { onTable(layer.name) },
+                                    MoreItem(R.string.style, Icons.Rounded.Palette) { styling = layer },
+                                    MoreItem(R.string.layer_fields, Icons.AutoMirrored.Rounded.List) { fieldsOf = layer.name },
+                                    MoreItem(R.string.move_up, Icons.Rounded.ArrowUpward, enabled = at > 0) {
+                                        display(Workspace.LAYER_ORDER, order(layers, at, at - 1))
+                                    },
+                                    MoreItem(R.string.move_down, Icons.Rounded.ArrowDownward, enabled = at < layers.size - 1) {
+                                        display(Workspace.LAYER_ORDER, order(layers, at, at + 1))
+                                    },
+                                    MoreItem(R.string.layer_export, Icons.Rounded.SaveAlt) { exporting = layer },
+                                    MoreItem(R.string.layer_like, Icons.Rounded.ContentCopy) { liking = layer },
+                                    MoreItem(R.string.layer_rename, Icons.Rounded.Edit) { renaming = layer },
+                                    MoreItem(R.string.layer_properties, Icons.Rounded.Info) { describing = layer },
+                                    null,
+                                    MoreItem(R.string.delete, Icons.Rounded.DeleteOutline, danger = true) { deleting = layer },
+                                ),
                             )
                         },
-                        leadingContent = { LayerDot(if (layer.visible) layer.color else layer.color.copy(alpha = 0.3f)) },
-                        trailingContent = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("visible", !layer.visible) }) }) {
-                                    Icon(
-                                        if (layer.visible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                                        stringResource(if (layer.visible) R.string.layer_hide else R.string.layer_show),
-                                    )
-                                }
-                                Icon(Icons.Rounded.ExpandMore, null, modifier = Modifier.rotate(turn))
-                            }
-                        },
-                        colors = clear,
-                        modifier = Modifier.animateItem().clickable { open[layer.name] = !expanded },
                     )
                 }
                 if (expanded) {
                     item(key = "display:${layer.name}") {
-                        Column(Modifier.animateItem().padding(start = 40.dp, end = 16.dp)) {
-                            OpacitySlider(layer.opacity) { opacity ->
-                                display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("opacity", opacity.toDouble()) })
-                            }
-                            // Up and down the list: the first is drawn on top.
-                            val at = layers.indexOf(layer)
-                            Row {
-                                TextButton(onClick = { display(Workspace.LAYER_ORDER, order(layers, at, at - 1)) }, enabled = at > 0) {
-                                    Icon(Icons.Rounded.ArrowUpward, null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.move_up))
-                                }
-                                TextButton(onClick = { display(Workspace.LAYER_ORDER, order(layers, at, at + 1)) }, enabled = at < layers.size - 1) {
-                                    Icon(Icons.Rounded.ArrowDownward, null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.move_down))
-                                }
-                            }
-                        }
-                    }
-                    // The legend of a style by values or ranges: each colour and what it stands for, then the rest.
-                    if (layer.style.field != null) {
-                        item(key = "legend:${layer.name}") {
-                            val legend = layer.style.ranges?.map { rangeText(it) to it.color } ?: layer.style.classes.map { it.value to it.color }
-                            Column(Modifier.animateItem().padding(start = 40.dp, end = 16.dp, top = 4.dp, bottom = 8.dp)) {
-                                Text(stringResource(R.string.legend), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
+                        Column(Modifier.animateItem().padding(start = ROW_TEXT, end = 16.dp, bottom = 8.dp)) {
+                            // The legend of a style by values or ranges: each colour and what it stands for, then the rest.
+                            if (layer.style.field != null) {
+                                val legend = layer.style.ranges?.map { rangeText(it) to it.color } ?: layer.style.classes.map { it.value to it.color }
                                 for ((text, shown) in legend + (stringResource(R.string.style_other) to layer.style.color)) {
                                     Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                                         ColorDot(shown, 16.dp)
@@ -405,69 +406,8 @@ fun LayersScreen(
                                     }
                                 }
                             }
-                        }
-                    }
-                    items(layer.fields, key = { "field:${layer.name}:${it.name}" }) { field ->
-                        ListItem(
-                            headlineContent = { Text(field.name) },
-                            supportingContent = {
-                                Text(field.range?.let { stringResource(R.string.field_type_range, typeName(field.type), rangeText(it)) } ?: typeName(field.type))
-                            },
-                            leadingContent = { Icon(fieldIcon(field.type), null) },
-                            trailingContent = {
-                                FieldMenu(
-                                    onRename = { renamingField = layer to field },
-                                    onRange = if (field.type in NUMBER_TYPES) ({ rangingField = layer to field }) else null,
-                                    onDelete = { deletingField = layer to field },
-                                )
-                            },
-                            colors = clear,
-                            modifier = Modifier.animateItem().padding(start = 24.dp),
-                        )
-                    }
-                    item(key = "add:${layer.name}") {
-                        FilledTonalButton(onClick = { adding = layer }, modifier = Modifier.animateItem().padding(start = 40.dp, top = 4.dp, bottom = 4.dp)) {
-                            Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.field_add))
-                        }
-                    }
-                    item(key = "about:${layer.name}") {
-                        Column(Modifier.animateItem().padding(start = 40.dp, end = 16.dp, bottom = 12.dp)) {
-                            layer.srs?.let {
-                                Text(
-                                    stringResource(R.string.layer_crs_value, it),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp),
-                                )
-                            }
-                            FlowRow {
-                                TextButton(onClick = { styling = layer }) {
-                                    Icon(Icons.Rounded.Palette, null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.style))
-                                }
-                                TextButton(onClick = { onTable(layer.name) }) {
-                                    Icon(Icons.Rounded.TableChart, null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.attribute_table))
-                                }
-                                TextButton(onClick = { onZoom(layer.name) }) {
-                                    Icon(Icons.Rounded.ZoomIn, null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.zoom_to_layer))
-                                }
-                                TextButton(onClick = { renaming = layer }) {
-                                    Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.layer_rename))
-                                }
-                                TextButton(onClick = { deleting = layer }) {
-                                    Icon(Icons.Rounded.DeleteOutline, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
-                                }
+                            OpacitySlider(layer.opacity) { opacity ->
+                                display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("opacity", opacity.toDouble()) })
                             }
                         }
                     }
@@ -476,56 +416,47 @@ fun LayersScreen(
             if (rasters.isNotEmpty()) {
                 item(key = "rasters") { SectionHeader(stringResource(R.string.raster_section)) }
                 for (raster in rasters) {
+                    val expanded = folds["raster:${raster.id}"] == true
                     item(key = "raster:${raster.id}") {
-                        Column(Modifier.animateItem()) {
-                            ListItem(
-                                headlineContent = { Text(raster.name) },
-                                supportingContent = {
-                                    if (raster.missing) {
-                                        Text(stringResource(R.string.raster_missing), color = MaterialTheme.colorScheme.error)
-                                    } else {
-                                        Text(rasterDetail(raster))
-                                    }
-                                },
-                                leadingContent = { Icon(Icons.Rounded.Terrain, null) },
-                                trailingContent = {
-                                    IconButton(onClick = { display(RasterActions.DISPLAY, buildJsonObject { put("name", raster.name); put("visible", !raster.visible) }) }) {
-                                        Icon(
-                                            if (raster.visible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                                            stringResource(if (raster.visible) R.string.layer_hide else R.string.layer_show),
-                                        )
-                                    }
-                                },
-                                colors = clear,
-                            )
-                            Column(Modifier.padding(start = 56.dp, end = 16.dp)) {
+                        LayerRow(
+                            title = raster.name,
+                            detail = if (raster.missing) stringResource(R.string.raster_missing) else rasterDetail(raster),
+                            detailError = raster.missing,
+                            visible = raster.visible,
+                            onToggle = { display(RasterActions.DISPLAY, buildJsonObject { put("name", raster.name); put("visible", !raster.visible) }) },
+                            swatch = { Icon(Icons.Rounded.Terrain, null, modifier = Modifier.alpha(if (raster.visible) 1f else 0.38f)) },
+                            onClick = { folds["raster:${raster.id}"] = !expanded },
+                            modifier = Modifier.animateItem(),
+                            more = {
+                                // A single band (a DEM) can be drawn in grey, shaded, or coloured by height.
+                                val renders = if (raster.single && !raster.missing) {
+                                    listOf(
+                                        Triple(RENDER_DEFAULT, R.string.raster_grey, Icons.Rounded.Contrast),
+                                        Triple(RENDER_HILLSHADE, R.string.raster_hillshade, Icons.Rounded.Landscape),
+                                        Triple(RENDER_RELIEF, R.string.raster_relief, Icons.Rounded.Palette),
+                                    )
+                                } else {
+                                    emptyList()
+                                }
+                                MoreMenu(
+                                    listOf(
+                                        MoreItem(R.string.zoom_to_layer, Icons.Rounded.ZoomIn, enabled = raster.extent != null && !raster.missing) {
+                                            raster.extent?.let(onZoomTo)
+                                        },
+                                    ) + renders.map { (render, label, icon) ->
+                                        MoreItem(label, icon, checked = raster.render == render) {
+                                            display(RasterActions.DISPLAY, buildJsonObject { put("name", raster.name); put("render", render) })
+                                        }
+                                    } + listOf(null, MoreItem(R.string.raster_remove, Icons.Rounded.DeleteOutline, danger = true) { removing = raster }),
+                                )
+                            },
+                        )
+                    }
+                    if (expanded) {
+                        item(key = "raster-display:${raster.id}") {
+                            Column(Modifier.animateItem().padding(start = ROW_TEXT, end = 16.dp, bottom = 8.dp)) {
                                 OpacitySlider(raster.opacity) { opacity ->
                                     display(RasterActions.DISPLAY, buildJsonObject { put("name", raster.name); put("opacity", opacity.toDouble()) })
-                                }
-                                // A single band (a DEM) can be drawn in grey, shaded, or coloured by height.
-                                if (raster.single && !raster.missing) {
-                                    val renders = listOf(RENDER_DEFAULT to R.string.raster_grey, RENDER_HILLSHADE to R.string.raster_hillshade, RENDER_RELIEF to R.string.raster_relief)
-                                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                                        renders.forEachIndexed { i, (render, label) ->
-                                            SegmentedButton(
-                                                selected = raster.render == render,
-                                                onClick = { display(RasterActions.DISPLAY, buildJsonObject { put("name", raster.name); put("render", render) }) },
-                                                shape = SegmentedButtonDefaults.itemShape(i, renders.size),
-                                            ) { Text(stringResource(label), maxLines = 1) }
-                                        }
-                                    }
-                                }
-                                Row {
-                                    TextButton(onClick = { raster.extent?.let(onZoomTo) }, enabled = raster.extent != null && !raster.missing) {
-                                        Icon(Icons.Rounded.ZoomIn, null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(stringResource(R.string.zoom_to_layer))
-                                    }
-                                    TextButton(onClick = { removing = raster }) {
-                                        Icon(Icons.Rounded.DeleteOutline, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(stringResource(R.string.raster_remove), color = MaterialTheme.colorScheme.error)
-                                    }
                                 }
                             }
                         }
@@ -535,22 +466,21 @@ fun LayersScreen(
             if (basemaps.isNotEmpty()) {
                 item(key = "basemaps") { SectionHeader(stringResource(R.string.basemap_section)) }
                 for (basemap in basemaps.reversed()) {
+                    val expanded = folds["basemap:${basemap.id}"] == true
                     item(key = "basemap:${basemap.id}") {
-                        Column(Modifier.animateItem()) {
-                            ListItem(
-                                headlineContent = { Text(stringResource(basemapName(basemap.id, kind))) },
-                                leadingContent = { Icon(Icons.Rounded.Public, null) },
-                                trailingContent = {
-                                    IconButton(onClick = { display(Workspace.BASEMAP_DISPLAY, buildJsonObject { put("basemap", basemap.id); put("visible", !basemap.visible) }) }) {
-                                        Icon(
-                                            if (basemap.visible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                                            stringResource(if (basemap.visible) R.string.layer_hide else R.string.layer_show),
-                                        )
-                                    }
-                                },
-                                colors = clear,
-                            )
-                            Column(Modifier.padding(start = 56.dp, end = 16.dp)) {
+                        LayerRow(
+                            title = stringResource(basemapName(basemap.id, kind)),
+                            detail = null,
+                            visible = basemap.visible,
+                            onToggle = { display(Workspace.BASEMAP_DISPLAY, buildJsonObject { put("basemap", basemap.id); put("visible", !basemap.visible) }) },
+                            swatch = { Icon(Icons.Rounded.Public, null, modifier = Modifier.alpha(if (basemap.visible) 1f else 0.38f)) },
+                            onClick = { folds["basemap:${basemap.id}"] = !expanded },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
+                    if (expanded) {
+                        item(key = "basemap-display:${basemap.id}") {
+                            Column(Modifier.animateItem().padding(start = ROW_TEXT, end = 16.dp, bottom = 8.dp)) {
                                 OpacitySlider(basemap.opacity) { opacity ->
                                     display(Workspace.BASEMAP_DISPLAY, buildJsonObject { put("basemap", basemap.id); put("opacity", opacity.toDouble()) })
                                 }
@@ -605,6 +535,78 @@ fun LayersScreen(
             graph = graph,
             // The zones that apply follow where the map was last.
             near = graph.cameras[project]?.target?.let { it.longitude to it.latitude },
+        )
+    }
+    fieldsOf?.let { name ->
+        val layer = layers.firstOrNull { it.name == name }
+        if (layer != null) {
+            FieldsSheet(
+                layer = layer.name,
+                fields = layer.fields,
+                detail = { field -> field.range?.let { stringResource(R.string.field_type_range, typeName(field.type), rangeText(it)) } ?: typeName(field.type) },
+                icon = { fieldIcon(it.type) },
+                menu = { field ->
+                    FieldMenu(
+                        onRename = { renamingField = layer to field },
+                        onRange = if (field.type in NUMBER_TYPES) ({ rangingField = layer to field }) else null,
+                        onDelete = { deletingField = layer to field },
+                    )
+                },
+                onAdd = { adding = layer },
+                onDismiss = { fieldsOf = null },
+            )
+        }
+    }
+    exporting?.let { layer ->
+        // A layer on its own, for another program: a GeoPackage keeps its CRS and fields, KML is for Google Earth and the like.
+        AppDialog(
+            onDismissRequest = { exporting = null },
+            icon = { Icon(Icons.Rounded.SaveAlt, null) },
+            title = { Text(stringResource(R.string.layer_export_title, layer.name)) },
+            confirmButton = {
+                Row {
+                    // The title says what is done; the buttons, only the format, so they fit on one line with "cancel".
+                    for ((format, label) in listOf("kml" to R.string.format_kml, "gpkg" to R.string.format_gpkg)) {
+                        TextButton(onClick = {
+                            exporting = null
+                            scope.launch {
+                                val done = graph.invoke(Workspace.EXPORT, buildJsonObject { put("format", format); put("layer", layer.name) })
+                                if (done is Outcome.Done) exported = java.io.File(done.output.jsonObject.getValue("path").jsonPrimitive.content) else failure = texts.of(done)
+                            }
+                        }) { Text(stringResource(label)) }
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { exporting = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    exported?.let { file ->
+        val title = stringResource(R.string.share_title)
+        AppDialog(
+            onDismissRequest = { exported = null },
+            icon = { Icon(Icons.Rounded.SaveAlt, null) },
+            text = { Text(stringResource(R.string.exported, file.path)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    exported = null
+                    share(context, file, title)
+                }) { Text(stringResource(R.string.share)) }
+            },
+            dismissButton = { TextButton(onClick = { exported = null }) { Text(stringResource(R.string.ok)) } },
+        )
+    }
+    describing?.let { layer ->
+        LayerPropertiesDialog(layer.name, layer.geometry, layer.count, layer.fields.size, layer.srs, onDismiss = { describing = null })
+    }
+    liking?.let { layer ->
+        NewLayerDialog(
+            existing = layers.map { it.name },
+            suggested = layer.name,
+            onDismiss = { liking = null },
+            onCreate = { name, _, _ ->
+                liking = null
+                createLayer(name, null, null, like = layer.name)
+            },
         )
     }
     styling?.let { layer ->
@@ -914,6 +916,14 @@ private fun order(layers: List<LayerInfo>, from: Int, to: Int): JsonObject {
 }
 
 /** How opaque a layer is, set when the finger lifts: each change is written to the project. */
+// A layer's colours for its swatch: its own, or the first of a style by values or ranges.
+private fun legendColors(layer: LayerInfo): List<Color> =
+    if (layer.style.field == null) {
+        listOf(layer.color)
+    } else {
+        (layer.style.ranges?.map { it.color } ?: layer.style.classes.map { it.color }).take(3).ifEmpty { listOf(layer.color) }
+    }
+
 @Composable
 private fun OpacitySlider(opacity: Float, onSet: (Float) -> Unit) {
     var value by remember(opacity) { mutableFloatStateOf(opacity) }
