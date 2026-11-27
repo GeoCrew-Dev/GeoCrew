@@ -120,9 +120,9 @@ fun AppDialog(
             // which the keyboard takes its part of, not by what the dialog is offered: that follows its own size.)
             val tight = clear.height < TIGHT_HEIGHT
             val pictured = side != null && !tight
-            // 16 dp clear above and below the dialog, 4 dp when tight. A side fills the height it is given; a form takes
-            // the height it needs.
-            val height = clear.height - if (tight) 8.dp else 32.dp
+            // 16 dp clear above and below the dialog, 12 dp beside a picture (which has the most to fit), 4 dp when tight.
+            // A side fills the height it is given; a form takes the height it needs.
+            val height = clear.height - if (tight) 8.dp else if (pictured) 24.dp else 32.dp
             val size = Modifier.width((clear.width * 0.9f).coerceAtMost(TWO_PANE_WIDTH))
                 .then(if (pictured) Modifier.height(height.coerceAtMost(SIDE_HEIGHT)) else Modifier.heightIn(max = height))
             val margin = if (tight) 16.dp else 24.dp
@@ -159,17 +159,23 @@ fun AppDialog(
                             }
                         }
                         Spacer(Modifier.width(margin))
-                        // The right pane: the title when the side took the left, the text, scrolling, and the buttons.
-                        Column(Modifier.weight(if (pictured) 1f else 0.6f)) {
-                            if (pictured) title?.let {
-                                DialogTitle(it)
-                                Spacer(Modifier.height(16.dp))
+                        // The right pane: the title when the side took the left, the text, scrolling, and the buttons, which
+                        // beside a picture stand at the bottom, level with it.
+                        Column(
+                            Modifier.weight(if (pictured) 1f else 0.6f).then(if (pictured) Modifier.fillMaxHeight() else Modifier),
+                            verticalArrangement = if (pictured) Arrangement.SpaceBetween else Arrangement.Top,
+                        ) {
+                            Column(Modifier.weight(1f, fill = false)) {
+                                if (pictured) title?.let {
+                                    DialogTitle(it)
+                                    Spacer(Modifier.height(16.dp))
+                                }
+                                // Only the text scrolls: the buttons stay where they are.
+                                Box(Modifier.weight(1f, fill = false).then(if (scrolls) Modifier.verticalScroll(rememberScrollState()) else Modifier)) {
+                                    ProvideTextStyle(MaterialTheme.typography.bodyMedium) { text?.invoke() }
+                                }
                             }
-                            // Only the text scrolls: the buttons stay where they are.
-                            Box(Modifier.weight(1f, fill = false).then(if (scrolls) Modifier.verticalScroll(rememberScrollState()) else Modifier)) {
-                                ProvideTextStyle(MaterialTheme.typography.bodyMedium) { text?.invoke() }
-                            }
-                            if (!tight) buttons(16.dp)
+                            if (!tight) buttons(if (pictured) 12.dp else 16.dp)
                         }
                     }
                 }
