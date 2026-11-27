@@ -577,6 +577,98 @@ class Project internal constructor(
         dataset.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES (${quote(layer)}, ${quote(name)}, ${quote(UUID.randomUUID().toString())})")
     }
 
+    /** The names of [layer]'s fields as GDAL reads them, its fid and geometry aside. */
+    fun fieldNames(layer: String): List<String> {
+        require(layers.any { it.name == layer }) { "there is no layer $layer" }
+        return VectorLayerStore(dataset, layer).fields.map { it.name }
+    }
+
+    /** Throws unless field [field] of [layer] can be named [to]: a name of its own in the layer, in any case, that fits. */
+    fun checkFieldRename(layer: String, field: String, to: String) {
+        val names = fieldNames(layer)
+        require(field in names) { "$layer has no field $field" }
+        require(to != field) { "the field is already called $to" }
+        require(to.isNotEmpty() && to == to.trim() && to.length <= ProjectFormat.MAX_NAME) {
+            "a field name has 1 to ${ProjectFormat.MAX_NAME} characters, without spaces at either end"
+        }
+        require((names - field + Workspace.RESERVED).none { it.equals(to, ignoreCase = true) }) { "the layer already has a field $to" }
+    }
+
+    /**
+     * Renames field [field] of [layer] to [to] in the file (GDAL keeps
+     * GeoPackage's own tables in step) and in GeoCrew's: its values and its
+     * stable id stay (ADR 0004), and the layer's style and label follow it
+     * (ADR 0006). Open the project again afterwards, see [Projects.reopen].
+     */
+    fun renameField(layer: String, field: String, to: String) {
+        checkFieldRename(layer, field, to)
+        val id = layers.single { it.name == layer }.id
+        val table = ProjectFormat.identifier(layer)
+        changing {
+            // SQLite takes column names in any case as the same, so a change of case goes by way of another name.
+            val via = if (to.equals(field, ignoreCase = true)) "geocrew_" + UUID.randomUUID().toString().replace("-", "") else field
+            if (via != field) dataset.sql("ALTER TABLE $table RENAME COLUMN ${ProjectFormat.identifier(field)} TO ${ProjectFormat.identifier(via)}")
+            dataset.sql("ALTER TABLE $table RENAME COLUMN ${ProjectFormat.identifier(via)} TO ${ProjectFormat.identifier(to)}")
+            dataset.sql("UPDATE ${ProjectFormat.FIELDS_TABLE} SET column_name = ${quote(to)} WHERE table_name = ${quote(layer)} AND column_name = ${quote(field)}")
+            restyle(id, field, to)
+        }
+    }
+
+    /** Throws unless [layer] has field [field] to delete. */
+    fun checkFieldDelete(layer: String, field: String) {
+        require(field in fieldNames(layer)) { "$layer has no field $field" }
+    }
+
+    /**
+     * Deletes field [field] of [layer], every value in it with it, from the
+     * file and from GeoCrew's tables; the layer's style no longer colours by
+     * it nor labels with it (ADR 0006). It cannot be undone. Open the project
+     * again afterwards, see [Projects.reopen].
+     */
+    fun deleteField(layer: String, field: String) {
+        checkFieldDelete(layer, field)
+        val id = layers.single { it.name == layer }.id
+        changing {
+            dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} DROP COLUMN ${ProjectFormat.identifier(field)}")
+            dataset.sql("DELETE FROM ${ProjectFormat.FIELDS_TABLE} WHERE table_name = ${quote(layer)} AND column_name = ${quote(field)}")
+            restyle(id, field, null)
+        }
+    }
+
+    // [change] all or nothing: a column renamed or dropped without GeoCrew's rows would leave them pointing nowhere.
+    private fun changing(change: () -> Unit) {
+        dataset.begin()
+        try {
+            change()
+            dataset.commit()
+        } catch (e: Exception) {
+            runCatching { dataset.rollback() }
+            throw e
+        }
+    }
+
+    // Layer [id]'s style with field [from] called [to] instead; with [to] null, no longer drawn by it (one colour, as
+    // before it was) nor labelled with it (as by default). A style that uses another field is left as it is.
+    private fun restyle(id: String, from: String, to: String?) {
+        val style = styles[id] ?: return
+        val drawnBy = (style["field"] as? JsonPrimitive)?.contentOrNull == from
+        val labelled = (style["label"] as? JsonPrimitive)?.contentOrNull == from
+        if (!drawnBy && !labelled) return
+        val changed = buildJsonObject {
+            for ((key, value) in style) {
+                val ours = (key == "field" && drawnBy) || (key == "label" && labelled)
+                when {
+                    ours && to != null -> put(key, to)
+                    ours -> Unit
+                    to == null && drawnBy && key in setOf("classes", "ranges") -> Unit
+                    to == null && drawnBy && key == "kind" -> put(key, "single")
+                    else -> put(key, value)
+                }
+            }
+        }
+        dataset.sql("UPDATE ${ProjectFormat.STYLE_TABLE} SET style = ${quote(changed.toString())} WHERE layer_id = ${quote(id)}")
+    }
+
     /**
      * Makes layer [name] from [template], its fields named in [language], in CRS
      * [srs] (the template's when null), in the open file: layers being edited

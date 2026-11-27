@@ -3,6 +3,7 @@ package org.geocrew.android
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Numbers
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Public
@@ -37,6 +39,8 @@ import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.ZoomIn
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -155,13 +159,21 @@ fun listedBasemaps(about: JsonObject): List<BasemapInfo> = about["basemaps"]?.js
     BasemapInfo(id, (listed["visible"] as? JsonPrimitive)?.contentOrNull != "false", (listed["opacity"] as? JsonPrimitive)?.contentOrNull?.toFloatOrNull() ?: 1f)
 }
 
-/** A field to add once the project's edits are saved. */
-private data class NewField(val layer: String, val name: String, val type: String)
+/** A change to a layer's fields, made in a project with nothing unsaved: tried again once the edits are saved. */
+private sealed interface FieldChange {
+    val layer: String
+
+    data class Add(override val layer: String, val name: String, val type: String) : FieldChange
+
+    data class Rename(override val layer: String, val field: String, val to: String) : FieldChange
+
+    data class Delete(override val layer: String, val field: String) : FieldChange
+}
 
 /**
  * The project's layers and their fields (ADR 0004), from the map's layers
  * button: each layer's fields fold open under it; fields and layers are added
- * here. Everything goes through actions (ADR 0010).
+ * here, and fields renamed and deleted. Everything goes through actions (ADR 0010).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -188,7 +200,9 @@ fun LayersScreen(
     var styling by remember { mutableStateOf<LayerInfo?>(null) }
     var deleting by remember { mutableStateOf<LayerInfo?>(null) }
     var adding by remember { mutableStateOf<LayerInfo?>(null) }
-    var saveFirst by remember { mutableStateOf<NewField?>(null) }
+    var renamingField by remember { mutableStateOf<Pair<LayerInfo, FormField>?>(null) }
+    var deletingField by remember { mutableStateOf<Pair<LayerInfo, FormField>?>(null) }
+    var saveFirst by remember { mutableStateOf<FieldChange?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
     var loads by remember { mutableIntStateOf(0) }
     val texts = FailureTexts(
@@ -241,13 +255,31 @@ fun LayersScreen(
         }
     }
 
-    // A field is added to a project with nothing unsaved: its file is opened again.
-    fun addField(field: NewField) = scope.launch {
-        val params = buildJsonObject { put("layer", field.layer); put("name", field.name); put("type", field.type) }
-        when (val added = graph.invoke(Workspace.FIELD_ADD, params)) {
+    // A layer's fields change in a project with nothing unsaved: its file is opened again.
+    fun changeField(change: FieldChange) = scope.launch {
+        val params = buildJsonObject {
+            put("layer", change.layer)
+            when (change) {
+                is FieldChange.Add -> {
+                    put("name", change.name)
+                    put("type", change.type)
+                }
+                is FieldChange.Rename -> {
+                    put("field", change.field)
+                    put("to", change.to)
+                }
+                is FieldChange.Delete -> put("field", change.field)
+            }
+        }
+        val action = when (change) {
+            is FieldChange.Add -> Workspace.FIELD_ADD
+            is FieldChange.Rename -> Workspace.FIELD_RENAME
+            is FieldChange.Delete -> Workspace.FIELD_DELETE
+        }
+        when (val done = graph.invoke(action, params)) {
             is Outcome.Done -> loads++
-            is Outcome.Failed -> if (added.code == "unsaved") saveFirst = field else failure = texts.of(added)
-            else -> failure = texts.of(added)
+            is Outcome.Failed -> if (done.code == "unsaved") saveFirst = change else failure = texts.of(done)
+            else -> failure = texts.of(done)
         }
     }
 
@@ -345,6 +377,9 @@ fun LayersScreen(
                             headlineContent = { Text(field.name) },
                             supportingContent = { Text(typeName(field.type)) },
                             leadingContent = { Icon(fieldIcon(field.type), null) },
+                            trailingContent = {
+                                FieldMenu(onRename = { renamingField = layer to field }, onDelete = { deletingField = layer to field })
+                            },
                             colors = clear,
                             modifier = Modifier.animateItem().padding(start = 24.dp),
                         )
@@ -588,26 +623,72 @@ fun LayersScreen(
             onDismiss = { adding = null },
             onAdd = { name, type ->
                 adding = null
-                addField(NewField(layer.name, name, type))
+                changeField(FieldChange.Add(layer.name, name, type))
             },
         )
     }
-    saveFirst?.let { field ->
+    renamingField?.let { (layer, field) ->
+        RenameFieldDialog(
+            current = field.name,
+            existing = layer.fields.map { it.name },
+            onDismiss = { renamingField = null },
+            onRename = { to ->
+                renamingField = null
+                changeField(FieldChange.Rename(layer.name, field.name, to))
+            },
+        )
+    }
+    deletingField?.let { (layer, field) ->
+        AppDialog(
+            onDismissRequest = { deletingField = null },
+            icon = { Icon(Icons.Rounded.DeleteOutline, null) },
+            title = { Text(stringResource(R.string.field_delete_title, field.name)) },
+            text = { Text(stringResource(R.string.field_delete_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deletingField = null
+                    changeField(FieldChange.Delete(layer.name, field.name))
+                }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deletingField = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    saveFirst?.let { change ->
         AppDialog(
             onDismissRequest = { saveFirst = null },
             icon = { Icon(Icons.Rounded.Save, null) },
             title = { Text(stringResource(R.string.save_first_title)) },
-            text = { Text(stringResource(R.string.save_first_body)) },
+            text = {
+                Text(
+                    stringResource(
+                        when (change) {
+                            is FieldChange.Add -> R.string.save_first_body
+                            is FieldChange.Rename -> R.string.save_first_rename_body
+                            is FieldChange.Delete -> R.string.save_first_delete_body
+                        },
+                    ),
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     saveFirst = null
                     scope.launch {
                         when (val saved = graph.invoke(Editing.SAVE_ALL)) {
-                            is Outcome.Done -> addField(field)
+                            is Outcome.Done -> changeField(change)
                             else -> failure = texts.of(saved)
                         }
                     }
-                }) { Text(stringResource(R.string.save_and_add)) }
+                }) {
+                    Text(
+                        stringResource(
+                            when (change) {
+                                is FieldChange.Add -> R.string.save_and_add
+                                is FieldChange.Rename -> R.string.save_and_rename
+                                is FieldChange.Delete -> R.string.save_and_delete
+                            },
+                        ),
+                    )
+                }
             },
             dismissButton = { TextButton(onClick = { saveFirst = null }) { Text(stringResource(R.string.cancel)) } },
         )
@@ -619,6 +700,59 @@ fun LayersScreen(
             text = { Text(message) },
         )
     }
+}
+
+/** What can be done to a field from its row: rename it or delete it. */
+@Composable
+private fun FieldMenu(onRename: () -> Unit, onDelete: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.files_more)) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.layer_rename)) },
+                leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                onClick = {
+                    open = false
+                    onRename()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    open = false
+                    onDelete()
+                },
+            )
+        }
+    }
+}
+
+/** A field's new name, checked like a new field's: its own in the layer, in any case. */
+@Composable
+private fun RenameFieldDialog(current: String, existing: List<String>, onDismiss: () -> Unit, onRename: (String) -> Unit) {
+    var name by remember { mutableStateOf(current) }
+    val trimmed = name.trim()
+    val taken = (existing - current + Workspace.RESERVED).any { it.equals(trimmed, ignoreCase = true) }
+    val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && trimmed != current && !taken
+    AppDialog(
+        onDismissRequest = onDismiss,
+        twoPane = true,
+        title = { Text(stringResource(R.string.field_rename)) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(stringResource(R.string.field_name)) },
+                singleLine = true,
+                isError = taken,
+                supportingText = { if (taken) Text(stringResource(R.string.field_name_taken)) },
+            )
+        },
+        confirmButton = { TextButton(onClick = { onRename(trimmed) }, enabled = valid) { Text(stringResource(R.string.save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 /** A layer's new name, checked like a new layer's. */
