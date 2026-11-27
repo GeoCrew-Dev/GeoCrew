@@ -107,8 +107,9 @@ fun MoreMenu(items: List<MoreItem?>) {
 
 /**
  * A row of the layer list (ADR 0017), lined up with the section headers: the
- * eye at the left edge, the layer's look in small ([swatch]), its name and
- * [detail], and the ⋮ ([more]) at the right edge. Tapping the row opens it.
+ * ≡ that drags it ([handle]; rows that do not move keep its room), the
+ * layer's look in small ([swatch]), its name and [detail], then the eye and
+ * the ⋮ ([more]) at the right edge. Tapping the row opens it.
  */
 @Composable
 fun LayerRow(
@@ -121,13 +122,14 @@ fun LayerRow(
     modifier: Modifier = Modifier,
     detailError: Boolean = false,
     indent: Dp = 0.dp,
+    handle: (@Composable () -> Unit)? = null,
     more: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(onClick = onClick).padding(start = 4.dp + indent, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        VisibilityButton(visible, onToggle)
+        if (handle != null) handle() else Spacer(Modifier.width(48.dp))
         Spacer(Modifier.width(4.dp))
         swatch()
         Spacer(Modifier.width(16.dp))
@@ -143,14 +145,15 @@ fun LayerRow(
                 )
             }
         }
+        VisibilityButton(visible, onToggle)
         if (more != null) more() else Spacer(Modifier.width(48.dp))
     }
 }
 
-/** Where an opened row's content starts: under its name (eye 4 + 48, gap 4, swatch 24, gap 16). */
+/** Where an opened row's content starts: under its name (handle 4 + 48, gap 4, swatch 24, gap 16). */
 val ROW_TEXT = 96.dp
 
-/** Shows or hides a layer, the first thing in its row, as the box in front of a layer in QGIS. */
+/** Shows or hides a layer, next to its ⋮, as the box beside a layer in QGIS. */
 @Composable
 fun VisibilityButton(visible: Boolean, onToggle: () -> Unit) {
     IconButton(onClick = onToggle) {

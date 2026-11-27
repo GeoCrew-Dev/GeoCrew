@@ -163,6 +163,7 @@
         <item quantity="other">图层和它的 %d 个要素都会删掉，不能撤销。</item>
     </plurals>
     <string name="layer_show">显示</string>
+    <string name="layer_drag">拖动排序</string>
     <string name="layer_hide">隐藏</string>
     <string name="layer_opacity">不透明度 %1$d%%</string>
     <string name="move_up">上移</string>
