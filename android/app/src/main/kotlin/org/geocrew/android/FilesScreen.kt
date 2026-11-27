@@ -201,13 +201,14 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
         }
     }
     val shown = query?.trim()?.takeIf { it.isNotEmpty() }?.let { q -> sorted.filter { it.name.contains(q, ignoreCase = true) } } ?: sorted
-    val pickedEntries = sorted.filter { it.path in picked }
+    // Only what is shown counts as picked: a search that hides a picked file leaves it alone.
+    val pickedEntries = shown.filter { it.path in picked }
 
     Scaffold(
         topBar = {
             when {
                 picked.isNotEmpty() -> TopAppBar(
-                    title = { Text(pluralStringResource(R.plurals.files_picked, picked.size, picked.size)) },
+                    title = { Text(pluralStringResource(R.plurals.files_picked, pickedEntries.size, pickedEntries.size)) },
                     navigationIcon = { IconButton(onClick = { picked = emptySet() }) { Icon(Icons.Rounded.Close, stringResource(R.string.close)) } },
                     actions = {
                         val all = shown.map { it.path }.toSet()
