@@ -5,6 +5,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
 import java.time.Instant
+import java.time.OffsetDateTime
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -241,7 +242,9 @@ class SyncClient(private val transport: Transport) {
         lost = (o["lost"] as? JsonObject)?.let(::fieldValueOf),
     )
 
-    private fun fieldValueOf(o: JsonObject) = FieldValue(o["value"] ?: JsonNull, o.text("by").orEmpty(), Instant.parse(o.text("at") ?: "1970-01-01T00:00:00Z"), o.long("seq"))
+    // RFC 3339 allows an offset as well as Z (protocol v1 3.1); Instant.parse takes only Z on older java.time.
+    private fun fieldValueOf(o: JsonObject) =
+        FieldValue(o["value"] ?: JsonNull, o.text("by").orEmpty(), OffsetDateTime.parse(o.text("at") ?: "1970-01-01T00:00:00Z").toInstant(), o.long("seq"))
 
     private fun fieldJson(f: FieldDef) = buildJsonObject {
         put("id", f.id)
