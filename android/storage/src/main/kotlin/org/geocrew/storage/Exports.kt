@@ -29,20 +29,42 @@ internal class Exports(private val dir: File) {
      * WGS84, as KML wants. GeoCrew's own tables stay out: the layers are named,
      * as GDAL would list the attachment table and the unregistered tables too.
      */
-    fun kml(project: Project): File {
-        project.checkpoint()
-        val out = next(project, "kml")
-        val layers = project.layers.flatMap { listOf("--input-layer", it.name) }
-        GeoCrewNative.run(arrayOf("vector", "convert", "--oo", "LIST_ALL_TABLES=NO") + layers + arrayOf("--output-format", "KML", project.file.path, out.path))
+    fun kml(project: Project): File = convert(project, project.layers.map { it.name }, "KML", next(project, "kml"))
+
+    /**
+     * One layer of the project on its own (ADR 0017: a layer's ⋮ menu): as a
+     * GeoPackage, its features, fields and CRS as they are saved (GeoCrew's
+     * styles and attachments stay behind), or as KML in WGS84.
+     */
+    fun layer(project: Project, layer: String, format: String): File {
+        val extension = if (format == "gpkg") "gpkg" else "kml"
+        val out = next(project, extension, layer)
+        val part = File(out.parentFile, ".${out.name}.part.$extension")
+        part.delete()
+        try {
+            convert(project, listOf(layer), if (format == "gpkg") "GPKG" else "KML", part)
+            check(part.renameTo(out)) { "cannot name the export $out" }
+        } finally {
+            part.delete()
+        }
         return out
     }
 
-    private fun next(project: Project, extension: String): File {
+    private fun convert(project: Project, layers: List<String>, driver: String, out: File): File {
+        project.checkpoint()
+        val inputs = layers.flatMap { listOf("--input-layer", it) }
+        GeoCrewNative.run(arrayOf("vector", "convert", "--oo", "LIST_ALL_TABLES=NO") + inputs + arrayOf("--output-format", driver, project.file.path, out.path))
+        return out
+    }
+
+    // A new file named after the project (and the layer), and the time; characters no file name takes become "_".
+    private fun next(project: Project, extension: String, layer: String? = null): File {
         dir.mkdirs()
         val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
-        var out = File(dir, "${project.name}-$stamp.$extension")
+        val base = listOfNotNull(project.name, layer?.replace(Regex("""[\\/:*?"<>|]"""), "_")).joinToString("-")
+        var out = File(dir, "$base-$stamp.$extension")
         var n = 2
-        while (out.exists()) out = File(dir, "${project.name}-$stamp-${n++}.$extension")
+        while (out.exists()) out = File(dir, "$base-$stamp-${n++}.$extension")
         return out
     }
 }

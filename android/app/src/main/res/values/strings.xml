@@ -543,4 +543,16 @@
     <string name="type_attitude">Attitude</string>
     <string name="clino_hold">Hold</string>
     <string name="clino_release">Let go</string>
+    <string name="layer_fields">Fields</string>
+    <string name="layer_fields_of">Fields of %1$s</string>
+    <string name="layer_like">New layer like this</string>
+    <string name="layer_properties">Layer info</string>
+    <string name="layer_property_kind">Geometry</string>
+    <string name="layer_property_count">Features</string>
+    <string name="layer_property_fields">Fields</string>
+    <string name="layer_kind_mixed">Mixed</string>
+    <string name="layer_export">Export</string>
+    <string name="layer_export_title">Export %1$s</string>
+    <string name="format_kml" translatable="false">KML</string>
+    <string name="format_gpkg" translatable="false">GeoPackage</string>
 </resources>
