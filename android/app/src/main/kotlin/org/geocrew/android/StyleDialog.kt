@@ -7,25 +7,32 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,26 +47,51 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.floatOrNull
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import org.geocrew.core.files.NaturalOrder
+
+/** One value of a categorized style's field and the colour it is drawn in. */
+data class StyleClass(val value: String, val color: Color)
 
 /**
- * How a layer is drawn (ADR 0006, v1: one symbol): its colour, a point's
- * radius and a line's width in dp, an area's fill opacity.
+ * How a layer is drawn (ADR 0006): its colour, a point's radius and a line's
+ * width in dp, an area's fill opacity. A categorized style also has a [field]
+ * and a colour for each of its values ([classes]); features with any other
+ * value keep [color].
  */
-data class LayerStyle(val color: Color, val size: Float = DEFAULT_SIZE, val width: Float = DEFAULT_WIDTH, val fill: Float = DEFAULT_FILL) {
+data class LayerStyle(
+    val color: Color,
+    val size: Float = DEFAULT_SIZE,
+    val width: Float = DEFAULT_WIDTH,
+    val fill: Float = DEFAULT_FILL,
+    val field: String? = null,
+    val classes: List<StyleClass> = emptyList(),
+) {
     /** The colour as MapLibre and the project take it, #rrggbb. */
-    val hex: String get() = "#%06x".format(color.toArgb() and 0xffffff)
+    val hex: String get() = hex(color)
+
+    private val byValue: Map<String, String> by lazy { classes.associate { it.value to hex(it.color) } }
+
+    /** The colour a feature with [properties] is drawn in, #rrggbb. */
+    fun hexFor(properties: JsonObject?): String {
+        val field = field ?: return hex
+        val value = (properties?.get(field) as? JsonPrimitive)?.contentOrNull ?: return hex
+        return byValue[value] ?: hex
+    }
 
     /** As layer.style takes it. */
     fun json(): JsonObject = buildJsonObject {
@@ -67,6 +99,12 @@ data class LayerStyle(val color: Color, val size: Float = DEFAULT_SIZE, val widt
         put("size", size.toDouble())
         put("width", width.toDouble())
         put("fill", fill.toDouble())
+        if (field != null) {
+            put("field", field)
+            putJsonArray("classes") {
+                for (c in classes) addJsonObject { put("value", c.value); put("color", hex(c.color)) }
+            }
+        }
     }
 
     companion object {
@@ -80,61 +118,132 @@ data class LayerStyle(val color: Color, val size: Float = DEFAULT_SIZE, val widt
 fun styleOf(layer: JsonObject, fallback: Color): LayerStyle {
     val style = layer["style"] as? JsonObject
     fun number(key: String) = (style?.get(key) as? JsonPrimitive)?.floatOrNull
-    val color = (style?.get("color") as? JsonPrimitive)?.contentOrNull?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+    val color = (style?.get("color") as? JsonPrimitive)?.contentOrNull?.let(::colorOf)
+    val field = (style?.get("field") as? JsonPrimitive)?.contentOrNull
+    val classes = (style?.get("classes") as? JsonArray).orEmpty().mapNotNull { c ->
+        val o = c as? JsonObject ?: return@mapNotNull null
+        val value = (o["value"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+        val shown = (o["color"] as? JsonPrimitive)?.contentOrNull?.let(::colorOf) ?: return@mapNotNull null
+        StyleClass(value, shown)
+    }
     return LayerStyle(
         color ?: fallback,
         number("size") ?: LayerStyle.DEFAULT_SIZE,
         number("width") ?: LayerStyle.DEFAULT_WIDTH,
         number("fill") ?: LayerStyle.DEFAULT_FILL,
+        field,
+        if (field == null) emptyList() else classes,
     )
 }
 
-// Colours to choose from: strong enough to read on imagery, and told apart by colour-blind eyes as far as can be.
-private val PALETTE = listOf(
-    0xFFE53935, 0xFFD81B60, 0xFF8E24AA, 0xFF5E35B1, 0xFF3949AB, 0xFF1E88E5, 0xFF039BE5, 0xFF00ACC1,
-    0xFF00897B, 0xFF43A047, 0xFF7CB342, 0xFFC0CA33, 0xFFFDD835, 0xFFFFB300, 0xFFFB8C00, 0xFFF4511E,
-    0xFF6D4C41, 0xFF757575, 0xFF546E7A, 0xFF000000, 0xFFFFFFFF,
-).map { Color(it) }
+private fun colorOf(hex: String): Color? = runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
+
+private fun hex(color: Color): String = "#%06x".format(color.toArgb() and 0xffffff)
+
+/** The most values a categorized style lists; features with others keep the layer's colour. */
+const val MAX_CLASSES = 100
 
 /**
- * A layer's style to change: a colour from the palette and, by what the layer
- * holds ([geometry], an OGC name), a point's size, a line's width, an area's
- * fill, with a preview. [onSave] gets the style; [onReset] goes back to the default.
+ * The classes for [field] of [features]: those in [kept] first, as they were,
+ * then each other value there is, in natural order, in the next colours of the
+ * palette. Blank values are left to the layer's colour.
  */
-@OptIn(ExperimentalLayoutApi::class)
+fun classesFor(features: JsonArray, field: String, kept: List<StyleClass>): List<StyleClass> {
+    val values = features.mapNotNull { f ->
+        (((f as? JsonObject)?.get("properties") as? JsonObject)?.get(field) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+    }.distinct().sortedWith(NaturalOrder)
+    val known = kept.map { it.value }.toSet()
+    val added = values.filter { it !in known }.mapIndexed { i, v -> StyleClass(v, CLASS_COLORS[(kept.size + i) % CLASS_COLORS.size]) }
+    return (kept + added).take(MAX_CLASSES)
+}
+
+// The palette in an order that puts unlike colours next to each other, for classes; no white or black.
+private val CLASS_COLORS = listOf(5, 0, 9, 14, 2, 7, 12, 16, 3, 10, 1, 13, 6, 18, 4, 11, 15, 8, 17).map { PALETTE[it] }
+
+/**
+ * A layer's style to change: one colour from the palette, or a colour for each
+ * value of a field of [collection] (the layer's features as layer.features
+ * gives them, null while they load) with the layer's colour for the rest; and,
+ * by what the layer holds ([geometry], an OGC name), a point's size, a line's
+ * width, an area's fill, with a preview. [onSave] gets the style; [onReset]
+ * goes back to the default.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StyleDialog(layer: String, geometry: String?, style: LayerStyle, onDismiss: () -> Unit, onSave: (LayerStyle) -> Unit, onReset: () -> Unit) {
+fun StyleDialog(
+    layer: String,
+    geometry: String?,
+    style: LayerStyle,
+    collection: JsonObject?,
+    onDismiss: () -> Unit,
+    onSave: (LayerStyle) -> Unit,
+    onReset: () -> Unit,
+) {
     var color by remember { mutableStateOf(style.color) }
     var size by remember { mutableFloatStateOf(style.size) }
     var width by remember { mutableFloatStateOf(style.width) }
     var fill by remember { mutableFloatStateOf(style.fill) }
+    var field by remember { mutableStateOf(style.field) }
+    var classes by remember { mutableStateOf(style.classes) }
+    // Whose colour is being chosen: a class by its index, OTHER for the rest; null for no one.
+    var picking by remember { mutableStateOf<Int?>(null) }
     val point = geometry == null || geometry.contains("POINT")
     val area = holdsAreas(geometry)
+    val features = collection?.get("features") as? JsonArray ?: JsonArray(emptyList())
+    val fields = formFields(collection).map { it.name }
+    // Values added to the field since the style was saved get colours of their own once the features are read.
+    LaunchedEffect(collection) {
+        val f = field
+        if (collection != null && f != null) classes = classesFor(features, f, classes)
+    }
+    fun categorize(f: String) {
+        field = f
+        classes = classesFor(features, f, if (style.field == f) style.classes else emptyList())
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Palette, null) },
         title = { Text(stringResource(R.string.style_title, layer)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Preview(color, size, width, fill, point, area)
-                FlowRow(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (c in PALETTE) {
-                        Box(
-                            Modifier.size(36.dp).clip(CircleShape).background(c)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                                .clickable { color = c },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (c.toArgb() == color.toArgb()) Icon(Icons.Rounded.Check, null, tint = if (c.luminance() > 0.5f) Color.Black else Color.White)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    SegmentedButton(
+                        selected = field == null,
+                        onClick = { field = null },
+                        shape = SegmentedButtonDefaults.itemShape(0, 2),
+                    ) { Text(stringResource(R.string.style_single)) }
+                    SegmentedButton(
+                        selected = field != null,
+                        enabled = fields.isNotEmpty(),
+                        onClick = { if (field == null) categorize(style.field?.takeIf { it in fields } ?: fields.first()) },
+                        shape = SegmentedButtonDefaults.itemShape(1, 2),
+                    ) { Text(stringResource(R.string.style_categorized)) }
+                }
+                val chosen = field
+                Preview(if (chosen != null) classes.firstOrNull()?.color ?: color else color, size, width, fill, point, area)
+                if (chosen != null) {
+                    Text(stringResource(R.string.style_field), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (f in fields) {
+                            FilterChip(selected = f == chosen, onClick = { if (f != chosen) categorize(f) }, label = { Text(f) })
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    classes.forEachIndexed { i, c -> ClassRow(c.value, c.color) { picking = i } }
+                    ClassRow(stringResource(R.string.style_other), color) { picking = OTHER }
+                } else {
+                    ColorPalette(color, onMore = { picking = OTHER }) { color = it }
                 }
                 if (point) StyleSlider(stringResource(R.string.style_size), size, 2f..16f) { size = it }
                 if (!point) StyleSlider(stringResource(R.string.style_width), width, 1f..10f) { width = it }
                 if (area) StyleSlider(stringResource(R.string.style_fill), fill, 0f..1f, percent = true) { fill = it }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(LayerStyle(color, size, width, fill)) }) { Text(stringResource(R.string.save)) } },
+        confirmButton = {
+            TextButton(onClick = { onSave(LayerStyle(color, size, width, fill, field, if (field == null) emptyList() else classes)) }) {
+                Text(stringResource(R.string.save))
+            }
+        },
         dismissButton = {
             androidx.compose.foundation.layout.Row {
                 TextButton(onClick = onReset) { Text(stringResource(R.string.style_reset)) }
@@ -142,6 +251,33 @@ fun StyleDialog(layer: String, geometry: String?, style: LayerStyle, onDismiss: 
             }
         },
     )
+    picking?.let { i ->
+        val c = classes.getOrNull(i)
+        ColorPickerDialog(
+            title = c?.value ?: if (field == null) layer else stringResource(R.string.style_other),
+            selected = c?.color ?: color,
+            onDismiss = { picking = null },
+        ) { picked ->
+            picking = null
+            if (c != null) classes = classes.toMutableList().apply { set(i, c.copy(color = picked)) } else color = picked
+        }
+    }
+}
+
+// Whose colour is chosen when it is the rest's, the features with no class of their own.
+private const val OTHER = -1
+
+// A value of a categorized style and its colour; a tap chooses another.
+@Composable
+private fun ClassRow(value: String, color: Color, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 6.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(24.dp).clip(CircleShape).background(color).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape))
+        Spacer(Modifier.width(12.dp))
+        Text(value, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 @Composable

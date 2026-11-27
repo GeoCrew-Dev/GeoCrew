@@ -404,6 +404,19 @@ class WorkspaceTest {
         assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "blue"}}"""), "not #rrggbb")
         assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"size": 99}}"""), "too big")
 
+        val byValue = style(
+            output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#757575", "field": "点名", "classes": [{"value": "D001", "color": "#E53935"}]}}""")),
+        )!!
+        assertEquals("categorized", byValue.getValue("kind").jsonPrimitive.content)
+        assertEquals("#e53935", byValue.getValue("classes").jsonArray.single().jsonObject.getValue("color").jsonPrimitive.content)
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"field": "岩性", "classes": []}}"""), "no such field")
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"field": "点名"}}"""), "a field without classes")
+        assertIs<Outcome.Failed>(
+            run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"field": "点名", "classes": [{"value": "a", "color": "#000000"}, {"value": "a", "color": "#ffffff"}]}}"""),
+            "one class a value",
+        )
+        run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1E88E5", "size": 8, "fill": 0.4}}""")
+
         run(Workspace.CLOSE)
         run(Workspace.OPEN, """{"name": "样式"}""")
         assertEquals(8.0, style(output(run(Workspace.CURRENT)))!!.getValue("size").jsonPrimitive.content.toDouble(), "kept in the file")
