@@ -98,6 +98,8 @@ class ImportActionsTest {
         VectorDataset.create(File(folder, "界线.shp").path, "ESRI Shapefile").use { ds ->
             ds.createLayer("界线", "LINESTRING", "EPSG:4326", """[{"name": "name", "type": "string"}]""")
             ds.add("界线", """{"geometry": {"type": "LineString", "coordinates": [[114.3, 30.6], [114.4, 30.7]]}, "properties": {"name": "F1"}}""")
+            // A Shapefile line layer holds multi-part lines too.
+            ds.add("界线", """{"geometry": {"type": "MultiLineString", "coordinates": [[[114.3, 30.5], [114.4, 30.5]], [[114.5, 30.5], [114.6, 30.6]]]}, "properties": {"name": "F2"}}""")
         }
         val zip = File(outside, "地质界线.zip")
         ZipOutputStream(zip.outputStream()).use { out ->
@@ -108,8 +110,8 @@ class ImportActionsTest {
             }
         }
         val made = layers(run(ImportActions.IMPORT, """{"path": ${json(zip)}}"""))
-        assertEquals("LINESTRING", made.getValue("地质界线").getValue("geometry").jsonPrimitive.content)
-        assertEquals(1, count("地质界线"))
+        assertEquals("MULTILINESTRING", made.getValue("地质界线").getValue("geometry").jsonPrimitive.content, "multi-part, as some lines are")
+        assertEquals(2, count("地质界线"))
     }
 
     @Test

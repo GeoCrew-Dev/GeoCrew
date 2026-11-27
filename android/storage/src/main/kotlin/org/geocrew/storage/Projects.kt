@@ -503,14 +503,17 @@ class Project internal constructor(
         checkNewName(name)
         val info = Json.parseToJsonElement(source.layerInfo(sourceLayer)).jsonObject
         val srs = (info["srs"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
-            ?: throw IllegalArgumentException("$sourceLayer does not say its CRS")
-        val geometry = (info["geometryType"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: "GEOMETRY"
+            ?: throw NoCrs("$sourceLayer does not say its CRS")
+        val declared = (info["geometryType"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: "GEOMETRY"
         // Fields GeoCrew cannot edit (binary, lists) stay behind; so does a second field of the same name in another case.
         val fields = info.getValue("fields").jsonArray.map { f ->
             Field(f.jsonObject.getValue("name").jsonPrimitive.content, FieldType.of(f.jsonObject.getValue("type").jsonPrimitive.content))
         }.filter { it.type != FieldType.OTHER && it.name.isNotBlank() }.distinctBy { it.name.lowercase() }
         val kept = fields.map { it.name }.toSet()
         val features = Json.parseToJsonElement(source.features(sourceLayer)).jsonArray
+        // A Shapefile calls a layer of multi-part lines or areas single-part: such a layer comes in as multi-part.
+        val multi = features.any { ((it.jsonObject["geometry"] as? JsonObject)?.get("type") as? JsonPrimitive)?.contentOrNull?.startsWith("Multi") == true }
+        val geometry = if (multi && !declared.startsWith("MULTI") && !declared.startsWith("GEOMETRY")) "MULTI$declared" else declared
         addLayer(dataset, name, geometry, srs, null, fields)
         try {
             dataset.begin()
@@ -626,3 +629,6 @@ class Project internal constructor(
         val BASEMAPS = listOf("img", "cia")
     }
 }
+
+/** A layer brought into a project that does not say its CRS: there is no knowing where it is. */
+class NoCrs(message: String) : IllegalArgumentException(message)

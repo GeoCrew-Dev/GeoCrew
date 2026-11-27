@@ -64,7 +64,7 @@ class ImportActions(private val workspace: Workspace, private val geocrew: File,
                         val name = project.freeLayerName(if (there.size == 1) file.nameWithoutExtension else layer)
                         try {
                             project.importLayer(source, layer, name)
-                        } catch (e: IllegalArgumentException) {
+                        } catch (e: NoCrs) {
                             return ActionResult.Failed(NO_CRS, e.message ?: "$layer does not say its CRS")
                         }
                     }
