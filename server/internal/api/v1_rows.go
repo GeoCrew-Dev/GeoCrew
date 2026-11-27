@@ -204,6 +204,15 @@ func (s *Server) v1Push(w http.ResponseWriter, r *http.Request) {
 	}
 	changes := make([]v1.Change, len(req.Changes))
 	for i, c := range req.Changes {
+		// A missing edit time would read as year 1 and lose every merge.
+		timed := c.Delete == nil || !c.Delete.EditedAt.IsZero()
+		for _, e := range c.Set {
+			timed = timed && !e.EditedAt.IsZero()
+		}
+		if !timed {
+			writeErr(w, http.StatusBadRequest, "invalid", "every edit needs edited_at")
+			return
+		}
 		changes[i] = v1.Change{ID: c.ID, Layer: c.Layer, Row: c.Row, BaseSeq: c.BaseSeq, Set: c.Set, Delete: c.Delete}
 	}
 	results, seq, err := s.V1.Push(r.Context(), r.PathValue("ws"), v1Who(r).Member.ID, *req.ClientNow, changes)
@@ -236,7 +245,11 @@ func (s *Server) v1Pull(w http.ResponseWriter, r *http.Request) {
 	}
 	var only []string
 	if v := q.Get("layers"); v != "" {
-		only = strings.Split(v, ",")
+		for _, id := range strings.Split(v, ",") {
+			if id != "" {
+				only = append(only, id)
+			}
+		}
 	}
 	p, err := s.V1.Pull(r.Context(), r.PathValue("ws"), v1Who(r).Member.ID, since, limit, only)
 	if err != nil {
