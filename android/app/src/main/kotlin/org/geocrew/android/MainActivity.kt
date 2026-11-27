@@ -46,6 +46,7 @@ private sealed interface Screen {
     data object Home : Screen { override val key = "home" }
     data object Settings : Screen { override val key = "settings" }
     data object About : Screen { override val key = "about" }
+    data object Files : Screen { override val key = "files" }
     data class Project(val name: String) : Screen { override val key = "project:$name" }
     data class ProjectSettings(val name: String) : Screen { override val key = "project-settings:$name" }
     data class Layers(val name: String) : Screen { override val key = "project-layers:$name" }
@@ -62,6 +63,7 @@ private sealed interface Screen {
             key == Permissions.key -> Permissions
             key == Settings.key -> Settings
             key == About.key -> About
+            key == Files.key -> Files
             else -> Home
         }
     }
@@ -107,15 +109,18 @@ private fun App(graph: AppGraph, resumed: Int) {
                 graph,
                 onOpen = { push(Screen.Project(it)) },
                 onSettings = { push(Screen.Settings) },
+                onFiles = { push(Screen.Files) },
                 onAbout = { push(Screen.About) },
             )
             Screen.Settings -> SettingsScreen(graph, onBack = ::pop, onAbout = { push(Screen.About) })
             Screen.About -> AboutScreen(onBack = ::pop)
+            Screen.Files -> FilesScreen(graph, onBack = ::pop)
             is Screen.Project -> MapScreen(
                 graph, screen.name, onBack = ::pop,
                 onSettings = { push(Screen.Settings) },
                 onProjectSettings = { push(Screen.ProjectSettings(screen.name)) },
                 onLayers = { push(Screen.Layers(screen.name)) },
+                onFiles = { push(Screen.Files) },
             )
             is Screen.ProjectSettings -> ProjectSettingsScreen(graph, screen.name, onBack = ::pop)
             is Screen.Layers -> LayersScreen(

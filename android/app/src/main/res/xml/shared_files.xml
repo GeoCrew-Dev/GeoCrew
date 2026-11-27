@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Files the app hands to other apps through the share sheet: exports in the GeoCrew folder. -->
+<!-- Files the app hands to other apps (share, open with): exports in the GeoCrew folder, and any
+     file the file manager shows, which with all-files access may be anywhere in shared storage. -->
 <paths>
     <external-path name="geocrew" path="GeoCrew/" />
+    <external-path name="storage" path="." />
     <external-files-path name="own" path="GeoCrew/" />
 </paths>

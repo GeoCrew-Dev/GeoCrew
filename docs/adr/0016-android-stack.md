@@ -47,6 +47,8 @@
 
 2026-11-26 补充：负责人定了 GeoCrew-Native 先不发布，等稳定了统一发。客户端用 GeoCrew-Native CI 产出的 AAR：`android/native.properties` 写明用哪一次 CI 运行和 AAR 的 SHA-256，`android/scripts/fetch-native.sh` 下载并核对。
 
+2026-11-27 补充：新加纯 Kotlin 模块 `core:files`，放内置文件管理器的动作（列出、新建文件夹、重命名、复制、移动、删除）和按扩展名认文件种类，在电脑上测。
+
 ## 相关
 
 - [ADR 0002](0002-android-baseline.md)

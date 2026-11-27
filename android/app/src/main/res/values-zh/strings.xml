@@ -298,4 +298,41 @@
     <string name="track_new_in">新轨迹 · %1$s</string>
     <string name="layer_default_track">轨迹</string>
     <string name="location_off">定位已关闭</string>
+    <string name="files">文件</string>
+    <string name="files_geocrew">GeoCrew</string>
+    <string name="files_downloads">下载</string>
+    <string name="files_wechat">微信</string>
+    <string name="files_storage">手机存储</string>
+    <string name="files_sort">排序</string>
+    <string name="files_sort_name">名称</string>
+    <string name="files_sort_time">时间</string>
+    <string name="files_sort_size">大小</string>
+    <string name="files_hidden">显示隐藏文件</string>
+    <string name="files_empty">空文件夹</string>
+    <string name="files_unreadable">读不了这个文件夹</string>
+    <string name="files_more">更多</string>
+    <string name="files_open">打开</string>
+    <string name="files_open_with">打开方式</string>
+    <string name="files_copy">复制</string>
+    <string name="files_move">移动</string>
+    <string name="files_rename">重命名</string>
+    <string name="files_new_folder">新建文件夹</string>
+    <string name="files_name">名称</string>
+    <string name="files_create">新建</string>
+    <string name="files_copying">复制「%1$s」</string>
+    <string name="files_moving">移动「%1$s」</string>
+    <string name="files_paste">粘贴到这里</string>
+    <string name="files_copied">已复制到「%1$s」</string>
+    <string name="files_moved">已移到「%1$s」</string>
+    <string name="files_delete_title">删除「%1$s」？</string>
+    <string name="files_name_taken">已经有这个名字了</string>
+    <string name="files_busy">工程开着，不能改它的文件</string>
+    <string name="files_protected">这个文件夹不能改</string>
+    <string name="files_inside">不能放进它自己里面</string>
+    <plurals name="files_items">
+        <item quantity="other">%d 项</item>
+    </plurals>
+    <plurals name="files_delete_items">
+        <item quantity="other">里面的 %d 项也会删除</item>
+    </plurals>
 </resources>

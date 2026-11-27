@@ -1,7 +1,5 @@
 package org.geocrew.android
 
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.JsonElement
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -35,10 +33,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.double
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -137,15 +137,10 @@ internal fun fit(map: MapLibreMap, features: JsonArray, density: Float) {
     }
 }
 
-/** Hands an exported file to another app through the system's share sheet. */
+/** Hands a file to another app through the system's share sheet. */
 internal fun share(context: Context, file: File, title: String) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-    val type = when (file.extension) {
-        "gpkg" -> "application/geopackage+sqlite3"
-        "png" -> "image/png"
-        else -> "application/vnd.google-earth.kml+xml"
-    }
-    val send = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val send = Intent(Intent.ACTION_SEND).setType(mimeOf(file)).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(Intent.createChooser(send, title))
 }
 
