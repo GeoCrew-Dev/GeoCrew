@@ -40,7 +40,10 @@ class Workspace(private val projects: Projects) {
         private set
 
     // One undo history for the whole project, as its save covers every layer.
-    val editing = Editing(sharedScope = PROJECT_SCOPE) { layer -> checkNotNull(current) { "no project is open" }.target(layer) }
+    // Features move between layers of different CRSs through PROJ.
+    val editing = Editing(sharedScope = PROJECT_SCOPE, reproject = { g, from, to -> Crs.transform(listOf(g), from, to).single() }) { layer ->
+        checkNotNull(current) { "no project is open" }.target(layer)
+    }
 
     /** The project actions and the editing actions, for the registry. */
     val actions: List<Action> = listOf(

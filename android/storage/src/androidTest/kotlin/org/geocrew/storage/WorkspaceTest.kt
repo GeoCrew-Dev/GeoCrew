@@ -345,6 +345,19 @@ class WorkspaceTest {
         val target = workspace.current!!.target("泉点").store.features().single()
         assertEquals(JsonPrimitive(2.5), target.properties["流量"])
         assertEquals(0L, workspace.current!!.count("野外点"))
+
+        // Into a layer in Gauss-Kruger the position is put into its CRS by PROJ.
+        run(Workspace.LAYER_CREATE, """{"name": "测点", "language": "zh", "srs": "EPSG:4547"}""")
+        run(Editing.START, """{"layer": "测点"}""")
+        val added = output(run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "S2"}}"""))
+        val fid = added.getValue("fid").jsonPrimitive.content
+        assertIs<Outcome.Done>(run(Editing.MOVE, """{"layer": "野外点", "fid": $fid, "to": "测点"}"""))
+        assertIs<Outcome.Done>(run(Editing.SAVE_ALL))
+        val xy = workspace.current!!.target("测点").store.features().single().geometry!!.getValue("coordinates").jsonArray.map { it.jsonPrimitive.double }
+        val expected = Crs.transform("EPSG:4490", "EPSG:4547", doubleArrayOf(114.3, 30.6))
+        assertEquals(expected[0], xy[0], 0.01)
+        assertEquals(expected[1], xy[1], 0.01)
+        assertTrue(xy[0] > 100_000 && xy[1] > 3_000_000, "metres, not degrees: $xy")
     }
 
     // Gauss-Kruger is stored as such; the map gets longitude and latitude.
