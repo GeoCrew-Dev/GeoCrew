@@ -98,24 +98,37 @@ internal fun snap(
     val ids = map.queryRenderedFeatures(box, *layerIds).mapNotNull { it.id() }.distinct().filter { it != reshaped }
     val places = ArrayList<LatLng>()
     val edges = ArrayList<Pair<Int, Int>>()
+    // Only the vertices and sides inside the box, in degrees, are put on the screen: a big shape has many more.
+    val corners = listOf(PointF(box.left, box.top), PointF(box.right, box.top), PointF(box.right, box.bottom), PointF(box.left, box.bottom))
+        .map { map.projection.fromScreenLocation(it) }
+    val west = corners.minOf { it.longitude }
+    val east = corners.maxOf { it.longitude }
+    val south = corners.minOf { it.latitude }
+    val north = corners.maxOf { it.latitude }
+    fun crosses(a: Pair<Double, Double>, b: Pair<Double, Double>) =
+        maxOf(a.first, b.first) >= west && minOf(a.first, b.first) <= east && maxOf(a.second, b.second) >= south && minOf(a.second, b.second) <= north
     for (id in ids) {
         for (part in partsOf(features[id]?.get("geometry") as? JsonObject)) {
-            val start = places.size
-            part.mapTo(places) { (x, y) -> LatLng(y, x) }
-            for (i in 1 until part.size) edges += (start + i - 1) to (start + i)
+            val placeOf = HashMap<Int, Int>()
+            fun place(i: Int) = placeOf.getOrPut(i) {
+                places += LatLng(part[i].second, part[i].first)
+                places.size - 1
+            }
+            if (part.size == 1 && crosses(part[0], part[0])) place(0)
+            for (i in 1 until part.size) if (crosses(part[i - 1], part[i])) edges += place(i - 1) to place(i)
         }
     }
     // The drawing's own vertices and sides, without the vertex being moved and the sides that end at it.
     val own = drawing.vertices
     val moved = if (drawing.moving) drawing.picked else null
-    val placeOf = HashMap<Int, Int>()
+    val ownPlace = HashMap<Int, Int>()
     for (i in own.indices) {
         if (i == moved) continue
-        placeOf[i] = places.size
+        ownPlace[i] = places.size
         places += own[i]
     }
     val sides = own.indices.zipWithNext() + if (drawing.area && own.size >= 3) listOf(own.size - 1 to 0) else emptyList()
-    for ((a, b) in sides) edges += (placeOf[a] ?: continue) to (placeOf[b] ?: continue)
+    for ((a, b) in sides) edges += (ownPlace[a] ?: continue) to (ownPlace[b] ?: continue)
     if (places.isEmpty()) return null
     val screen = places.map { map.projection.toScreenLocation(it).let { p -> Px(p.x.toDouble(), p.y.toDouble()) } }
     return when (val hit = snapOnScreen(Px(at.x.toDouble(), at.y.toDouble()), screen, edges, reach.toDouble())) {
