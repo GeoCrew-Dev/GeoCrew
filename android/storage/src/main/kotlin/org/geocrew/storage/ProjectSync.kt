@@ -26,7 +26,7 @@ internal class ProjectSync(private val project: Project, private val client: Syn
      * there and features already queued stay as they are.
      */
     fun share() {
-        val specs = project.layers.map(::spec)
+        val specs = specs(project)
         for (spec in specs) client.createLayer(account.workspace, account.token, spec)
         project.link(account.workspace)
         project.data { ds ->
@@ -59,32 +59,37 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         return Pushed(sent, project.data(Sending::counts).second, conflicts)
     }
 
-    // A layer as the workspace has it: its kind of geometry, CRS and fields, by the ids the project keeps (protocol v1 7.1, 7.2).
-    private fun spec(layer: Project.Layer): LayerSpec {
-        val geometry = when (layer.geometry?.uppercase()?.removeSuffix(" Z")?.removeSuffix(" M")?.removeSuffix(" ZM")?.trimEnd('Z', 'M')) {
-            null, "", "NONE" -> "None"
-            "POINT" -> "Point"
-            "LINESTRING" -> "LineString"
-            "POLYGON" -> "Polygon"
-            "MULTIPOINT" -> "MultiPoint"
-            "MULTILINESTRING" -> "MultiLineString"
-            "MULTIPOLYGON" -> "MultiPolygon"
-            else -> throw Unsupported(layer.name)
-        }
-        val ids = project.fieldIds(layer.name)
-        val fields = project.target(layer.name).store.fields.mapNotNull { f ->
-            val id = ids[f.name] ?: return@mapNotNull null
-            val type = when (f.type) {
-                FieldType.INTEGER, FieldType.INTEGER64 -> "integer"
-                FieldType.REAL -> "real"
-                FieldType.STRING -> "string"
-                FieldType.DATE -> "date"
-                FieldType.DATETIME -> "datetime"
-                FieldType.BOOLEAN -> "boolean"
-                FieldType.OTHER -> "json"
+    companion object {
+        /** Each layer of [project] as the workspace will have it; [Unsupported] for one it cannot take, before anything is made. */
+        fun specs(project: Project): List<LayerSpec> = project.layers.map { spec(project, it) }
+
+        // A layer as the workspace has it: its kind of geometry, CRS and fields, by the ids the project keeps (protocol v1 7.1, 7.2).
+        private fun spec(project: Project, layer: Project.Layer): LayerSpec {
+            val geometry = when (layer.geometry?.uppercase()?.removeSuffix(" Z")?.removeSuffix(" M")?.removeSuffix(" ZM")?.trimEnd('Z', 'M')) {
+                null, "", "NONE" -> "None"
+                "POINT" -> "Point"
+                "LINESTRING" -> "LineString"
+                "POLYGON" -> "Polygon"
+                "MULTIPOINT" -> "MultiPoint"
+                "MULTILINESTRING" -> "MultiLineString"
+                "MULTIPOLYGON" -> "MultiPolygon"
+                else -> throw Unsupported(layer.name)
             }
-            FieldDef(id, f.name, type)
+            val ids = project.fieldIds(layer.name)
+            val fields = project.target(layer.name).store.fields.mapNotNull { f ->
+                val id = ids[f.name] ?: return@mapNotNull null
+                val type = when (f.type) {
+                    FieldType.INTEGER, FieldType.INTEGER64 -> "integer"
+                    FieldType.REAL -> "real"
+                    FieldType.STRING -> "string"
+                    FieldType.DATE -> "date"
+                    FieldType.DATETIME -> "datetime"
+                    FieldType.BOOLEAN -> "boolean"
+                    FieldType.OTHER -> "json"
+                }
+                FieldDef(id, f.name, type)
+            }
+            return LayerSpec(layer.id, layer.name, geometry, layer.srs ?: Crs.LONGITUDE_LATITUDE, fields)
         }
-        return LayerSpec(layer.id, layer.name, geometry, layer.srs ?: Crs.LONGITUDE_LATITUDE, fields)
     }
 }

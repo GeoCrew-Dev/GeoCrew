@@ -44,6 +44,8 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
                 val info = client.info()
                 if (info.protocol != 1 || "sync" !in info.capabilities) return@remote ActionResult.Failed(UNSUPPORTED, "the server does not speak protocol v1 sync")
                 if ("create" !in info.capabilities) return@remote ActionResult.Failed(UNSUPPORTED, "the server takes no new workspaces")
+                // Every layer is checked before the workspace is made: none is left behind for a project that cannot go.
+                ProjectSync.specs(project)
                 val joined = client.create(p.text("name")?.takeIf { it.isNotBlank() } ?: project.name, p.text("nickname")!!, p.text("device")!!)
                 val account = SyncAccount(server, joined.workspace, joined.member, joined.token)
                 accounts.put(project.id, account)
