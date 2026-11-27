@@ -25,8 +25,7 @@
     <string name="permission_grant">Allow</string>
     <string name="permission_granted">Allowed</string>
     <string name="permissions_continue">Continue</string>
-    <string name="permissions_own_folder">Keep projects inside the app for now</string>
-    <string name="permissions_own_folder_warning">Projects inside the app are deleted when GeoCrew is uninstalled, and other apps cannot open them.</string>
+    <string name="permissions_own_folder_warning">Without Files, projects stay inside the app: they are deleted when GeoCrew is uninstalled, and other apps cannot open them.</string>
 
     <!-- Projects -->
     <string name="projects_title">Projects</string>
@@ -531,4 +530,13 @@
     <string name="clino_low_accuracy">The compass is not accurate</string>
     <string name="clino_no_sensor">This phone has no compass</string>
     <string name="snapshot_failed">Today\'s snapshot of the project was not made</string>
+    <string name="track_interrupted">Track interrupted</string>
+    <string name="track_no_notification">Notifications are off. Tap to turn them on</string>
+    <string name="permissions_skip">Skip</string>
+    <string name="permissions_later">What you skip can be allowed later in Settings, and is asked for when it is needed.</string>
+    <string name="permission_notifications">Notifications</string>
+    <string name="permission_notifications_body">Show the track being recorded in the notification shade.</string>
+    <string name="permission_background">Background running</string>
+    <string name="permission_background_body">Keep a track recording for long with the screen off, free of battery saving limits.</string>
+    <string name="settings_permissions">Permissions</string>
 </resources>

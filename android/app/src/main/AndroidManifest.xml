@@ -14,6 +14,9 @@
     <!-- GPS tracks record in a foreground service of the location kind, with a notification
          that says so: the screen may be off, and no "allow all the time" is asked. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- While a track records: the CPU stays up for its points, and the user may let the app off battery optimization. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -80,6 +83,9 @@
             android:name=".TrackService"
             android:exported="false"
             android:foregroundServiceType="location" />
+        <receiver
+            android:name=".TrackActionReceiver"
+            android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

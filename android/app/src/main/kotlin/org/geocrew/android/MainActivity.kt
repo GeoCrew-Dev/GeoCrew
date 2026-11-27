@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -57,7 +58,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // Only a fresh start: brought back after the system stopped it, the files were taken in already.
-        if (savedInstanceState == null) received = receivedUris(this, intent)
+        if (savedInstanceState == null) {
+            received = receivedUris(this, intent)
+            finishTrackIfAsked(intent)
+        }
         setContent { GeoCrewTheme(graph.settings) { App(graph, resumed, received, onReceived = { received = emptyList() }) } }
     }
 
@@ -66,6 +70,14 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         receivedUris(this, intent).takeIf { it.isNotEmpty() }?.let { received = it }
+        finishTrackIfAsked(intent)
+    }
+
+    // The track notification's "end": the track pauses and the map asks where it goes. Taken once.
+    private fun finishTrackIfAsked(intent: Intent) {
+        if (!intent.getBooleanExtra(EXTRA_FINISH_TRACK, false)) return
+        intent.removeExtra(EXTRA_FINISH_TRACK)
+        graph.tracks.requestFinish()
     }
 
     override fun onResume() {
@@ -156,6 +168,14 @@ private fun App(graph: AppGraph, resumed: Int, received: List<Uri>, onReceived: 
     }
     if (receiving) ReceivingDialog()
 
+    // The track notification's "end" with no project open: the track's project opens, and its map asks where the
+    // track goes. With another screen up, the map asks once it shows the track's project.
+    val finishing by graph.tracks.finishing.collectAsStateWithLifecycle()
+    LaunchedEffect(finishing) {
+        val track = graph.tracks.track.value
+        if (finishing && track != null && top == Screen.Home) push(Screen.Project(track.projectName))
+    }
+
     // The map asks about unsaved edits before it goes, so it handles back itself.
     BackHandler(enabled = stack.size > 1 && top !is Screen.Project) { pop() }
 
@@ -166,7 +186,12 @@ private fun App(graph: AppGraph, resumed: Int, received: List<Uri>, onReceived: 
         label = "screen",
     ) { screen ->
         when (screen) {
-            Screen.Permissions -> PermissionScreen(graph, resumed, onDone = { stack = listOf(Screen.Home.key) })
+            Screen.Permissions -> PermissionScreen(
+                graph, resumed,
+                // At start it leads home; from the settings it goes back to them.
+                onDone = { if (stack.size > 1) pop() else stack = listOf(Screen.Home.key) },
+                onBack = if (stack.size > 1) ::pop else null,
+            )
             Screen.Home -> HomeScreen(
                 graph,
                 onOpen = { push(Screen.Project(it)) },
@@ -174,7 +199,7 @@ private fun App(graph: AppGraph, resumed: Int, received: List<Uri>, onReceived: 
                 onFiles = { push(Screen.Files()) },
                 onAbout = { push(Screen.About) },
             )
-            Screen.Settings -> SettingsScreen(graph, onBack = ::pop, onAbout = { push(Screen.About) })
+            Screen.Settings -> SettingsScreen(graph, onBack = ::pop, onAbout = { push(Screen.About) }, onPermissions = { push(Screen.Permissions) })
             Screen.About -> AboutScreen(onBack = ::pop)
             is Screen.Files -> FilesScreen(
                 graph, onBack = ::pop,
