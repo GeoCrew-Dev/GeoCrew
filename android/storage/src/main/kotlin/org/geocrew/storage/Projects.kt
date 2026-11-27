@@ -24,6 +24,9 @@ import org.geocrew.core.edit.Field
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.edit.FileJournal
 import org.geocrew.core.edit.ValueRange
+import org.geocrew.core.layers.LayerTree
+import org.geocrew.core.layers.Place
+import org.geocrew.core.layers.TreeNode
 import org.geocrew.core.project.LayerTemplate
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.core.project.ProjectFormat.quote
@@ -183,13 +186,14 @@ private fun addLayer(ds: VectorDataset, layer: String, geometry: String, crs: St
     }
 }
 
-// The project's layers in their list order (made order where none was set), with geometry type, CRS and display.
+// The project's layers in their list order (made order where none was set; a group's layers together where the group
+// is, ADR 0017), with geometry type, CRS and display.
 private fun readLayers(ds: VectorDataset): List<Project.Layer> {
     val present = ds.layers.toSet()
     val geometry = rows(ds, "SELECT table_name, geometry_type_name FROM gpkg_geometry_columns").associate { it["table_name"] to it["geometry_type_name"] }
     val display = readDisplay(ds)
     // Rows of GeoCrew's layer table keep their number when a layer before them is deleted: colours stay too.
-    return rows(ds, "SELECT rowid - 1 AS made, table_name, id, template FROM ${ProjectFormat.LAYERS_TABLE} ORDER BY rowid")
+    val layers = rows(ds, "SELECT rowid - 1 AS made, table_name, id, template FROM ${ProjectFormat.LAYERS_TABLE} ORDER BY rowid")
         .filter { it["table_name"] in present }
         .map {
             val made = it["made"]?.toIntOrNull() ?: 0
@@ -198,15 +202,33 @@ private fun readLayers(ds: VectorDataset): List<Project.Layer> {
             val id = it.getValue("id")!!
             Project.Layer(name, id, it["template"], geometry[name], srs, display[id] ?: Project.Display(), made)
         }
-        .sortedWith(compareBy({ it.display.sort ?: Int.MAX_VALUE }, { it.made }))
+    val order = LayerTree.drawOrder(treeNodes(layers, readGroups(ds, display))).withIndex().associate { (i, id) -> id to i }
+    return layers.sortedBy { order[it.id] ?: Int.MAX_VALUE }
 }
 
-// Each layer's and basemap's display by id; nothing for a project whose table was never made.
+// The layer list's groups, in no order (the tree puts them in place); none for a project that never had one.
+private fun readGroups(ds: VectorDataset, display: Map<String, Project.Display> = readDisplay(ds)): List<Project.Group> {
+    val made = rows(ds, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${ProjectFormat.GROUPS_TABLE}'").isNotEmpty()
+    if (!made) return emptyList()
+    return rows(ds, "SELECT id, name, vector FROM ${ProjectFormat.GROUPS_TABLE}").map {
+        val id = it.getValue("id")!!
+        Project.Group(id, it["name"].orEmpty(), it["vector"] == "1", display[Project.groupKey(id)] ?: Project.Display())
+    }
+}
+
+// The layers and groups as the tree takes them: a group by its key in the display table, as layers name it as parent.
+private fun treeNodes(layers: List<Project.Layer>, groups: List<Project.Group>): List<TreeNode> =
+    layers.map { TreeNode(it.id, group = false, parent = it.display.parent, sort = it.display.sort, made = it.made) } +
+        groups.map { TreeNode(Project.groupKey(it.id), group = true, sort = it.display.sort) }
+
+// Each layer's, basemap's and group's display by id; nothing for a project whose table was never made.
 private fun readDisplay(ds: VectorDataset): Map<String, Project.Display> {
     val made = rows(ds, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${ProjectFormat.DISPLAY_TABLE}'").isNotEmpty()
     if (!made) return emptyMap()
-    return rows(ds, "SELECT layer_id, sort, visible, opacity FROM ${ProjectFormat.DISPLAY_TABLE}").associate {
-        it.getValue("layer_id")!! to Project.Display(it["sort"]?.toIntOrNull(), it["visible"] != "0", it["opacity"]?.toDoubleOrNull() ?: 1.0)
+    // Older projects have no parent column until a layer first goes into a group.
+    val parent = rows(ds, "PRAGMA table_info(${ProjectFormat.DISPLAY_TABLE})").any { it["name"] == "parent" }
+    return rows(ds, "SELECT layer_id, sort, visible, opacity${if (parent) ", parent" else ""} FROM ${ProjectFormat.DISPLAY_TABLE}").associate {
+        it.getValue("layer_id")!! to Project.Display(it["sort"]?.toIntOrNull(), it["visible"] != "0", it["opacity"]?.toDoubleOrNull() ?: 1.0, it["parent"])
     }
 }
 
@@ -512,7 +534,154 @@ class Project internal constructor(
     }
 
     /** How a layer or basemap shows: its place in the list when set, whether it shows, and its opacity from 0 to 1. */
-    data class Display(val sort: Int? = null, val visible: Boolean = true, val opacity: Double = 1.0)
+    data class Display(val sort: Int? = null, val visible: Boolean = true, val opacity: Double = 1.0, val parent: String? = null)
+
+    /**
+     * A group in the layer list (ADR 0017): its stable [id], its name, whether
+     * it is a [vector] layer (its points, lines and areas tables of their own),
+     * and its place and whether it shows.
+     */
+    data class Group(val id: String, val name: String, val vector: Boolean, val display: Display = Display())
+
+    /** The layer list's groups, in no order; [tree] puts them in place. */
+    var groups: List<Group> = readGroups(dataset)
+        private set
+
+    /**
+     * The layer list as a tree: the nodes at the top in order, a layer alone or
+     * a group with its layers in order, the first drawn on top.
+     */
+    val tree: List<Pair<Group?, List<Layer>>>
+        get() {
+            val byKey = layers.associateBy { it.id }
+            val groupsByKey = groups.associateBy { groupKey(it.id) }
+            return LayerTree.tree(treeNodes(layers, groups)).mapNotNull { (node, children) ->
+                if (node.group) {
+                    groupsByKey[node.id]?.let { it to children.mapNotNull { c -> byKey[c.id] } }
+                } else {
+                    byKey[node.id]?.let { null to listOf(it) }
+                }
+            }
+        }
+
+    /** Whether layer [layer] shows on the map: its own switch, and its group's. */
+    fun shows(layer: Layer): Boolean =
+        layer.display.visible && (layer.display.parent?.let { key -> groups.firstOrNull { groupKey(it.id) == key } }?.display?.visible ?: true)
+
+    /**
+     * Makes a group named [name] on top of the layer list, a [vector] layer or
+     * not, with layers [inside] in it in that order; saved at once, not undone.
+     */
+    fun createGroup(name: String, vector: Boolean = false, inside: List<String> = emptyList()): Group {
+        val trimmed = name.trim()
+        require(trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME) { "a group name has 1 to ${ProjectFormat.MAX_NAME} characters" }
+        require(groups.none { it.name.equals(trimmed, ignoreCase = true) }) { "there is a group $trimmed already" }
+        val ids = inside.map { n -> layers.firstOrNull { it.name == n }?.id ?: throw IllegalArgumentException("there is no layer $n") }
+        val id = UUID.randomUUID().toString()
+        dataset.begin()
+        try {
+            dataset.sql(ProjectFormat.GROUPS_SCHEMA)
+            dataset.sql("INSERT INTO ${ProjectFormat.GROUPS_TABLE} (id, name, vector) VALUES (${quote(id)}, ${quote(trimmed)}, ${if (vector) 1 else 0})")
+            reload()
+            var nodes = treeNodes(layers, groups)
+            nodes = placed(nodes, LayerTree.move(nodes, groupKey(id), null, 0))
+            for ((i, layer) in ids.withIndex()) nodes = placed(nodes, LayerTree.move(nodes, layer, groupKey(id), i))
+            writePlaces(nodes)
+            dataset.commit()
+        } catch (e: Exception) {
+            dataset.rollback()
+            reload()
+            throw e
+        }
+        reload()
+        return groups.single { it.id == id }
+    }
+
+    /** Renames group [id]; saved at once. */
+    fun renameGroup(id: String, to: String) {
+        val trimmed = to.trim()
+        require(groups.any { it.id == id }) { "there is no group $id" }
+        require(trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME) { "a group name has 1 to ${ProjectFormat.MAX_NAME} characters" }
+        require(groups.none { it.id != id && it.name.equals(trimmed, ignoreCase = true) }) { "there is a group $trimmed already" }
+        dataset.sql("UPDATE ${ProjectFormat.GROUPS_TABLE} SET name = ${quote(trimmed)} WHERE id = ${quote(id)}")
+        reload()
+    }
+
+    /** Takes group [id] away; its layers stay, at its place at the top. Saved at once. */
+    fun removeGroup(id: String) {
+        require(groups.any { it.id == id }) { "there is no group $id" }
+        val places = LayerTree.ungroup(treeNodes(layers, groups), groupKey(id))
+        dataset.begin()
+        try {
+            writePlaces(places)
+            dataset.sql("DELETE FROM ${ProjectFormat.GROUPS_TABLE} WHERE id = ${quote(id)}")
+            dataset.sql("DELETE FROM ${ProjectFormat.DISPLAY_TABLE} WHERE layer_id = ${quote(groupKey(id))}")
+            dataset.commit()
+        } catch (e: Exception) {
+            dataset.rollback()
+            throw e
+        } finally {
+            reload()
+        }
+    }
+
+    /** Shows or hides group [id], and with it its layers; saved at once. */
+    fun setGroupDisplay(id: String, visible: Boolean) {
+        require(groups.any { it.id == id }) { "there is no group $id" }
+        dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
+        dataset.sql("INSERT OR IGNORE INTO ${ProjectFormat.DISPLAY_TABLE} (layer_id) VALUES (${quote(groupKey(id))})")
+        dataset.sql("UPDATE ${ProjectFormat.DISPLAY_TABLE} SET visible = ${if (visible) 1 else 0} WHERE layer_id = ${quote(groupKey(id))}")
+        reload()
+    }
+
+    /**
+     * Moves layer [layer] or group [group] to place [index] (0 first) among
+     * the nodes of group [into] (null for the top; a group always goes at the
+     * top); saved at once.
+     */
+    fun move(layer: String? = null, group: String? = null, into: String? = null, index: Int) {
+        val key = when {
+            layer != null -> layers.firstOrNull { it.name == layer }?.id ?: throw IllegalArgumentException("there is no layer $layer")
+            group != null -> group.takeIf { g -> groups.any { it.id == g } }?.let(::groupKey) ?: throw IllegalArgumentException("there is no group $group")
+            else -> throw IllegalArgumentException("a layer or a group")
+        }
+        val parent = into?.let { g -> g.takeIf { groups.any { it.id == g } }?.let(::groupKey) ?: throw IllegalArgumentException("there is no group $g") }
+        require(index >= 0) { "a place is 0 or more" }
+        val places = LayerTree.move(treeNodes(layers, groups), key, parent, index)
+        dataset.begin()
+        try {
+            writePlaces(places)
+            dataset.commit()
+        } catch (e: Exception) {
+            dataset.rollback()
+            throw e
+        } finally {
+            reload()
+        }
+    }
+
+    // [nodes] with the places given.
+    private fun placed(nodes: List<TreeNode>, places: Map<String, Place>): List<TreeNode> =
+        nodes.map { n -> places[n.id]?.let { n.copy(parent = it.parent, sort = it.sort) } ?: n }
+
+    // Every node's place, as the tree has it.
+    private fun writePlaces(nodes: List<TreeNode>) = writePlaces(nodes.associate { it.id to Place(it.parent, it.sort ?: 0) })
+
+    private fun writePlaces(places: Map<String, Place>) {
+        dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
+        if (rows(dataset, "PRAGMA table_info(${ProjectFormat.DISPLAY_TABLE})").none { it["name"] == "parent" }) dataset.sql(ProjectFormat.DISPLAY_PARENT)
+        for ((key, place) in places) {
+            dataset.sql("INSERT OR IGNORE INTO ${ProjectFormat.DISPLAY_TABLE} (layer_id) VALUES (${quote(key)})")
+            dataset.sql(
+                "UPDATE ${ProjectFormat.DISPLAY_TABLE} SET sort = ${place.sort}, parent = ${place.parent?.let(::quote) ?: "NULL"} WHERE layer_id = ${quote(key)}",
+            )
+        }
+    }
+
+    private fun reload() {
+        groups = readGroups(dataset)
+        layers = readLayers(dataset)
+    }
 
     /** The basemaps a project can show, under the layers: imagery, and its annotation above it. */
     val basemaps: Map<String, Display>
@@ -541,16 +710,34 @@ class Project internal constructor(
         layers = readLayers(dataset)
     }
 
-    /** Puts the layers in the order of [names], every layer once, the first drawn on top; saved at once. */
+    /**
+     * Puts the layers in the order of [names], every layer once, the first
+     * drawn on top; saved at once. Layers stay in their groups: the order
+     * within a group follows [names], and a group goes where its first layer
+     * is named (an empty one last).
+     */
     fun setOrder(names: List<String>) {
         require(names.size == layers.size && names.toSet() == layers.map { it.name }.toSet()) { "name every layer once" }
-        dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
-        for ((index, name) in names.withIndex()) {
-            val id = quote(layers.single { it.name == name }.id)
-            dataset.sql("INSERT OR IGNORE INTO ${ProjectFormat.DISPLAY_TABLE} (layer_id) VALUES ($id)")
-            dataset.sql("UPDATE ${ProjectFormat.DISPLAY_TABLE} SET sort = $index WHERE layer_id = $id")
+        val at = names.withIndex().associate { (i, n) -> layers.single { it.name == n }.id to i }
+        val places = LinkedHashMap<String, Place>()
+        val top = LayerTree.tree(treeNodes(layers, groups)).sortedBy { (node, children) ->
+            if (node.group) children.minOfOrNull { at.getValue(it.id) } ?: Int.MAX_VALUE else at.getValue(node.id)
         }
-        layers = readLayers(dataset)
+        for ((i, pair) in top.withIndex()) {
+            val (node, children) = pair
+            places[node.id] = Place(null, i)
+            children.sortedBy { at.getValue(it.id) }.forEachIndexed { j, c -> places[c.id] = Place(node.id, j) }
+        }
+        dataset.begin()
+        try {
+            writePlaces(places)
+            dataset.commit()
+        } catch (e: Exception) {
+            dataset.rollback()
+            throw e
+        } finally {
+            reload()
+        }
     }
 
     /** The layers, in the order they were made. */
@@ -871,8 +1058,10 @@ class Project internal constructor(
 
     // A new layer goes on top of a list that has been put in order, as in QGIS; an unordered list keeps the order layers were made.
     private fun putOnTop(name: String) {
-        if (layers.none { it.display.sort != null }) return
-        setOrder(listOf(name) + layers.map { it.name }.filter { it != name })
+        val nodes = treeNodes(layers, groups)
+        if (!LayerTree.ordered(nodes)) return
+        writePlaces(LayerTree.move(nodes, layers.single { it.name == name }.id, null, 0))
+        reload()
     }
 
     // [besides]: a layer being renamed, whose own name, in any case, does not count as taken.
@@ -902,6 +1091,9 @@ class Project internal constructor(
 
         /** Tianditu imagery and its annotation (ADR 0015). */
         val BASEMAPS = listOf("img", "cia")
+
+        /** A group's key in the display table, where its layers name it as their parent. */
+        fun groupKey(id: String) = "group:$id"
     }
 }
 

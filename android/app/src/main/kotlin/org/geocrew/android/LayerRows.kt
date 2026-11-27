@@ -21,6 +21,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.DriveFileMove
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Visibility
@@ -37,6 +40,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -55,7 +59,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.geocrew.core.project.ProjectFormat
 
 /**
  * One operation in a row's ⋮ menu (ADR 0017): its name and icon, whether it
@@ -114,10 +120,11 @@ fun LayerRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     detailError: Boolean = false,
+    indent: Dp = 0.dp,
     more: (@Composable () -> Unit)? = null,
 ) {
     Row(
-        modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 4.dp),
+        modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(onClick = onClick).padding(start = 4.dp + indent, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         VisibilityButton(visible, onToggle)
@@ -222,6 +229,79 @@ fun FieldsSheet(
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+/** Which group a layer goes into: one of [groups] (id to name), a new one, or out of the one it is in. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GroupPicker(
+    layer: String,
+    groups: List<Pair<String, String>>,
+    inGroup: Boolean,
+    onPick: (String) -> Unit,
+    onNew: () -> Unit,
+    onOut: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Text(
+                stringResource(R.string.layer_move_title, layer),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            for ((id, name) in groups) {
+                ListItem(
+                    headlineContent = { Text(name) },
+                    leadingContent = { Icon(Icons.Rounded.Folder, null) },
+                    colors = clear,
+                    modifier = Modifier.clickable { onPick(id) },
+                )
+            }
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.layer_group_new)) },
+                leadingContent = { Icon(Icons.Rounded.CreateNewFolder, null) },
+                colors = clear,
+                modifier = Modifier.clickable(onClick = onNew),
+            )
+            if (inGroup) {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.layer_move_out)) },
+                    leadingContent = { Icon(Icons.Rounded.DriveFileMove, null) },
+                    colors = clear,
+                    modifier = Modifier.clickable(onClick = onOut),
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/** A group's name: new ([current] empty) or changed, not one of [existing] (in any case). */
+@Composable
+fun GroupNameDialog(title: String, current: String, existing: List<String>, onDismiss: () -> Unit, onDone: (String) -> Unit) {
+    var name by remember { mutableStateOf(current) }
+    val trimmed = name.trim()
+    val taken = existing.any { it.equals(trimmed, ignoreCase = true) && !it.equals(current, ignoreCase = true) }
+    val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && trimmed != current && !taken
+    AppDialog(
+        onDismissRequest = onDismiss,
+        twoPane = true,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(stringResource(R.string.layer_group_name)) },
+                singleLine = true,
+                isError = taken,
+                supportingText = { if (taken) Text(stringResource(R.string.layer_group_taken)) },
+            )
+        },
+        confirmButton = { TextButton(onClick = { onDone(trimmed) }, enabled = valid) { Text(stringResource(R.string.save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 /** What a layer is: what it holds, how many features and fields, and its coordinate system. */

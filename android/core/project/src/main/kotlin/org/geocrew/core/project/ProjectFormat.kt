@@ -23,13 +23,25 @@ object ProjectFormat {
 
     /**
      * How each layer shows on the map: its place in the layer list (the first
-     * drawn on top), whether it shows and how opaque it is. Basemaps have rows
-     * too, as basemap:<id>. Made when first needed, so older projects open
-     * without being written to.
+     * drawn on top) among the nodes beside it, whether it shows and how opaque
+     * it is, and the group it is in ([parent], group:<id>; none at the top).
+     * Basemaps and groups have rows too, as basemap:<id> and group:<id>. Made
+     * when first needed, so older projects open without being written to; the
+     * parent column is added when a layer first goes into a group.
      */
     const val DISPLAY_TABLE = "geocrew_layer_display"
     const val DISPLAY_SCHEMA = "CREATE TABLE IF NOT EXISTS $DISPLAY_TABLE " +
-        "(layer_id TEXT PRIMARY KEY NOT NULL, sort INTEGER, visible INTEGER NOT NULL DEFAULT 1, opacity REAL NOT NULL DEFAULT 1)"
+        "(layer_id TEXT PRIMARY KEY NOT NULL, sort INTEGER, visible INTEGER NOT NULL DEFAULT 1, opacity REAL NOT NULL DEFAULT 1, parent TEXT)"
+    const val DISPLAY_PARENT = "ALTER TABLE $DISPLAY_TABLE ADD COLUMN parent TEXT"
+
+    /**
+     * Groups in the layer list (ADR 0017), like the display kept on this phone
+     * and not synced: a stable id, a name, and whether the group is a vector
+     * layer, whose points, lines and areas are tables of their own. Made when
+     * the first group is made.
+     */
+    const val GROUPS_TABLE = "geocrew_layer_groups"
+    const val GROUPS_SCHEMA = "CREATE TABLE IF NOT EXISTS $GROUPS_TABLE (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, vector INTEGER NOT NULL DEFAULT 0)"
 
     /**
      * How each layer is drawn (ADR 0006), as JSON; made when a style is first

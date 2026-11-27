@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -26,8 +27,11 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Landscape
@@ -84,6 +88,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -118,7 +123,43 @@ data class LayerInfo(
     val opacity: Float = 1f,
     val geometry: String? = null,
     val style: LayerStyle = LayerStyle(color),
+    val group: String? = null,
+    val shown: Boolean = visible,
 )
+
+/** A group in the layer list (ADR 0017): its id, name, whether it is a vector layer, whether it shows, and its layers in order. */
+data class GroupInfo(val id: String, val name: String, val vector: Boolean, val visible: Boolean, val layers: List<String>)
+
+/** A node at the top of the layer list: a layer, or a group with its layers. */
+sealed interface TopNode {
+    data class Single(val layer: String) : TopNode
+    data class Group(val group: GroupInfo) : TopNode
+}
+
+/** The layer list's top nodes in order, as project.current gives them (ADR 0017); the layers alone for a project without a tree. */
+fun listedTree(about: JsonObject): List<TopNode> {
+    val groups = about["groups"]?.jsonArray.orEmpty().mapNotNull { g ->
+        val o = g.jsonObject
+        val id = (o["id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+        id to o
+    }.toMap()
+    val tree = about["tree"]?.jsonArray ?: return listedLayers(about).map { TopNode.Single(it.name) }
+    return tree.mapNotNull { n ->
+        val node = n.jsonObject
+        (node["layer"] as? JsonPrimitive)?.contentOrNull?.let { return@mapNotNull TopNode.Single(it) }
+        val id = (node["group"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+        val g = groups[id] ?: return@mapNotNull null
+        TopNode.Group(
+            GroupInfo(
+                id,
+                (g["name"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+                (g["vector"] as? JsonPrimitive)?.contentOrNull == "true",
+                (g["visible"] as? JsonPrimitive)?.contentOrNull != "false",
+                node["layers"]?.jsonArray.orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
+            ),
+        )
+    }
+}
 
 /** The layers project.current lists, in order, each in its colour on the map. */
 fun listedLayers(about: JsonObject): List<LayerInfo> = about["layers"]?.jsonArray.orEmpty().mapNotNull { l ->
@@ -132,8 +173,11 @@ fun listedLayers(about: JsonObject): List<LayerInfo> = about["layers"]?.jsonArra
         styleOf(listed, layerColor(madeIndex(listed))).color,
         geometry = (listed["geometry"] as? JsonPrimitive)?.contentOrNull,
         style = styleOf(listed, layerColor(madeIndex(listed))),
-        visible = (listed["visible"] as? JsonPrimitive)?.contentOrNull != "false",
+        // Its own switch; whether it shows also takes its group's.
+        visible = ((listed["ownVisible"] ?: listed["visible"]) as? JsonPrimitive)?.contentOrNull != "false",
         opacity = (listed["opacity"] as? JsonPrimitive)?.contentOrNull?.toFloatOrNull() ?: 1f,
+        group = (listed["group"] as? JsonPrimitive)?.contentOrNull,
+        shown = (listed["visible"] as? JsonPrimitive)?.contentOrNull != "false",
     )
 }
 
@@ -198,6 +242,12 @@ fun LayersScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var layers by remember { mutableStateOf<List<LayerInfo>>(emptyList()) }
+    var tree by remember { mutableStateOf<List<TopNode>>(emptyList()) }
+    // Groups are open until folded.
+    val folded = remember { mutableStateMapOf<String, Boolean>() }
+    var renamingGroup by remember { mutableStateOf<GroupInfo?>(null) }
+    var grouping by remember { mutableStateOf<LayerInfo?>(null) }
+    var newGroupFor by remember { mutableStateOf<LayerInfo?>(null) }
     var basemaps by remember { mutableStateOf<List<BasemapInfo>>(emptyList()) }
     var rasters by remember { mutableStateOf<List<RasterInfo>>(emptyList()) }
     var removing by remember { mutableStateOf<RasterInfo?>(null) }
@@ -228,13 +278,18 @@ fun LayersScreen(
         start = stringResource(R.string.start_failed),
     )
 
+    // A row put in above the first (a new group, a layer moved up) shows: a list at the top stays there.
+    val listState = rememberLazyListState()
     LaunchedEffect(loads) {
+        val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
         val opened = graph.open(project)
         if (opened !is Outcome.Done) {
             failure = texts.of(opened)
             return@LaunchedEffect
         }
         basemaps = listedBasemaps(opened.output.jsonObject)
+        tree = listedTree(opened.output.jsonObject)
+        if (atTop) listState.requestScrollToItem(0)
         rasters = listedRasters(opened.output.jsonObject)
         kind = (opened.output.jsonObject["id"] as? JsonPrimitive)?.contentOrNull?.let(graph.settings::basemapKind) ?: "img"
         layers = listedLayers(opened.output.jsonObject).mapNotNull { layer ->
@@ -271,6 +326,68 @@ fun LayersScreen(
         when (val done = graph.invoke(action, params)) {
             is Outcome.Done -> loads++
             else -> failure = texts.of(done)
+        }
+    }
+
+    // A layer's row, and under it, when opened, its legend and opacity: [at] its place among the [siblings] beside it, at the
+    // top or in group [into], set in by [indent]; faded when its group is hidden.
+    fun androidx.compose.foundation.lazy.LazyListScope.layerRows(layer: LayerInfo, siblings: Int, at: Int, into: String?, indent: Dp, groupShown: Boolean) {
+        val expanded = open[layer.name] == true
+        item(key = "layer:${layer.name}") {
+            LayerRow(
+                title = layer.name,
+                detail = pluralStringResource(countOf(layer.geometry), layer.count, layer.count),
+                visible = layer.visible,
+                onToggle = { display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("visible", !layer.visible) }) },
+                swatch = { LegendSwatch(layer.geometry, legendColors(layer), layer.shown) },
+                onClick = { open[layer.name] = !expanded },
+                modifier = Modifier.animateItem().alpha(if (groupShown) 1f else 0.6f),
+                indent = indent,
+                more = {
+                    fun place(index: Int) = buildJsonObject {
+                        put("layer", layer.name)
+                        into?.let { put("into", it) }
+                        put("index", index)
+                    }
+                    MoreMenu(
+                        listOf(
+                            MoreItem(R.string.zoom_to_layer, Icons.Rounded.ZoomIn) { onZoom(layer.name) },
+                            MoreItem(R.string.attribute_table, Icons.Rounded.TableChart) { onTable(layer.name) },
+                            MoreItem(R.string.style, Icons.Rounded.Palette) { styling = layer },
+                            MoreItem(R.string.layer_fields, Icons.AutoMirrored.Rounded.List) { fieldsOf = layer.name },
+                            MoreItem(R.string.move_up, Icons.Rounded.ArrowUpward, enabled = at > 0) { display(Workspace.LAYER_MOVE, place(at - 1)) },
+                            MoreItem(R.string.move_down, Icons.Rounded.ArrowDownward, enabled = at < siblings - 1) { display(Workspace.LAYER_MOVE, place(at + 1)) },
+                            MoreItem(R.string.layer_move_to_group, Icons.Rounded.DriveFileMove) { grouping = layer },
+                            MoreItem(R.string.layer_export, Icons.Rounded.SaveAlt) { exporting = layer },
+                            MoreItem(R.string.layer_like, Icons.Rounded.ContentCopy) { liking = layer },
+                            MoreItem(R.string.layer_rename, Icons.Rounded.Edit) { renaming = layer },
+                            MoreItem(R.string.layer_properties, Icons.Rounded.Info) { describing = layer },
+                            null,
+                            MoreItem(R.string.delete, Icons.Rounded.DeleteOutline, danger = true) { deleting = layer },
+                        ),
+                    )
+                },
+            )
+        }
+        if (expanded) {
+            item(key = "display:${layer.name}") {
+                Column(Modifier.animateItem().padding(start = ROW_TEXT + indent, end = 16.dp, bottom = 8.dp)) {
+                    // The legend of a style by values or ranges: each colour and what it stands for, then the rest.
+                    if (layer.style.field != null) {
+                        val legend = layer.style.ranges?.map { rangeText(it) to it.color } ?: layer.style.classes.map { it.value to it.color }
+                        for ((text, shown) in legend + (stringResource(R.string.style_other) to layer.style.color)) {
+                            Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                ColorDot(shown, 16.dp)
+                                Spacer(Modifier.width(12.dp))
+                                Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    OpacitySlider(layer.opacity) { opacity ->
+                        display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("opacity", opacity.toDouble()) })
+                    }
+                }
+            }
         }
     }
 
@@ -343,7 +460,7 @@ fun LayersScreen(
         },
     ) { padding ->
         val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
-        LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding), state = listState) {
             if (layers.isEmpty()) {
                 item {
                     Text(
@@ -355,59 +472,50 @@ fun LayersScreen(
                 }
             }
             // One row a layer, folded (ADR 0017): shown or hidden, its look in small, its name and count, and the ⋮ with
-            // everything else. Opened, the row shows the full legend and how opaque the layer is.
-            for (layer in layers) {
-                val expanded = open[layer.name] == true
-                val at = layers.indexOf(layer)
-                item(key = "layer:${layer.name}") {
-                    LayerRow(
-                        title = layer.name,
-                        detail = pluralStringResource(countOf(layer.geometry), layer.count, layer.count),
-                        visible = layer.visible,
-                        onToggle = { display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("visible", !layer.visible) }) },
-                        swatch = { LegendSwatch(layer.geometry, legendColors(layer), layer.visible) },
-                        onClick = { open[layer.name] = !expanded },
-                        modifier = Modifier.animateItem(),
-                        more = {
-                            MoreMenu(
-                                listOf(
-                                    MoreItem(R.string.zoom_to_layer, Icons.Rounded.ZoomIn) { onZoom(layer.name) },
-                                    MoreItem(R.string.attribute_table, Icons.Rounded.TableChart) { onTable(layer.name) },
-                                    MoreItem(R.string.style, Icons.Rounded.Palette) { styling = layer },
-                                    MoreItem(R.string.layer_fields, Icons.AutoMirrored.Rounded.List) { fieldsOf = layer.name },
-                                    MoreItem(R.string.move_up, Icons.Rounded.ArrowUpward, enabled = at > 0) {
-                                        display(Workspace.LAYER_ORDER, order(layers, at, at - 1))
-                                    },
-                                    MoreItem(R.string.move_down, Icons.Rounded.ArrowDownward, enabled = at < layers.size - 1) {
-                                        display(Workspace.LAYER_ORDER, order(layers, at, at + 1))
-                                    },
-                                    MoreItem(R.string.layer_export, Icons.Rounded.SaveAlt) { exporting = layer },
-                                    MoreItem(R.string.layer_like, Icons.Rounded.ContentCopy) { liking = layer },
-                                    MoreItem(R.string.layer_rename, Icons.Rounded.Edit) { renaming = layer },
-                                    MoreItem(R.string.layer_properties, Icons.Rounded.Info) { describing = layer },
-                                    null,
-                                    MoreItem(R.string.delete, Icons.Rounded.DeleteOutline, danger = true) { deleting = layer },
-                                ),
+            // everything else. Opened, the row shows the full legend and how opaque the layer is. A group's layers come
+            // under it, set in, unless it is folded.
+            val byName = layers.associateBy { it.name }
+            for ((top, node) in tree.withIndex()) {
+                when (node) {
+                    is TopNode.Single -> byName[node.layer]?.let { layer ->
+                        layerRows(layer, siblings = tree.size, at = top, into = null, indent = 0.dp, groupShown = true)
+                    }
+                    is TopNode.Group -> {
+                        val group = node.group
+                        val open = folded[group.id] != true
+                        item(key = "group:${group.id}") {
+                            LayerRow(
+                                title = group.name,
+                                detail = pluralStringResource(R.plurals.layers_count, group.layers.size, group.layers.size),
+                                visible = group.visible,
+                                onToggle = { display(Workspace.GROUP_DISPLAY, buildJsonObject { put("group", group.id); put("visible", !group.visible) }) },
+                                swatch = { Icon(if (open) Icons.Rounded.FolderOpen else Icons.Rounded.Folder, null) },
+                                onClick = { folded[group.id] = open },
+                                modifier = Modifier.animateItem(),
+                                more = {
+                                    MoreMenu(
+                                        listOf(
+                                            MoreItem(R.string.move_up, Icons.Rounded.ArrowUpward, enabled = top > 0) {
+                                                display(Workspace.LAYER_MOVE, buildJsonObject { put("group", group.id); put("index", top - 1) })
+                                            },
+                                            MoreItem(R.string.move_down, Icons.Rounded.ArrowDownward, enabled = top < tree.size - 1) {
+                                                display(Workspace.LAYER_MOVE, buildJsonObject { put("group", group.id); put("index", top + 1) })
+                                            },
+                                            MoreItem(R.string.layer_rename, Icons.Rounded.Edit) { renamingGroup = group },
+                                            null,
+                                            MoreItem(R.string.group_ungroup, Icons.Rounded.FolderOff) {
+                                                display(Workspace.GROUP_REMOVE, buildJsonObject { put("group", group.id) })
+                                            },
+                                        ),
+                                    )
+                                },
                             )
-                        },
-                    )
-                }
-                if (expanded) {
-                    item(key = "display:${layer.name}") {
-                        Column(Modifier.animateItem().padding(start = ROW_TEXT, end = 16.dp, bottom = 8.dp)) {
-                            // The legend of a style by values or ranges: each colour and what it stands for, then the rest.
-                            if (layer.style.field != null) {
-                                val legend = layer.style.ranges?.map { rangeText(it) to it.color } ?: layer.style.classes.map { it.value to it.color }
-                                for ((text, shown) in legend + (stringResource(R.string.style_other) to layer.style.color)) {
-                                    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        ColorDot(shown, 16.dp)
-                                        Spacer(Modifier.width(12.dp))
-                                        Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
+                        }
+                        if (open) {
+                            for ((i, name) in group.layers.withIndex()) {
+                                byName[name]?.let { layer ->
+                                    layerRows(layer, siblings = group.layers.size, at = i, into = group.id, indent = GROUP_INDENT, groupShown = group.visible)
                                 }
-                            }
-                            OpacitySlider(layer.opacity) { opacity ->
-                                display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("opacity", opacity.toDouble()) })
                             }
                         }
                     }
@@ -556,6 +664,53 @@ fun LayersScreen(
                 onDismiss = { fieldsOf = null },
             )
         }
+    }
+    grouping?.let { layer ->
+        // Into a group, a new one, or out of the one it is in, just under it.
+        val groups = tree.mapNotNull { (it as? TopNode.Group)?.group }
+        GroupPicker(
+            layer = layer.name,
+            groups = groups.filter { it.id != layer.group }.map { it.id to it.name },
+            inGroup = layer.group != null,
+            onPick = { id ->
+                grouping = null
+                display(Workspace.LAYER_MOVE, buildJsonObject { put("layer", layer.name); put("into", id); put("index", Int.MAX_VALUE / 2) })
+            },
+            onNew = {
+                grouping = null
+                newGroupFor = layer
+            },
+            onOut = {
+                grouping = null
+                val at = tree.indexOfFirst { (it as? TopNode.Group)?.group?.id == layer.group }
+                display(Workspace.LAYER_MOVE, buildJsonObject { put("layer", layer.name); put("index", at + 1) })
+            },
+            onDismiss = { grouping = null },
+        )
+    }
+    newGroupFor?.let { layer ->
+        GroupNameDialog(
+            title = stringResource(R.string.layer_group_new),
+            current = "",
+            existing = tree.mapNotNull { (it as? TopNode.Group)?.group?.name },
+            onDismiss = { newGroupFor = null },
+            onDone = { name ->
+                newGroupFor = null
+                display(Workspace.GROUP_CREATE, buildJsonObject { put("name", name); putJsonArray("layers") { add(layer.name) } })
+            },
+        )
+    }
+    renamingGroup?.let { group ->
+        GroupNameDialog(
+            title = stringResource(R.string.layer_rename),
+            current = group.name,
+            existing = tree.mapNotNull { (it as? TopNode.Group)?.group?.name },
+            onDismiss = { renamingGroup = null },
+            onDone = { name ->
+                renamingGroup = null
+                display(Workspace.GROUP_RENAME, buildJsonObject { put("group", group.id); put("to", name) })
+            },
+        )
     }
     exporting?.let { layer ->
         // A layer on its own, for another program: a GeoPackage keeps its CRS and fields, KML is for Google Earth and the like.
@@ -916,6 +1071,9 @@ private fun order(layers: List<LayerInfo>, from: Int, to: Int): JsonObject {
 }
 
 /** How opaque a layer is, set when the finger lifts: each change is written to the project. */
+// How far a group's layers are set in under it.
+private val GROUP_INDENT = 24.dp
+
 // A layer's colours for its swatch: its own, or the first of a style by values or ranges.
 private fun legendColors(layer: LayerInfo): List<Color> =
     if (layer.style.field == null) {

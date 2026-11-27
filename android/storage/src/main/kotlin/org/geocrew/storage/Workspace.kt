@@ -312,6 +312,55 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
+            GROUP_CREATE, "Create layer group",
+            "Makes a group in the open project's layer list (ADR 0017), on top, with the layers given in it in that order; vector: a vector " +
+                "layer, whose points, lines and areas are tables of their own. Groups stay on this phone; saved at once, not undone",
+            Risk.EDIT, GROUP_CREATE_PARAMS, """{"name": "水文", "layers": ["泉点", "水井"]}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.createGroup(p.name(), p.flag("vector") ?: false, (p["layers"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty())
+            ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
+            GROUP_RENAME, "Rename layer group", "Renames a group of the open project's layer list; saved at once",
+            Risk.EDIT, GROUP_RENAME_PARAMS, """{"group": "…", "to": "水文地质"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.renameGroup(p.getValue("group").jsonPrimitive.content, p.getValue("to").jsonPrimitive.content)
+            ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
+            GROUP_REMOVE, "Remove layer group", "Takes a group out of the open project's layer list; its layers stay, where it was",
+            Risk.EDIT, GROUP_PARAMS, """{"group": "…"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.removeGroup(p.getValue("group").jsonPrimitive.content)
+            ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
+            GROUP_DISPLAY, "Layer group display", "Shows or hides a group of the open project's layer list, and with it its layers; saved at once",
+            Risk.EDIT, GROUP_DISPLAY_PARAMS, """{"group": "…", "visible": false}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.setGroupDisplay(p.getValue("group").jsonPrimitive.content, p.flag("visible")!!)
+            ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
+            LAYER_MOVE, "Move in layer list",
+            "Moves a layer or a group of the open project's layer list to a place (0 first, drawn on top) at the top or in a group " +
+                "(into: the group's id; groups always go at the top); saved at once",
+            Risk.EDIT, MOVE_PARAMS, """{"layer": "泉点", "into": "…", "index": 0}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            project.move(
+                layer = (p["layer"] as? JsonPrimitive)?.contentOrNull,
+                group = (p["group"] as? JsonPrimitive)?.contentOrNull,
+                into = (p["into"] as? JsonPrimitive)?.contentOrNull,
+                index = p.getValue("index").jsonPrimitive.content.toInt(),
+            )
+            ActionResult.Done(about(project))
+        },
+        WorkspaceAction(
             CRS_DESCRIBE, "Describe CRS", "What a CRS (EPSG:4549, WKT, a PROJ string) is: its name, id, whether geographic or projected, and unit",
             Risk.VIEW, CRS_PARAMS, """{"srs": "EPSG:4547"}""",
         ) { p ->
@@ -443,9 +492,35 @@ class Workspace(private val projects: Projects) {
                     put("geometry", layer.geometry)
                     put("srs", layer.srs)
                     put("made", layer.made)
-                    put("visible", layer.display.visible)
+                    // Whether it shows on the map (its group shown too), and its own switch.
+                    put("visible", project.shows(layer))
+                    put("ownVisible", layer.display.visible)
                     put("opacity", layer.display.opacity)
+                    layer.display.parent?.let { key -> project.groups.firstOrNull { Project.groupKey(it.id) == key }?.let { put("group", it.id) } }
                     styles[layer.id]?.let { put("style", it) }
+                }
+            }
+        }
+        // The layer list as a tree (ADR 0017): at the top in order, a layer by its name or a group by its id with its layers.
+        putJsonArray("groups") {
+            for (group in project.groups) {
+                addJsonObject {
+                    put("id", group.id)
+                    put("name", group.name)
+                    put("vector", group.vector)
+                    put("visible", group.display.visible)
+                }
+            }
+        }
+        putJsonArray("tree") {
+            for ((group, layers) in project.tree) {
+                addJsonObject {
+                    if (group == null) {
+                        put("layer", layers.single().name)
+                    } else {
+                        put("group", group.id)
+                        putJsonArray("layers") { layers.forEach { add(it.name) } }
+                    }
                 }
             }
         }
@@ -510,6 +585,11 @@ class Workspace(private val projects: Projects) {
         const val LAYER_DELETE = "layer.delete"
         const val BASEMAP_DISPLAY = "basemap.display"
         const val LAYER_ORDER = "layer.order"
+        const val LAYER_MOVE = "layer.move"
+        const val GROUP_CREATE = "layer.group.create"
+        const val GROUP_RENAME = "layer.group.rename"
+        const val GROUP_REMOVE = "layer.group.remove"
+        const val GROUP_DISPLAY = "layer.group.display"
         const val LAYER_STYLE = "layer.style"
         const val BOOKMARKS = "bookmark.list"
         const val BOOKMARK_ADD = "bookmark.add"
@@ -587,6 +667,24 @@ class Workspace(private val projects: Projects) {
         private val BASEMAP_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["basemap"],
                 "properties": {"basemap": {"enum": ["img", "cia"]}, "visible": {"type": "boolean"}, "opacity": {"type": "number", "minimum": 0, "maximum": 1}}}""",
+        )
+        private val GROUP_CREATE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["name"],
+                "properties": {"name": {"type": "string"}, "vector": {"type": "boolean"}, "layers": {"type": "array", "items": {"type": "string"}}}}""",
+        )
+        private val GROUP_RENAME_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["group", "to"], "properties": {"group": {"type": "string"}, "to": {"type": "string"}}}""",
+        )
+        private val GROUP_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["group"], "properties": {"group": {"type": "string"}}}""",
+        )
+        private val GROUP_DISPLAY_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["group", "visible"],
+                "properties": {"group": {"type": "string"}, "visible": {"type": "boolean"}}}""",
+        )
+        private val MOVE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["index"],
+                "properties": {"layer": {"type": "string"}, "group": {"type": "string"}, "into": {"type": "string"}, "index": {"type": "integer", "minimum": 0}}}""",
         )
         private val ORDER_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layers"], "properties": {"layers": {"type": "array", "items": {"type": "string"}}}}""",
