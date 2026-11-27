@@ -338,8 +338,6 @@ internal val SNAPSHOT_NAME = Regex("""\d{4}-\d{2}-\d{2}\.gpkg""")
 // The name of the copy a project's file goes to before a snapshot is put in its place, then the time.
 const val RESTORED_PREFIX = "恢复前-"
 
-// A snapshot's name: its date.
-private val SNAPSHOT = Regex("""\d{4}-\d{2}-\d{2}\.gpkg""")
 
 /**
  * An open project: its [layers] and where its attachments go. Close it when done;
@@ -914,7 +912,7 @@ class Project internal constructor(
         } finally {
             part.delete()
         }
-        snapshots.listFiles { f -> SNAPSHOT.matches(f.name) }.orEmpty().sortedByDescending { it.name }.drop(keep).forEach { it.delete() }
+        snapshots.listFiles { f -> SNAPSHOT_NAME.matches(f.name) }.orEmpty().sortedByDescending { it.name }.drop(keep).forEach { it.delete() }
         return target
     }
 
