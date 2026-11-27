@@ -62,7 +62,9 @@ fun MenuSheet(title: String, entries: List<MenuEntry>, onDismiss: () -> Unit) {
         AnimatedContent(targetState = path, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "menu") { shown ->
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 val group = shown.lastOrNull()
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Lined up with the rows: the back arrow over their icons, a group's name over their names, the menu's
+                // title at their left edge.
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (group != null) {
                         IconButton(onClick = { path = path.dropLast(1) }) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back))
@@ -71,7 +73,7 @@ fun MenuSheet(title: String, entries: List<MenuEntry>, onDismiss: () -> Unit) {
                     Text(
                         group?.label ?: title,
                         style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(start = if (group != null) 4.dp else 12.dp, top = 8.dp, bottom = 8.dp),
                     )
                 }
                 for (entry in group?.entries ?: entries) {

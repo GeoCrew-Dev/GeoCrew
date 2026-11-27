@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -319,12 +320,16 @@ fun FeatureForm(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (start != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)) {
-                                FormHeader(if (byXY && crs != null) stringResource(R.string.coordinates_in, crs.srs) else stringResource(R.string.coordinates))
-                            }
+                        // The header and "my position" on one line, the button's text ending where the fields end.
+                        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (byXY && crs != null) stringResource(R.string.coordinates_in, crs.srs) else stringResource(R.string.coordinates),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f),
+                            )
                             if (locate != null) {
-                                TextButton(onClick = ::useMyPosition, enabled = !locating) {
+                                TextButton(onClick = ::useMyPosition, enabled = !locating, modifier = Modifier.offset(x = 12.dp)) {
                                     if (locating) {
                                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                                     } else {

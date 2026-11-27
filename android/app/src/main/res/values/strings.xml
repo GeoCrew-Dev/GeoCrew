@@ -122,7 +122,8 @@
     <string name="map_leave">Leave project</string>
     <string name="map_place">Place point</string>
     <string name="place_hint">Move the map until the cross is on the spot</string>
-    <string name="place_coordinates">Lon %1$s  Lat %2$s</string>
+    <string name="place_longitude">Lon %1$s</string>
+    <string name="place_latitude">Lat %1$s</string>
     <string name="place_here">Place here</string>
     <string name="place_into">Into “%1$s”</string>
     <string name="place_change_layer">Change</string>
