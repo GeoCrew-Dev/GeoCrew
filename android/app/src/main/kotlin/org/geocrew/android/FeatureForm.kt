@@ -359,7 +359,7 @@ internal fun FieldInput(field: FormField, text: String, onChange: (String) -> Un
     if (field.type == "boolean") {
         Row(modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(field.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Switch(checked = text == "true", onCheckedChange = { onChange(it.toString()) })
+            Switch(checked = text == "true" || text == "1", onCheckedChange = { onChange(it.toString()) })
         }
         return
     }
