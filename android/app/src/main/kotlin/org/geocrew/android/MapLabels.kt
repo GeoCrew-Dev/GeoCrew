@@ -6,11 +6,22 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.core.graphics.createBitmap
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import org.maplibre.android.maps.Style
 
 /**
@@ -38,6 +49,105 @@ internal object MapLabels {
             JsonObject(f + ("properties" to JsonObject(properties + (PROPERTY to JsonPrimitive(image)))))
         },
     )
+
+    /** The property that turns a line's label to run with the line, degrees clockwise. */
+    const val ROTATE = "_label_rotate"
+
+    /** The property that says what a label names: "line" or "area". */
+    const val KIND = "_label_kind"
+
+    /**
+     * Labels for the lines and areas of [features] that have a [field] value,
+     * as points: a line's in the middle of its length, turned to run with it
+     * and kept upright; an area's at its centre. The images go into [style];
+     * [tag] adds what the map needs to each (its layer's opacity, say).
+     */
+    fun shapes(features: JsonArray, field: String, style: Style, density: Float, tag: (JsonObject) -> JsonObject): List<JsonObject> =
+        features.mapNotNull { feature ->
+            val f = feature as? JsonObject ?: return@mapNotNull null
+            val text = ((f["properties"] as? JsonObject)?.get(field) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val (at, rotate, kind) = anchor(f["geometry"] as? JsonObject) ?: return@mapNotNull null
+            val image = PREFIX + text
+            if (style.getImage(image) == null) style.addImage(image, draw(text, density))
+            tag(
+                buildJsonObject {
+                    put("type", "Feature")
+                    putJsonObject("properties") {
+                        put(PROPERTY, image)
+                        put(ROTATE, rotate)
+                        put(KIND, kind)
+                    }
+                    putJsonObject("geometry") {
+                        put("type", "Point")
+                        putJsonArray("coordinates") { add(at.first); add(at.second) }
+                    }
+                },
+            )
+        }
+
+    /**
+     * Where a line's or an area's label goes: (longitude, latitude), how far
+     * it turns (degrees clockwise) and its kind. A line's is the middle of its
+     * length (of its longest part), along the side there; an area's the centre
+     * of its outer ring (of its biggest part), unturned. Null for anything else.
+     */
+    internal fun anchor(geometry: JsonObject?): Triple<Pair<Double, Double>, Double, String>? {
+        val type = (geometry?.get("type") as? JsonPrimitive)?.contentOrNull ?: return null
+        val coordinates = geometry["coordinates"] as? JsonArray ?: return null
+        fun positions(e: JsonElement?): List<Pair<Double, Double>> = (e as? JsonArray).orEmpty().mapNotNull { p ->
+            val xy = p as? JsonArray ?: return@mapNotNull null
+            val x = (xy.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
+            val y = (xy.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
+            x to y
+        }
+        // Lengths and areas in degrees, the longitude shrunk by the latitude's cosine: near enough to choose and place by.
+        fun scale(line: List<Pair<Double, Double>>) = cos(Math.toRadians(line.map { it.second }.average()))
+        fun length(line: List<Pair<Double, Double>>): Double {
+            val k = scale(line)
+            return line.zipWithNext().sumOf { (a, b) -> hypot((b.first - a.first) * k, b.second - a.second) }
+        }
+        return when (type) {
+            "LineString", "MultiLineString" -> {
+                val line = if (type == "LineString") positions(coordinates) else coordinates.map(::positions).maxByOrNull(::length).orEmpty()
+                if (line.size < 2) return null
+                val k = scale(line)
+                var left = length(line) / 2
+                for ((a, b) in line.zipWithNext()) {
+                    val step = hypot((b.first - a.first) * k, b.second - a.second)
+                    if (step >= left && step > 0) {
+                        val t = left / step
+                        val at = (a.first + (b.first - a.first) * t) to (a.second + (b.second - a.second) * t)
+                        // On a conformal map the side runs at this angle from east, counterclockwise; MapLibre turns clockwise.
+                        var rotate = -Math.toDegrees(atan2(b.second - a.second, (b.first - a.first) * k))
+                        if (rotate > 90) rotate -= 180
+                        if (rotate < -90) rotate += 180
+                        return Triple(at, rotate, "line")
+                    }
+                    left -= step
+                }
+                null
+            }
+            "Polygon", "MultiPolygon" -> {
+                val ring = if (type == "Polygon") positions(coordinates.firstOrNull()) else coordinates.map { positions((it as? JsonArray)?.firstOrNull()) }.maxByOrNull { abs(signedArea(it)) }.orEmpty()
+                if (ring.size < 3) return null
+                val area = signedArea(ring)
+                if (area == 0.0) return Triple(ring.map { it.first }.average() to ring.map { it.second }.average(), 0.0, "area")
+                // The centroid of the ring, by the shoelace formula.
+                var cx = 0.0
+                var cy = 0.0
+                for ((a, b) in ring.zipWithNext() + (ring.last() to ring.first())) {
+                    val cross = a.first * b.second - b.first * a.second
+                    cx += (a.first + b.first) * cross
+                    cy += (a.second + b.second) * cross
+                }
+                Triple((cx / (6 * area)) to (cy / (6 * area)), 0.0, "area")
+            }
+            else -> null
+        }
+    }
+
+    private fun signedArea(ring: List<Pair<Double, Double>>): Double =
+        if (ring.size < 3) 0.0 else (ring.zipWithNext() + (ring.last() to ring.first())).sumOf { (a, b) -> a.first * b.second - b.first * a.second } / 2
 
     // White text with a dark halo, readable on imagery.
     private fun draw(text: String, density: Float): Bitmap {

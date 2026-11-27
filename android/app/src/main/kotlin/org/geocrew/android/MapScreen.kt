@@ -476,6 +476,18 @@ fun MapScreen(
                     PropertyFactory.iconOpacity(Expression.get(OPACITY)),
                 ).withFilter(Expression.all(Expression.has(MapLabels.PROPERTY), isType("Point"))),
             )
+            // Names of lines (turned with them, so they turn with the map) and of areas (upright on the screen).
+            style.addSource(GeoJsonSource(SHAPE_LABELS))
+            for ((kind, alignment) in listOf("line" to Property.ICON_ROTATION_ALIGNMENT_MAP, "area" to Property.ICON_ROTATION_ALIGNMENT_VIEWPORT)) {
+                style.addLayer(
+                    SymbolLayer("$SHAPE_LABELS-$kind", SHAPE_LABELS).withProperties(
+                        PropertyFactory.iconImage(Expression.get(MapLabels.PROPERTY)),
+                        PropertyFactory.iconRotate(Expression.get(MapLabels.ROTATE)),
+                        PropertyFactory.iconRotationAlignment(alignment),
+                        PropertyFactory.iconOpacity(Expression.get(OPACITY)),
+                    ).withFilter(Expression.eq(Expression.get(MapLabels.KIND), Expression.literal(kind))),
+                )
+            }
             // The measurement on top of everything: its line or polygon, and its points.
             style.addSource(GeoJsonSource(MEASURE_SOURCE))
             style.addLayer(
@@ -616,6 +628,23 @@ fun MapScreen(
             put("features", features)
         }
         style.getSourceAs<GeoJsonSource>(POINT_SOURCE)?.setGeoJson(geoJson.toString())
+        // The names of lines and areas, as points of their own: in the middle of a line, turned with it; in an area's centre.
+        val shapeLabels = layers.reversed().flatMap { l ->
+            if ((l["visible"] as? JsonPrimitive)?.contentOrNull == "false") return@flatMap emptyList()
+            if ((l["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT") return@flatMap emptyList()
+            val collection = collections[l.name()] ?: return@flatMap emptyList()
+            val field = nameField(collection) ?: return@flatMap emptyList()
+            val opacity = (l["opacity"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() ?: 1.0
+            MapLabels.shapes(collection["features"] as? JsonArray ?: return@flatMap emptyList(), field, style, density) { label ->
+                JsonObject(label + ("properties" to JsonObject((label["properties"] as JsonObject) + (OPACITY to JsonPrimitive(opacity)))))
+            }
+        }
+        style.getSourceAs<GeoJsonSource>(SHAPE_LABELS)?.setGeoJson(
+            buildJsonObject {
+                put("type", "FeatureCollection")
+                put("features", JsonArray(shapeLabels))
+            }.toString(),
+        )
         // The first visit shows the points there are.
         if (!fitted && styleLoads > 0) {
             fitted = true
@@ -1720,6 +1749,9 @@ private const val FEATURE_FILL = "geocrew-points-fill"
 // Features of geometry [type] (Point, LineString, Polygon), single or multi.
 private fun isType(type: String): Expression =
     Expression.any(Expression.eq(Expression.geometryType(), Expression.literal(type)), Expression.eq(Expression.geometryType(), Expression.literal("Multi$type")))
+
+// Where the names of lines and areas are shown, as points.
+private const val SHAPE_LABELS = "geocrew-shape-labels"
 
 // The measuring tool's source on the map, and its colour.
 private const val MEASURE_SOURCE = "geocrew-measure"
