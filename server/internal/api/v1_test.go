@@ -27,7 +27,8 @@ type v1JoinedResp struct {
 }
 
 type v1Error struct {
-	Error string `json:"error"`
+	Error      string `json:"error"`
+	Permission string `json:"permission"`
 }
 
 func TestV1Info(t *testing.T) {
@@ -96,7 +97,7 @@ func TestV1JoinAndWorkspace(t *testing.T) {
 	}
 
 	// Only those with manage_workspace change it; only those with manage_members reset the invite.
-	if c := e.call("PATCH", ws, member.Token, map[string]any{"name": "改"}, &fail); c != 403 || fail.Error != "forbidden" {
+	if c := e.call("PATCH", ws, member.Token, map[string]any{"name": "改"}, &fail); c != 403 || fail.Error != "forbidden" || fail.Permission != "manage_workspace" {
 		t.Fatalf("member renames: %d %+v", c, fail)
 	}
 	if c := e.call("PATCH", ws, leader.Token, map[string]any{"name": "", "archived": true}, nil); c != 400 {
@@ -106,7 +107,7 @@ func TestV1JoinAndWorkspace(t *testing.T) {
 		got.Workspace.Name != "秋季填图" || got.Workspace.ArchivedAt == nil {
 		t.Fatalf("rename and archive: %d %+v", c, got.Workspace)
 	}
-	if c := e.call("POST", ws+"/invite/reset", member.Token, nil, nil); c != 403 {
+	if c := e.call("POST", ws+"/invite/reset", member.Token, nil, &fail); c != 403 || fail.Permission != "manage_members" {
 		t.Fatalf("member resets the invite: %d", c)
 	}
 	e.call("PATCH", ws, leader.Token, map[string]any{"archived": false}, nil)
