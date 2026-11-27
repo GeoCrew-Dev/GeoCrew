@@ -809,8 +809,7 @@ class Project internal constructor(
      */
     fun deleteLayer(layer: String) {
         val found = layers.firstOrNull { it.name == layer } ?: throw IllegalArgumentException("there is no layer $layer")
-        FieldRanges.tableDropped(dataset, layer)
-        dataset.sql("DROP TABLE ${ProjectFormat.identifier(layer)}")
+        FieldRanges.droppingTable(dataset, layer) { dataset.sql("DROP TABLE ${ProjectFormat.identifier(layer)}") }
         dataset.sql("DELETE FROM ${ProjectFormat.FIELDS_TABLE} WHERE table_name = ${quote(layer)}")
         dataset.sql("DELETE FROM ${ProjectFormat.LAYERS_TABLE} WHERE table_name = ${quote(layer)}")
         dataset.sql(ProjectFormat.DISPLAY_SCHEMA)

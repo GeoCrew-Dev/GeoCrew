@@ -33,7 +33,7 @@ internal object FieldRanges {
                 dataset,
                 "SELECT dc.column_name AS field, c.min AS min, c.min_is_inclusive AS min_in, c.max AS max, c.max_is_inclusive AS max_in " +
                     "FROM $COLUMNS dc JOIN $CONSTRAINTS c ON c.constraint_name = dc.constraint_name AND c.constraint_type = 'range' " +
-                    "WHERE lower(dc.table_name) = lower(${quote(layer)})",
+                    "WHERE dc.table_name = ${quote(layer)}",
             )
         }.getOrDefault(emptyList())
         return found.mapNotNull { row -> row["field"]?.let { field -> rangeOf(row)?.let { field to it } } }.toMap()
@@ -87,11 +87,17 @@ internal object FieldRanges {
         for (row in tied) tie(dataset, to, row["column_name"] ?: continue, row["constraint_name"] ?: continue)
     }
 
-    /** Layer [layer] is about to go: its rows go, and the ranges no other layer uses. */
-    fun tableDropped(dataset: VectorDataset, layer: String) {
+    /** Drops layer [layer] by [drop]; once it is gone, so are its rows and the ranges no other layer uses. */
+    fun droppingTable(dataset: VectorDataset, layer: String, drop: () -> Unit) {
+        // Noted first: GDAL may take the layer's rows with it.
+        val names = if (made(dataset)) {
+            rows(dataset, "SELECT DISTINCT constraint_name FROM $COLUMNS WHERE table_name = ${quote(layer)} AND constraint_name IS NOT NULL")
+                .mapNotNull { it["constraint_name"] }
+        } else {
+            emptyList()
+        }
+        drop()
         if (!made(dataset)) return
-        val names = rows(dataset, "SELECT DISTINCT constraint_name FROM $COLUMNS WHERE table_name = ${quote(layer)} AND constraint_name IS NOT NULL")
-            .mapNotNull { it["constraint_name"] }
         dataset.sql("DELETE FROM $COLUMNS WHERE table_name = ${quote(layer)}")
         names.forEach { dropUnused(dataset, it) }
     }
