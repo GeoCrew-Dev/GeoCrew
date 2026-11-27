@@ -4,18 +4,24 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Backspace
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Deselect
+import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Pentagon
 import androidx.compose.material.icons.rounded.Timeline
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,15 +40,77 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import org.maplibre.android.geometry.LatLng
 
 /**
  * A line or an area being drawn into [layer]: its vertices so far, in CGCS2000
  * degrees. With [fid] it is a feature of the layer being reshaped.
  */
-data class Drawing(val layer: String, val area: Boolean, val vertices: List<LatLng> = emptyList(), val fid: Long? = null) {
+data class Drawing(
+    val layer: String,
+    val area: Boolean,
+    val vertices: List<LatLng> = emptyList(),
+    val fid: Long? = null,
+    /** The vertex picked (by its place in [vertices]) to move, delete or add after; null when none is. */
+    val picked: Int? = null,
+    /** Whether the picked vertex is being moved: it stands at the crosshair until put down. */
+    val moving: Boolean = false,
+) {
     /** Whether it has enough vertices to be saved: two for a line, three for an area. */
     val complete: Boolean get() = vertices.size >= if (area) 3 else 2
+
+    /**
+     * The vertices as the map shows them now, with the crosshair at [center]:
+     * a vertex being moved stands there; with none picked, it is the next
+     * vertex, to show where adding one would go.
+     */
+    fun shown(center: LatLng?): List<LatLng> = when {
+        center == null -> vertices
+        moving && picked != null -> vertices.mapIndexed { i, v -> if (i == picked) center else v }
+        picked == null -> vertices + center
+        else -> vertices
+    }
+
+    /**
+     * Where a vertex can be put in between two: the middle of each side, with
+     * the place in [vertices] it would take; an area's closing side too.
+     */
+    fun middles(): List<Pair<Int, LatLng>> {
+        if (vertices.size < 2) return emptyList()
+        val sides = vertices.zipWithNext().mapIndexed { i, (a, b) -> i + 1 to middle(a, b) }
+        return if (area && vertices.size >= 3) sides + (vertices.size to middle(vertices.last(), vertices.first())) else sides
+    }
+
+    private fun middle(a: LatLng, b: LatLng) = LatLng((a.latitude + b.latitude) / 2, (a.longitude + b.longitude) / 2)
+}
+
+/**
+ * [drawing] for the map, with the crosshair at [center]: the area or line,
+ * then each vertex (the picked one marked "picked") and, while nothing is
+ * being moved, the middles of the sides where a vertex can be put in
+ * ("middle"). Features carry their role in the property "role".
+ */
+fun drawingGeoJson(drawing: Drawing, center: LatLng?): JsonObject {
+    val shown = drawing.shown(center)
+    val base = measureGeoJson(if (drawing.area) MeasureMode.AREA else MeasureMode.DISTANCE, shown)
+    val shapes = base.getValue("features").let { it as JsonArray }.filter { f ->
+        ((f as JsonObject)["geometry"] as? JsonObject)?.get("type")?.let { (it as JsonPrimitive).contentOrNull } != "Point"
+    }
+    fun point(p: LatLng, role: String) = buildJsonObject {
+        put("type", "Feature")
+        putJsonObject("properties") { put("role", role) }
+        putJsonObject("geometry") {
+            put("type", "Point")
+            putJsonArray("coordinates") { add(p.longitude); add(p.latitude) }
+        }
+    }
+    val points = shown.mapIndexed { i, p -> point(p, if (i == drawing.picked) "picked" else "vertex") }
+    val middles = if (drawing.moving) emptyList() else drawing.middles().map { (_, p) -> point(p, "middle") }
+    return buildJsonObject {
+        put("type", "FeatureCollection")
+        put("features", JsonArray(shapes + middles + points))
+    }
 }
 
 /**
@@ -100,9 +168,21 @@ fun shapeGeoJson(vertices: List<Pair<Double, Double>>, area: Boolean): JsonObjec
     }
 }
 
-/** What is being drawn: the layer, how many vertices, and the length or area so far; undoing a vertex, and stopping. */
+/**
+ * What is being drawn: the layer, how many vertices, and the length or area so
+ * far; going back one change ([canUndo]), and stopping. With a vertex picked:
+ * which it is, moving it, deleting it, and putting it down.
+ */
 @Composable
-fun DrawPanel(drawing: Drawing, onUndo: () -> Unit, onClose: () -> Unit) {
+fun DrawPanel(
+    drawing: Drawing,
+    canUndo: Boolean,
+    onUndo: () -> Unit,
+    onClose: () -> Unit,
+    onMove: () -> Unit,
+    onDelete: () -> Unit,
+    onUnpick: () -> Unit,
+) {
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.secondaryContainer,
@@ -110,23 +190,50 @@ fun DrawPanel(drawing: Drawing, onUndo: () -> Unit, onClose: () -> Unit) {
         shadowElevation = 3.dp,
         modifier = Modifier.widthIn(max = 560.dp),
     ) {
-        Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (drawing.area) Icons.Rounded.Pentagon else Icons.Rounded.Timeline, null)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(drawing.layer, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val count = pluralStringResource(R.plurals.vertices_count, drawing.vertices.size, drawing.vertices.size)
-                val size = when {
-                    drawing.area && drawing.vertices.size >= 3 -> stringResource(R.string.measure_area_value, areaText(areaOf(drawing.vertices)))
-                    !drawing.area && drawing.vertices.size >= 2 -> stringResource(R.string.measure_distance_value, distanceText(lengthOf(drawing.vertices)))
-                    else -> null
+        Column {
+            Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (drawing.area) Icons.Rounded.Pentagon else Icons.Rounded.Timeline, null)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(drawing.layer, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val count = pluralStringResource(R.plurals.vertices_count, drawing.vertices.size, drawing.vertices.size)
+                    val size = when {
+                        drawing.area && drawing.vertices.size >= 3 -> stringResource(R.string.measure_area_value, areaText(areaOf(drawing.vertices)))
+                        !drawing.area && drawing.vertices.size >= 2 -> stringResource(R.string.measure_distance_value, distanceText(lengthOf(drawing.vertices)))
+                        else -> null
+                    }
+                    Text(listOfNotNull(count, size).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
                 }
-                Text(listOfNotNull(count, size).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                IconButton(onClick = onUndo, enabled = canUndo && !drawing.moving) {
+                    Icon(Icons.AutoMirrored.Rounded.Undo, stringResource(R.string.map_undo))
+                }
+                IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, stringResource(R.string.cancel)) }
             }
-            IconButton(onClick = onUndo, enabled = drawing.vertices.isNotEmpty()) {
-                Icon(Icons.AutoMirrored.Rounded.Backspace, stringResource(R.string.measure_undo))
+            // The picked vertex: what it is and what can be done with it.
+            val picked = drawing.picked
+            if (picked != null) {
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(if (drawing.moving) R.string.draw_moving_vertex else R.string.draw_vertex, picked + 1),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (!drawing.moving) {
+                        TextButton(onClick = onMove) {
+                            Icon(Icons.Rounded.OpenWith, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(stringResource(R.string.draw_move))
+                        }
+                        TextButton(onClick = onDelete) {
+                            Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                            Spacer(Modifier.width(4.dp))
+                            Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                        }
+                        IconButton(onClick = onUnpick) { Icon(Icons.Rounded.Deselect, stringResource(R.string.draw_unpick)) }
+                    }
+                }
             }
-            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, stringResource(R.string.cancel)) }
         }
     }
 }

@@ -99,6 +99,7 @@ import androidx.lifecycle.compose.currentStateAsState
 import java.io.File
 import java.io.IOException
 import java.util.Locale
+import kotlin.math.hypot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -191,6 +192,8 @@ fun MapScreen(
     var draft by remember { mutableStateOf<Draft?>(null) }
     // A line or an area being drawn, and one drawn, waiting for its form.
     var drawing by remember { mutableStateOf<Drawing?>(null) }
+    // The shapes it was before each change, to go back on one at a time.
+    var drawingHistory by remember { mutableStateOf(emptyList<Drawing>()) }
     var shapeDraft by remember { mutableStateOf<Drawing?>(null) }
     var droppingDrawing by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Pair<String, Long>?>(null) }
@@ -385,9 +388,29 @@ fun MapScreen(
         map.cameraPosition = graph.cameras[project] ?: CameraPosition.Builder().target(LatLng(35.0, 105.0)).zoom(3.5).build()
         map.addOnMapClickListener { point ->
             if (placing) return@addOnMapClickListener false
-            // While drawing, a tap adds a vertex where it is.
+            // While drawing, a tap on a vertex picks it (or puts it down), a tap on the middle of a side puts a vertex
+            // in there, picked; elsewhere a tap puts the pick down, or with none picked adds a vertex at the end.
             drawing?.let { d ->
-                drawing = d.copy(vertices = d.vertices + point.wrap())
+                if (d.moving) return@addOnMapClickListener true
+                val at = map.projection.toScreenLocation(point)
+                fun away(p: LatLng) = map.projection.toScreenLocation(p).let { s -> hypot(s.x - at.x, s.y - at.y) }
+                val reach = 24 * density
+                val vertex = d.vertices.indices.minByOrNull { away(d.vertices[it]) }?.takeIf { away(d.vertices[it]) <= reach }
+                val middle = d.middles().minByOrNull { away(it.second) }?.takeIf { away(it.second) <= reach }
+                val toVertex = vertex?.let { away(d.vertices[it]) } ?: Float.MAX_VALUE
+                val toMiddle = middle?.let { away(it.second) } ?: Float.MAX_VALUE
+                when {
+                    vertex != null && toVertex <= toMiddle -> drawing = d.copy(picked = if (d.picked == vertex) null else vertex)
+                    middle != null -> {
+                        drawingHistory = drawingHistory + d.copy(picked = null)
+                        drawing = d.copy(vertices = d.vertices.toMutableList().apply { add(middle.first, middle.second) }, picked = middle.first)
+                    }
+                    d.picked != null -> drawing = d.copy(picked = null)
+                    else -> {
+                        drawingHistory = drawingHistory + d
+                        drawing = d.copy(vertices = d.vertices + point.wrap())
+                    }
+                }
                 return@addOnMapClickListener true
             }
             // While measuring, a tap adds a point to the measurement.
@@ -466,10 +489,19 @@ fun MapScreen(
                 ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("LineString"))),
             )
             style.addLayer(
+                // A drawing's vertices are marked by role: the picked one bigger and blue, the middles of sides small and hollow.
                 CircleLayer("$MEASURE_SOURCE-points", MEASURE_SOURCE).withProperties(
-                    PropertyFactory.circleRadius(5f),
-                    PropertyFactory.circleColor(MEASURE_COLOR),
-                    PropertyFactory.circleStrokeColor("#ffffff"),
+                    PropertyFactory.circleRadius(
+                        Expression.match(Expression.get("role"), Expression.literal(5f), Expression.stop("picked", 9f), Expression.stop("middle", 4f)),
+                    ),
+                    PropertyFactory.circleColor(
+                        Expression.toColor(
+                            Expression.match(Expression.get("role"), Expression.literal(MEASURE_COLOR), Expression.stop("picked", PICKED_COLOR), Expression.stop("middle", "#ffffff")),
+                        ),
+                    ),
+                    PropertyFactory.circleStrokeColor(
+                        Expression.toColor(Expression.match(Expression.get("role"), Expression.literal("#ffffff"), Expression.stop("middle", MEASURE_COLOR))),
+                    ),
                     PropertyFactory.circleStrokeWidth(2f),
                 ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Point"))),
             )
@@ -500,7 +532,7 @@ fun MapScreen(
         val mode = measuring
         val d = drawing
         val shown = when {
-            d != null -> measureGeoJson(if (d.area) MeasureMode.AREA else MeasureMode.DISTANCE, d.vertices + listOfNotNull(center))
+            d != null -> drawingGeoJson(d, center)
             mode == null -> measureGeoJson(MeasureMode.DISTANCE, emptyList())
             else -> measureGeoJson(mode, measured)
         }
@@ -593,8 +625,52 @@ fun MapScreen(
         placing = false
         measuring = null // one tool at a time
         measured = emptyList()
+        drawingHistory = emptyList()
         drawing = Drawing(layer, area)
         scope.launch { center = mapView.awaitMap().cameraPosition.target?.wrap() }
+    }
+
+    // A change to the shape being drawn, kept so it can be gone back on.
+    fun editDrawing(next: Drawing) {
+        drawing?.let { drawingHistory = drawingHistory + it.copy(picked = null, moving = false) }
+        drawing = next
+    }
+
+    fun undoDrawing() {
+        val last = drawingHistory.lastOrNull() ?: return
+        drawingHistory = drawingHistory.dropLast(1)
+        drawing = last
+    }
+
+    // A vertex at the crosshair: after the picked one (then picked itself), else at the end.
+    fun addVertex(at: LatLng) {
+        val d = drawing ?: return
+        val i = d.picked
+        editDrawing(if (i == null) d.copy(vertices = d.vertices + at) else d.copy(vertices = d.vertices.toMutableList().apply { add(i + 1, at) }, picked = i + 1))
+    }
+
+    // The map goes to the picked vertex, which then stands at the crosshair, moving with the map until put down.
+    fun moveVertex() {
+        val d = drawing ?: return
+        val at = d.picked?.let { d.vertices.getOrNull(it) } ?: return
+        scope.launch {
+            mapView.awaitMap().moveCamera(CameraUpdateFactory.newLatLng(at))
+            center = at
+            drawing = drawing?.copy(moving = true)
+        }
+    }
+
+    fun putVertex() {
+        val d = drawing ?: return
+        val i = d.picked ?: return
+        val at = center ?: return
+        editDrawing(d.copy(vertices = d.vertices.toMutableList().apply { set(i, at) }, moving = false))
+    }
+
+    fun deleteVertex() {
+        val d = drawing ?: return
+        val i = d.picked ?: return
+        editDrawing(d.copy(vertices = d.vertices.filterIndexed { j, _ -> j != i }, picked = null))
     }
 
     fun startPlacing(layer: String) {
@@ -1021,9 +1097,15 @@ fun MapScreen(
     }
 
     BackHandler(enabled = !placing && drawing == null) { requestLeave() }
+    // Back first stops a move, then puts the pick down, then goes back one change; with nothing to go back on, the drawing ends.
     BackHandler(enabled = drawing != null) {
         val d = drawing ?: return@BackHandler
-        drawing = if (d.vertices.isEmpty()) null else d.copy(vertices = d.vertices.dropLast(1))
+        when {
+            d.moving -> drawing = d.copy(moving = false)
+            d.picked != null -> drawing = d.copy(picked = null)
+            drawingHistory.isNotEmpty() -> undoDrawing()
+            else -> drawing = null
+        }
     }
     BackHandler(enabled = placing) { placing = false }
 
@@ -1098,8 +1180,12 @@ fun MapScreen(
                     Spacer(Modifier.height(8.dp))
                     DrawPanel(
                         drawing = drawing ?: return@Column,
-                        onUndo = { drawing = drawing?.let { it.copy(vertices = it.vertices.dropLast(1)) } },
+                        canUndo = drawingHistory.isNotEmpty(),
+                        onUndo = ::undoDrawing,
                         onClose = { drawing = null },
+                        onMove = ::moveVertex,
+                        onDelete = ::deleteVertex,
+                        onUnpick = { drawing = drawing?.copy(picked = null, moving = false) },
                     )
                 } else if (measuring != null) {
                     Spacer(Modifier.height(8.dp))
@@ -1168,6 +1254,20 @@ fun MapScreen(
                         Text(stringResource(R.string.place_here))
                     }
                     Spacer(Modifier.size(56.dp)) // keeps the confirm button in the middle
+                } else if (drawing?.moving == true) {
+                    // Moving a vertex: put it at the crosshair, or leave it where it was.
+                    RoundButton(Icons.Rounded.Close, stringResource(R.string.cancel), onClick = { drawing = drawing?.copy(moving = false) }, size = 56.dp, solid = true)
+                    ExtendedFloatingActionButton(
+                        onClick = ::putVertex,
+                        shape = CircleShape,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) {
+                        Icon(Icons.Rounded.Check, null)
+                        Spacer(Modifier.width(12.dp))
+                        Text(stringResource(R.string.draw_put_here))
+                    }
+                    Spacer(Modifier.size(56.dp)) // keeps the button in the middle
                 } else if (drawing != null) {
                     val d = drawing
                     RoundButton(Icons.Rounded.Close, stringResource(R.string.cancel), onClick = { drawing = null }, size = 56.dp, solid = true)
@@ -1175,7 +1275,7 @@ fun MapScreen(
                         onClick = {
                             scope.launch {
                                 val at = mapView.awaitMap().cameraPosition.target?.wrap() ?: return@launch
-                                drawing = drawing?.let { it.copy(vertices = it.vertices + at) }
+                                addVertex(at)
                             }
                         },
                         shape = CircleShape,
@@ -1603,6 +1703,9 @@ private fun isType(type: String): Expression =
 // The measuring tool's source on the map, and its colour.
 private const val MEASURE_SOURCE = "geocrew-measure"
 private const val MEASURE_COLOR = "#ff6d00"
+
+// A drawing's picked vertex.
+private const val PICKED_COLOR = "#1565c0"
 
 // Feature properties the map reads: the colour of the point's layer.
 private const val COLOR = "_color"
