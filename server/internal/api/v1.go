@@ -247,7 +247,7 @@ func (s *Server) v1UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	who := v1Who(r)
 	ws, err := s.V1.UpdateWorkspace(r.Context(), r.PathValue("ws"), who.Member.ID, v1.WorkspaceUpdate{Name: req.Name, Archived: req.Archived})
 	if err != nil {
-		s.v1Fail(w, r, err)
+		s.v1Refused(w, r, err, perm.ManageWorkspace)
 		return
 	}
 	out, err := s.v1WorkspaceFor(r.Context(), ws, who.Member)
@@ -261,10 +261,25 @@ func (s *Server) v1UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) v1ResetInvite(w http.ResponseWriter, r *http.Request) {
 	code, err := s.V1.ResetInvite(r.Context(), r.PathValue("ws"), v1Who(r).Member.ID)
 	if err != nil {
-		s.v1Fail(w, r, err)
+		s.v1Refused(w, r, err, perm.ManageMembers)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"invite_code": code})
+}
+
+type v1Forbidden struct {
+	Error      string `json:"error"`
+	Message    string `json:"message"`
+	Permission string `json:"permission"`
+}
+
+// v1Refused is v1Fail for a call that needs permission: a refusal names it (protocol 3.2).
+func (s *Server) v1Refused(w http.ResponseWriter, r *http.Request, err error, permission string) {
+	if errors.Is(err, store.ErrForbidden) {
+		writeJSON(w, http.StatusForbidden, v1Forbidden{"forbidden", permission + " is required", permission})
+		return
+	}
+	s.v1Fail(w, r, err)
 }
 
 // v1Fail maps store errors to protocol v1 errors (protocol 3.2).

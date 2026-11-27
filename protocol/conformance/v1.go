@@ -170,15 +170,26 @@ func (s *suite) v1Checks() []check {
 			if err := ready(); err != nil {
 				return err
 			}
-			if r, err := s.c.do(http.MethodPatch, v1Path(s.v1.ws, ""), s.v1.member, map[string]any{"name": "组员改名"}, nil); err != nil {
-				return err
-			} else if err := expect(r, http.StatusForbidden, "forbidden"); err != nil {
-				return fmt.Errorf("组员改名：%w", err)
-			}
-			if r, err := s.c.do(http.MethodPost, v1Path(s.v1.ws, "/invite/reset"), s.v1.member, nil, nil); err != nil {
-				return err
-			} else if err := expect(r, http.StatusForbidden, "forbidden"); err != nil {
-				return fmt.Errorf("组员重置邀请码：%w", err)
+			for _, f := range []struct{ what, method, path, permission string }{
+				{"组员改名", http.MethodPatch, "", "manage_workspace"},
+				{"组员重置邀请码", http.MethodPost, "/invite/reset", "manage_members"},
+			} {
+				r, err := s.c.do(f.method, v1Path(s.v1.ws, f.path), s.v1.member, map[string]any{"name": "组员改名"}, nil)
+				if err != nil {
+					return err
+				}
+				if err := expect(r, http.StatusForbidden, "forbidden"); err != nil {
+					return fmt.Errorf("%s：%w", f.what, err)
+				}
+				var body struct {
+					Permission string `json:"permission"`
+				}
+				if err := r.json(&body); err != nil {
+					return err
+				}
+				if body.Permission != f.permission {
+					return fmt.Errorf("%s：permission 为 %q，应写明缺 %s（v1 §3.2）", f.what, body.Permission, f.permission)
+				}
 			}
 			r, err := s.c.do(http.MethodPatch, v1Path(s.v1.ws, ""), s.v1.leader, map[string]any{"name": "一致性检查 v1 改名", "archived": true}, nil)
 			if err != nil {
