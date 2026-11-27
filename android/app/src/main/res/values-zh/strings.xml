@@ -446,4 +446,14 @@
     <string name="raster_grey">灰度</string>
     <string name="raster_hillshade">山体阴影</string>
     <string name="raster_relief">分层设色</string>
+    <plurals name="files_received">
+        <item quantity="other">已收到 %d 个文件</item>
+    </plurals>
+    <plurals name="files_receive_failed">
+        <item quantity="other">%d 个文件读不到</item>
+    </plurals>
+    <string name="files_receiving">正在接收文件</string>
+    <string name="files_add_to_project">添加到工程</string>
+    <string name="files_import_to_project">导入到工程</string>
+    <string name="choose_project">选择工程</string>
 </resources>

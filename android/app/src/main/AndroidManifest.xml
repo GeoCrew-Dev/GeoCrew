@@ -25,13 +25,53 @@
         android:theme="@style/Theme.GeoCrew">
         <!-- Compose lays the screens out again when the phone turns; the map keeps
              its view, and the screens what they show, instead of starting over. -->
+        <!-- One instance: a file sent from another app goes to the one running (onNewIntent). -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Files other apps open with GeoCrew or share to it: GIS data (GDAL's formats), and files of no
+                 telling type, as .shp and .gpkg often come; they are copied into the GeoCrew folder's 导入. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/vnd.google-earth.kml+xml" />
+                <data android:mimeType="application/vnd.google-earth.kmz" />
+                <data android:mimeType="application/gpx+xml" />
+                <data android:mimeType="application/geo+json" />
+                <data android:mimeType="application/geopackage+sqlite3" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="image/tiff" />
+                <data android:mimeType="image/vnd.dxf" />
+                <data android:mimeType="application/dxf" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.google-earth.kml+xml" />
+                <data android:mimeType="application/vnd.google-earth.kmz" />
+                <data android:mimeType="application/gpx+xml" />
+                <data android:mimeType="application/geo+json" />
+                <data android:mimeType="application/geopackage+sqlite3" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="image/tiff" />
+                <data android:mimeType="image/vnd.dxf" />
+                <data android:mimeType="application/dxf" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
         <service

@@ -466,4 +466,16 @@
     <string name="raster_grey">Grey</string>
     <string name="raster_hillshade">Hillshade</string>
     <string name="raster_relief">Relief</string>
+    <plurals name="files_received">
+        <item quantity="one">Received %d file</item>
+        <item quantity="other">Received %d files</item>
+    </plurals>
+    <plurals name="files_receive_failed">
+        <item quantity="one">%d file could not be read</item>
+        <item quantity="other">%d files could not be read</item>
+    </plurals>
+    <string name="files_receiving">Receiving files</string>
+    <string name="files_add_to_project">Add to a project</string>
+    <string name="files_import_to_project">Import into a project</string>
+    <string name="choose_project">Choose a project</string>
 </resources>

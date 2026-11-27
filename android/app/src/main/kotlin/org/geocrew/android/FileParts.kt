@@ -46,9 +46,11 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.LibraryAdd
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -106,6 +108,7 @@ import org.geocrew.core.action.Outcome
 import org.geocrew.core.files.FileActions
 import org.geocrew.storage.ImportActions
 import org.geocrew.storage.RasterActions
+import org.geocrew.storage.Workspace
 
 /** A file or folder as file.list gives it. */
 internal data class FileEntry(val name: String, val path: String, val kind: String, val modified: Long, val size: Long?, val items: Int?) {
@@ -282,8 +285,7 @@ internal fun FileSheet(
     onRename: () -> Unit,
     onDetails: () -> Unit,
     onDelete: () -> Unit,
-    addTo: String? = null,
-    importing: Boolean = false,
+    addLabel: String? = null,
     onAdd: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -304,10 +306,10 @@ internal fun FileSheet(
                 colors = clear,
                 modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
             )
-            // Into the open project first: what a GIS user came for.
-            if (addTo != null) {
+            // Into a project first: what a GIS user came for.
+            if (addLabel != null) {
                 ListItem(
-                    headlineContent = { Text(stringResource(if (importing) R.string.files_import_to else R.string.files_add_to, addTo), color = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(addLabel, color = MaterialTheme.colorScheme.primary) },
                     leadingContent = { Icon(Icons.Rounded.LibraryAdd, null, tint = MaterialTheme.colorScheme.primary) },
                     colors = clear,
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onAdd),
@@ -648,5 +650,36 @@ internal fun shareAll(context: Context, files: List<File>, title: String) {
             Intent(Intent.ACTION_SEND_MULTIPLE).setType(type).putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files.map { uriOf(context, it) }))
         }
         context.startActivity(Intent.createChooser(send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), title))
+    }
+}
+
+/** The projects to choose from, latest change first (project.list); [onPick] gets the name of the one chosen. */
+@Composable
+internal fun ProjectPickDialog(graph: AppGraph, title: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    var names by remember { mutableStateOf<List<String>?>(null) }
+    LaunchedEffect(Unit) {
+        names = ((graph.invoke(Workspace.LIST) as? Outcome.Done)?.output?.jsonObject?.get("projects") as? JsonArray).orEmpty()
+            .mapNotNull { ((it as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull }
+    }
+    AppDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    ) {
+        val shown = names
+        when {
+            shown == null -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            shown.isEmpty() -> Text(stringResource(R.string.projects_empty_title))
+            else -> Column {
+                for (name in shown) {
+                    ListItem(
+                        headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        leadingContent = { Icon(Icons.Rounded.Map, null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { onPick(name) },
+                    )
+                }
+            }
+        }
     }
 }
