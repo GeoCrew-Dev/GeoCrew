@@ -158,6 +158,34 @@ class Projects(private val root: File, private val journals: File) {
         return open(project.name)
     }
 
+    /**
+     * Puts [project] back as it was in its snapshot [day] (ADR 0004): the file
+     * as it is goes first into the snapshot folder as 恢复前-<time>.gpkg (kept
+     * out of the seven, to delete by hand), then the snapshot is copied in its
+     * place and the project opened again. Attachments stay: edits never change
+     * or delete their files. Returns the project opened again, and the copy.
+     */
+    fun restore(project: Project, day: String): Pair<Project, File> {
+        val snapshot = File(project.snapshots, "$day.gpkg")
+        require(SNAPSHOT_NAME.matches(snapshot.name) && snapshot.isFile) { "there is no snapshot $day" }
+        val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+        val kept = File(project.snapshots, "$RESTORED_PREFIX$stamp.gpkg")
+        project.keepCopy(kept)
+        val file = project.file
+        val name = project.name
+        project.close()
+        val part = File(file.parentFile, ".${file.name}.restoring")
+        try {
+            snapshot.copyTo(part, overwrite = true)
+            // The log of the file being replaced goes with it.
+            for (suffix in listOf("-wal", "-shm", "-journal")) File(file.path + suffix).delete()
+            check(part.renameTo(file) || (file.delete() && part.renameTo(file))) { "cannot put the snapshot in place of $file" }
+        } finally {
+            part.delete()
+        }
+        return open(name, snapshot = false) to kept
+    }
+
     companion object {
         /** The folder in the GeoCrew folder where exports (and map screenshots) go. */
         const val EXPORTS = "导出"
@@ -303,6 +331,12 @@ internal fun rowCount(ds: VectorDataset, layer: String): Long {
 
 /** How many daily snapshots a project keeps: a week of field days. */
 const val SNAPSHOTS_KEPT = 7
+
+// A snapshot's name: its date (also for listing and restoring them).
+internal val SNAPSHOT_NAME = Regex("""\d{4}-\d{2}-\d{2}\.gpkg""")
+
+// The name of the copy a project's file goes to before a snapshot is put in its place, then the time.
+const val RESTORED_PREFIX = "恢复前-"
 
 // A snapshot's name: its date.
 private val SNAPSHOT = Regex("""\d{4}-\d{2}-\d{2}\.gpkg""")
@@ -833,6 +867,24 @@ class Project internal constructor(
     /** The folder of the project's daily snapshots. */
     val snapshots: File get() = File(folder, ProjectFormat.SNAPSHOTS)
 
+    /** The days the project has a snapshot of (2026-11-27), newest first. */
+    val snapshotDays: List<String>
+        get() = snapshots.listFiles { f -> SNAPSHOT_NAME.matches(f.name) }.orEmpty().map { it.name.removeSuffix(".gpkg") }.sortedDescending()
+
+    // A consistent copy of the project's file at [target], as a snapshot is made (VACUUM INTO), written under another name first.
+    internal fun keepCopy(target: File) {
+        check(target.parentFile?.let { it.isDirectory || it.mkdirs() } == true) { "cannot make the folder ${target.parentFile}" }
+        val part = File(target.parentFile, ".${target.name}.part")
+        part.delete()
+        try {
+            dataset.sql("VACUUM INTO ${quote(part.path)}")
+            VectorDataset.open(part.path, update = true).use { it.sql("PRAGMA journal_mode=DELETE") }
+            check(part.renameTo(target)) { "cannot name the copy $target" }
+        } finally {
+            part.delete()
+        }
+    }
+
     /** Why the day's snapshot could not be made when the project opened; null when it was, or was there already. */
     var snapshotFailure: String? = null
         internal set
@@ -1164,7 +1216,14 @@ class Project internal constructor(
         return EditTarget(VectorLayerStore(dataset, found.name, found.id), FileJournal(File(journals, "${found.id}.jsonl")), found.srs)
     }
 
-    override fun close() = dataset.close()
+    /** Whether the project has been closed: its file is no longer open. */
+    var closed = false
+        private set
+
+    override fun close() {
+        closed = true
+        dataset.close()
+    }
 
     companion object {
         // Tables of GeoPackage, its spatial indexes, SQLite and GeoCrew itself.

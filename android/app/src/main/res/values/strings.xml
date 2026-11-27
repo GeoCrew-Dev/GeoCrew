@@ -565,4 +565,9 @@
     <string name="add_part_point">New point layer</string>
     <string name="add_part_line">New line layer</string>
     <string name="add_part_polygon">New area layer</string>
+    <string name="snapshots_section">Snapshots</string>
+    <string name="snapshots_none">No snapshots yet</string>
+    <string name="snapshot_restore">Restore</string>
+    <string name="snapshot_restore_title">Restore the snapshot of %1$s?</string>
+    <string name="snapshot_restore_body">The project as it is now is kept in the snapshot folder first.</string>
 </resources>

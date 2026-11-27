@@ -74,12 +74,33 @@ class SnapshotsTest {
 
         // The newest seven stay.
         for (day in 1..8) today.copyTo(File(folder, "2020-01-0$day.gpkg"))
+        // A copy kept before a restore is not one of the seven.
+        today.copyTo(File(folder, "${RESTORED_PREFIX}20200101-000000.gpkg"))
         today.delete()
         reopen()
         assertEquals(
             listOf("2020-01-04", "2020-01-05", "2020-01-06", "2020-01-07", "2020-01-08", LocalDate.now().toString()).map { "$it.gpkg" }.let { listOf("2020-01-03.gpkg") + it },
-            folder.list()!!.sorted(),
+            folder.list()!!.filter { !it.startsWith(RESTORED_PREFIX) }.sorted(),
         )
+        assertTrue(File(folder, "${RESTORED_PREFIX}20200101-000000.gpkg").isFile)
+
+        // Put back as it was in a snapshot: the project as it is kept first, nothing unsaved.
+        reopen()
+        run(Editing.START, """{"layer": "野外点"}""")
+        run(Editing.ADD, """{"layer": "野外点", "properties": {"点名": "D002"}}""")
+        assertEquals("unsaved", (run(Workspace.RESTORE, """{"day": "${LocalDate.now()}"}""") as Outcome.Failed).code)
+        run(Editing.SAVE, """{"layer": "野外点"}""")
+        val days = (run(Workspace.SNAPSHOTS) as Outcome.Done).output.jsonObject.getValue("days").jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(LocalDate.now().toString(), days.first(), "newest first")
+        val restored = (run(Workspace.RESTORE, """{"day": "${LocalDate.now()}"}""") as Outcome.Done).output.jsonObject
+        val features = (run(Workspace.FEATURES, """{"layer": "野外点"}""") as Outcome.Done).output.jsonObject.getValue("features").jsonArray
+        assertEquals(listOf("D001"), features.map { it.jsonObject.getValue("properties").jsonObject.getValue("点名").jsonPrimitive.content }, "as it was")
+        val kept = File(restored.getValue("kept").jsonPrimitive.content)
+        assertTrue(kept.isFile && kept.name.startsWith(RESTORED_PREFIX), kept.path)
+        VectorDataset.open(kept.path).use { ds ->
+            assertEquals(2, Json.parseToJsonElement(ds.sql("SELECT \"点名\" FROM \"野外点\"")).jsonArray.size, "the project as it was before, kept")
+        }
+        assertIs<Outcome.Failed>(run(Workspace.RESTORE, """{"day": "1999-01-01"}"""))
 
         // A snapshot that cannot be made does not stop the project opening.
         folder.deleteRecursively()

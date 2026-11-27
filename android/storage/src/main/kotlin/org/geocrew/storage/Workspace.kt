@@ -418,6 +418,32 @@ class Workspace(private val projects: Projects) {
             val moved = Crs.transform(p.getValue("from").jsonPrimitive.content, p.getValue("to").jsonPrimitive.content, xy)
             ActionResult.Done(buildJsonObject { putJsonArray("xy") { for (v in moved) if (v.isFinite()) add(v) else add(JsonNull) } })
         },
+        WorkspaceAction(
+            SNAPSHOTS, "Project snapshots", "The days the open project has a daily snapshot of (ADR 0004), newest first",
+            Risk.VIEW, NO_PARAMS, "{}",
+        ) {
+            val project = checkNotNull(current) { "no project is open" }
+            ActionResult.Done(buildJsonObject { putJsonArray("days") { project.snapshotDays.forEach { add(it) } } })
+        },
+        WorkspaceAction(
+            RESTORE, "Restore snapshot",
+            "Puts the open project back as it was in a daily snapshot (ADR 0004), once no layer has unsaved edits; the project as it was " +
+                "goes first into the snapshot folder (kept: its path). Undo cannot take it back; the kept copy can",
+            Risk.DELETE, RESTORE_PARAMS, """{"day": "2026-11-27"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            unsaved()?.let { return@WorkspaceAction it }
+            val day = p.getValue("day").jsonPrimitive.content
+            require(day in project.snapshotDays) { "there is no snapshot $day" }
+            val ended = stopEditing()
+            val (restored, kept) = runCatching { projects.restore(project, day) }.getOrElse { e ->
+                // Closed on the way: the project as it is, opened again.
+                if (project.closed) current = runCatching { projects.open(project.name, snapshot = false) }.getOrNull()
+                throw e
+            }
+            current = restored
+            ActionResult.Done(JsonObject(about(restored) + ("kept" to JsonPrimitive(kept.path))), endsUndo = ended)
+        },
         WorkspaceAction(CLOSE, "Close project", "Closes the open project, once no layer has unsaved edits", Risk.VIEW, NO_PARAMS, "{}") {
             unsaved() ?: run {
                 val ended = stopEditing()
@@ -602,6 +628,8 @@ class Workspace(private val projects: Projects) {
         const val BASEMAP_DISPLAY = "basemap.display"
         const val LAYER_ORDER = "layer.order"
         const val LAYER_MOVE = "layer.move"
+        const val SNAPSHOTS = "project.snapshots"
+        const val RESTORE = "project.restore"
         const val LAYER_PART = "layer.part.create"
         const val GROUP_CREATE = "layer.group.create"
         const val GROUP_RENAME = "layer.group.rename"
@@ -703,6 +731,9 @@ class Workspace(private val projects: Projects) {
             """{"type": "object", "additionalProperties": false, "required": ["layer", "geometry"],
                 "properties": {"layer": {"type": "string"}, "geometry": {"enum": ["POINT", "LINESTRING", "POLYGON"]}, "language": {"type": "string"},
                 "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}}}""",
+        )
+        private val RESTORE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["day"], "properties": {"day": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"}}}""",
         )
         private val MOVE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["index"],
