@@ -80,6 +80,24 @@ internal object Outbox {
         }
     }
 
+    /**
+     * Queues the features of layer [layer] (id [layerId]) that the workspace
+     * has not had, whole, as new rows: the project joins a workspace (protocol
+     * v1 5.6). Features already queued or sent keep their rows, so it can run
+     * again after a share cut short.
+     */
+    fun enqueueNew(ds: VectorDataset, layer: String, layerId: String, features: List<Feature>, now: Long = System.currentTimeMillis()) {
+        ds.sql(ProjectFormat.ROWS_SCHEMA)
+        ds.sql(ProjectFormat.OUTBOX_SCHEMA)
+        val ids = fieldIds(ds, layer)
+        for (f in features) {
+            if (lookup(ds, layerId, f.fid) != null) continue
+            val row = newRow(ds, layerId, f.fid)
+            for ((name, value) in f.properties) ids[name]?.let { put(ds, row, layerId, it, value, now) }
+            put(ds, row, layerId, GEOMETRY, f.geometry ?: JsonNull, now)
+        }
+    }
+
     /** The row id of feature [fid] of layer [layerId], if it has one. */
     fun rowId(ds: VectorDataset, layerId: String, fid: Long): String? =
         if (exists(ds, ProjectFormat.ROWS_TABLE)) lookup(ds, layerId, fid) else null

@@ -32,6 +32,7 @@ kotlin {
 dependencies {
     api(project(":core:project"))
     implementation(project(":core:layers"))
+    implementation(project(":core:sync"))
     compileOnly(files(nativeAar))
     androidTestImplementation(files(nativeAar))
     androidTestImplementation(libs.androidx.test.runner)
