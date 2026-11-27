@@ -86,9 +86,11 @@ private val LAYER_COLORS = listOf(
 private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
 /**
- * Which layer a new point goes into: the project's point layers, a new layer,
- * and "remember", after which points go into the chosen layer without asking
- * until the project settings say otherwise or the layer is gone.
+ * Which layer a new feature goes into: the layers, a new layer, and
+ * "remember", after which features go into the chosen layer without asking
+ * until the project settings say otherwise or the layer is gone. With [kind]
+ * the feature's kind comes first (ADR 0017): point, line or area, chosen at
+ * the top ([onKind]), and only the layers that take it are listed.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +101,8 @@ fun LayerPicker(
     onNew: (remember: Boolean) -> Unit,
     onDismiss: () -> Unit,
     showRemember: Boolean = true,
+    kind: LayerKind? = null,
+    onKind: (LayerKind) -> Unit = {},
 ) {
     var remember by remember { mutableStateOf(false) }
     val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -109,7 +113,16 @@ fun LayerPicker(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
-            for (layer in layers) {
+            if (kind != null) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    LayerKind.entries.forEachIndexed { i, k ->
+                        SegmentedButton(selected = kind == k, onClick = { onKind(k) }, shape = SegmentedButtonDefaults.itemShape(i, LayerKind.entries.size)) {
+                            Text(stringResource(k.label))
+                        }
+                    }
+                }
+            }
+            for (layer in if (kind == null) layers else layers.filter { kind.takenBy(it.geometry) }) {
                 ListItem(
                     headlineContent = { Text(layer.name) },
                     supportingContent = { Text(pluralStringResource(countOf(layer.geometry), layer.count, layer.count)) },
@@ -168,6 +181,7 @@ fun NewLayerDialog(
     graph: AppGraph? = null,
     near: Pair<Double, Double>? = null,
     kinds: Boolean = false,
+    startKind: LayerKind = LayerKind.POINT,
 ) {
     // The first name not taken: 野外点, 野外点 2, ...
     fun free(base: String) = generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base $it" }.first { n -> existing.none { it.equals(n, ignoreCase = true) } }
@@ -176,8 +190,8 @@ fun NewLayerDialog(
         LayerKind.LINE to stringResource(R.string.layer_default_line),
         LayerKind.POLYGON to stringResource(R.string.layer_default_polygon),
     )
-    var kind by remember { mutableStateOf(LayerKind.POINT) }
-    var name by remember { mutableStateOf(free(suggested)) }
+    var kind by remember { mutableStateOf(startKind) }
+    var name by remember { mutableStateOf(free(suggestions.getValue(startKind))) }
     var srs by remember { mutableStateOf(Crs.LONGITUDE_LATITUDE) }
     val trimmed = name.trim()
     val taken = existing.any { it.equals(trimmed, ignoreCase = true) }
@@ -231,11 +245,26 @@ fun NewLayerDialog(
     )
 }
 
-/** What a new layer holds, and the template it is made from. */
-private enum class LayerKind(val template: String, val label: Int) {
+/** What a feature or a new layer is: a point, a line or an area, and the template a new layer is made from. */
+enum class LayerKind(val template: String, val label: Int) {
     POINT("field-point", R.string.layer_kind_point),
     LINE("field-line", R.string.layer_kind_line),
     POLYGON("field-polygon", R.string.layer_kind_polygon),
+    ;
+
+    /** Whether a layer of [geometry] takes this kind: its own, or any kind for a layer of mixed geometry (GEOMETRY). */
+    fun takenBy(geometry: String?): Boolean = of(geometry).let { it == null || it == this }
+
+    companion object {
+        /** The kind a layer of [geometry] holds (multi types too); null for mixed geometry, which takes any. */
+        fun of(geometry: String?): LayerKind? = when {
+            geometry == null -> null
+            geometry.contains("POLYGON") -> POLYGON
+            geometry.contains("LINE") -> LINE
+            geometry.contains("POINT") -> POINT
+            else -> null
+        }
+    }
 }
 
 /**

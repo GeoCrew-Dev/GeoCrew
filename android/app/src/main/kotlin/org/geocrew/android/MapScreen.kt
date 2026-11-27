@@ -787,8 +787,13 @@ fun MapScreen(
         scope.launch { center = mapView.awaitMap().cameraPosition.target?.wrap() }
     }
 
+    // A feature of the layer's own kind; one of mixed geometry takes the kind chosen in the add sheet.
     fun startAdding(layer: MapLayer) {
-        if (layer.geometry == "POINT") startPlacing(layer.name) else startDrawing(layer.name, holdsAreas(layer.geometry))
+        when (LayerKind.of(layer.geometry) ?: graph.settings.addKind) {
+            LayerKind.POINT -> startPlacing(layer.name)
+            LayerKind.LINE -> startDrawing(layer.name, area = false)
+            LayerKind.POLYGON -> startDrawing(layer.name, area = true)
+        }
     }
 
     // Placing asks which layer the point goes into: not when the user chose to
@@ -1557,6 +1562,8 @@ fun MapScreen(
                 naming = true
             },
             onDismiss = { picking = false },
+            kind = graph.settings.addKind,
+            onKind = graph.settings::changeAddKind,
         )
     }
     moving?.let { (layer, fid) ->
@@ -1613,6 +1620,7 @@ fun MapScreen(
             graph = graph,
             near = mapCenter?.let { it.longitude to it.latitude },
             kinds = true,
+            startKind = graph.settings.addKind,
         )
     }
     shapeDraft?.let { d ->
