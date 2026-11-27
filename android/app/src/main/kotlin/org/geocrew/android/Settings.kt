@@ -57,6 +57,15 @@ class AppSettings(context: Context) {
         prefs.edit { putBoolean(ROTATION_LOCKED, on) }
     }
 
+    /** Whether drawing snaps to the vertices and edges of features near the crosshair. */
+    var snapping by mutableStateOf(prefs.getBoolean(SNAPPING, true))
+        private set
+
+    fun changeSnapping(on: Boolean) {
+        snapping = on
+        prefs.edit { putBoolean(SNAPPING, on) }
+    }
+
     /** The tools on the map's toolbar, in order (MapTool); the default until the user changes it. */
     var toolbar by mutableStateOf(prefs.getString(TOOLBAR, null)?.split(',')?.mapNotNull(MapTool::of) ?: MapTool.DEFAULT)
         private set
@@ -126,6 +135,7 @@ class AppSettings(context: Context) {
         const val LOCATION_ASKED = "location_asked"
         const val BASEMAP_KIND = "basemap_kind:"
         const val ROTATION_LOCKED = "rotation_locked"
+        const val SNAPPING = "snapping"
         const val RECENT_CRS = "recent_crs"
         const val RECENT_CRS_KEPT = 8
         const val FILE_SORT = "file_sort"

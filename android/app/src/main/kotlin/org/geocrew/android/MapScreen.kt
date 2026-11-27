@@ -72,6 +72,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -175,6 +176,25 @@ fun MapScreen(
     var layers by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     // Each layer as layer.features gives it, by name.
     var collections by remember { mutableStateOf<Map<String, JsonObject>>(emptyMap()) }
+    // The features by their ids on the map ("layer index/fid"), with their exact coordinates, for snapping to.
+    val featuresById by remember {
+        derivedStateOf {
+            buildMap {
+                layers.forEachIndexed { index, l ->
+                    for (f in (collections[l.name()]?.get("features") as? JsonArray).orEmpty()) {
+                        val o = f as? JsonObject ?: continue
+                        val fid = (o["id"] as? JsonPrimitive)?.contentOrNull ?: continue
+                        put("$index/$fid", o)
+                    }
+                }
+            }
+        }
+    }
+    // Where the crosshair snaps to while drawing, when it is near a vertex or an edge.
+    var snapped by remember { mutableStateOf<LatLng?>(null) }
+
+    // The map id of the feature a drawing reshapes, which it does not snap to; null for a new one.
+    fun reshapedId(d: Drawing): String? = d.fid?.let { fid -> layers.indexOfFirst { it.name() == d.layer }.takeIf { it >= 0 }?.let { "$it/$fid" } }
     var styleLoads by remember { mutableIntStateOf(0) }
     var history by remember { mutableStateOf(false to false) }
     var placing by remember { mutableStateOf(false) }
@@ -410,7 +430,8 @@ fun MapScreen(
                     d.picked != null -> drawing = d.copy(picked = null)
                     else -> {
                         drawingHistory = drawingHistory + d
-                        drawing = d.copy(vertices = d.vertices + point.wrap())
+                        val to = if (graph.settings.snapping) snap(map, at, d, featuresById, reshapedId(d), SNAP_REACH * density, SNAP_LAYERS) else null
+                        drawing = d.copy(vertices = d.vertices + (to ?: point.wrap()))
                     }
                 }
                 return@addOnMapClickListener true
@@ -514,17 +535,25 @@ fun MapScreen(
                 // A drawing's vertices are marked by role: the picked one bigger and blue, the middles of sides small and hollow.
                 CircleLayer("$MEASURE_SOURCE-points", MEASURE_SOURCE).withProperties(
                     PropertyFactory.circleRadius(
-                        Expression.match(Expression.get("role"), Expression.literal(5f), Expression.stop("picked", 9f), Expression.stop("middle", 4f)),
+                        Expression.match(
+                            Expression.get("role"), Expression.literal(5f),
+                            Expression.stop("picked", 9f), Expression.stop("middle", 4f), Expression.stop("snap", 12f),
+                        ),
                     ),
                     PropertyFactory.circleColor(
                         Expression.toColor(
-                            Expression.match(Expression.get("role"), Expression.literal(MEASURE_COLOR), Expression.stop("picked", PICKED_COLOR), Expression.stop("middle", "#ffffff")),
+                            Expression.match(
+                                Expression.get("role"), Expression.literal(MEASURE_COLOR),
+                                Expression.stop("picked", PICKED_COLOR), Expression.stop("middle", "#ffffff"), Expression.stop("snap", "rgba(0, 0, 0, 0)"),
+                            ),
                         ),
                     ),
                     PropertyFactory.circleStrokeColor(
-                        Expression.toColor(Expression.match(Expression.get("role"), Expression.literal("#ffffff"), Expression.stop("middle", MEASURE_COLOR))),
+                        Expression.toColor(
+                            Expression.match(Expression.get("role"), Expression.literal("#ffffff"), Expression.stop("middle", MEASURE_COLOR), Expression.stop("snap", SNAP_COLOR)),
+                        ),
                     ),
-                    PropertyFactory.circleStrokeWidth(2f),
+                    PropertyFactory.circleStrokeWidth(Expression.match(Expression.get("role"), Expression.literal(2f), Expression.stop("snap", 3f))),
                 ).withFilter(Expression.eq(Expression.geometryType(), Expression.literal("Point"))),
             )
             addTrackLayers(style)
@@ -549,12 +578,24 @@ fun MapScreen(
         onDispose { mapView.getMapAsync { graph.cameras[project] = it.cameraPosition } }
     }
 
-    LaunchedEffect(styleLoads, measuring, measured, drawing, center) {
+    // While drawing, the crosshair snaps to a vertex or an edge near it.
+    LaunchedEffect(drawing, center, featuresById, graph.settings.snapping) {
+        val d = drawing
+        val c = center
+        if (d == null || c == null || !graph.settings.snapping) {
+            snapped = null
+            return@LaunchedEffect
+        }
+        val map = mapView.awaitMap()
+        snapped = snap(map, map.projection.toScreenLocation(c), d, featuresById, reshapedId(d), SNAP_REACH * density, SNAP_LAYERS)
+    }
+
+    LaunchedEffect(styleLoads, measuring, measured, drawing, center, snapped) {
         val style = mapView.awaitMap().style ?: return@LaunchedEffect
         val mode = measuring
         val d = drawing
         val shown = when {
-            d != null -> drawingGeoJson(d, center)
+            d != null -> drawingGeoJson(d, snapped ?: center, snapped = snapped != null)
             mode == null -> measureGeoJson(MeasureMode.DISTANCE, emptyList())
             else -> measureGeoJson(mode, measured)
         }
@@ -706,7 +747,7 @@ fun MapScreen(
     fun putVertex() {
         val d = drawing ?: return
         val i = d.picked ?: return
-        val at = center ?: return
+        val at = snapped ?: center ?: return
         // Put down where it was, it is no change to go back on.
         if (at == d.vertices.getOrNull(i)) drawing = d.copy(moving = false) else editDrawing(d.copy(vertices = d.vertices.toMutableList().apply { set(i, at) }, moving = false))
     }
@@ -1110,6 +1151,7 @@ fun MapScreen(
             }
             MapTool.BOOKMARKS -> bookmarkAction(Workspace.BOOKMARKS)
             MapTool.LOCK_ROTATION -> graph.settings.lockRotation(!graph.settings.rotationLocked)
+            MapTool.SNAP -> graph.settings.changeSnapping(!graph.settings.snapping)
             MapTool.MEASURE_DISTANCE -> measureOrStop(MeasureMode.DISTANCE)
             MapTool.MEASURE_AREA -> measureOrStop(MeasureMode.AREA)
             MapTool.AZIMUTH -> measureOrStop(MeasureMode.AZIMUTH)
@@ -1133,6 +1175,7 @@ fun MapScreen(
             MapTool.UNDO -> plain.copy(enabled = history.first)
             MapTool.REDO -> plain.copy(enabled = history.second)
             MapTool.ADD_FEATURE -> plain.copy(enabled = projectId != null)
+            MapTool.SNAP -> plain.copy(on = graph.settings.snapping)
             // A locked map is always north up.
             MapTool.NORTH_UP -> plain.copy(enabled = !graph.settings.rotationLocked)
             MapTool.LOCK_ROTATION -> if (graph.settings.rotationLocked) ToolState(stringResource(R.string.tool_unlock_rotation), Icons.Rounded.ScreenRotation, on = true) else plain
@@ -1323,7 +1366,7 @@ fun MapScreen(
                     ExtendedFloatingActionButton(
                         onClick = {
                             scope.launch {
-                                val at = mapView.awaitMap().cameraPosition.target?.wrap() ?: return@launch
+                                val at = snapped ?: mapView.awaitMap().cameraPosition.target?.wrap() ?: return@launch
                                 addVertex(at)
                             }
                         },
@@ -1773,6 +1816,11 @@ private const val MEASURE_COLOR = "#ff6d00"
 
 // A drawing's picked vertex.
 private const val PICKED_COLOR = "#1565c0"
+
+// Where drawing snaps: how near, in dp, the layers it snaps to, and the ring that shows it.
+private const val SNAP_REACH = 16
+private val SNAP_LAYERS = arrayOf(POINT_SOURCE, FEATURE_LINE, FEATURE_FILL)
+private const val SNAP_COLOR = "#d500f9"
 
 // Feature properties the map reads: the colour of the point's layer.
 private const val COLOR = "_color"

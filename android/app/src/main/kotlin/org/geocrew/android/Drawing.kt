@@ -89,9 +89,10 @@ data class Drawing(
  * [drawing] for the map, with the crosshair at [center]: the area or line,
  * then each vertex (the picked one marked "picked") and, while nothing is
  * being moved, the middles of the sides where a vertex can be put in
- * ("middle"). Features carry their role in the property "role".
+ * ("middle"); with [snapped], a ring where the crosshair snapped ("snap").
+ * Features carry their role in the property "role".
  */
-fun drawingGeoJson(drawing: Drawing, center: LatLng?): JsonObject {
+fun drawingGeoJson(drawing: Drawing, center: LatLng?, snapped: Boolean = false): JsonObject {
     val shown = drawing.shown(center)
     val base = measureGeoJson(if (drawing.area) MeasureMode.AREA else MeasureMode.DISTANCE, shown)
     val shapes = base.getValue("features").let { it as JsonArray }.filter { f ->
@@ -107,9 +108,10 @@ fun drawingGeoJson(drawing: Drawing, center: LatLng?): JsonObject {
     }
     val points = shown.mapIndexed { i, p -> point(p, if (i == drawing.picked) "picked" else "vertex") }
     val middles = if (drawing.moving) emptyList() else drawing.middles().map { (_, p) -> point(p, "middle") }
+    val snap = listOfNotNull(center?.takeIf { snapped }?.let { point(it, "snap") })
     return buildJsonObject {
         put("type", "FeatureCollection")
-        put("features", JsonArray(shapes + middles + points))
+        put("features", JsonArray(shapes + middles + points + snap))
     }
 }
 

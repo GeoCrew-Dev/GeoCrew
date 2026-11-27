@@ -2,8 +2,8 @@ package org.geocrew.android
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.FilterCenterFocus
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MyLocation
@@ -64,6 +65,7 @@ enum class MapTool(val id: String, val group: Int?, val label: Int, val icon: Im
     UNDO("undo", R.string.menu_edit, R.string.map_undo, Icons.AutoMirrored.Rounded.Undo),
     REDO("redo", R.string.menu_edit, R.string.map_redo, Icons.AutoMirrored.Rounded.Redo),
     ADD_FEATURE("add_feature", R.string.menu_edit, R.string.tool_add_feature, Icons.Rounded.AddCircleOutline),
+    SNAP("snap", R.string.menu_edit, R.string.tool_snap, Icons.Rounded.FilterCenterFocus),
     SHOW_ALL("show_all", R.string.menu_map, R.string.tool_show_all, Icons.Rounded.ZoomOutMap),
     GO_TO("go_to", R.string.menu_map, R.string.tool_go_to, Icons.Rounded.NearMe),
     NORTH_UP("north_up", R.string.menu_map, R.string.tool_north_up, Icons.Rounded.Explore),
