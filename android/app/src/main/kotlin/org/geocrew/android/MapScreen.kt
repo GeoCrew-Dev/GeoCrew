@@ -124,14 +124,17 @@ import androidx.lifecycle.compose.currentStateAsState
 import java.io.File
 import java.io.IOException
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonArray
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -142,6 +145,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
@@ -154,6 +158,7 @@ import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
@@ -217,6 +222,8 @@ fun MapScreen(
     // Layers in a projected CRS, by name: their points can be entered as X and Y.
     var projected by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var basemaps by remember { mutableStateOf<List<BasemapInfo>>(emptyList()) }
+    // The project's rasters, under its layers.
+    var rasters by remember { mutableStateOf<List<RasterInfo>>(emptyList()) }
     // Where the map looks, as it settles: the Gauss-Kruger zone of a new layer follows it.
     var mapCenter by remember { mutableStateOf<LatLng?>(null) }
     val convert: suspend (String, String, Double, Double) -> Pair<Double, Double>? = { from, to, x, y ->
@@ -328,6 +335,7 @@ fun MapScreen(
         projectId = (about["id"] as? JsonPrimitive)?.contentOrNull
         layers = about["layers"]?.jsonArray.orEmpty().map { it.jsonObject }
         basemaps = listedBasemaps(about)
+        rasters = listedRasters(about)
         val kinds = HashMap<String, String>()
         for (l in layers) {
             val name = l.name() ?: continue
@@ -376,10 +384,17 @@ fun MapScreen(
                 // Back from the layers page with a layer to show in full, or from a table with a feature to open.
                 graph.zoomTo?.let { zoom ->
                     graph.zoomTo = null
-                    val features = (collections[zoom.layer]?.get("features") as? JsonArray).orEmpty()
-                    val shown = if (zoom.fid == null) features else features.filter { (it as? JsonObject)?.get("id")?.jsonPrimitive?.longOrNull == zoom.fid }
-                    fit(mapView.awaitMap(), JsonArray(shown), density)
-                    if (zoom.fid != null && shown.isNotEmpty()) selected = zoom.layer to zoom.fid
+                    val bounds = zoom.bounds
+                    if (bounds != null && bounds.size == 4) {
+                        // A raster's extent, from the layers page.
+                        val (west, south, east, north) = bounds
+                        mapView.awaitMap().animateCamera(CameraUpdateFactory.newLatLngBounds(LatLngBounds.from(north, east, south, west), (48 * density).toInt()))
+                    } else {
+                        val features = (collections[zoom.layer]?.get("features") as? JsonArray).orEmpty()
+                        val shown = if (zoom.fid == null) features else features.filter { (it as? JsonObject)?.get("id")?.jsonPrimitive?.longOrNull == zoom.fid }
+                        fit(mapView.awaitMap(), JsonArray(shown), density)
+                        if (zoom.fid != null && shown.isNotEmpty()) selected = zoom.layer to zoom.fid
+                    }
                 }
             }
             else -> failure = texts.of(opened)
@@ -514,6 +529,17 @@ fun MapScreen(
             else -> measureGeoJson(mode, measured)
         }
         style.getSourceAs<GeoJsonSource>(MEASURE_SOURCE)?.setGeoJson(shown.toString())
+    }
+
+    // The project's rasters under its layers. The files they draw (VRTs for some) are made ready off the main thread.
+    LaunchedEffect(styleLoads, rasters) {
+        val style = mapView.awaitMap().style ?: return@LaunchedEffect
+        val files = withContext(Dispatchers.IO) {
+            if (runCatching { graph.start() }.isFailure) return@withContext emptyMap()
+            rasters.filter { !it.missing }.mapNotNull { r -> runCatching { r.id to RasterTiles.fileFor(context, r) }.getOrNull() }.toMap()
+        }
+        // The style may have been replaced meanwhile; the next run shows them there.
+        if (mapView.awaitMap().style === style) showRasters(style, rasters, files, below = FEATURE_FILL)
     }
 
     // The track as it grows; it goes when it is saved or thrown away.
@@ -807,9 +833,22 @@ fun MapScreen(
     }
 
     // Every point of every layer in view.
+    // Every feature of every layer in view, and the rasters shown, by their extents.
     fun showAll() = scope.launch {
         val shown = layers.filter { it.text("visible") != "false" }.mapNotNull { it.name() }
-        val all = JsonArray(shown.flatMap { (collections[it]?.get("features") as? JsonArray).orEmpty() })
+        val boxes = rasters.filter { it.visible && !it.missing }.mapNotNull { it.extent }.map { (west, south, east, north) ->
+            buildJsonObject {
+                put("type", "Feature")
+                putJsonObject("geometry") {
+                    put("type", "MultiPoint")
+                    putJsonArray("coordinates") {
+                        addJsonArray { add(west); add(south) }
+                        addJsonArray { add(east); add(north) }
+                    }
+                }
+            }
+        }
+        val all = JsonArray(shown.flatMap { (collections[it]?.get("features") as? JsonArray).orEmpty() } + boxes)
         fit(mapView.awaitMap(), all, density)
     }
 

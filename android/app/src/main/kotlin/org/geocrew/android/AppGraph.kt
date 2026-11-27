@@ -24,8 +24,12 @@ import org.geocrew.storage.RasterActions
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
 
-/** A layer to show in full, or one feature of it ([fid]), which the map then opens. */
-data class Zoom(val layer: String, val fid: Long? = null)
+/**
+ * A layer to show in full, or one feature of it ([fid]), which the map then
+ * opens; or with [bounds] (west, south, east, north) a place to show, as a
+ * raster's extent.
+ */
+data class Zoom(val layer: String, val fid: Long? = null, val bounds: List<Double>? = null)
 
 /** The application: it keeps the app's parts for as long as the process lives. */
 class GeoCrewApplication : Application() {

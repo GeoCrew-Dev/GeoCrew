@@ -44,6 +44,7 @@ dependencies {
     implementation(project(":storage"))
     implementation(project(":core:files"))
     implementation(libs.maplibre)
+    implementation(libs.okhttp)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons)

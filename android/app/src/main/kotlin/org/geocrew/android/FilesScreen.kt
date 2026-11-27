@@ -68,11 +68,15 @@ import androidx.compose.ui.unit.dp
 import java.io.File
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.files.FileActions
+import org.geocrew.storage.RasterActions
+import org.geocrew.storage.Workspace
 
 /**
  * The built-in file manager (ADR 0011), one list in the MD3 way: the GeoCrew
@@ -109,6 +113,11 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
     var making by remember { mutableStateOf(false) }
     var clip by remember { mutableStateOf<Clip?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
+    // The project open now, if any: rasters can be added to it.
+    var project by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        project = ((graph.invoke(Workspace.CURRENT) as? Outcome.Done)?.output?.jsonObject?.get("name") as? JsonPrimitive)?.contentOrNull
+    }
     val snackbar = remember { SnackbarHostState() }
     val texts = FileTexts(
         taken = stringResource(R.string.files_name_taken),
@@ -117,7 +126,11 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
         inside = stringResource(R.string.files_inside),
         gone = stringResource(R.string.files_gone),
         failed = stringResource(R.string.action_failed),
+        notRaster = stringResource(R.string.raster_not_raster),
+        noCrs = stringResource(R.string.raster_no_crs),
+        unreadable = stringResource(R.string.files_cannot_read),
     )
+    val addedText = stringResource(R.string.files_added_to)
     val copiedText = stringResource(R.string.files_copied)
     val movedText = stringResource(R.string.files_moved)
     val shareText = stringResource(R.string.share)
@@ -393,6 +406,17 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
             onDetails = {
                 chosen = null
                 details = listOf(entry)
+            },
+            // A raster goes under the open project's layers; it stays where it is.
+            addTo = project?.takeIf { entry.kind == "raster" },
+            onAdd = {
+                chosen = null
+                act(RasterActions.ADD, buildJsonObject { put("path", entry.path) }) {
+                    scope.launch {
+                        snackbar.currentSnackbarData?.dismiss()
+                        snackbar.showSnackbar(addedText.format(project.orEmpty()))
+                    }
+                }
             },
             onDelete = {
                 chosen = null

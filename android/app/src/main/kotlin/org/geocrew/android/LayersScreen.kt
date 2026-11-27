@@ -2,6 +2,7 @@ package org.geocrew.android
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -23,11 +24,13 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Numbers
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.TableChart
+import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.Visibility
@@ -82,6 +85,7 @@ import kotlinx.serialization.json.putJsonArray
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
 import org.geocrew.core.project.ProjectFormat
+import org.geocrew.storage.RasterActions
 import org.geocrew.storage.Workspace
 
 /** A layer of the open project, in its colour on the map, with its fields and how many features it has once read. */
@@ -123,6 +127,13 @@ fun countOf(geometry: String?): Int = when {
     else -> R.plurals.points_count
 }
 
+/** A raster in a line: its format, and its size in pixels. */
+private fun rasterDetail(raster: RasterInfo): String {
+    fun text(key: String) = (raster.info[key] as? JsonPrimitive)?.contentOrNull
+    val size = text("width")?.let { w -> text("height")?.let { h -> "$w × $h" } }
+    return listOfNotNull(text("format") ?: text("driver"), size).joinToString(" · ")
+}
+
 /** A basemap row's name: the labels (cia), or the base of the Tianditu map [kind] (img, vec, ter). */
 fun basemapName(id: String, kind: String): Int = when {
     id == "cia" -> R.string.basemap_cia
@@ -150,11 +161,21 @@ private data class NewField(val layer: String, val name: String, val type: Strin
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (String) -> Unit = {}, onTable: (String) -> Unit = {}) {
+fun LayersScreen(
+    graph: AppGraph,
+    project: String,
+    onBack: () -> Unit,
+    onZoom: (String) -> Unit = {},
+    onTable: (String) -> Unit = {},
+    onZoomTo: (List<Double>) -> Unit = {},
+    onAddFile: () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var layers by remember { mutableStateOf<List<LayerInfo>>(emptyList()) }
     var basemaps by remember { mutableStateOf<List<BasemapInfo>>(emptyList()) }
+    var rasters by remember { mutableStateOf<List<RasterInfo>>(emptyList()) }
+    var removing by remember { mutableStateOf<RasterInfo?>(null) }
     // Which Tianditu map the base row is: imagery, vector or terrain.
     var kind by remember { mutableStateOf("img") }
     val open = remember { mutableStateMapOf<String, Boolean>() }
@@ -179,6 +200,7 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
             return@LaunchedEffect
         }
         basemaps = listedBasemaps(opened.output.jsonObject)
+        rasters = listedRasters(opened.output.jsonObject)
         kind = (opened.output.jsonObject["id"] as? JsonPrimitive)?.contentOrNull?.let(graph.settings::basemapKind) ?: "img"
         layers = listedLayers(opened.output.jsonObject).mapNotNull { layer ->
             when (val info = graph.invoke(Workspace.LAYER_INFO, buildJsonObject { put("layer", layer.name) })) {
@@ -355,6 +377,52 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
                     }
                 }
             }
+            if (rasters.isNotEmpty()) {
+                item(key = "rasters") { SectionHeader(stringResource(R.string.raster_section)) }
+                for (raster in rasters) {
+                    item(key = "raster:${raster.id}") {
+                        Column(Modifier.animateItem()) {
+                            ListItem(
+                                headlineContent = { Text(raster.name) },
+                                supportingContent = {
+                                    if (raster.missing) {
+                                        Text(stringResource(R.string.raster_missing), color = MaterialTheme.colorScheme.error)
+                                    } else {
+                                        Text(rasterDetail(raster))
+                                    }
+                                },
+                                leadingContent = { Icon(Icons.Rounded.Terrain, null) },
+                                trailingContent = {
+                                    IconButton(onClick = { display(RasterActions.DISPLAY, buildJsonObject { put("name", raster.name); put("visible", !raster.visible) }) }) {
+                                        Icon(
+                                            if (raster.visible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                            stringResource(if (raster.visible) R.string.layer_hide else R.string.layer_show),
+                                        )
+                                    }
+                                },
+                                colors = clear,
+                            )
+                            Column(Modifier.padding(start = 56.dp, end = 16.dp)) {
+                                OpacitySlider(raster.opacity) { opacity ->
+                                    display(RasterActions.DISPLAY, buildJsonObject { put("name", raster.name); put("opacity", opacity.toDouble()) })
+                                }
+                                Row {
+                                    TextButton(onClick = { raster.extent?.let(onZoomTo) }, enabled = raster.extent != null && !raster.missing) {
+                                        Icon(Icons.Rounded.ZoomIn, null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(stringResource(R.string.zoom_to_layer))
+                                    }
+                                    TextButton(onClick = { removing = raster }) {
+                                        Icon(Icons.Rounded.DeleteOutline, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(stringResource(R.string.raster_remove), color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if (basemaps.isNotEmpty()) {
                 item(key = "basemaps") { SectionHeader(stringResource(R.string.basemap_section)) }
                 for (basemap in basemaps.reversed()) {
@@ -383,16 +451,38 @@ fun LayersScreen(graph: AppGraph, project: String, onBack: () -> Unit, onZoom: (
                 }
             }
             item(key = "new") {
-                OutlinedButton(onClick = { naming = true }, modifier = Modifier.animateItem().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.layer_new))
+                // A new layer, or data from a file (a raster for now).
+                FlowRow(Modifier.animateItem().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { naming = true }) {
+                        Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.layer_new))
+                    }
+                    OutlinedButton(onClick = onAddFile) {
+                        Icon(Icons.Rounded.FolderOpen, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.layer_from_file))
+                    }
                 }
                 Spacer(Modifier.height(24.dp))
             }
         }
     }
 
+    removing?.let { raster ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text(stringResource(R.string.raster_remove_title, raster.name)) },
+            text = { Text(stringResource(R.string.raster_remove_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    removing = null
+                    display(RasterActions.REMOVE, buildJsonObject { put("name", raster.name) })
+                }) { Text(stringResource(R.string.raster_remove), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
     if (naming) {
         NewLayerDialog(
             existing = layers.map { it.name },

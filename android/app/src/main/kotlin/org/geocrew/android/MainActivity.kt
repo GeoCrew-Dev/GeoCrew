@@ -127,6 +127,8 @@ private fun App(graph: AppGraph, resumed: Int) {
                 graph, screen.name, onBack = ::pop,
                 onZoom = { backToMap(Zoom(it)) },
                 onTable = { push(Screen.Table(screen.name, it)) },
+                onZoomTo = { backToMap(Zoom("", bounds = it)) },
+                onAddFile = { push(Screen.Files) },
             )
             is Screen.Table -> AttributeTableScreen(graph, screen.name, screen.layer, onBack = ::pop, onFeature = { backToMap(Zoom(screen.layer, it)) })
         }

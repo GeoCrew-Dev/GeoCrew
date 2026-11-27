@@ -45,6 +45,8 @@
 
 2026-11-26 样式模型的第一步：单一符号。每个图层一种颜色、点的半径、线宽和面的填充透明度，存在工程的 `geocrew_layer_style` 表里，一个图层一行 JSON（`{"kind": "single", "color": "#rrggbb", "size", "width", "fill"}`），以后的分类、分级、规则着色用别的 `kind`。没设样式的图层按建立的先后取一种颜色。动作 `layer.style`，改了马上存、不进撤销，和图层显示一样。
 
+2026-11-27 栅格图层按 M1 验证的做法落地：MapLibre 的每个栅格源指向 `https://geocrew.tiles/raster/<栅格 ID>/<文件版本>/{z}/{x}/{y}.png`，应用给 MapLibre 装了自己的 OkHttp 客户端，拦截器拦下这个地址，调 GeoCrew-Native 的 `renderTile` 现场出瓦片，其他请求照常出去。地址里带文件的大小和修改时间，文件换了 MapLibre 的缓存就不会用旧瓦片；出图失败回空瓦片，不抛异常。8 位的灰度、RGB、RGBA 直接出图；调色板图先用 `gdal raster color-map` 转成 RGB 的 VRT，16 位、浮点的先用 `gdal raster scale` 拉伸成 8 位的 VRT（单波段 DEM 现在是灰度，山体阴影以后做），VRT 存在应用私有目录，文件变了重做。栅格源带范围和缩放级别（从栅格只有几个像素大到瓦片像素和原像元一样细，再往上由 MapLibre 放大），画在所有矢量图层下面、底图上面，后加的在上面。OkHttp 原本就随 MapLibre 打包，现在应用直接引用同一版本（4.12.0）。
+
 ## 相关
 
 - [ADR 0003](0003-gis-engine.md)
