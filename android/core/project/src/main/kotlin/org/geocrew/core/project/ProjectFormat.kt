@@ -112,6 +112,20 @@ object ProjectFormat {
     const val SENDING_SCHEMA = "CREATE TABLE IF NOT EXISTS $SENDING_TABLE " +
         "(change TEXT PRIMARY KEY NOT NULL, row TEXT NOT NULL, layer_id TEXT NOT NULL, base_seq INTEGER NOT NULL, body TEXT NOT NULL, rejected TEXT)"
 
+    /**
+     * A linked project's conflict records (protocol v1 6.5, 8.2), as pulls
+     * bring them: the row and field, what kind, the value kept and the one
+     * lost (JSON, with who set it, when and at which seq), and whether someone
+     * resolved it. The page that lists them reads this table.
+     */
+    const val CONFLICTS_TABLE = "geocrew_conflicts"
+    const val CONFLICTS_SCHEMA = "CREATE TABLE IF NOT EXISTS $CONFLICTS_TABLE " +
+        "(id TEXT PRIMARY KEY NOT NULL, layer_id TEXT NOT NULL, row TEXT NOT NULL, field TEXT, kind TEXT NOT NULL, kept TEXT, lost TEXT, " +
+        "resolved INTEGER NOT NULL DEFAULT 0)"
+
+    /** The project's key in its own table for the seq its last pull reached (protocol v1 8.2): where the next one starts. */
+    const val PULLED_KEY = "pulled_seq"
+
     /** The statements that make GeoCrew's own tables in a new project. */
     val SCHEMA = listOf(
         "CREATE TABLE $PROJECT_TABLE (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",

@@ -84,6 +84,8 @@ class SyncPushTest {
                     }
                     Reply(200, buildJsonObject { put("results", results); put("seq", seq) }.toString())
                 }
+                // Pulls bring nothing here: what this test sends is all there is.
+                path.contains("/changes?") -> Reply(200, """{"layers": [], "rows": [], "conflicts": [], "seq": $seq, "more": false}""")
                 else -> Reply(404, """{"error": "not_found", "message": "$path"}""")
             }
         }

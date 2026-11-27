@@ -5,9 +5,12 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import org.geocrew.core.edit.Feature
 import org.geocrew.core.edit.Saved
 import org.geocrew.core.project.ProjectFormat
@@ -96,6 +99,44 @@ internal object Outbox {
             for ((name, value) in f.properties) ids[name]?.let { put(ds, row, layerId, it, value, now) }
             put(ds, row, layerId, GEOMETRY, f.geometry ?: JsonNull, now)
         }
+    }
+
+    /** The feature of layer [layerId] that row [uuid] is, if it has been here. */
+    // Named otherwise: GDAL takes a result's column called fid for the result feature's own id, not a value of it.
+    fun fidOf(ds: VectorDataset, layerId: String, uuid: String): Long? =
+        rows(ds, "SELECT fid AS feature FROM ${ProjectFormat.ROWS_TABLE} WHERE layer_id = ${quote(layerId)} AND uuid = ${quote(uuid)}").firstOrNull()?.get("feature")?.toLongOrNull()
+
+    /** Row [uuid] is feature [fid] of layer [layerId], seen at [seq]: in place of where it was before (a row back after a deletion). */
+    fun map(ds: VectorDataset, layerId: String, fid: Long, uuid: String, seq: Long) {
+        ds.sql("INSERT OR REPLACE INTO ${ProjectFormat.ROWS_TABLE} (layer_id, fid, uuid, seq) VALUES (${quote(layerId)}, $fid, ${quote(uuid)}, $seq)")
+    }
+
+    /** Row [uuid] was last seen at [seq]: the base seq of its next change (protocol v1 8.2). */
+    fun seen(ds: VectorDataset, uuid: String, seq: Long) {
+        ds.sql("UPDATE ${ProjectFormat.ROWS_TABLE} SET seq = $seq WHERE uuid = ${quote(uuid)}")
+    }
+
+    /**
+     * The fields each row still has to send, by row: in the outbox, or in a
+     * change on its way the server has not refused. A pull leaves them as they
+     * are here (protocol v1 8.4).
+     */
+    fun waiting(ds: VectorDataset): Map<String, Set<String>> {
+        val out = HashMap<String, MutableSet<String>>()
+        if (exists(ds, ProjectFormat.OUTBOX_TABLE)) {
+            for (r in rows(ds, "SELECT row, field FROM ${ProjectFormat.OUTBOX_TABLE}")) {
+                out.getOrPut(r.getValue("row")!!) { HashSet() } += r.getValue("field")!!
+            }
+        }
+        if (exists(ds, ProjectFormat.SENDING_TABLE)) {
+            for (r in rows(ds, "SELECT row, body FROM ${ProjectFormat.SENDING_TABLE} WHERE rejected IS NULL")) {
+                val body = Json.parseToJsonElement(r.getValue("body")!!).jsonObject
+                val fields = out.getOrPut(r.getValue("row")!!) { HashSet() }
+                (body["set"] as? JsonObject)?.keys?.let(fields::addAll)
+                if ("delete" in body) fields += DELETED
+            }
+        }
+        return out
     }
 
     /** The row id of feature [fid] of layer [layerId], if it has one. */

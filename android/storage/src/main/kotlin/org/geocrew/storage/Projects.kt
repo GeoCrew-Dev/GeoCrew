@@ -1229,6 +1229,27 @@ class Project internal constructor(
     /** The row id of feature [fid] of layer [layerId] in the workspace, once it has one. */
     internal fun rowId(layerId: String, fid: Long): String? = Outbox.rowId(dataset, layerId, fid)
 
+    /**
+     * Makes layer [name] as a team's workspace has it (protocol v1 7.1, 7.2):
+     * with its id [id], geometry type (as GDAL names it, such as POINT), CRS,
+     * and [fields] (id, name, type) by their ids, so that rows and fields go by
+     * the same ids here and there. Saved at once, not undone.
+     */
+    internal fun createSharedLayer(id: String, name: String, geometry: String, crs: String, fields: List<Triple<String, String, FieldType>>): Layer {
+        checkNewName(name)
+        Crs.describe(crs) // a CRS GDAL does not know is refused before anything is made
+        val described = buildJsonArray {
+            for ((_, field, type) in fields) add(buildJsonObject { put("name", field); put("type", type.name.lowercase()) })
+        }
+        dataset.createLayer(name, geometry, crs, described.toString())
+        dataset.sql("INSERT INTO ${ProjectFormat.LAYERS_TABLE} VALUES (${quote(name)}, ${quote(id)}, NULL)")
+        for ((fieldId, field, _) in fields) {
+            dataset.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES (${quote(name)}, ${quote(field)}, ${quote(fieldId)})")
+        }
+        layers = readLayers(dataset)
+        return layers.single { it.name == name }
+    }
+
     /** [block] with the project's file, for sync (ProjectSync), which writes GeoCrew's own tables in it. */
     internal fun <T> data(block: (VectorDataset) -> T): T = block(dataset)
 
