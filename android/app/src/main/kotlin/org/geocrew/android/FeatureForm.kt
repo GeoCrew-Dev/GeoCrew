@@ -128,12 +128,12 @@ fun FeatureForm(
     // What is deleted: a point, or with [area] a line (false) or an area (true).
     val deleteText = stringResource(when (area) { null -> R.string.feature_delete; false -> R.string.line_delete; true -> R.string.area_delete })
     val deleteTitle = stringResource(when (area) { null -> R.string.feature_delete_title; false -> R.string.line_delete_title; true -> R.string.area_delete_title })
-    val original = remember(properties) { fields.associate { it.name to text(properties[it.name]) } }
+    val original = remember(properties) { fields.associate { it.name to fieldText(properties[it.name]) } }
     val texts = remember(properties) { mutableStateMapOf<String, String>().apply { putAll(original) } }
     val start = remember(coordinates) { coordinates?.let { degrees(it.first) to degrees(it.second) } }
     var longitude by remember(coordinates) { mutableStateOf(start?.first.orEmpty()) }
     var latitude by remember(coordinates) { mutableStateOf(start?.second.orEmpty()) }
-    val problems = fields.associate { it.name to problem(it.type, texts[it.name].orEmpty()) }
+    val problems = fields.associate { it.name to valueProblem(it.type, texts[it.name].orEmpty()) }
     // X and Y in the layer's projected CRS, entered there when chosen; X is the northing, as surveyors write it.
     // X/Y comes up once the converted values are there; until then, and when conversion fails, longitude and latitude.
     var byXY by remember(coordinates, crs) { mutableStateOf(false) }
@@ -157,11 +157,9 @@ fun FeatureForm(
     val latitudeProblem = if (start == null || byXY) null else coordinateProblem(latitude, 90.0, R.string.latitude_range)
     val positionOk = if (byXY) xyReady && eastingProblem == null && northingProblem == null else longitudeProblem == null && latitudeProblem == null
     val canSave = problems.values.all { it == null } && (start == null || positionOk)
-    val locale = LocalConfiguration.current.locales[0]
     var confirmDelete by remember { mutableStateOf(false) }
-    // A date or date-and-time field whose value is being chosen; for a date and time, its date once chosen.
+    // A date or date-and-time field whose value is being chosen.
     var picking by remember { mutableStateOf<FormField?>(null) }
-    var pickedDate by remember { mutableStateOf<LocalDate?>(null) }
     var locating by remember { mutableStateOf(false) }
     var accuracy by remember { mutableStateOf<Float?>(null) }
 
@@ -201,7 +199,7 @@ fun FeatureForm(
     fun save() {
         val values = fields.filter {
             val text = texts[it.name].orEmpty()
-            (editable(it.type) || it.type == "datetime") && if (isNew) text.isNotBlank() else text != original[it.name]
+            settable(it.type) && if (isNew) text.isNotBlank() else text != original[it.name]
         }
         // Positions compare as typed: a value read with more decimals than shown is no change.
         val position = when {
@@ -216,7 +214,7 @@ fun FeatureForm(
                 if (moved) Position(Degrees.parse(longitude, Degrees.Axis.LONGITUDE)!!, Degrees.parse(latitude, Degrees.Axis.LATITUDE)!!, DEGREES_CRS) else null
             }
         }
-        onSave(JsonObject(values.associate { it.name to value(it.type, texts[it.name].orEmpty()) }), position)
+        onSave(JsonObject(values.associate { it.name to fieldValue(it.type, texts[it.name].orEmpty()) }), position)
     }
 
     // Edge to edge like the app's screens: the map does not show above the form.
@@ -293,45 +291,7 @@ fun FeatureForm(
                     }
                     if (fields.isNotEmpty()) FormHeader(stringResource(R.string.attributes))
                     for (field in fields) {
-                        val problem = problems[field.name]
-                        if (field.type == "boolean") {
-                            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(field.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                                Switch(
-                                    checked = texts[field.name] == "true",
-                                    onCheckedChange = { texts[field.name] = it.toString() },
-                                )
-                            }
-                            continue
-                        }
-                        OutlinedTextField(
-                            value = if (editable(field.type)) texts[field.name].orEmpty() else shownDateTime(field.type, texts[field.name].orEmpty(), locale),
-                            onValueChange = { texts[field.name] = it },
-                            label = { Text(field.name) },
-                            placeholder = if (field.type == "date") ({ Text("2026-11-26") }) else null,
-                            // A date is typed or chosen; a date and time is chosen, and can be cleared.
-                            trailingIcon = if (field.type == "date" || field.type == "datetime") {
-                                {
-                                    Row {
-                                        if (field.type == "datetime" && !texts[field.name].isNullOrBlank()) {
-                                            IconButton(onClick = { texts[field.name] = "" }) { Icon(Icons.Rounded.Clear, stringResource(R.string.clear)) }
-                                        }
-                                        IconButton(onClick = {
-                                            pickedDate = null
-                                            picking = field
-                                        }) { Icon(Icons.Rounded.CalendarMonth, stringResource(R.string.pick_date)) }
-                                    }
-                                }
-                            } else {
-                                null
-                            },
-                            singleLine = field.type != "string",
-                            readOnly = !editable(field.type),
-                            isError = problem != null,
-                            supportingText = problem?.let { { Text(stringResource(it)) } },
-                            keyboardOptions = KeyboardOptions(keyboardType = keyboard(field.type)),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        FieldInput(field, texts[field.name].orEmpty(), onChange = { texts[field.name] = it }, onPick = { picking = field })
                     }
                     if (onReshape != null) {
                         Spacer(Modifier.height(8.dp))
@@ -367,26 +327,9 @@ fun FeatureForm(
         }
     }
     picking?.let { field ->
-        val text = texts[field.name].orEmpty()
-        val zone = ZoneId.systemDefault()
-        val day = pickedDate
-        when {
-            field.type == "date" -> DateDialog(dateOf(text), onDismiss = { picking = null }) {
-                texts[field.name] = it.toString()
-                picking = null
-            }
-            day == null -> DateDialog(instantOf(text)?.atZone(zone)?.toLocalDate(), onDismiss = { picking = null }) { pickedDate = it }
-            else -> TimeDialog(
-                instantOf(text)?.atZone(zone)?.toLocalTime() ?: LocalTime.now(),
-                onDismiss = {
-                    picking = null
-                    pickedDate = null
-                },
-            ) {
-                texts[field.name] = storedDateTime(day, it, zone)
-                picking = null
-                pickedDate = null
-            }
+        FieldPicker(field, texts[field.name].orEmpty(), onDismiss = { picking = null }) {
+            texts[field.name] = it
+            picking = null
         }
     }
     if (confirmDelete && onDelete != null) {
@@ -403,6 +346,63 @@ fun FeatureForm(
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel)) } },
         )
+    }
+}
+
+/**
+ * The input for [field]'s value, [text] as a form keeps it: a switch for a yes
+ * or no, else a text field that says what is wrong with what is typed. A date
+ * is typed or chosen ([onPick]); a date and time is chosen, and can be cleared.
+ */
+@Composable
+internal fun FieldInput(field: FormField, text: String, onChange: (String) -> Unit, onPick: () -> Unit, modifier: Modifier = Modifier.fillMaxWidth()) {
+    if (field.type == "boolean") {
+        Row(modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(field.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Switch(checked = text == "true", onCheckedChange = { onChange(it.toString()) })
+        }
+        return
+    }
+    val problem = valueProblem(field.type, text)
+    OutlinedTextField(
+        value = if (editable(field.type)) text else shownDateTime(field.type, text, LocalConfiguration.current.locales[0]),
+        onValueChange = onChange,
+        label = { Text(field.name) },
+        placeholder = if (field.type == "date") ({ Text("2026-11-26") }) else null,
+        trailingIcon = if (field.type == "date" || field.type == "datetime") {
+            {
+                Row {
+                    if (field.type == "datetime" && text.isNotBlank()) {
+                        IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Clear, stringResource(R.string.clear)) }
+                    }
+                    IconButton(onClick = onPick) { Icon(Icons.Rounded.CalendarMonth, stringResource(R.string.pick_date)) }
+                }
+            }
+        } else {
+            null
+        },
+        // A date and time, chosen and not typed, wraps rather than losing its seconds in a narrow dialog.
+        singleLine = field.type != "string" && field.type != "datetime",
+        readOnly = !editable(field.type),
+        isError = problem != null,
+        supportingText = problem?.let { { Text(stringResource(it)) } },
+        keyboardOptions = KeyboardOptions(keyboardType = keyboard(field.type)),
+        modifier = modifier,
+    )
+}
+
+/** Chooses [field]'s date, or its date and then its time, from [text]; [onPick] gets the value as a form keeps it. */
+@Composable
+internal fun FieldPicker(field: FormField, text: String, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    val zone = ZoneId.systemDefault()
+    var day by remember(field) { mutableStateOf<LocalDate?>(null) }
+    val chosen = day
+    when {
+        field.type == "date" -> DateDialog(dateOf(text), onDismiss = onDismiss) { onPick(it.toString()) }
+        chosen == null -> DateDialog(instantOf(text, zone)?.atZone(zone)?.toLocalDate(), onDismiss = onDismiss) { day = it }
+        else -> TimeDialog(instantOf(text, zone)?.atZone(zone)?.toLocalTime() ?: LocalTime.now(), onDismiss = onDismiss) {
+            onPick(storedDateTime(chosen, it, zone))
+        }
     }
 }
 
@@ -436,7 +436,11 @@ internal fun CoordinateField(value: String, onChange: (String) -> Unit, label: S
     )
 }
 
+// Typed or switched in its input; a date can be chosen too.
 private fun editable(type: String) = type in setOf("string", "real", "integer", "integer64", "date", "boolean")
+
+/** Whether a form sets values of this type: typed, switched or chosen. */
+internal fun settable(type: String) = editable(type) || type == "datetime"
 
 private fun keyboard(type: String) = when (type) {
     "real" -> KeyboardType.Decimal
@@ -457,10 +461,11 @@ internal fun numberProblem(text: String): Int? = when {
 // Degrees as the user reads them: to the seventh decimal (about a centimetre), no trailing zeros.
 private fun degrees(value: Double): String = BigDecimal.valueOf(value).setScale(7, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
 
-private fun text(value: JsonElement?): String = (value as? JsonPrimitive)?.takeUnless { it is JsonNull }?.contentOrNull.orEmpty()
+/** A value as a form keeps it: its text, empty for none. */
+internal fun fieldText(value: JsonElement?): String = (value as? JsonPrimitive)?.takeUnless { it is JsonNull }?.contentOrNull.orEmpty()
 
-// What is wrong with the text for a field of this type, as a string resource.
-private fun problem(type: String, text: String): Int? {
+/** What is wrong with the text for a field of this type, as a string resource; null when nothing is. */
+internal fun valueProblem(type: String, text: String): Int? {
     if (text.isBlank()) return null
     return when (type) {
         "real" -> if (Numbers.double(text) != null) null else R.string.field_not_a_number
@@ -482,8 +487,8 @@ internal fun coordinateProblem(text: String, limit: Double, outOfRange: Int): In
     }
 }
 
-// Numbers and dates as typed, full-width too (Numbers.plain); what is still no number goes as text, for the layer to refuse.
-private fun value(type: String, text: String): JsonElement = when {
+/** A value as typed, for feature.add and feature.values: numbers and dates full-width too (Numbers.plain); what is still no number goes as text, for the layer to refuse. */
+internal fun fieldValue(type: String, text: String): JsonElement = when {
     text.isBlank() -> JsonNull
     type == "real" -> Numbers.double(text)?.let { JsonPrimitive(it) } ?: JsonPrimitive(text.trim())
     type == "integer" || type == "integer64" -> Numbers.long(text)?.let { JsonPrimitive(it) } ?: JsonPrimitive(text.trim())
