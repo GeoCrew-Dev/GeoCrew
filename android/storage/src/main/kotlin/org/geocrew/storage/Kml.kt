@@ -34,8 +34,8 @@ internal class Kml(private val project: Project, private val photos: Boolean) {
             val color = (styles[layer.id]?.get("color") as? JsonPrimitive)?.contentOrNull ?: LayerColors.of(layer.made)
             val style = "layer-${layer.made}"
             out.write("<Style id=\"$style\">")
-            out.write("<IconStyle><color>${kmlColor(color, 0xff)}</color><scale>0.8</scale>")
-            out.write("<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>")
+            // No icon of its own: the viewer tints its default, with nothing fetched from the network.
+            out.write("<IconStyle><color>${kmlColor(color, 0xff)}</color><scale>0.8</scale></IconStyle>")
             out.write("<LineStyle><color>${kmlColor(color, 0xff)}</color><width>3</width></LineStyle>")
             out.write("<PolyStyle><color>${kmlColor(color, 0x66)}</color></PolyStyle></Style>\n")
         }
@@ -145,6 +145,9 @@ internal class Kml(private val project: Project, private val photos: Boolean) {
             return "%02x".format(alpha) + rgb.substring(4, 6) + rgb.substring(2, 4) + rgb.substring(0, 2)
         }
 
-        fun xml(s: String): String = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+        // [s] as XML text: characters XML cannot hold (control characters other than tab and line breaks) left out.
+        fun xml(s: String): String = s.filter { it == '	' || it == '
+' || it == '' || it >= ' ' }
+            .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     }
 }
