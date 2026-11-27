@@ -65,7 +65,6 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -445,7 +444,7 @@ private fun editable(type: String) = type in setOf("string", "real", "integer", 
 private fun shown(type: String, text: String, locale: Locale): String {
     if (type != "datetime" || text.isBlank()) return text
     return runCatching {
-        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(locale).withZone(ZoneId.systemDefault()).format(Instant.parse(text))
+        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(locale).withZone(ZoneId.systemDefault()).format(instantOf(text)!!)
     }.getOrDefault(text)
 }
 

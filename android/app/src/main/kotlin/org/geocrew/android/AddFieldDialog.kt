@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.storage.Workspace
 
-/** The field types a user can add, in the order offered. Dates with a time wait for a picker. */
+/** The field types a user can add, in the order offered. */
 private val TYPES = listOf("string", "real", "integer", "date", "datetime", "boolean")
 
 /**
