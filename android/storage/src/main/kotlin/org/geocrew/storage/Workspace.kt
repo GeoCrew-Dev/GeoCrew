@@ -5,12 +5,13 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
-import kotlinx.serialization.json.double
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -22,7 +23,9 @@ import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Risk
 import org.geocrew.core.action.Stability
 import org.geocrew.core.edit.Editing
+import org.geocrew.core.edit.Field
 import org.geocrew.core.edit.FieldType
+import org.geocrew.core.edit.ValueRange
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.core.project.Templates
 
@@ -109,9 +112,7 @@ class Workspace(private val projects: Projects) {
                             }
                         }
                     }
-                    putJsonArray("fields") {
-                        for (f in store.fields) addJsonObject { put("name", f.name); put("type", f.type.name.lowercase()) }
-                    }
+                    putJsonArray("fields") { for (f in store.fields) add(fieldJson(f)) }
                     put("editing", layer in editing.layersBeingEdited)
                     put("modified", editing.isModified(layer))
                     put("projectModified", editing.layersBeingEdited.any(editing::isModified))
@@ -179,7 +180,22 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(buildJsonObject { put("layer", layer); put("field", field) }, endsUndo = ended)
         },
         WorkspaceAction(
-            LAYER_INFO, "Layer info", "A layer of the open project: its fields with their types, and how many features it has, as edited",
+            FIELD_RANGE, "Set field range",
+            "Lets a number field of a layer of the open project take only the numbers from min to max, both included; " +
+                "with neither, any number. Kept as a GeoPackage range constraint; values already there stay",
+            Risk.EDIT, FIELD_RANGE_PARAMS, """{"layer": "野外点", "field": "倾角", "min": 0, "max": 90}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            val layer = p.getValue("layer").jsonPrimitive.content
+            val field = p.getValue("field").jsonPrimitive.content
+            val min = (p["min"] as? JsonPrimitive)?.doubleOrNull
+            val max = (p["max"] as? JsonPrimitive)?.doubleOrNull
+            val range = if (min == null && max == null) null else ValueRange(min, max)
+            project.setFieldRange(layer, field, range)
+            ActionResult.Done(buildJsonObject { put("layer", layer); put("field", field); put("range", range?.toJson() ?: JsonNull) })
+        },
+        WorkspaceAction(
+            LAYER_INFO, "Layer info", "A layer of the open project: its fields with their types and ranges, and how many features it has, as edited",
             Risk.VIEW, LAYER_PARAMS, """{"layer": "野外点"}""",
         ) { p ->
             val layer = p.getValue("layer").jsonPrimitive.content
@@ -189,9 +205,7 @@ class Workspace(private val projects: Projects) {
                 buildJsonObject {
                     put("name", layer)
                     put("template", project.layers.firstOrNull { it.name == layer }?.template)
-                    putJsonArray("fields") {
-                        for (f in store.fields) addJsonObject { put("name", f.name); put("type", f.type.name.lowercase()) }
-                    }
+                    putJsonArray("fields") { for (f in store.fields) add(fieldJson(f)) }
                     put("count", editing.features(layer)?.size?.toLong() ?: project.count(layer))
                 },
             )
@@ -375,6 +389,13 @@ class Workspace(private val projects: Projects) {
         return ActionResult.Done(about(next), endsUndo = ended)
     }
 
+    // A field as actions give it: its name, its type, and its range when it has one.
+    private fun fieldJson(f: Field): JsonObject = buildJsonObject {
+        put("name", f.name)
+        put("type", f.type.name.lowercase())
+        f.range?.let { put("range", it.toJson()) }
+    }
+
     // A change to [layer]'s fields: every layer stops being edited, with nothing unsaved, and the project's file is
     // opened again afterwards, failed or not, as GDAL reads a layer's fields when it opens the file. The undo histories that end.
     private fun changeFields(project: Project, layer: String, change: () -> Unit): List<String> {
@@ -474,6 +495,7 @@ class Workspace(private val projects: Projects) {
         const val FIELD_ADD = "layer.field.add"
         const val FIELD_RENAME = "layer.field.rename"
         const val FIELD_DELETE = "layer.field.delete"
+        const val FIELD_RANGE = "layer.field.range"
         const val LAYER_INFO = "layer.info"
         const val LAYER_CREATE = "layer.create"
         const val CRS_DESCRIBE = "crs.describe"
@@ -517,6 +539,10 @@ class Workspace(private val projects: Projects) {
         private val FIELD_DELETE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer", "field"],
                 "properties": {"layer": {"type": "string"}, "field": {"type": "string"}}}""",
+        )
+        private val FIELD_RANGE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "field"],
+                "properties": {"layer": {"type": "string"}, "field": {"type": "string"}, "min": {"type": "number"}, "max": {"type": "number"}}}""",
         )
         private val EXPORT_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"enum": ["gpkg", "kml"]}}}""",

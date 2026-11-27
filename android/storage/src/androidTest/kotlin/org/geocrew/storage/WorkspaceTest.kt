@@ -12,6 +12,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -19,6 +20,8 @@ import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
+import org.geocrew.core.edit.ValueRange
+import org.geocrew.nativelib.GeoCrewNative
 import org.geocrew.nativelib.VectorDataset
 import org.junit.Before
 import org.junit.Test
@@ -207,6 +210,66 @@ class WorkspaceTest {
         run(Workspace.CLOSE)
         assertIs<Outcome.Done>(run(Workspace.OPEN, """{"name": "改字段"}"""), "the project opens as before")
         assertEquals(listOf("点名", "NOTE"), fields())
+    }
+
+    // A number field's range is a GeoPackage range constraint (ADR 0004): GDAL reads it as a field domain, edits keep to it
+    // from when it is set, fields with the same range share one, and it follows its field and its layer.
+    @Test
+    fun fieldRangesAreGeoPackageConstraints() {
+        run(Workspace.CREATE, """{"name": "范围", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "倾角", "type": "real"}""")
+        run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "倾向", "type": "integer"}""")
+        run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "走向", "type": "integer"}""")
+        run(Editing.START, """{"layer": "野外点"}""")
+        fun ranges(layer: String) = output(run(Workspace.LAYER_INFO, """{"layer": "$layer"}""")).getValue("fields").jsonArray
+            .associate { f -> f.jsonObject.getValue("name").jsonPrimitive.content to ValueRange.of(f.jsonObject["range"]) }
+        fun range(layer: String, field: String, ends: String = "") = run(Workspace.FIELD_RANGE, """{"layer": "$layer", "field": "$field"$ends}""")
+        assertIs<Outcome.Done>(range("野外点", "倾角", """, "min": 0, "max": 90"""), "while the layer is being edited")
+        assertIs<Outcome.Done>(range("野外点", "倾向", """, "min": 0, "max": 360"""))
+        assertIs<Outcome.Done>(range("野外点", "走向", """, "min": 0, "max": 360"""))
+        assertIs<Outcome.Failed>(range("野外点", "点名", """, "min": 0"""), "only number fields")
+        assertIs<Outcome.Failed>(range("野外点", "倾角", """, "min": 90, "max": 0"""), "the right way round")
+        assertEquals(ValueRange(0.0, 90.0), ranges("野外点")["倾角"])
+        assertNull(ranges("野外点")["点名"])
+
+        assertIs<Outcome.Failed>(run(Editing.ADD, """{"layer": "野外点", "properties": {"倾角": 95}}"""), "kept to at once")
+        assertIs<Outcome.Done>(run(Editing.ADD, """{"layer": "野外点", "properties": {"点名": "D001", "倾角": 90, "倾向": 0}}"""))
+        run(Editing.SAVE, """{"layer": "野外点"}""")
+
+        val path = File(root, "工程/范围/范围.gpkg").path
+        fun constraints() = VectorDataset.open(path).use { ds ->
+            Json.parseToJsonElement(ds.sql("SELECT constraint_name FROM gpkg_data_column_constraints ORDER BY constraint_name")).jsonArray
+                .map { it.jsonObject.getValue("properties").jsonObject.getValue("constraint_name").jsonPrimitive.content }
+        }
+        assertEquals(listOf("[0, 360]", "[0, 90]"), constraints(), "fields with the same range share it")
+        // GDAL reads it as a range field domain, which is how QGIS gets it.
+        val info = Json.parseToJsonElement(GeoCrewNative.run(arrayOf("vector", "info", "--format", "json", path))).jsonObject
+        val dip = info.getValue("layers").jsonArray.map { it.jsonObject }.single { it["name"]?.jsonPrimitive?.content == "野外点" }
+            .getValue("fields").jsonArray.map { it.jsonObject }.single { it["name"]?.jsonPrimitive?.content == "倾角" }
+        assertEquals("[0, 90]", dip["domainName"]?.jsonPrimitive?.content, info.toString())
+        val domain = info.getValue("domains").jsonObject.getValue("[0, 90]").jsonObject
+        assertEquals(listOf(0.0, 90.0), listOf("minValue", "maxValue").map { domain.getValue(it).jsonPrimitive.double }, domain.toString())
+
+        assertIs<Outcome.Done>(run(Workspace.FIELD_RENAME, """{"layer": "野外点", "field": "倾角", "to": "倾角2"}"""))
+        assertEquals(ValueRange(0.0, 90.0), ranges("野外点")["倾角2"], "it follows its field")
+        assertIs<Outcome.Done>(run(Workspace.LAYER_RENAME, """{"layer": "野外点", "to": "产状点"}"""))
+        assertEquals(ValueRange(0.0, 90.0), ranges("产状点")["倾角2"], "and its layer")
+        assertIs<Outcome.Done>(run(Workspace.LAYER_CREATE, """{"name": "产状点2", "like": "产状点"}"""))
+        assertEquals(ValueRange(0.0, 360.0), ranges("产状点2")["倾向"], "a layer made like it has it too")
+
+        // A constraint goes once no field uses it.
+        assertIs<Outcome.Done>(run(Workspace.FIELD_DELETE, """{"layer": "产状点", "field": "倾角2"}"""))
+        assertEquals(listOf("[0, 360]", "[0, 90]"), constraints(), "产状点2 still has [0, 90]")
+        assertIs<Outcome.Done>(range("产状点2", "倾角2"), "no ends: any number")
+        assertNull(ranges("产状点2")["倾角2"])
+        assertEquals(listOf("[0, 360]"), constraints())
+        assertIs<Outcome.Done>(run(Workspace.LAYER_DELETE, """{"layer": "产状点2"}"""))
+        assertEquals(listOf("[0, 360]"), constraints(), "产状点 still has [0, 360]")
+
+        run(Workspace.CLOSE)
+        assertIs<Outcome.Done>(run(Workspace.OPEN, """{"name": "范围"}"""), "the project opens as before")
+        assertEquals(ValueRange(0.0, 360.0), ranges("产状点")["走向"])
     }
 
     @Test

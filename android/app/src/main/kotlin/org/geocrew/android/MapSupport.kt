@@ -41,6 +41,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.geocrew.core.action.Outcome
+import org.geocrew.core.edit.ValueRange
 import org.geocrew.core.project.Templates
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
@@ -99,7 +100,7 @@ private val EARLIER_NAME_FIELDS = setOf("点号", "Number")
 
 internal fun formFields(collection: JsonObject?): List<FormField> = collection?.get("fields")?.jsonArray.orEmpty().map {
     val f = it.jsonObject
-    FormField((f["name"] as JsonPrimitive).content, (f["type"] as JsonPrimitive).content)
+    FormField((f["name"] as JsonPrimitive).content, (f["type"] as JsonPrimitive).content, ValueRange.of(f["range"]))
 }
 
 /** A point feature's longitude and latitude, or null when it is not a point (a line, an area, no geometry). */

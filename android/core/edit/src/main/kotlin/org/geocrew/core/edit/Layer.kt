@@ -1,13 +1,16 @@
 package org.geocrew.core.edit
 
+import kotlin.math.abs
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 
 /**
  * A feature in its layer's own CRS: [geometry] is a GeoJSON geometry, or null;
@@ -59,7 +62,61 @@ enum class FieldType {
     }
 }
 
-data class Field(val name: String, val type: FieldType)
+/**
+ * The numbers a field takes, as a GeoPackage range constraint gives them
+ * (ADR 0004): from [min] to [max], an end left open when null, each end itself
+ * in the range or not. Null and values that are not numbers are left to the
+ * field's type.
+ */
+data class ValueRange(val min: Double? = null, val max: Double? = null, val minIncluded: Boolean = true, val maxIncluded: Boolean = true) {
+    init {
+        require(min != null || max != null) { "a range has a minimum, a maximum or both" }
+        require(min?.isFinite() != false && max?.isFinite() != false) { "the ends of a range are finite numbers" }
+        require(min == null || max == null || min <= max) { "the minimum of a range is not above its maximum" }
+    }
+
+    operator fun contains(x: Double): Boolean =
+        (min == null || if (minIncluded) x >= min else x > min) && (max == null || if (maxIncluded) x <= max else x < max)
+
+    /** Whether [value] fits: a number in the range, or anything else. */
+    fun accepts(value: JsonElement): Boolean {
+        val x = (value as? JsonPrimitive)?.takeUnless { it.isString }?.doubleOrNull ?: return true
+        return x in this
+    }
+
+    /** The range in words, for messages: "at least 0 and at most 90". */
+    fun describe(): String = listOfNotNull(
+        min?.let { (if (minIncluded) "at least " else "more than ") + plain(it) },
+        max?.let { (if (maxIncluded) "at most " else "less than ") + plain(it) },
+    ).joinToString(" and ")
+
+    /** As actions give it: "min" and "max" when set, "minIncluded" or "maxIncluded" false for an end not in it. */
+    fun toJson(): JsonObject = buildJsonObject {
+        min?.let { put("min", it) }
+        max?.let { put("max", it) }
+        if (!minIncluded) put("minIncluded", false)
+        if (!maxIncluded) put("maxIncluded", false)
+    }
+
+    companion object {
+        /** The range [json] gives as [toJson] writes it; null for none, or for one that is no range. */
+        fun of(json: JsonElement?): ValueRange? {
+            val o = json as? JsonObject ?: return null
+            fun number(key: String) = (o[key] as? JsonPrimitive)?.takeUnless { it.isString }?.doubleOrNull
+            fun flag(key: String) = (o[key] as? JsonPrimitive)?.booleanOrNull != false
+            return runCatching { ValueRange(number("min"), number("max"), flag("minIncluded"), flag("maxIncluded")) }.getOrNull()
+        }
+
+        // A whole number without its ".0", as people write it.
+        private fun plain(x: Double): String = if (x % 1.0 == 0.0 && abs(x) < 1e15) x.toLong().toString() else x.toString()
+    }
+}
+
+/** A field of a layer; with a [range], a number field takes only the numbers in it. */
+data class Field(val name: String, val type: FieldType, val range: ValueRange? = null) {
+    /** Whether the field takes [value]: one of its type, and within its range. */
+    fun accepts(value: JsonElement): Boolean = type.accepts(value) && range?.accepts(value) != false
+}
 
 /** What a layer's driver can do (ADR 0005: edits follow the driver's capabilities). */
 data class Capabilities(val add: Boolean, val update: Boolean, val delete: Boolean, val transactions: Boolean)

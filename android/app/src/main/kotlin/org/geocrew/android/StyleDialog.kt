@@ -212,7 +212,7 @@ fun classesFor(features: JsonArray, field: String, kept: List<StyleClass>): List
     return (kept + added).take(MAX_CLASSES)
 }
 
-/** The field types a graduated style can range over. */
+/** The number field types: a graduated style ranges over them, and they can have a value range. */
 val NUMBER_TYPES = setOf("integer", "integer64", "real")
 
 // How many ranges a graduated style makes: at least, at most, and to begin with; and its ramp to begin with.

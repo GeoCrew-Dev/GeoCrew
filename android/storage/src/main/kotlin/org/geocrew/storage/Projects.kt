@@ -22,6 +22,7 @@ import org.geocrew.core.edit.EditTarget
 import org.geocrew.core.edit.Field
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.edit.FileJournal
+import org.geocrew.core.edit.ValueRange
 import org.geocrew.core.project.LayerTemplate
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.core.project.ProjectFormat.quote
@@ -221,7 +222,10 @@ private const val MAX_CLASSES = 100
 private val STYLE_COLOR = Regex("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")
 
 // The rows of a query, as column name to text.
-private fun rows(ds: VectorDataset, sql: String): List<Map<String, String?>> =
+// The field types a range can be set on.
+private val NUMBERS = setOf(FieldType.INTEGER, FieldType.INTEGER64, FieldType.REAL)
+
+internal fun rows(ds: VectorDataset, sql: String): List<Map<String, String?>> =
     Json.parseToJsonElement(ds.sql(sql)).jsonArray.map { row ->
         row.jsonObject.getValue("properties").jsonObject.mapValues { (_, v) -> (v as? JsonPrimitive)?.contentOrNull }
     }
@@ -605,10 +609,12 @@ class Project internal constructor(
         val id = layers.single { it.name == layer }.id
         val table = ProjectFormat.identifier(layer)
         changing {
-            // SQLite takes column names in any case as the same, so a change of case goes by way of another name.
-            val via = if (to.equals(field, ignoreCase = true)) "geocrew_" + UUID.randomUUID().toString().replace("-", "") else field
-            if (via != field) dataset.sql("ALTER TABLE $table RENAME COLUMN ${ProjectFormat.identifier(field)} TO ${ProjectFormat.identifier(via)}")
-            dataset.sql("ALTER TABLE $table RENAME COLUMN ${ProjectFormat.identifier(via)} TO ${ProjectFormat.identifier(to)}")
+            FieldRanges.renamingColumn(dataset, layer, field, to) {
+                // SQLite takes column names in any case as the same, so a change of case goes by way of another name.
+                val via = if (to.equals(field, ignoreCase = true)) "geocrew_" + UUID.randomUUID().toString().replace("-", "") else field
+                if (via != field) dataset.sql("ALTER TABLE $table RENAME COLUMN ${ProjectFormat.identifier(field)} TO ${ProjectFormat.identifier(via)}")
+                dataset.sql("ALTER TABLE $table RENAME COLUMN ${ProjectFormat.identifier(via)} TO ${ProjectFormat.identifier(to)}")
+            }
             dataset.sql("UPDATE ${ProjectFormat.FIELDS_TABLE} SET column_name = ${quote(to)} WHERE table_name = ${quote(layer)} AND column_name = ${quote(field)}")
             restyle(id, field, to)
         }
@@ -629,10 +635,24 @@ class Project internal constructor(
         checkFieldDelete(layer, field)
         val id = layers.single { it.name == layer }.id
         changing {
+            FieldRanges.columnDropped(dataset, layer, field)
             dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} DROP COLUMN ${ProjectFormat.identifier(field)}")
             dataset.sql("DELETE FROM ${ProjectFormat.FIELDS_TABLE} WHERE table_name = ${quote(layer)} AND column_name = ${quote(field)}")
             restyle(id, field, null)
         }
+    }
+
+    /**
+     * Lets number field [field] of [layer] take only the numbers in [range],
+     * or with null any (ADR 0004: a GeoPackage range constraint, which GDAL
+     * and QGIS read). Edits keep to it from then on; values already in the
+     * layer stay. Saved at once, not undone, like a style.
+     */
+    fun setFieldRange(layer: String, field: String, range: ValueRange?) {
+        require(layers.any { it.name == layer }) { "there is no layer $layer" }
+        val found = VectorLayerStore(dataset, layer).fields.firstOrNull { it.name == field } ?: throw IllegalArgumentException("$layer has no field $field")
+        require(range == null || found.type in NUMBERS) { "only number fields have ranges, and $field is ${found.type.name.lowercase()}" }
+        changing { FieldRanges.set(dataset, layer, field, range) }
     }
 
     // [change] all or nothing: a column renamed or dropped without GeoCrew's rows would leave them pointing nowhere.
@@ -745,6 +765,7 @@ class Project internal constructor(
         val source = layers.firstOrNull { it.name == like } ?: throw IllegalArgumentException("there is no layer $like")
         val fields = VectorLayerStore(dataset, like).fields.filter { it.type != FieldType.OTHER } // fields GeoCrew cannot edit stay behind
         addLayer(dataset, name, source.geometry ?: "POINT", source.srs ?: "EPSG:4490", source.template, fields)
+        for (f in fields) f.range?.let { FieldRanges.set(dataset, name, f.name, it) }
         layers = readLayers(dataset)
         // Its style too, so a feature moved across keeps its look.
         styles[source.id]?.let { style ->
@@ -766,10 +787,12 @@ class Project internal constructor(
         // All or nothing: a table renamed without GeoCrew's rows would drop out of the project.
         dataset.begin()
         try {
-            // SQLite takes table names in any case as the same, so a change of case goes by way of another name.
-            val via = if (to.equals(layer, ignoreCase = true)) "geocrew_renaming" else layer
-            if (via != layer) dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} RENAME TO ${ProjectFormat.identifier(via)}")
-            dataset.sql("ALTER TABLE ${ProjectFormat.identifier(via)} RENAME TO ${ProjectFormat.identifier(to)}")
+            FieldRanges.renamingTable(dataset, layer, to) {
+                // SQLite takes table names in any case as the same, so a change of case goes by way of another name.
+                val via = if (to.equals(layer, ignoreCase = true)) "geocrew_renaming" else layer
+                if (via != layer) dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} RENAME TO ${ProjectFormat.identifier(via)}")
+                dataset.sql("ALTER TABLE ${ProjectFormat.identifier(via)} RENAME TO ${ProjectFormat.identifier(to)}")
+            }
             dataset.sql("UPDATE ${ProjectFormat.LAYERS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
             dataset.sql("UPDATE ${ProjectFormat.FIELDS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
             dataset.commit()
@@ -786,6 +809,7 @@ class Project internal constructor(
      */
     fun deleteLayer(layer: String) {
         val found = layers.firstOrNull { it.name == layer } ?: throw IllegalArgumentException("there is no layer $layer")
+        FieldRanges.tableDropped(dataset, layer)
         dataset.sql("DROP TABLE ${ProjectFormat.identifier(layer)}")
         dataset.sql("DELETE FROM ${ProjectFormat.FIELDS_TABLE} WHERE table_name = ${quote(layer)}")
         dataset.sql("DELETE FROM ${ProjectFormat.LAYERS_TABLE} WHERE table_name = ${quote(layer)}")
