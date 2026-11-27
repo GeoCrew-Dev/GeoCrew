@@ -10,17 +10,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -46,12 +51,14 @@ import androidx.compose.ui.window.DialogProperties
  * plane, its dip direction from true north ([declination] added to the
  * compass) and its dip, the mean of the last moment's readings, shown in the
  * theme's colour while the hand is steady. [onRecord] takes the last steady
- * reading, so the tap on the button does not spoil it (the current one when
- * there was none). The screen stays on while it is open.
+ * reading, so the tap on the round button does not spoil it (the current one
+ * when there was none). Without [onRecord] it measures for the moment only
+ * (from the measuring tools): the round button holds the reading, and lets
+ * it go. The screen stays on while it is open.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClinometerScreen(declination: Float, onRecord: (Attitude) -> Unit, onDismiss: () -> Unit) {
+fun ClinometerScreen(declination: Float, onRecord: ((Attitude) -> Unit)?, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val view = LocalView.current
     val sensors = remember { context.getSystemService(SensorManager::class.java) }
@@ -60,6 +67,7 @@ fun ClinometerScreen(declination: Float, onRecord: (Attitude) -> Unit, onDismiss
     var steady by remember { mutableStateOf(false) }
     var lastSteady by remember { mutableStateOf<Attitude?>(null) }
     var lowAccuracy by remember { mutableStateOf(false) }
+    var held by remember { mutableStateOf<Attitude?>(null) }
     val window = remember { NormalWindow() }
 
     DisposableEffect(rotationSensor) {
@@ -104,13 +112,37 @@ fun ClinometerScreen(declination: Float, onRecord: (Attitude) -> Unit, onDismiss
                     navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, stringResource(R.string.close)) } },
                 )
             },
+            floatingActionButton = {
+                val enabled = reading != null
+                // Round, at the bottom, like a shutter: records the reading, or holds it for the moment.
+                LargeFloatingActionButton(
+                    onClick = {
+                        when {
+                            !enabled -> Unit
+                            onRecord != null -> (lastSteady ?: reading)?.let(onRecord)
+                            held != null -> held = null
+                            else -> held = lastSteady ?: reading
+                        }
+                    },
+                    shape = CircleShape,
+                    containerColor = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                ) {
+                    when {
+                        onRecord != null -> Icon(Icons.Rounded.Check, stringResource(R.string.clino_record), modifier = Modifier.size(36.dp))
+                        held != null -> Icon(Icons.Rounded.LockOpen, stringResource(R.string.clino_release), modifier = Modifier.size(36.dp))
+                        else -> Icon(Icons.Rounded.Lock, stringResource(R.string.clino_hold), modifier = Modifier.size(36.dp))
+                    }
+                }
+            },
+            floatingActionButtonPosition = FabPosition.Center,
         ) { padding ->
             Column(
                 Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                val shown = reading
-                val color = if (steady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                val shown = held ?: reading
+                val color = if (held != null || steady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 // Flat, a plane dips nowhere: its dip direction is not given.
                 val flat = shown == null || wholeDip(shown.dip) == 0
                 Row(horizontalArrangement = Arrangement.spacedBy(48.dp), modifier = Modifier.padding(top = 24.dp)) {
@@ -128,12 +160,8 @@ fun ClinometerScreen(declination: Float, onRecord: (Attitude) -> Unit, onDismiss
                     rotationSensor == null -> Text(stringResource(R.string.clino_no_sensor), color = MaterialTheme.colorScheme.error)
                     lowAccuracy -> Text(stringResource(R.string.clino_low_accuracy), color = MaterialTheme.colorScheme.error)
                 }
-                Spacer(Modifier.height(32.dp))
-                Button(
-                    onClick = { (lastSteady ?: shown)?.let(onRecord) },
-                    enabled = shown != null,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                ) { Text(stringResource(R.string.clino_record)) }
+                // Room under the readings for the round button.
+                Spacer(Modifier.height(120.dp))
             }
         }
     }

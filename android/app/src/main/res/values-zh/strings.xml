@@ -517,4 +517,7 @@
     <string name="permission_background">后台运行</string>
     <string name="permission_background_body">熄屏长时间记录轨迹时，不受系统省电限制。</string>
     <string name="settings_permissions">权限</string>
+    <string name="type_attitude">产状</string>
+    <string name="clino_hold">定住</string>
+    <string name="clino_release">松开</string>
 </resources>

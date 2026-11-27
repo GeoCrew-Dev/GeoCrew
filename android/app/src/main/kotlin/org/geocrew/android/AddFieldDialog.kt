@@ -23,7 +23,10 @@ import org.geocrew.core.project.ProjectFormat
 import org.geocrew.storage.Workspace
 
 /** The field types a user can add, in the order offered. */
-private val TYPES = listOf("string", "real", "integer", "date", "datetime", "boolean")
+private val TYPES = listOf("string", "real", "integer", "date", "datetime", "boolean", ATTITUDE)
+
+/** The attitude, a field of its own kind: a dip direction and a dip, whole degrees, measured with the phone. */
+const val ATTITUDE = "attitude"
 
 /**
  * Adds a field of the user's own to a layer: GeoCrew's point layers carry only
@@ -36,7 +39,14 @@ fun AddFieldDialog(existing: List<String>, onDismiss: () -> Unit, onAdd: (name: 
     var type by remember { mutableStateOf(TYPES.first()) }
     val trimmed = name.trim()
     val taken = (existing + Workspace.RESERVED).any { it.equals(trimmed, ignoreCase = true) }
-    val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && !taken
+    // The attitude's fields are named for it, and a layer has one attitude.
+    val attitudeNames = attitudeNames()
+    val attitudeTaken = existing.any { e -> attitudeNames.any { it.equals(e, ignoreCase = true) } }
+    val valid = if (type == ATTITUDE) {
+        !attitudeTaken
+    } else {
+        trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && !taken
+    }
     AppDialog(
         onDismissRequest = onDismiss,
         twoPane = true,
@@ -44,7 +54,7 @@ fun AddFieldDialog(existing: List<String>, onDismiss: () -> Unit, onAdd: (name: 
         title = { Text(stringResource(R.string.field_add)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
+                if (type != ATTITUDE) OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text(stringResource(R.string.field_name)) },
@@ -74,5 +84,10 @@ fun typeName(type: String): String = when (type) {
     "date" -> stringResource(R.string.type_date)
     "datetime" -> stringResource(R.string.type_datetime)
     "boolean" -> stringResource(R.string.type_boolean)
+    ATTITUDE -> stringResource(R.string.type_attitude)
     else -> type
 }
+
+/** The names the attitude's fields get: dip direction and dip, in the app's language (attitudeFields finds them). */
+@Composable
+fun attitudeNames(): List<String> = listOf(stringResource(R.string.clino_dip_direction), stringResource(R.string.clino_dip))

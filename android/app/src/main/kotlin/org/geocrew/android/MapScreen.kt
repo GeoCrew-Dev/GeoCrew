@@ -290,6 +290,7 @@ fun MapScreen(
     val ownTrack = track?.takeIf { it.projectId == projectId }
     // Saving a finished track: which layer it goes into (or a new track layer), then its form.
     var trackPicking by remember { mutableStateOf(false) }
+    var clinometer by remember { mutableStateOf(false) }
     var trackNaming by remember { mutableStateOf(false) }
     var trackLayer by remember { mutableStateOf<String?>(null) }
     var discardingTrack by remember { mutableStateOf(false) }
@@ -1199,6 +1200,7 @@ fun MapScreen(
             MapTool.MEASURE_AREA -> measureOrStop(MeasureMode.AREA)
             MapTool.AZIMUTH -> measureOrStop(MeasureMode.AZIMUTH)
             MapTool.PICK -> measureOrStop(MeasureMode.PICK)
+            MapTool.CLINOMETER -> clinometer = true
             MapTool.MY_LOCATION -> showMe()
             MapTool.TRACK -> if (ownTrack == null) requestTrack() else finishTrack()
             MapTool.CONVERT -> converting = true
@@ -1702,6 +1704,16 @@ fun MapScreen(
                 importFile = { importAttachment(context, graph, it) },
             )
         }
+    }
+    // The clinometer for the moment, from the measuring tools: nothing is recorded.
+    if (clinometer) {
+        ClinometerScreen(
+            declination = remember {
+                lastLocation(context, 600_000)?.let { GeomagneticField(it.latitude.toFloat(), it.longitude.toFloat(), 0f, System.currentTimeMillis()).declination } ?: 0f
+            },
+            onRecord = null,
+            onDismiss = { clinometer = false },
+        )
     }
     if (trackPicking) {
         LayerPicker(
