@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import kotlin.math.floor
 import kotlinx.serialization.json.JsonObject
@@ -132,7 +134,7 @@ fun LayerPicker(
                         }
                     },
                     colors = clear,
-                    modifier = Modifier.fillMaxWidth().clickable { remember = !remember },
+                    modifier = Modifier.fillMaxWidth().toggleable(value = remember, role = Role.Checkbox) { remember = it },
                 )
             }
             Spacer(Modifier.height(16.dp))
