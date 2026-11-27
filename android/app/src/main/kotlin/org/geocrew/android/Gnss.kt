@@ -18,6 +18,19 @@ data class Fix(val longitude: Double, val latitude: Double, val accuracy: Float?
 fun mayLocate(context: Context): Boolean =
     context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+/** The best position the phone already has, at most [maxAgeMs] old; null without permission or when there is none. */
+@SuppressLint("MissingPermission") // mayLocate checks it
+fun lastLocation(context: Context, maxAgeMs: Long): Location? {
+    if (!mayLocate(context)) return null
+    val manager = context.getSystemService(LocationManager::class.java) ?: return null
+    val now = System.currentTimeMillis()
+    return listOf(LocationManager.GPS_PROVIDER, LocationManager.FUSED_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        .mapNotNull { runCatching { manager.getLastKnownLocation(it) }.getOrNull() }
+        .filter { now - it.time <= maxAgeMs }
+        .minByOrNull { if (it.hasAccuracy()) it.accuracy else Float.MAX_VALUE }
+}
+
 /**
  * One position from the phone through its own location service, so no Google
  * services are needed: GNSS first, else the fused or network provider. A fix

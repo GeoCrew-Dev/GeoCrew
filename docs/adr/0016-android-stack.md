@@ -49,6 +49,8 @@
 
 2026-11-27 补充：新加纯 Kotlin 模块 `core:files`，放内置文件管理器的动作（列出、新建文件夹、重命名、复制、移动、删除）和按扩展名认文件种类，在电脑上测。
 
+2026-11-27 再补充：应用内相机用 CameraX 1.7.0（`camera-camera2`、`camera-lifecycle`、`camera-view`，Apache-2.0），ADR 0011 定了拍照默认用应用内相机。用 `LifecycleCameraController` 加 `PreviewView`：后置摄像头全屏预览，按下快门写一张 JPEG 到应用缓存，再作为附件导入工程（ADR 0004）。CameraX 1.7 要求 compileSdk 36、AGP 8.9.1 及以上，和现在的构建一致。摄像头权限放进权限页，没给过的拍照时再问。录像、录音以后做，用 CameraX 的 VideoCapture 和系统的录音接口。
+
 ## 相关
 
 - [ADR 0002](0002-android-baseline.md)

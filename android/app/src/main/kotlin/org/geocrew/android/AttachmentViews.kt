@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -72,8 +73,8 @@ import kotlinx.serialization.json.put
 import org.geocrew.core.action.Outcome
 import org.geocrew.storage.AttachmentActions
 
-/** Where a new attachment comes from: the phone's photos, or any file. */
-enum class AttachmentSource { GALLERY, FILE }
+/** Where a new attachment comes from: the app's camera, the phone's photos, or any file. */
+enum class AttachmentSource { CAMERA, GALLERY, FILE }
 
 private val TILE = 88.dp
 
@@ -121,6 +122,14 @@ internal fun AttachmentStrip(
                     }
                 }
                 DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.attachment_camera)) },
+                        leadingIcon = { Icon(Icons.Rounded.PhotoCamera, null) },
+                        onClick = {
+                            choosing = false
+                            onAdd(AttachmentSource.CAMERA)
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.attachment_gallery)) },
                         leadingIcon = { Icon(Icons.Rounded.PhotoLibrary, null) },

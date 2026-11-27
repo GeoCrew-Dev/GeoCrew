@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
@@ -64,9 +65,20 @@ fun PermissionScreen(graph: AppGraph, resumed: Int, onDone: () -> Unit) {
         graph.settings.markLocationAsked()
         answered++
     }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        graph.settings.markCameraAsked()
+        answered++
+    }
     // Read again after every return from the settings and every answer.
     val files = remember(resumed, answered) { graph.hasAllFilesAccess }
     val located = remember(resumed, answered) { graph.hasLocation(context) }
+    val filming = remember(resumed, answered) { mayUseCamera(context) }
+    // What was not granted is not asked again by this screen; the camera asks when a photo is taken.
+    fun leave() {
+        if (!located) graph.settings.markLocationAsked()
+        if (!filming) graph.settings.markCameraAsked()
+        onDone()
+    }
 
     val header: @Composable () -> Unit = {
         Box(
@@ -106,13 +118,18 @@ fun PermissionScreen(graph: AppGraph, resumed: Int, onDone: () -> Unit) {
                 location.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
             },
         )
+        Spacer(Modifier.height(12.dp))
+        PermissionCard(
+            icon = Icons.Rounded.PhotoCamera,
+            title = stringResource(R.string.permission_camera),
+            body = stringResource(R.string.permission_camera_body),
+            granted = filming,
+            onGrant = { camera.launch(Manifest.permission.CAMERA) },
+        )
     }
     val actions: @Composable () -> Unit = {
         Button(
-            onClick = {
-                if (!located) graph.settings.markLocationAsked()
-                onDone()
-            },
+            onClick = { leave() },
             enabled = files || graph.settings.ownFolderChosen,
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) { Text(stringResource(R.string.permissions_continue)) }
@@ -120,8 +137,7 @@ fun PermissionScreen(graph: AppGraph, resumed: Int, onDone: () -> Unit) {
             TextButton(
                 onClick = {
                     graph.settings.chooseOwnFolder()
-                    if (!located) graph.settings.markLocationAsked()
-                    onDone()
+                    leave()
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(stringResource(R.string.permissions_own_folder)) }
