@@ -498,7 +498,9 @@ class Workspace(private val projects: Projects) {
                 "style": {"type": "object", "additionalProperties": false, "properties": {"color": {"type": "string"}, "size": {"type": "number"},
                 "width": {"type": "number"}, "fill": {"type": "number"}, "field": {"type": "string"}, "label": {"type": "string"},
                 "classes": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["value", "color"],
-                "properties": {"value": {"type": "string"}, "color": {"type": "string"}}}}}}}}""",
+                "properties": {"value": {"type": "string"}, "color": {"type": "string"}}}},
+                "ranges": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["from", "to", "color"],
+                "properties": {"from": {"type": "number"}, "to": {"type": "number"}, "color": {"type": "string"}}}}}}}}""",
         )
         private val RENAME_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer", "to"], "properties": {"layer": {"type": "string"}, "to": {"type": "string"}}}""",

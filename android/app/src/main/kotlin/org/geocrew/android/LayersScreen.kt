@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -316,6 +317,22 @@ fun LayersScreen(
                                     Icon(Icons.Rounded.ArrowDownward, null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(4.dp))
                                     Text(stringResource(R.string.move_down))
+                                }
+                            }
+                        }
+                    }
+                    // The legend of a style by values or ranges: each colour and what it stands for, then the rest.
+                    val legend = layer.style.ranges?.map { rangeText(it) to it.color } ?: layer.style.classes.map { it.value to it.color }
+                    if (layer.style.field != null) {
+                        item(key = "legend:${layer.name}") {
+                            Column(Modifier.animateItem().padding(start = 40.dp, end = 16.dp, top = 4.dp, bottom = 8.dp)) {
+                                Text(stringResource(R.string.legend), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
+                                for ((text, shown) in legend + (stringResource(R.string.style_other) to layer.style.color)) {
+                                    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        ColorDot(shown, 16.dp)
+                                        Spacer(Modifier.width(12.dp))
+                                        Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
                                 }
                             }
                         }
