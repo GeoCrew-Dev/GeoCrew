@@ -84,10 +84,14 @@ internal fun SheetItem(icon: ImageVector, label: String, onClick: () -> Unit) {
 internal fun fieldNames(collection: JsonObject?): List<String> =
     collection?.get("fields")?.jsonArray.orEmpty().mapNotNull { (it.jsonObject["name"] as? JsonPrimitive)?.contentOrNull }
 
-/** The field that names points (D001 and on), under the name the template gave it in the project's language. */
+/**
+ * The field that names a layer's features (points D001 and on), under the name
+ * a template gave it in the project's language: 点名 for points, 名称 for lines,
+ * areas and tracks, Name in English.
+ */
 internal fun nameField(collection: JsonObject?): String? {
     val names = fieldNames(collection)
-    return Templates.FIELD_POINT.column(Templates.NAME, names) ?: names.firstOrNull { it in EARLIER_NAME_FIELDS }
+    return Templates.all.firstNotNullOfOrNull { it.column(Templates.NAME, names) } ?: names.firstOrNull { it in EARLIER_NAME_FIELDS }
 }
 
 // The number field of the first point template, in projects made before it became the name field.

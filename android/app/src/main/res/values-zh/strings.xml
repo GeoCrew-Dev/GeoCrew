@@ -279,4 +279,23 @@
     <string name="type_date">日期</string>
     <string name="type_datetime">日期和时间</string>
     <string name="type_boolean">是 / 否</string>
+    <string name="menu_location">定位</string>
+    <string name="tool_track">记录轨迹</string>
+    <string name="tool_track_finish">结束轨迹</string>
+    <string name="track_channel">轨迹记录</string>
+    <string name="track_recording">正在记录轨迹</string>
+    <string name="track_paused">轨迹已暂停</string>
+    <string name="track_waiting">等待定位</string>
+    <string name="track_pause">暂停</string>
+    <string name="track_resume">继续</string>
+    <string name="track_finish">结束</string>
+    <string name="track_discard">丢弃</string>
+    <string name="track_discard_title">丢弃这条轨迹？</string>
+    <string name="track_empty">没有记录到轨迹</string>
+    <string name="track_failed">轨迹记录没能开始</string>
+    <string name="track_other_project">「%1$s」正在记录轨迹</string>
+    <string name="track_save_title">轨迹存到哪个图层</string>
+    <string name="track_new_in">新轨迹 · %1$s</string>
+    <string name="layer_default_track">轨迹</string>
+    <string name="location_off">定位已关闭</string>
 </resources>

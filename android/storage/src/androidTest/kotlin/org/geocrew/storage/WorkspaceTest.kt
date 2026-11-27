@@ -364,6 +364,32 @@ class WorkspaceTest {
         assertEquals(listOf(0L, 1L, 1L), listOf("points", "lines", "areas").map { card.getValue(it).jsonPrimitive.content.toLong() }, "counted by kind")
     }
 
+    // A recorded track goes into a track layer with when it started and ended, and its length.
+    @Test
+    fun trackLayersKeepTimesAndLength() {
+        run(Workspace.CREATE, """{"name": "轨迹", "language": "zh"}""")
+        val made = output(run(Workspace.LAYER_CREATE, """{"name": "轨迹", "template": "track", "language": "zh"}"""))
+        val layer = made.getValue("layers").jsonArray.single().jsonObject
+        assertEquals("track", layer.getValue("template").jsonPrimitive.content)
+        assertEquals("LINESTRING", layer.getValue("geometry").jsonPrimitive.content)
+        assertEquals(listOf("名称", "描述", "开始时间", "结束时间", "长度（米）"), workspace.current!!.target("轨迹").store.fields.map { it.name })
+
+        run(Editing.START, """{"layer": "轨迹"}""")
+        val track = """{"type": "LineString", "coordinates": [[114.30, 30.60], [114.301, 30.601], [114.302, 30.6015]]}"""
+        val values = """{"名称": "2026-11-27 08:30", "开始时间": "2026-11-27T00:30:00Z", "结束时间": "2026-11-27T01:05:12Z", "长度（米）": 268.4}"""
+        assertIs<Outcome.Done>(run(Editing.ADD, "{\"layer\": \"轨迹\", \"geometry\": $track, \"properties\": $values}"))
+        run(Editing.SAVE_ALL)
+        run(Workspace.CLOSE)
+        run(Workspace.OPEN, """{"name": "轨迹"}""")
+
+        val saved = output(run(Workspace.FEATURES, """{"layer": "轨迹"}""")).getValue("features").jsonArray.single().jsonObject
+        val properties = saved.getValue("properties").jsonObject
+        assertEquals(3, saved.getValue("geometry").jsonObject.getValue("coordinates").jsonArray.size)
+        assertTrue(properties.getValue("开始时间").jsonPrimitive.content.startsWith("2026-11-27T00:30:00"), "kept: ${properties["开始时间"]}")
+        assertTrue(properties.getValue("结束时间").jsonPrimitive.content.startsWith("2026-11-27T01:05:12"), "kept: ${properties["结束时间"]}")
+        assertEquals(268.4, properties.getValue("长度（米）").jsonPrimitive.content.toDouble())
+    }
+
     // A layer's own colour and sizes, kept in the project (ADR 0006).
     @Test
     fun layerStylesAreKeptAndCleared() {

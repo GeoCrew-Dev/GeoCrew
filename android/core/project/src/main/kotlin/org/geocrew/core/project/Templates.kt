@@ -83,10 +83,31 @@ object Templates {
         ),
     )
 
+    /**
+     * GPS tracks: the line walked, when its recording started and stopped (UTC)
+     * and how long it is, worked out when it is saved.
+     */
+    val TRACK = LayerTemplate(
+        id = "track",
+        names = mapOf("zh" to "轨迹", "en" to "Tracks"),
+        geometryType = "LINESTRING",
+        crs = "EPSG:4490",
+        fields = listOf(
+            TemplateField(NAME, FieldType.STRING, mapOf("zh" to "名称", "en" to "Name"), "the track's name, when it started by default"),
+            TemplateField(DESCRIPTION, FieldType.STRING, mapOf("zh" to "描述", "en" to "Description"), "what the track was for"),
+            TemplateField(STARTED, FieldType.DATETIME, mapOf("zh" to "开始时间", "en" to "Started"), "when its recording started"),
+            TemplateField(ENDED, FieldType.DATETIME, mapOf("zh" to "结束时间", "en" to "Ended"), "when its last position was recorded"),
+            TemplateField(LENGTH, FieldType.REAL, mapOf("zh" to "长度（米）", "en" to "Length (m)"), "its length in metres along the WGS84 ellipsoid, when saved"),
+        ),
+    )
+
     const val NAME = "name"
     const val DESCRIPTION = "description"
+    const val STARTED = "started"
+    const val ENDED = "ended"
+    const val LENGTH = "length"
 
-    val all: List<LayerTemplate> = listOf(FIELD_POINT, FIELD_LINE, FIELD_POLYGON)
+    val all: List<LayerTemplate> = listOf(FIELD_POINT, FIELD_LINE, FIELD_POLYGON, TRACK)
 
     fun byId(id: String?): LayerTemplate? = all.firstOrNull { it.id == id }
 }

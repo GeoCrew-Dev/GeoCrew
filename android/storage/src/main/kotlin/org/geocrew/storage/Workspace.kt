@@ -178,7 +178,8 @@ class Workspace(private val projects: Projects) {
         WorkspaceAction(
             LAYER_CREATE, "Create layer",
             "Adds a layer to the open project: like another layer (its fields, geometry type and CRS) or from a template " +
-                "(field-point, field-line, field-polygon: a name and a description), its fields named in the language given",
+                "(field-point, field-line, field-polygon: a name and a description; track: those and when it started and ended, " +
+                "its length in metres), its fields named in the language given",
             Risk.EDIT, LAYER_CREATE_PARAMS, """{"name": "野外点", "language": "zh"}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
@@ -461,7 +462,7 @@ class Workspace(private val projects: Projects) {
         )
         private val LAYER_CREATE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"],
-                "properties": {"name": {"type": "string"}, "like": {"type": "string"}, "template": {"enum": ["field-point", "field-line", "field-polygon"]},
+                "properties": {"name": {"type": "string"}, "like": {"type": "string"}, "template": {"enum": ["field-point", "field-line", "field-polygon", "track"]},
                                "language": {"enum": ["zh", "en"]}, "srs": {"type": "string"}}}""",
         )
         private val FEATURES_PARAMS = schema(
