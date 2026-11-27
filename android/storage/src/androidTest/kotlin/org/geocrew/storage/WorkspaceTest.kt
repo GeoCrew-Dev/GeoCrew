@@ -137,6 +137,33 @@ class WorkspaceTest {
         assertIs<Outcome.Failed>(run(Workspace.EXPORT, """{"format": "gpkg", "layer": "没有"}"""))
     }
 
+    // GeoPackage's own count of features, which GDAL leaves behind when Android ends the app, is put right (backlog).
+    @Test
+    fun theFeatureCountQgisReadsIsPutRight() {
+        run(Workspace.CREATE, """{"name": "计数", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        run(Editing.START, """{"layer": "野外点"}""")
+        for (n in 1..2) run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "D00$n"}}""")
+        run(Editing.SAVE, """{"layer": "野外点"}""")
+        val file = File(root, "工程/计数/计数.gpkg")
+        fun count(): String? = VectorDataset.open(file.path).use { ds ->
+            Json.parseToJsonElement(ds.sql("SELECT feature_count FROM gpkg_ogr_contents WHERE table_name = '野外点'")).jsonArray.single()
+                .jsonObject.getValue("properties").jsonObject.getValue("feature_count").jsonPrimitive.content
+        }
+        assertEquals("2", count(), "after a save")
+
+        // As left behind by an app ended without closing the file.
+        run(Workspace.CLOSE)
+        VectorDataset.open(file.path, update = true).use { it.sql("UPDATE gpkg_ogr_contents SET feature_count = 99 WHERE table_name = '野外点'") }
+        assertEquals("99", count())
+        run(Workspace.OPEN, """{"name": "计数"}""")
+        assertEquals("2", count(), "put right when the project opens")
+        run(Editing.START, """{"layer": "野外点"}""")
+        run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.4, 30.6]}, "properties": {"点名": "D003"}}""")
+        run(Editing.SAVE, """{"layer": "野外点"}""")
+        assertEquals("3", count(), "and at every save")
+    }
+
     // Users add the fields they need: a hydrogeologist the depth to water, say.
     @Test
     fun usersAddTheirOwnFields() {
