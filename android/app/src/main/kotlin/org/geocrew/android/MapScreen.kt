@@ -196,6 +196,8 @@ fun MapScreen(
     var drawingHistory by remember { mutableStateOf(emptyList<Drawing>()) }
     var shapeDraft by remember { mutableStateOf<Drawing?>(null) }
     var droppingDrawing by remember { mutableStateOf(false) }
+    // Cancelling a drawing that has changes asks first.
+    var cancellingDrawing by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Pair<String, Long>?>(null) }
     // Layers in a projected CRS, by name: their points can be entered as X and Y.
     var projected by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -664,7 +666,13 @@ fun MapScreen(
         val d = drawing ?: return
         val i = d.picked ?: return
         val at = center ?: return
-        editDrawing(d.copy(vertices = d.vertices.toMutableList().apply { set(i, at) }, moving = false))
+        // Put down where it was, it is no change to go back on.
+        if (at == d.vertices.getOrNull(i)) drawing = d.copy(moving = false) else editDrawing(d.copy(vertices = d.vertices.toMutableList().apply { set(i, at) }, moving = false))
+    }
+
+    // Cancelling ends the drawing at once while nothing was changed; otherwise it asks first.
+    fun cancelDrawing() {
+        if (drawingHistory.isEmpty()) drawing = null else cancellingDrawing = true
     }
 
     fun deleteVertex() {
@@ -1182,7 +1190,7 @@ fun MapScreen(
                         drawing = drawing ?: return@Column,
                         canUndo = drawingHistory.isNotEmpty(),
                         onUndo = ::undoDrawing,
-                        onClose = { drawing = null },
+                        onClose = ::cancelDrawing,
                         onMove = ::moveVertex,
                         onDelete = ::deleteVertex,
                         onUnpick = { drawing = drawing?.copy(picked = null, moving = false) },
@@ -1270,7 +1278,7 @@ fun MapScreen(
                     Spacer(Modifier.size(56.dp)) // keeps the button in the middle
                 } else if (drawing != null) {
                     val d = drawing
-                    RoundButton(Icons.Rounded.Close, stringResource(R.string.cancel), onClick = { drawing = null }, size = 56.dp, solid = true)
+                    RoundButton(Icons.Rounded.Close, stringResource(R.string.cancel), onClick = ::cancelDrawing, size = 56.dp, solid = true)
                     ExtendedFloatingActionButton(
                         onClick = {
                             scope.launch {
@@ -1615,6 +1623,19 @@ fun MapScreen(
                 }) { Text(stringResource(R.string.track_discard), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { discardingTrack = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    if (cancellingDrawing) {
+        AlertDialog(
+            onDismissRequest = { cancellingDrawing = false },
+            title = { Text(stringResource(R.string.draw_drop_title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    cancellingDrawing = false
+                    drawing = null
+                }) { Text(stringResource(R.string.draw_drop), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { cancellingDrawing = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
     if (droppingDrawing) {
