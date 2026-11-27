@@ -21,7 +21,9 @@ type check struct {
 	needs string
 	// workspace: needs the workspace and both members from the setup.
 	workspace bool
-	run       func() error
+	// v1: needs protocol v1 (v1.go), which servers add while v0 stays.
+	v1  bool
+	run func() error
 }
 
 // suite holds what earlier checks learned for later ones.
@@ -35,6 +37,8 @@ type suite struct {
 	leaderID, memberID   string
 	leaderNick, memberNk string
 	setupFailed          bool
+
+	v1 *v1State // nil: the server does not serve protocol v1
 }
 
 func (s *suite) run() []result {
@@ -46,13 +50,24 @@ func (s *suite) run() []result {
 			r.skip = "服务端未声明能力 " + ch.needs
 		case ch.workspace && (s.ws == "" || s.member == ""):
 			r.skip = "没有建好测试工作组"
+		case ch.v1 && s.v1 == nil:
+			r.skip = "服务端还没有协议 v1"
 		default:
 			r.err = ch.run()
+			var sk skipped
+			if errors.As(r.err, &sk) {
+				r.err, r.skip = nil, string(sk)
+			}
 		}
 		out = append(out, r)
 	}
 	return out
 }
+
+// skipped is what a check returns when it finds it cannot run here.
+type skipped string
+
+func (s skipped) Error() string { return string(s) }
 
 func randomID() string {
 	b := make([]byte, 16)

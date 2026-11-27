@@ -15,6 +15,7 @@ import (
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/push"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/realtime"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store"
+	v1 "github.com/GeoCrew-Dev/GeoCrew/server/internal/store/v1"
 )
 
 // ProtocolVersion is the GeoCrew sync protocol version this server speaks.
@@ -34,6 +35,9 @@ type Server struct {
 	// Push delivers notices to registered device endpoints; nil disables
 	// push (the "push" capability is then not advertised).
 	Push *push.Sender
+
+	// V1 serves protocol v1 next to v0 (M3); nil leaves the v1 routes out.
+	V1 v1.Store
 
 	// MaxPushFeatures bounds one push request.
 	MaxPushFeatures int
@@ -78,6 +82,9 @@ func (s *Server) Handler() http.Handler {
 	joins := newLimiter(s.JoinPerMinute, s.JoinPerMinute)
 	mux.HandleFunc("POST /api/v0/workspaces", s.limited(joins, s.createWorkspace))
 	mux.HandleFunc("POST /api/v0/workspaces/join", s.limited(joins, s.join))
+	if s.V1 != nil {
+		s.v1Routes(mux, joins)
+	}
 
 	ws := "/api/v0/workspaces/{ws}"
 	mux.Handle("GET "+ws, s.view(s.workspace))
