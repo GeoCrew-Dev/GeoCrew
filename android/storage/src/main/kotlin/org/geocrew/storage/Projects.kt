@@ -138,6 +138,8 @@ class Projects(private val root: File, private val journals: File) {
             val version = about["format_version"]?.toIntOrNull()
             check(version != null) { "$file is not a GeoCrew project" }
             check(version <= ProjectFormat.VERSION) { "the project was saved by a newer GeoCrew (format $version)" }
+            // Before GDAL reads the counts, so it goes on from the right ones.
+            fixFeatureCounts(ds, rows(ds, "SELECT table_name FROM ${ProjectFormat.LAYERS_TABLE}").mapNotNull { it["table_name"] })
             val id = about.getValue("id")!!
             val project = Project(name, File(dir, name), ds, id, readLayers(ds), File(journals, "$id-${pathKey(file)}"))
             if (snapshot) project.snapshotFailure = runCatching { project.snapshot() }.exceptionOrNull()?.let { it.message ?: it.toString() }
@@ -267,6 +269,24 @@ internal fun rows(ds: VectorDataset, sql: String): List<Map<String, String?>> =
     Json.parseToJsonElement(ds.sql(sql)).jsonArray.map { row ->
         row.jsonObject.getValue("properties").jsonObject.mapValues { (_, v) -> (v as? JsonPrimitive)?.contentOrNull }
     }
+
+/**
+ * Puts right the count of features GeoPackage keeps for each of [layers]
+ * (gpkg_ogr_contents), where it is wrong. GDAL writes that count only when it
+ * closes a layer, and Android ends apps without warning: QGIS and other
+ * readers would show the count left behind (backlog). Called when a project
+ * opens, before GDAL reads the counts, and after every save; a file with no
+ * such table, or a count that cannot be put right, is left as it is.
+ */
+internal fun fixFeatureCounts(ds: VectorDataset, layers: Collection<String>) {
+    if (rows(ds, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'gpkg_ogr_contents'").isEmpty()) return
+    for (layer in layers) {
+        runCatching {
+            val n = rowCount(ds, layer)
+            ds.sql("UPDATE gpkg_ogr_contents SET feature_count = $n WHERE lower(table_name) = lower(${quote(layer)}) AND feature_count IS NOT $n")
+        }
+    }
+}
 
 /**
  * How many features [layer] has, from its rows. The count a GeoPackage keeps

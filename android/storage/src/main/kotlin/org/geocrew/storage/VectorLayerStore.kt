@@ -83,7 +83,11 @@ class VectorLayerStore(private val dataset: VectorDataset, private val layer: St
 
     override fun begin() = dataset.begin()
 
-    override fun commit() = dataset.commit()
+    // The layer's count of features in GeoPackage's own table, put right with every save (see fixFeatureCounts).
+    override fun commit() {
+        dataset.commit()
+        fixFeatureCounts(dataset, listOf(layer))
+    }
 
     override fun rollback() = dataset.rollback()
 }
