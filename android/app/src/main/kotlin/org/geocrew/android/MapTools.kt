@@ -2,6 +2,8 @@ package org.geocrew.android
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -180,7 +182,7 @@ fun ToolbarEditor(tools: List<MapTool>, onChange: (List<MapTool>) -> Unit, onDis
                         }
                     }
                 }
-                item { Column(Modifier.padding(bottom = 24.dp)) {} }
+                item { Spacer(Modifier.height(24.dp)) }
             }
         }
     }
