@@ -15,8 +15,8 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.PinDrop
-import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.SquareFoot
+import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
