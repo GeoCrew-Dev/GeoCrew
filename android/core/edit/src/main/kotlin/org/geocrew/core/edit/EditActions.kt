@@ -38,8 +38,15 @@ data class EditTarget(val store: LayerStore, val journal: Journal, val srs: Stri
  * all of them, as a project wants. A shared history ends as a whole: saving,
  * discarding or stopping any one layer ends it for all, so a project saves and
  * discards all its layers together. [open] finds a layer by its id.
+ * [reproject] puts a geometry from one CRS into another (null when it cannot),
+ * so a feature can move between layers of different CRSs; without it such a
+ * move is refused.
  */
-class Editing(private val sharedScope: String? = null, private val open: (String) -> EditTarget) {
+class Editing(
+    private val sharedScope: String? = null,
+    private val reproject: ((geometry: JsonObject, from: String, to: String) -> JsonObject?)? = null,
+    private val open: (String) -> EditTarget,
+) {
     private val buffers = HashMap<String, EditBuffer>()
     private val targets = HashMap<String, EditTarget>()
 
@@ -172,9 +179,16 @@ class Editing(private val sharedScope: String? = null, private val open: (String
             if (scopeOf(layer) != scopeOf(to)) return ActionResult.Failed("unsupported", "moving needs one undo history for both layers")
             val from = targets.getValue(layer)
             val into = targets.getValue(to)
-            if (from.srs != into.srs) return ActionResult.Failed("crs", "$layer and $to have different coordinate systems")
             if (fid >= 0 && !from.store.capabilities.delete) return ActionResult.Failed("read-only", "layer $layer does not allow deleting its features")
             val feature = requireNotNull(source.feature(fid)) { "there is no feature $fid" }
+            // In another CRS the position is put into it; one that cannot be stays where it is.
+            val geometry = when {
+                from.srs == into.srs || feature.geometry == null -> feature.geometry
+                from.srs == null || into.srs == null || reproject == null ->
+                    return ActionResult.Failed("crs", "$layer and $to have different coordinate systems")
+                else -> reproject.invoke(feature.geometry, from.srs, into.srs)
+                    ?: return ActionResult.Failed("crs", "the feature's position cannot be put in the coordinate system of $to")
+            }
             val fields = into.store.fields.associateBy { it.name }
             val kept = LinkedHashMap<String, JsonElement>()
             val dropped = ArrayList<String>()
@@ -185,7 +199,7 @@ class Editing(private val sharedScope: String? = null, private val open: (String
             // The copy goes in first: a crash between the two leaves the feature in both layers, never in neither.
             // Its attachments go along as new ones (protocol v1 9.1: an attachment never changes the row it is on).
             val attachments = source.attachments(fid).map { it.copy(id = UUID.randomUUID().toString()) }
-            val added = target.add(feature.geometry, JsonObject(kept), attachments)
+            val added = target.add(geometry, JsonObject(kept), attachments)
             val deleted = try {
                 source.delete(fid)
             } catch (e: IllegalArgumentException) {

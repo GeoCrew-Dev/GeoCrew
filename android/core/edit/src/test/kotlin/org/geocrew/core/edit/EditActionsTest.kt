@@ -9,6 +9,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -162,9 +163,35 @@ class EditActionsTest {
         suspend fun run(action: String, params: String) = registry.invoke(Caller.USER, action, json(params))
         run(START, """{"layer": "points"}""")
         run(START, """{"layer": "lines"}""")
-        run(ADD, """{"layer": "points", "properties": {"rock": "p1"}}""")
+        // A feature with a place: one without moves in any case, there being nothing to put into the other CRS.
+        run(ADD, """{"layer": "points", "geometry": {"type": "Point", "coordinates": [1, 2]}, "properties": {"rock": "p1"}}""")
         assertEquals("crs", (run(Editing.MOVE, """{"layer": "points", "fid": -1, "to": "lines"}""") as Outcome.Failed).code)
         assertEquals(1, project.buffer("points")!!.features().size, "nothing moved")
+    }
+
+    // With a way to put positions into another CRS, a feature moves between layers of different CRSs (backlog).
+    @Test
+    fun movingPutsThePositionIntoTheOtherCoordinateSystem() = runTest {
+        val crs = mapOf("points" to "EPSG:4490", "lines" to "EPSG:4549")
+        // A stand-in for PROJ: x and y times ten; nothing for a point at 9,9.
+        val reproject = { g: JsonObject, from: String, to: String ->
+            assertEquals("EPSG:4490" to "EPSG:4549", from to to)
+            val c = g.getValue("coordinates").jsonArray.map { it.jsonPrimitive.double }
+            if (c == listOf(9.0, 9.0)) null else json("""{"type": "Point", "coordinates": [${c[0] * 10}, ${c[1] * 10}]}""")
+        }
+        val project = Editing(sharedScope = "project", reproject = reproject) { layer ->
+            EditTarget(stores.getValue(layer), journals.getValue(layer), crs.getValue(layer))
+        }
+        val registry = ActionRegistry().apply { project.actions.forEach(::register) }
+        suspend fun run(action: String, params: String) = registry.invoke(Caller.USER, action, json(params))
+        run(START, """{"layer": "points"}""")
+        run(START, """{"layer": "lines"}""")
+        run(ADD, """{"layer": "points", "geometry": {"type": "Point", "coordinates": [1, 2]}, "properties": {"rock": "p1"}}""")
+        assertIs<Outcome.Done>(run(Editing.MOVE, """{"layer": "points", "fid": -1, "to": "lines"}"""))
+        assertEquals(json("""{"type": "Point", "coordinates": [10.0, 20.0]}"""), project.buffer("lines")!!.features().single().geometry)
+        run(ADD, """{"layer": "points", "geometry": {"type": "Point", "coordinates": [9, 9]}, "properties": {"rock": "p2"}}""")
+        assertEquals("crs", (run(Editing.MOVE, """{"layer": "points", "fid": -2, "to": "lines"}""") as Outcome.Failed).code, "a position PROJ cannot put")
+        assertEquals(1, project.buffer("points")!!.features().size)
     }
 
     @Test
