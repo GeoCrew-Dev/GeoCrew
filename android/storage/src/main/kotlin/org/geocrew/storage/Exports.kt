@@ -86,8 +86,13 @@ internal class Exports(private val dir: File) {
                 ExportFormat.SHP -> File(work, "shp").also { convert(project, names, "ESRI Shapefile", it, "ENCODING=UTF-8") }
                 ExportFormat.XLSX -> File(work, "out.xlsx").also { excel(project, layers, it, language, work) }
                 else -> {
+                    val taken = mutableSetOf<String>()
                     val files = layers.map { l ->
-                        val file = File(work, safe(l.name) + "." + format.extension)
+                        // A file a layer, named after it; names that come out alike get a number.
+                        var base = safe(l.name)
+                        var n = 2
+                        while (!taken.add(base.lowercase())) base = "${safe(l.name)} ${n++}"
+                        val file = File(work, base + "." + format.extension)
                         when (format) {
                             ExportFormat.GEOJSON -> convert(project, listOf(l.name), "GeoJSON", file, "RFC7946=YES")
                             ExportFormat.DXF -> convert(project, listOf(l.name), "DXF", file)
@@ -158,7 +163,8 @@ internal class Exports(private val dir: File) {
     // Chinese right, or for Excel with the types of the columns beside it (.csvt).
     private fun csv(project: Project, layer: Project.Layer, file: File, language: String, forExcel: Boolean) {
         val kind = layer.geometry?.uppercase().orEmpty()
-        val point = "POINT" in kind
+        // GDAL gives X and Y of single points only: a multipoint goes as WKT.
+        val point = kind.startsWith("POINT")
         val options = buildList {
             if (point) add("GEOMETRY=AS_XY") else if (!forExcel && kind.isNotEmpty() && kind != "NONE") add("GEOMETRY=AS_WKT")
             if (forExcel) add("CREATE_CSVT=YES") else add("WRITE_BOM=YES")
