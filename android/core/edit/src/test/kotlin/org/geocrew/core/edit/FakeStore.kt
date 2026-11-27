@@ -22,10 +22,11 @@ internal class FakeStore(
     override val fields: List<Field> = FIELDS,
 ) : LayerStore {
     val rows = sortedMapOf<Long, Feature>()
+    val attached = sortedMapOf<Long, List<Attachment>>()
     val writes = mutableListOf<String>()
     var failOn: String? = null
     private var sequence = 0L // like AUTOINCREMENT: fids are never reused
-    private var saved: Pair<Map<Long, Feature>, Long>? = null
+    private var saved: Triple<Map<Long, Feature>, Long, Map<Long, List<Attachment>>>? = null
 
     fun put(rock: String, x: Number = 0): Long {
         val fid = ++sequence
@@ -55,13 +56,21 @@ internal class FakeStore(
         rows[fid] = f.copy(geometry = if (setGeometry) geometry else f.geometry, properties = JsonObject(f.properties + properties))
     }
 
+    override fun attachments(fid: Long): List<Attachment> = attached[fid].orEmpty()
+
+    override fun setAttachments(fid: Long, attachments: List<Attachment>) {
+        if (attachments.isEmpty() && fid !in attached) return
+        write("attach")
+        if (attachments.isEmpty()) attached.remove(fid) else attached[fid] = attachments
+    }
+
     override fun delete(fid: Long) {
         write("delete")
         requireNotNull(rows.remove(fid)) { "there is no feature $fid" }
     }
 
     override fun begin() {
-        saved = rows.toMap() to sequence
+        saved = Triple(rows.toMap(), sequence, attached.toMap())
     }
 
     override fun commit() {
@@ -70,10 +79,12 @@ internal class FakeStore(
     }
 
     override fun rollback() {
-        val (r, s) = checkNotNull(saved)
+        val (r, s, a) = checkNotNull(saved)
         rows.clear()
         rows.putAll(r)
         sequence = s
+        attached.clear()
+        attached.putAll(a)
         saved = null
     }
 }

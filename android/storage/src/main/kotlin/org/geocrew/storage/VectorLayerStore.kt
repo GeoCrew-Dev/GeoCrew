@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import org.geocrew.core.edit.Attachment
 import org.geocrew.core.edit.Capabilities
 import org.geocrew.core.edit.Feature
 import org.geocrew.core.edit.Field
@@ -22,10 +23,11 @@ import org.geocrew.nativelib.VectorDataset
  * Layer [layer] of an open [dataset] as the store of an edit buffer
  * (ADR 0005). The fields and capabilities are read once, when this is made;
  * the fields' ranges each time, as they can change while the layer is edited.
+ * With [layerId], a project layer's id, its features keep attachments (ADR 0004).
  * VectorDataset does not report whether a layer takes new features, so that
  * follows random writes: both or neither for GeoPackage and Shapefile.
  */
-class VectorLayerStore(private val dataset: VectorDataset, private val layer: String) : LayerStore {
+class VectorLayerStore(private val dataset: VectorDataset, private val layer: String, private val layerId: String? = null) : LayerStore {
     private val info = Json.parseToJsonElement(dataset.layerInfo(layer)).jsonObject
 
     private val plain: List<Field> = info.getValue("fields").jsonArray.map {
@@ -71,6 +73,13 @@ class VectorLayerStore(private val dataset: VectorDataset, private val layer: St
     }
 
     override fun delete(fid: Long) = dataset.delete(layer, fid)
+
+    override fun attachments(fid: Long): List<Attachment> = layerId?.let { AttachmentTables.of(dataset, it, fid) }.orEmpty()
+
+    override fun setAttachments(fid: Long, attachments: List<Attachment>) {
+        val id = layerId ?: return super.setAttachments(fid, attachments)
+        AttachmentTables.set(dataset, layer, id, fid, attachments)
+    }
 
     override fun begin() = dataset.begin()
 

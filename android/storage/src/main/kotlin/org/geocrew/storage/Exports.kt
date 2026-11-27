@@ -26,13 +26,14 @@ internal class Exports(private val dir: File) {
 
     /**
      * Every layer of the project as one KML file; GDAL puts the coordinates in
-     * WGS84, as KML wants. GeoCrew's own tables stay out: GDAL would list them as
-     * layers, since they are not in gpkg_contents.
+     * WGS84, as KML wants. GeoCrew's own tables stay out: the layers are named,
+     * as GDAL would list the attachment table and the unregistered tables too.
      */
     fun kml(project: Project): File {
         project.checkpoint()
         val out = next(project, "kml")
-        GeoCrewNative.run(arrayOf("vector", "convert", "--oo", "LIST_ALL_TABLES=NO", "--output-format", "KML", project.file.path, out.path))
+        val layers = project.layers.flatMap { listOf("--input-layer", it.name) }
+        GeoCrewNative.run(arrayOf("vector", "convert", "--oo", "LIST_ALL_TABLES=NO") + layers + arrayOf("--output-format", "KML", project.file.path, out.path))
         return out
     }
 

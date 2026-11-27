@@ -82,6 +82,16 @@
 - 检查在编辑缓冲里（`feature.add`、`feature.values`），转移要素时超出目标字段范围的值和类型不对的一样丢掉并先问。动作 `layer.field.range`；`layer.info`、`layer.features` 的字段带 `range`。
 - 这只是数字范围。按 ADR 0007 用 SQL 表达式写的一般约束以后另做。
 
+2026-11-27 再补充：附件的存储（界面另做）。
+- 附件挂在要素上，一个要素可以有多个，按协议 v1 第 9.1 节：每个附件是 `geocrew_attachments` 里的一行（登记成 attributes 表），有自己的 UUID、原文件和缩略图的 SHA-256、MIME 类型、大小、原文件名和 meta（JSON，比如拍摄方位）。
+- 每个有附件的图层一张映射表 `geocrew_attachments_<图层 ID>`（要素的 fid 对应附件行，带顺序），按关联表扩展登记在 `gpkgext_relations`（`relation_name` 为 `attributes`）和 `gpkg_extensions`。GDAL 能把它读成关系（测试里核对过），QGIS 通过 GDAL 读。映射表按图层 ID 命名，图层改名时只改登记，删图层时一起删。
+- 文件放在工程的 `附件/` 里，按 SHA-256 命名，带上类型常用的扩展名（`.jpg`、`.mp4` 等），别的应用能直接打开；同一个文件只存一份。照片和视频另存一张缩略图（JPEG，长边不超过 640 像素，协议 9.3），也按哈希命名。文件先写到临时名、落盘后再改名，写到一半断了不会留下残缺的文件。
+- 附件跟着要素进编辑缓冲（ADR 0005）：加点时一起加，改附件，删要素时一起删，都能撤销；保存时和要素在同一个事务里写，崩溃后从日志恢复。转移要素时附件跟着走，按协议（附件挂在哪一行不能改）在新的那一行上算新的附件。
+- 撤销和删除附件行都不删文件；没有附件行引用的文件以后统一清理。
+- 动作：`attachment.import` 把文件拷进附件文件夹，返回 `feature.add`、`feature.attachments.set` 要的描述（AI、插件只能导入 GeoCrew 文件夹里的文件）；`feature.attachments` 给出要素的附件和文件路径；`feature.add` 可以带 `attachments`。
+- 照片、视频这类"字段"不做成单独的列：附件挂在要素上，表单里一个附件区。以后要按用途分组（照片、素描），在 meta 里记组名。
+- 附件表登记在 `gpkg_contents` 里，导出 KML 时改为只导出工程的图层。导出时带上附件（KMZ、GPKG 打包）仍在待办。
+
 ## 相关
 
 - [ADR 0002](0002-android-baseline.md)

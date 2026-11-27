@@ -1,15 +1,19 @@
 package org.geocrew.core.edit
 
+import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
-import kotlinx.serialization.json.add
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.geocrew.core.action.Action
@@ -57,6 +61,9 @@ class Editing(private val sharedScope: String? = null, private val open: (String
     /** Whether [layer] has edits to save. Inside an action only. */
     fun isModified(layer: String): Boolean = buffers[layer]?.isModified == true
 
+    /** Feature [fid]'s attachments as edited, or null when [layer] is not being edited. Inside an action only. */
+    fun attachments(layer: String, fid: Long): List<Attachment>? = buffers[layer]?.attachments(fid)
+
     /**
      * Stops editing [layer] when it has nothing to save, as when its file must be
      * opened again; says whether it is no longer being edited. Inside an action
@@ -89,7 +96,7 @@ class Editing(private val sharedScope: String? = null, private val open: (String
             ADD, "Add feature", "Adds a feature to a layer being edited", Risk.EDIT, ADD_PARAMS,
             """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.305, 30.5928]}, "properties": {"点名": "D001", "描述": "泉水出露"}}""",
         ) { buffer, p ->
-            buffer.add(p["geometry"].geometry(), (p["properties"] as? JsonObject) ?: JsonObject(emptyMap()))
+            buffer.add(p["geometry"].geometry(), (p["properties"] as? JsonObject) ?: JsonObject(emptyMap()), attachments(p["attachments"]))
         },
         FeatureAction(
             GEOMETRY, "Change geometry", "Gives a feature a new geometry, or none", Risk.EDIT, GEOMETRY_PARAMS,
@@ -102,6 +109,14 @@ class Editing(private val sharedScope: String? = null, private val open: (String
             """{"layer": "野外点", "fid": 12, "values": {"点名": "S1", "描述": "泉水出露，流量约 2 L/s"}}""",
         ) { buffer, p ->
             buffer.changeValues(p.fid(), p.getValue("values").jsonObject)
+        },
+        FeatureAction(
+            ATTACHMENTS, "Set attachments",
+            "Gives a feature these attachments and no others, in this order: ones it has keep their id, new ones come from attachment.import",
+            Risk.EDIT, ATTACHMENTS_PARAMS,
+            """{"layer": "野外点", "fid": 12, "attachments": [{"file": "$EXAMPLE_HASH", "type": "image/jpeg", "size": 2841203, "name": "露头.jpg"}]}""",
+        ) { buffer, p ->
+            buffer.changeAttachments(p.fid(), attachments(p["attachments"]))
         },
         FeatureAction(DELETE, "Delete feature", "Deletes a feature", Risk.DELETE, FID_PARAMS, """{"layer": "野外点", "fid": 12}""") { buffer, p ->
             buffer.delete(p.fid())
@@ -142,7 +157,7 @@ class Editing(private val sharedScope: String? = null, private val open: (String
     // range), the rest are dropped and named in the result. Both layers change in one step of the shared undo history.
     private inner class Move : Action {
         override val spec = ActionSpec(
-            MOVE, "Move feature", "Moves a feature to another layer being edited; values that layer's fields do not take are dropped",
+            MOVE, "Move feature", "Moves a feature to another layer being edited, its attachments too; values that layer's fields do not take are dropped",
             MOVE_PARAMS, Risk.EDIT, Stability.PREVIEW, inputs = listOf("vector"), outputs = listOf("vector"),
             examples = listOf(schema("""{"layer": "野外点", "fid": 12, "to": "泉点"}""")),
         )
@@ -168,7 +183,9 @@ class Editing(private val sharedScope: String? = null, private val open: (String
                 if (fields[name]?.accepts(value) == true) kept[name] = value else dropped += name
             }
             // The copy goes in first: a crash between the two leaves the feature in both layers, never in neither.
-            val added = target.add(feature.geometry, JsonObject(kept))
+            // Its attachments go along as new ones (protocol v1 9.1: an attachment never changes the row it is on).
+            val attachments = source.attachments(fid).map { it.copy(id = UUID.randomUUID().toString()) }
+            val added = target.add(feature.geometry, JsonObject(kept), attachments)
             val deleted = try {
                 source.delete(fid)
             } catch (e: IllegalArgumentException) {
@@ -250,6 +267,7 @@ class Editing(private val sharedScope: String? = null, private val open: (String
         const val GEOMETRY = "feature.geometry"
         const val VALUES = "feature.values"
         const val DELETE = "feature.delete"
+        const val ATTACHMENTS = "feature.attachments.set"
         const val MOVE = "feature.move"
         const val SAVE_ALL = "edits.save"
         const val DISCARD_ALL = "edits.discard"
@@ -265,9 +283,17 @@ class Editing(private val sharedScope: String? = null, private val open: (String
         private val NO_PARAMS = schema("""{"type": "object", "additionalProperties": false}""")
         private val LAYER_PARAMS = schema("""{"type": "object", "additionalProperties": false, "required": ["layer"], "properties": {$LAYER}}""")
         private val FID_PARAMS = schema("""{"type": "object", "additionalProperties": false, "required": ["layer", "fid"], "properties": {$LAYER, $FID}}""")
+        private const val ATTACHMENT_LIST = """"attachments": {"type": "array", "items": {"type": "object", "required": ["file", "type", "size"],
+            "properties": {"id": {"type": "string"}, "file": {"type": "string"}, "thumb": {"type": "string"}, "type": {"type": "string"},
+                           "size": {"type": "integer"}, "name": {"type": "string"}, "meta": {"type": "object"}}}}"""
+        private const val EXAMPLE_HASH = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
         private val ADD_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer"],
-                "properties": {$LAYER, $GEOMETRY_ARG, "properties": {"type": "object"}}}""",
+                "properties": {$LAYER, $GEOMETRY_ARG, "properties": {"type": "object"}, $ATTACHMENT_LIST}}""",
+        )
+        private val ATTACHMENTS_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "fid", "attachments"],
+                "properties": {$LAYER, $FID, $ATTACHMENT_LIST}}""",
         )
         private val GEOMETRY_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["layer", "fid", "geometry"], "properties": {$LAYER, $FID, $GEOMETRY_ARG}}""",
@@ -285,6 +311,21 @@ class Editing(private val sharedScope: String? = null, private val open: (String
 
         // New features' temporary fids and the fids the store gave them.
         private fun fids(ids: Map<Long, Long>) = JsonObject(ids.entries.associate { (k, v) -> k.toString() to JsonPrimitive(v) })
+
+        // Attachments as actions give them; one without an id is new and gets one.
+        private fun attachments(json: JsonElement?): List<Attachment> = (json as? JsonArray).orEmpty().map { a ->
+            val o = a.jsonObject
+            fun text(key: String) = (o[key] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.contentOrNull
+            Attachment(
+                id = text("id") ?: UUID.randomUUID().toString(),
+                file = text("file").orEmpty(),
+                type = text("type").orEmpty(),
+                size = (o["size"] as? JsonPrimitive)?.longOrNull ?: -1,
+                name = text("name").orEmpty(),
+                thumb = text("thumb"),
+                meta = o["meta"] as? JsonObject,
+            )
+        }
 
         private fun JsonElement?.geometry(): JsonObject? = when (this) {
             null, JsonNull -> null
