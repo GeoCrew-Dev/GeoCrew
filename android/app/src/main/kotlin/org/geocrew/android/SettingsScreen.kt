@@ -1,16 +1,20 @@
 package org.geocrew.android
 
+import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Cached
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
@@ -38,9 +42,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +56,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The app's settings: appearance, language, the map's key and where projects are. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,6 +67,13 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
     val context = LocalContext.current
     val settings = graph.settings
     var askKey by remember { mutableStateOf(false) }
+    var askCache by remember { mutableStateOf(false) }
+    var clearingCache by remember { mutableStateOf(false) }
+    // How much the map's tile cache holds; read again after it is cleared.
+    var cacheUsed by remember { mutableStateOf<Long?>(null) }
+    var cacheReads by remember { mutableIntStateOf(0) }
+    LaunchedEffect(cacheReads) { cacheUsed = withContext(Dispatchers.IO) { MapCache.used(context) } }
+    val scope = rememberCoroutineScope()
     var askLanguage by remember { mutableStateOf(false) }
     var key by remember { mutableStateOf(TiandituKey.read(context)) }
     val language = remember { AppLanguage.current(context) }
@@ -128,6 +145,18 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
                     modifier = Modifier.clickable { askKey = true },
                 )
             }
+            item {
+                ListItem(
+                    colors = clear,
+                    headlineContent = { Text(stringResource(R.string.settings_map_cache)) },
+                    supportingContent = {
+                        Text(stringResource(R.string.map_cache_value, Formatter.formatShortFileSize(context, cacheUsed ?: 0), cacheSize(settings.mapCacheMb)))
+                    },
+                    leadingContent = { Icon(Icons.Rounded.Cached, null) },
+                    trailingContent = { TextButton(onClick = { clearingCache = true }) { Text(stringResource(R.string.map_cache_clear)) } },
+                    modifier = Modifier.clickable { askCache = true },
+                )
+            }
             item { SectionHeader(stringResource(R.string.settings_storage)) }
             item {
                 ListItem(
@@ -149,6 +178,47 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
         }
     }
 
+    if (askCache) {
+        AlertDialog(
+            onDismissRequest = { askCache = false },
+            title = { Text(stringResource(R.string.map_cache_limit)) },
+            text = {
+                Column {
+                    for (mb in MapCache.CHOICES) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                askCache = false
+                                settings.changeMapCache(mb)
+                                MapCache.limit(context, mb)
+                            }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = settings.mapCacheMb == mb, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(cacheSize(mb), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { askCache = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    if (clearingCache) {
+        AlertDialog(
+            onDismissRequest = { clearingCache = false },
+            title = { Text(stringResource(R.string.map_cache_clear_title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    clearingCache = false
+                    scope.launch {
+                        MapCache.clear(context)
+                        cacheReads++
+                    }
+                }) { Text(stringResource(R.string.map_cache_clear)) }
+            },
+            dismissButton = { TextButton(onClick = { clearingCache = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
     if (askKey) {
         KeyDialog(current = key.orEmpty(), onDismiss = { askKey = false }, onSave = {
             TiandituKey.write(context, it)
@@ -214,3 +284,6 @@ fun KeyDialog(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) 
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
+
+// A cache size in MB as people read it: 500 MB, 1 GB.
+private fun cacheSize(mb: Int): String = if (mb >= 1024 && mb % 1024 == 0) "${mb / 1024} GB" else "$mb MB"

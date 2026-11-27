@@ -414,4 +414,9 @@
     <string name="draw_move">移动</string>
     <string name="draw_unpick">取消选择</string>
     <string name="draw_put_here">放在这里</string>
+    <string name="settings_map_cache">地图缓存</string>
+    <string name="map_cache_value">已用 %1$s，上限 %2$s</string>
+    <string name="map_cache_limit">地图缓存上限</string>
+    <string name="map_cache_clear">清除</string>
+    <string name="map_cache_clear_title">清除地图缓存？</string>
 </resources>

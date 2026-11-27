@@ -169,7 +169,7 @@ fun MapScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current.density
-    val mapView = rememberMapView()
+    val mapView = rememberMapView(graph.settings.mapCacheMb)
     val key = remember { TiandituKey.read(context) }
     var projectId by remember { mutableStateOf<String?>(null) }
     var layers by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
