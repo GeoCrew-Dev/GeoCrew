@@ -50,6 +50,8 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.module.http.HttpRequestUtil
+import org.maplibre.android.offline.OfflineManager
+import org.maplibre.android.storage.FileSource
 
 // Names of our own: the basemap's style has layers of its own (Tianditu's "labels", say).
 internal const val POINT_SOURCE = "geocrew-points"
@@ -208,12 +210,58 @@ internal fun Crosshair(modifier: Modifier) {
     }
 }
 
-/** A MapView that follows the screen's lifecycle. */
+/**
+ * The map's tile cache: MapLibre keeps the tiles it has fetched as their
+ * servers' cache headers allow, so maps seen before show again without the
+ * network, as in a browser. Only the size is GeoCrew's: [DEFAULT_MB] unless
+ * the user picks another in the settings. Nothing is fetched ahead of time
+ * and nothing is kept against what a server says (ADR 0015).
+ */
+object MapCache {
+    const val DEFAULT_MB = 500
+
+    /** The sizes the settings offer, in MB. */
+    val CHOICES = listOf(100, 500, 1024, 2048)
+
+    /** Sets how much the cache may hold; MapLibre lets older tiles go when it is full. */
+    fun limit(context: Context, mb: Int) {
+        MapLibre.getInstance(context)
+        OfflineManager.getInstance(context).setMaximumAmbientCacheSize(mb * 1024L * 1024L, quietly)
+    }
+
+    /** How much the cache holds now, in bytes. */
+    fun used(context: Context): Long = File(FileSource.getResourcesCachePath(context), "mbgl-offline.db").length()
+
+    /** Empties the cache; false when MapLibre could not. */
+    suspend fun clear(context: Context): Boolean = suspendCancellableCoroutine { done ->
+        MapLibre.getInstance(context)
+        OfflineManager.getInstance(context).clearAmbientCache(
+            object : OfflineManager.FileSourceCallback {
+                override fun onSuccess() {
+                    if (done.isActive) done.resume(true)
+                }
+
+                override fun onError(message: String) {
+                    if (done.isActive) done.resume(false)
+                }
+            },
+        )
+    }
+
+    private val quietly = object : OfflineManager.FileSourceCallback {
+        override fun onSuccess() = Unit
+
+        override fun onError(message: String) = Unit
+    }
+}
+
+/** A MapView that follows the screen's lifecycle, its tile cache as big as [cacheMb]. */
 @Composable
-internal fun rememberMapView(): MapView {
+internal fun rememberMapView(cacheMb: Int = MapCache.DEFAULT_MB): MapView {
     val context = LocalContext.current
     val mapView = remember {
         MapLibre.getInstance(context)
+        MapCache.limit(context, cacheMb)
         HttpRequestUtil.setLogEnabled(false) // MapLibre logs the URLs of failed requests, and Tianditu's carry the key
         // The project's rasters are drawn by GDAL as MapLibre asks for their tiles; other requests go out as before.
         HttpRequestUtil.setOkHttpClient(RasterTiles.client)

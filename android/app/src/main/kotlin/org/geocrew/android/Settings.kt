@@ -66,6 +66,15 @@ class AppSettings(context: Context) {
         prefs.edit { putString(TOOLBAR, toolbar.joinToString(",") { it.id }) }
     }
 
+    /** The most the map's tile cache may hold, in MB (MapCache). */
+    var mapCacheMb by mutableStateOf(prefs.getInt(MAP_CACHE, MapCache.DEFAULT_MB))
+        private set
+
+    fun changeMapCache(mb: Int) {
+        mapCacheMb = mb
+        prefs.edit { putInt(MAP_CACHE, mb) }
+    }
+
     /** How the file manager lists a folder. */
     var fileSort by mutableStateOf(FileSort.entries.firstOrNull { it.name == prefs.getString(FILE_SORT, null) } ?: FileSort.NAME)
         private set
@@ -121,6 +130,7 @@ class AppSettings(context: Context) {
         const val RECENT_CRS_KEPT = 8
         const val FILE_SORT = "file_sort"
         const val TOOLBAR = "toolbar"
+        const val MAP_CACHE = "map_cache_mb"
     }
 }
 
