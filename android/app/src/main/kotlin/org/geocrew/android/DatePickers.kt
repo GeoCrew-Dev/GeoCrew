@@ -18,13 +18,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import java.time.Instant
-import java.time.LocalDateTime
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
 import org.geocrew.core.project.Numbers
 
 /** The date a date field's [text] says (2026-11-27, typed full-width too), or null. */
@@ -44,6 +47,13 @@ fun instantOf(text: String, zone: ZoneId = ZoneId.systemDefault()): Instant? {
 /** [date] at [time] where the phone is, as a date-and-time field keeps it: ISO 8601 in UTC. */
 fun storedDateTime(date: LocalDate, time: LocalTime, zone: ZoneId = ZoneId.systemDefault()): String =
     ZonedDateTime.of(date, time, zone).toInstant().toString()
+
+/** A [type] field's [text] as shown: a date and time in the phone's time zone and [locale]'s way; anything else as it is. */
+fun shownDateTime(type: String, text: String, locale: Locale): String {
+    if (type != "datetime") return text
+    val instant = instantOf(text) ?: return text
+    return DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(locale).withZone(ZoneId.systemDefault()).format(instant)
+}
 
 /**
  * A date to choose, [initial] picked to begin with (today without one).

@@ -249,14 +249,14 @@ internal fun Empty(icon: ImageVector, text: String) {
 
 /** What to look for in the folder's names, typed in the top bar; the keyboard comes up at once. */
 @Composable
-internal fun SearchField(query: String, onChange: (String) -> Unit) {
+internal fun SearchField(query: String, onChange: (String) -> Unit, hint: String = stringResource(R.string.files_search_hint)) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { focus.requestFocus() }
     TextField(
         value = query,
         onValueChange = onChange,
-        placeholder = { Text(stringResource(R.string.files_search_hint)) },
+        placeholder = { Text(hint) },
         singleLine = true,
         // The list follows what is typed; the search key only puts the keyboard away.
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),

@@ -481,4 +481,6 @@
     <string name="pick_date">Choose a date</string>
     <string name="pick_time">Time</string>
     <string name="clear">Clear</string>
+    <string name="table_search_hint">Search features</string>
+    <string name="table_no_matches">No matching features</string>
 </resources>
