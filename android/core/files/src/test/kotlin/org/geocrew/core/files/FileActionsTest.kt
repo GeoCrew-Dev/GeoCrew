@@ -11,6 +11,8 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -123,6 +125,16 @@ class FileActionsTest {
         assertEquals("folder", info.getValue("kind").jsonPrimitive.content)
         assertEquals(5L, done(FileActions.INFO, """{"path": ${json(File(folder, "a.tif"))}}""").getValue("size").jsonPrimitive.content.toLong())
         assertEquals(FileActions.NOT_FOUND, failed(FileActions.INFO, """{"path": ${json(File(folder, "c.tif"))}}"""))
+    }
+
+    @Test
+    fun probingGoesThroughTheProbe() {
+        val tif = File(storage, "a.tif").apply { writeText("raster") }
+        assertEquals(FileActions.FAILED, failed(FileActions.PROBE, """{"path": ${json(tif)}}"""), "no probe given")
+        val probing = FileActions(geocrew, top = { storage }, busy = { null }, probe = { f -> buildJsonObject { put("name", f.name) } })
+        val read = runBlocking { probing.actions.single { it.spec.id == FileActions.PROBE }.run(Caller.USER, Json.parseToJsonElement("""{"path": ${json(tif)}}""").jsonObject) }
+        assertEquals("a.tif", assertIs<ActionResult.Done>(read).output.jsonObject.getValue("name").jsonPrimitive.content)
+        assertEquals(FileActions.NOT_FOUND, failed(FileActions.PROBE, """{"path": ${json(File(storage, "b.tif"))}}"""))
     }
 
     @Test

@@ -368,4 +368,22 @@
     <plurals name="files_moving_many">
         <item quantity="other">移动 %d 项</item>
     </plurals>
+    <string name="files_format">格式</string>
+    <string name="files_reading">正在读取…</string>
+    <string name="files_cannot_read">读不了这个文件</string>
+    <string name="files_pixels">像素</string>
+    <string name="files_bands">波段</string>
+    <string name="files_bands_value">%1$d 个（%2$s）</string>
+    <string name="files_cell">像元大小</string>
+    <string name="files_metres">%1$s 米</string>
+    <string name="files_crs">坐标系</string>
+    <string name="files_no_crs">没有</string>
+    <string name="files_extent">范围</string>
+    <string name="files_extent_value">经度 %1$s 至 %2$s\n纬度 %3$s 至 %4$s</string>
+    <string name="files_layers">图层</string>
+    <string name="files_layer_value">%1$s：%2$s</string>
+    <string name="files_no_geometry">无几何</string>
+    <plurals name="files_features">
+        <item quantity="other">%d 个要素</item>
+    </plurals>
 </resources>
