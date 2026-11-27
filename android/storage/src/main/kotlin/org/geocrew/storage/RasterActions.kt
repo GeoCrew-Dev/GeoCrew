@@ -33,7 +33,8 @@ class RasterActions(private val workspace: Workspace, private val geocrew: File,
             Risk.EDIT, ADD_PARAMS, """{"path": "/storage/emulated/0/Download/影像.tif"}""",
         ) { caller, p ->
             val project = workspace.current ?: return@RasterAction ActionResult.Failed(NO_PROJECT, "no project is open")
-            val file = File(p.text("path").orEmpty()).canonicalFile
+            val path = p.text("path")?.takeIf { it.isNotBlank() } ?: return@RasterAction ActionResult.Failed(NOT_FOUND, "no path given")
+            val file = File(path).canonicalFile
             if (caller != Caller.USER && !within(file, geocrew.canonicalFile)) {
                 return@RasterAction ActionResult.Failed(OUTSIDE, "${file.path} is outside ${geocrew.path}")
             }
