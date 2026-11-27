@@ -5,9 +5,11 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -15,6 +17,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.geocrew.core.edit.EditTarget
 import org.geocrew.core.edit.Field
 import org.geocrew.core.edit.FieldType
@@ -198,8 +201,11 @@ private fun readDisplay(ds: VectorDataset): Map<String, Project.Display> {
     }
 }
 
-// What a layer's style may say (ADR 0006, v1: one symbol).
-private val STYLE_KEYS = setOf("color", "size", "width", "fill")
+// What a layer's style may say (ADR 0006): one symbol, or a colour for each value of a field.
+private val STYLE_KEYS = setOf("color", "size", "width", "fill", "field", "classes")
+
+// The most values a categorized style may colour.
+private const val MAX_CLASSES = 100
 
 // The rows of a query, as column name to text.
 private fun rows(ds: VectorDataset, sql: String): List<Map<String, String?>> =
@@ -259,8 +265,10 @@ class Project internal constructor(
     /**
      * Sets how layer [layer] is drawn: one colour (#rrggbb), a point's [size]
      * and a line's width in dp, an area's fill opacity; what is left out takes
-     * its default. An empty [style] goes back to the default style. Saved at
-     * once, not undone, like the display.
+     * its default. With a "field" of the layer and "classes" ([{"value",
+     * "color"}], each value once, at most 100) features are coloured by that
+     * field's value, the rest in the colour. An empty [style] goes back to the
+     * default style. Saved at once, not undone, like the display.
      */
     fun setStyle(layer: String, style: JsonObject) {
         val id = layers.firstOrNull { it.name == layer }?.id ?: throw IllegalArgumentException("there is no layer $layer")
@@ -277,17 +285,43 @@ class Project internal constructor(
         val size = number("size", 1.0..30.0)
         val width = number("width", 0.5..20.0)
         val fill = number("fill", 0.0..1.0)
+        val field = style["field"]?.let { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        require(style["field"] == null || field != null) { "field is a field's name" }
+        require((field == null) == (style["classes"] == null)) { "field and classes go together" }
+        val classes = style["classes"]?.let { c ->
+            val listed = (c as? JsonArray)?.map { it as? JsonObject } ?: throw IllegalArgumentException("classes is a list")
+            require(listed.size <= MAX_CLASSES) { "a style colours at most $MAX_CLASSES values" }
+            listed.map { o ->
+                val value = (o?.get("value") as? JsonPrimitive)?.contentOrNull
+                val shown = (o?.get("color") as? JsonPrimitive)?.contentOrNull
+                require(o != null && o.keys == setOf("value", "color") && value != null && shown != null && Regex("#[0-9a-fA-F]{6}").matches(shown)) {
+                    "each class is {\"value\", \"color\": #rrggbb}"
+                }
+                value to shown.lowercase()
+            }.also { pairs -> require(pairs.map { it.first }.toSet().size == pairs.size) { "each value has one class" } }
+        }
+        if (field != null) {
+            val fields = Json.parseToJsonElement(dataset.layerInfo(layer)).jsonObject["fields"]?.jsonArray.orEmpty()
+                .mapNotNull { (it.jsonObject["name"] as? JsonPrimitive)?.contentOrNull }
+            require(field in fields) { "$layer has no field $field" }
+        }
         dataset.sql(ProjectFormat.STYLE_SCHEMA)
         if (style.isEmpty()) {
             dataset.sql("DELETE FROM ${ProjectFormat.STYLE_TABLE} WHERE layer_id = ${quote(id)}")
             return
         }
         val stored = buildJsonObject {
-            put("kind", "single")
+            put("kind", if (field == null) "single" else "categorized")
             color?.let { put("color", it.lowercase()) }
             size?.let { put("size", it) }
             width?.let { put("width", it) }
             fill?.let { put("fill", it) }
+            if (field != null) {
+                put("field", field)
+                putJsonArray("classes") {
+                    for ((value, shown) in classes.orEmpty()) addJsonObject { put("value", value); put("color", shown) }
+                }
+            }
         }
         dataset.sql("INSERT OR REPLACE INTO ${ProjectFormat.STYLE_TABLE} (layer_id, style) VALUES (${quote(id)}, ${quote(stored.toString())})")
     }

@@ -499,10 +499,17 @@ fun LayersScreen(
         )
     }
     styling?.let { layer ->
+        // The layer's features, for the values a categorized style colours.
+        var collection by remember(layer.name) { mutableStateOf<JsonObject?>(null) }
+        LaunchedEffect(layer.name) {
+            val read = graph.invoke(Workspace.FEATURES, buildJsonObject { put("layer", layer.name) })
+            collection = (read as? Outcome.Done)?.output as? JsonObject ?: JsonObject(emptyMap())
+        }
         StyleDialog(
             layer = layer.name,
             geometry = layer.geometry,
             style = layer.style,
+            collection = collection,
             onDismiss = { styling = null },
             onSave = { style ->
                 styling = null

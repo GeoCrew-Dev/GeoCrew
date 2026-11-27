@@ -440,4 +440,13 @@
     <string name="map_cache_clear">Clear</string>
     <string name="map_cache_clear_title">Clear the map cache?</string>
     <string name="map_cache_clear_failed">The map cache could not be cleared</string>
+    <string name="style_single">Single</string>
+    <string name="style_categorized">By value</string>
+    <string name="style_field">Field</string>
+    <string name="style_other">Other</string>
+    <string name="color_more">More colours</string>
+    <string name="color_hex">Hex</string>
+    <string name="color_red">Red</string>
+    <string name="color_green">Green</string>
+    <string name="color_blue">Blue</string>
 </resources>

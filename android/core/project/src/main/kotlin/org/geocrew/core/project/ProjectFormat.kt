@@ -33,7 +33,10 @@ object ProjectFormat {
      * set, a layer without one drawn in a colour by when it was made. v1 has
      * one symbol per layer: {"kind": "single", "color": "#rrggbb", "size": a
      * point's radius in dp, "width": a line's width in dp, "fill": an area's
-     * fill opacity from 0 to 1}. Categorized, graduated and rule-based styles
+     * fill opacity from 0 to 1}. A categorized style is {"kind":
+     * "categorized", the same keys, "field": a field of the layer, "classes":
+     * [{"value", "color"}]}: features whose field has one of the values take
+     * its colour, the rest the style's colour. Graduated and rule-based styles
      * come as other kinds.
      */
     const val STYLE_TABLE = "geocrew_layer_style"
