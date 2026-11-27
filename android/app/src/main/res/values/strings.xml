@@ -490,4 +490,7 @@
     <string name="save_first_delete_body">Deleting a field saves your changes first. They can\'t be undone after that.</string>
     <string name="save_and_rename">Save and rename</string>
     <string name="save_and_delete">Save and delete</string>
+    <string name="table_change_values">Edit values</string>
+    <string name="table_change_done">Done</string>
+    <string name="table_change_value">Edit value</string>
 </resources>

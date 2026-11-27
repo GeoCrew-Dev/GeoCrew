@@ -468,4 +468,7 @@
     <string name="save_first_delete_body">删除字段要先保存修改，保存后不能撤销。</string>
     <string name="save_and_rename">保存并改名</string>
     <string name="save_and_delete">保存并删除</string>
+    <string name="table_change_values">改值</string>
+    <string name="table_change_done">完成</string>
+    <string name="table_change_value">改值</string>
 </resources>
