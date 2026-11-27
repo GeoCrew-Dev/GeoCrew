@@ -16,7 +16,6 @@ import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Bookmarks
-import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.FilterCenterFocus
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -24,6 +23,7 @@ import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PinDrop
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.ScreenLockRotation
 import androidx.compose.material.icons.rounded.SquareFoot
 import androidx.compose.material.icons.rounded.Straighten
+import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material.icons.rounded.Transform
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ZoomOutMap
@@ -84,6 +85,7 @@ enum class MapTool(val id: String, val group: Int?, val label: Int, val icon: Im
     CONVERT("convert", R.string.menu_analysis, R.string.tool_convert, Icons.Rounded.Transform),
     EXPORT_GPKG("export_gpkg", R.string.menu_data, R.string.export_gpkg, Icons.Rounded.SaveAlt),
     EXPORT_KML("export_kml", R.string.menu_data, R.string.export_kml, Icons.Rounded.Public),
+    EXPORT_KMZ("export_kmz", R.string.menu_data, R.string.export_kmz, Icons.Rounded.PhotoLibrary),
     FILES("files", R.string.menu_data, R.string.files, Icons.Rounded.FolderOpen),
     PROJECT_SETTINGS("project_settings", R.string.project_section, R.string.project_settings, Icons.Rounded.Tune),
     CLOSE_PROJECT("close_project", R.string.project_section, R.string.project_close, Icons.AutoMirrored.Rounded.Logout),

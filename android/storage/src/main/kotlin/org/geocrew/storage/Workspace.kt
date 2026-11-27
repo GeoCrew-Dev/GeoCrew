@@ -120,7 +120,8 @@ class Workspace(private val projects: Projects) {
             )
         },
         WorkspaceAction(
-            EXPORT, "Export project", "Writes the open project's saved data, or one layer of it, to a new GeoPackage or KML file in the export folder",
+            EXPORT, "Export project",
+            "Writes the open project's saved data, or one layer of it, to a new file in the export folder: a GeoPackage, KML, or KMZ with the photos",
             Risk.SEND, EXPORT_PARAMS, """{"format": "kml"}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
@@ -129,12 +130,12 @@ class Workspace(private val projects: Projects) {
             val layer = (p["layer"] as? JsonPrimitive)?.contentOrNull
             if (layer != null) require(project.layers.any { it.name == layer }) { "the project has no layer $layer" }
             // GDAL makes no KML of a GeoPackage without layers, as a new project is.
-            if (format == "kml" && project.layers.isEmpty()) return@WorkspaceAction ActionResult.Failed("empty", "the project has no layers")
+            if (format != "gpkg" && project.layers.isEmpty()) return@WorkspaceAction ActionResult.Failed("empty", "the project has no layers")
             val exports = Exports(projects.exports)
             val file = when {
                 layer != null -> exports.layer(project, layer, format)
                 format == "gpkg" -> exports.gpkg(project)
-                else -> exports.kml(project)
+                else -> exports.kml(project, zipped = format == "kmz")
             }
             ActionResult.Done(buildJsonObject { put("path", file.path) })
         },
@@ -675,7 +676,7 @@ class Workspace(private val projects: Projects) {
                 "properties": {"layer": {"type": "string"}, "field": {"type": "string"}, "min": {"type": "number"}, "max": {"type": "number"}}}""",
         )
         private val EXPORT_PARAMS = schema(
-            """{"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"enum": ["gpkg", "kml"]}, "layer": {"type": "string"}}}""",
+            """{"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"enum": ["gpkg", "kml", "kmz"]}, "layer": {"type": "string"}}}""",
         )
         private val LAYER_CREATE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"],

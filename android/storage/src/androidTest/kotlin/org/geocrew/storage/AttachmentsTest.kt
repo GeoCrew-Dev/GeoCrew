@@ -97,6 +97,17 @@ class AttachmentsTest {
         assertNotNull(relationships, info)
         assertTrue(relationships.toString().contains(mapping), relationships.toString())
 
+        // KMZ carries the photo, shown in its feature's description; plain KML names the feature but has no photos.
+        val kmz = File(output(run(Workspace.EXPORT, """{"format": "kmz"}""")).getValue("path").jsonPrimitive.content)
+        java.util.zip.ZipFile(kmz).use { zip ->
+            val entries = zip.entries().toList().map { it.name }
+            assertEquals(listOf("doc.kml", "files/$hash.jpg"), entries)
+            val doc = zip.getInputStream(zip.getEntry("doc.kml")).reader().readText()
+            assertTrue("<name>D001</name>" in doc && "files/$hash.jpg" in doc, doc)
+        }
+        val plain = File(output(run(Workspace.EXPORT, """{"format": "kml", "layer": "野外点"}""")).getValue("path").jsonPrimitive.content).readText()
+        assertTrue("<name>D001</name>" in plain && "<img" !in plain, plain)
+
         // The layer keeps them when it is renamed; KML leaves the attachment table out.
         run(Workspace.CLOSE)
         run(Workspace.OPEN, """{"name": "照片"}""")
