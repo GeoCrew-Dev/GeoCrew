@@ -23,7 +23,7 @@ import org.geocrew.core.project.ProjectFormat
 import org.geocrew.storage.Workspace
 
 /** The field types a user can add, in the order offered. Dates with a time wait for a picker. */
-private val TYPES = listOf("string", "real", "integer", "date", "boolean")
+private val TYPES = listOf("string", "real", "integer", "date", "datetime", "boolean")
 
 /**
  * Adds a field of the user's own to a layer: GeoCrew's point layers carry only
