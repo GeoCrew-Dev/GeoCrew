@@ -19,14 +19,17 @@ object Degrees {
 
     private val LETTERS = mapOf(Axis.LONGITUDE to "EW东西", Axis.LATITUDE to "NS北南")
 
-    /** The degrees [text] says, or null when it says none; with [axis], hemisphere letters must fit it. */
+    /**
+     * The degrees [text] says, or null when it says none; with [axis], hemisphere letters must fit it.
+     * Full-width digits and marks are read too (Numbers.plain), as a Chinese keyboard types them.
+     */
     fun parse(text: String, axis: Axis? = null): Double? {
+        val plain = Numbers.plain(text).uppercase()
         if (axis != null) {
-            val upper = text.uppercase()
             val wrong = LETTERS.getValue(if (axis == Axis.LONGITUDE) Axis.LATITUDE else Axis.LONGITUDE)
-            if (upper.any { it in wrong }) return null
+            if (plain.any { it in wrong }) return null
         }
-        var t = text.trim().uppercase().replace('，', '.').replace("''", "\"")
+        var t = plain.replace("''", "\"")
         if (t.isEmpty()) return null
         var sign = 1
         HEMISPHERES[t.first()]?.let { sign = it; t = t.drop(1) }
@@ -50,7 +53,7 @@ object Degrees {
     }
 
     /** Whether [text] is written as more than plain decimal degrees: it then deserves its decimal value shown. */
-    fun isSexagesimal(text: String): Boolean = parse(text) != null && text.trim().toDoubleOrNull() == null
+    fun isSexagesimal(text: String): Boolean = parse(text) != null && Numbers.double(text) == null
 
     /** [degrees] as degrees, minutes and seconds to a tenth of a second, such as 114°18′18.5″. */
     fun dms(degrees: Double): String {

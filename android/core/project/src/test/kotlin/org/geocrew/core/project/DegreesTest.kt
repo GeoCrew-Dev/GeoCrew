@@ -10,6 +10,15 @@ class DegreesTest {
     private fun near(expected: Double, text: String) = assertEquals(expected, Degrees.parse(text)!!, 1e-9, text)
 
     @Test
+    fun fullWidthIsReadAsAChineseKeyboardTypesIt() {
+        near(114.3, "114。3")
+        near(114.305138888888889, "１１４°１８′１８．５″")
+        near(-30.5, "Ｓ30。5")
+        assertNull(Degrees.parse("Ｓ30", Degrees.Axis.LONGITUDE), "a full-width hemisphere letter of the other axis")
+        assertFalse(Degrees.isSexagesimal("114。3"), "plain decimal degrees, only typed full-width")
+    }
+
+    @Test
     fun theWaysPeopleWriteThem() {
         near(114.305, "114.305")
         near(114.30513888888889, "114°18'18.5\"")
