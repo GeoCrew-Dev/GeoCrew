@@ -1,5 +1,6 @@
 package org.geocrew.android
 
+import android.Manifest
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -193,16 +194,27 @@ fun FeatureForm(
     var addFailed by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val openText = stringResource(R.string.attachment_open_with)
-    // A picked file goes into the project at once; the feature gets it when the form is saved.
-    fun attach(uri: Uri?) {
+    var shooting by remember { mutableStateOf(false) }
+    var cameraDenied by remember { mutableStateOf(false) }
+    // A picked file or a photo goes into the project at once, with what the camera knew ([meta]);
+    // the feature gets it when the form is saved. A photo's own file in the cache ([temp]) goes then.
+    fun attach(uri: Uri?, meta: JsonObject? = null, temp: File? = null) {
         val import = importFile ?: return
         if (uri == null) return
         adding = true
         scope.launch {
             val imported = import(uri)
+            temp?.delete()
             adding = false
-            if (imported == null) addFailed = true else files += imported
+            when {
+                imported == null -> addFailed = true
+                meta == null -> files += imported
+                else -> files += JsonObject(imported + ("meta" to meta))
+            }
         }
+    }
+    val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) shooting = true else cameraDenied = true
     }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { attach(it) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { attach(it) }
@@ -345,6 +357,7 @@ fun FeatureForm(
                             adding = adding,
                             onAdd = { source ->
                                 when (source) {
+                                    AttachmentSource.CAMERA -> if (mayUseCamera(context)) shooting = true else askCamera.launch(Manifest.permission.CAMERA)
                                     AttachmentSource.GALLERY -> pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                                     AttachmentSource.FILE -> pickFile.launch(arrayOf("*/*"))
                                 }
@@ -395,6 +408,22 @@ fun FeatureForm(
         }
     }
     viewing?.let { PhotoViewer(it, onDismiss = { viewing = null }) }
+    if (shooting) {
+        CameraScreen(
+            onTaken = { shot ->
+                shooting = false
+                attach(Uri.fromFile(shot.file), shot.meta, shot.file)
+            },
+            onDismiss = { shooting = false },
+        )
+    }
+    if (cameraDenied) {
+        AppDialog(
+            onDismissRequest = { cameraDenied = false },
+            confirmButton = { TextButton(onClick = { cameraDenied = false }) { Text(stringResource(R.string.ok)) } },
+            text = { Text(stringResource(R.string.camera_denied)) },
+        )
+    }
     if (addFailed) {
         AppDialog(
             onDismissRequest = { addFailed = false },

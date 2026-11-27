@@ -8,6 +8,9 @@
     <!-- Points where the user stands (GNSS). -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Photos for features, taken in the app (ADR 0011); a phone without a camera still installs it. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <!-- GPS tracks record in a foreground service of the location kind, with a notification
          that says so: the screen may be off, and no "allow all the time" is asked. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

@@ -17,7 +17,7 @@
 
     <!-- Permissions -->
     <string name="permissions_title">A few permissions</string>
-    <string name="permissions_body">GeoCrew works offline in the field. These let it keep your projects safe and record where you stand.</string>
+    <string name="permissions_body">GeoCrew works offline in the field. These let it keep your projects safe, record where you stand and take photos.</string>
     <string name="permission_storage">Files</string>
     <string name="permission_storage_body">Keep projects in the GeoCrew folder on the phone, where uninstalling never deletes them and a computer or file manager can reach them.</string>
     <string name="permission_location">Location</string>
@@ -518,4 +518,9 @@
     <string name="attachment_missing">Not on this phone</string>
     <string name="attachment_open_with">Open with</string>
     <string name="attachment_failed">This file cannot be added.</string>
+    <string name="attachment_camera">Take a photo</string>
+    <string name="camera_failed">The photo was not taken. Try again.</string>
+    <string name="camera_denied">The camera is not allowed. Allow it in the system settings.</string>
+    <string name="permission_camera">Camera</string>
+    <string name="permission_camera_body">Take photos for points, lines and areas.</string>
 </resources>

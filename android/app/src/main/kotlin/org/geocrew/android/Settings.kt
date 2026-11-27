@@ -33,6 +33,10 @@ class AppSettings(context: Context) {
     var locationAsked by mutableStateOf(prefs.getBoolean(LOCATION_ASKED, false))
         private set
 
+    /** The permission screen has asked for the camera once; a photo asks again when taken. */
+    var cameraAsked by mutableStateOf(prefs.getBoolean(CAMERA_ASKED, false))
+        private set
+
     fun setTheme(mode: ThemeMode) {
         themeMode = mode
         prefs.edit { putString(THEME, mode.name) }
@@ -116,6 +120,11 @@ class AppSettings(context: Context) {
         prefs.edit { putBoolean(LOCATION_ASKED, true) }
     }
 
+    fun markCameraAsked() {
+        cameraAsked = true
+        prefs.edit { putBoolean(CAMERA_ASKED, true) }
+    }
+
     /**
      * The layer (by id) that points of project [projectId] go into without
      * asking, as the user chose "remember"; null to ask each time. Kept on this
@@ -133,6 +142,7 @@ class AppSettings(context: Context) {
         const val DYNAMIC = "dynamic_color"
         const val OWN_FOLDER = "own_folder"
         const val LOCATION_ASKED = "location_asked"
+        const val CAMERA_ASKED = "camera_asked"
         const val BASEMAP_KIND = "basemap_kind:"
         const val ROTATION_LOCKED = "rotation_locked"
         const val SNAPPING = "snapping"
