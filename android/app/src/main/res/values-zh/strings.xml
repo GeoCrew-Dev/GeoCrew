@@ -396,4 +396,12 @@
     <string name="layer_from_file">从文件添加</string>
     <string name="files_add_to">添加到「%1$s」</string>
     <string name="files_added_to">已添加到「%1$s」</string>
+    <string name="toolbar_title">工具栏</string>
+    <string name="toolbar_edit">编辑工具栏</string>
+    <string name="toolbar_default">恢复默认</string>
+    <string name="toolbar_on">工具栏上的</string>
+    <string name="toolbar_empty">工具栏是空的</string>
+    <string name="toolbar_remove">移出</string>
+    <string name="toolbar_add">加入</string>
+    <string name="toolbar_more">其他</string>
 </resources>

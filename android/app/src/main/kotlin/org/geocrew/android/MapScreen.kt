@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,61 +30,38 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.Logout
-import androidx.compose.material.icons.automirrored.rounded.Redo
-import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DashboardCustomize
 import androidx.compose.material.icons.rounded.EditLocationAlt
-import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MyLocation
-import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.OpenWith
-import androidx.compose.material.icons.rounded.PhotoCamera
-import androidx.compose.material.icons.rounded.PinDrop
-import androidx.compose.material.icons.rounded.Place
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.Route
-import androidx.compose.material.icons.rounded.Satellite
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SaveAlt
-import androidx.compose.material.icons.rounded.ScreenLockRotation
 import androidx.compose.material.icons.rounded.ScreenRotation
-import androidx.compose.material.icons.rounded.SquareFoot
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Straighten
-import androidx.compose.material.icons.rounded.Transform
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -91,14 +69,12 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -110,7 +86,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -270,6 +245,7 @@ fun MapScreen(
     var goingTo by remember { mutableStateOf(false) }
     var converting by remember { mutableStateOf(false) }
     var choosingBasemap by remember { mutableStateOf(false) }
+    var editingToolbar by remember { mutableStateOf(false) }
     // Which Tianditu map shows: imagery, the vector map or terrain, kept per project on this phone.
     // Null until the project says which: no basemap shows (or loads) before then.
     var basemapKind by remember { mutableStateOf<String?>(null) }
@@ -975,6 +951,75 @@ fun MapScreen(
         }
     }
 
+    // A measuring tool, or the same one again to stop it, as from the toolbar.
+    fun measureOrStop(mode: MeasureMode) {
+        if (measuring == mode) {
+            measuring = null
+            measured = emptyList()
+        } else {
+            measure(mode)
+        }
+    }
+
+    // Runs a map tool, from the menu or the toolbar.
+    fun runTool(tool: MapTool) {
+        val projectScope = buildJsonObject { put("scope", Workspace.PROJECT_SCOPE) }
+        when (tool) {
+            MapTool.LAYERS -> onLayers()
+            MapTool.UNDO -> once { act(ActionRegistry.UNDO, projectScope) }
+            MapTool.REDO -> once { act(ActionRegistry.REDO, projectScope) }
+            MapTool.ADD_FEATURE -> if (drawables.isEmpty()) {
+                rememberNew = false
+                naming = true
+            } else {
+                picking = true
+            }
+            MapTool.SHOW_ALL -> showAll()
+            MapTool.GO_TO -> goingTo = true
+            MapTool.NORTH_UP -> northUp()
+            MapTool.BASEMAP -> choosingBasemap = true
+            MapTool.SCREENSHOT -> scope.launch {
+                // The map alone, without the buttons; saved with the exports, then offered to share.
+                val file = saveScreenshot(mapView.awaitMap(), File(graph.root, Projects.EXPORTS), project, attributionText.takeIf { key != null }, density)
+                if (file != null) exported = file else failure = screenshotFailedText
+            }
+            MapTool.BOOKMARKS -> bookmarkAction(Workspace.BOOKMARKS)
+            MapTool.LOCK_ROTATION -> graph.settings.lockRotation(!graph.settings.rotationLocked)
+            MapTool.MEASURE_DISTANCE -> measureOrStop(MeasureMode.DISTANCE)
+            MapTool.MEASURE_AREA -> measureOrStop(MeasureMode.AREA)
+            MapTool.AZIMUTH -> measureOrStop(MeasureMode.AZIMUTH)
+            MapTool.PICK -> measureOrStop(MeasureMode.PICK)
+            MapTool.MY_LOCATION -> showMe()
+            MapTool.TRACK -> if (ownTrack == null) requestTrack() else finishTrack()
+            MapTool.CONVERT -> converting = true
+            MapTool.EXPORT_GPKG -> export("gpkg")
+            MapTool.EXPORT_KML -> export("kml")
+            MapTool.FILES -> onFiles()
+            MapTool.PROJECT_SETTINGS -> onProjectSettings()
+            MapTool.CLOSE_PROJECT -> requestLeave()
+        }
+    }
+
+    // How a tool shows now: some change name and icon, some cannot be used, and a measuring tool in use is on.
+    @Composable
+    fun stateOf(tool: MapTool): ToolState {
+        val plain = ToolState(stringResource(tool.label), tool.icon)
+        return when (tool) {
+            MapTool.UNDO -> plain.copy(enabled = history.first)
+            MapTool.REDO -> plain.copy(enabled = history.second)
+            MapTool.ADD_FEATURE -> plain.copy(enabled = projectId != null)
+            // A locked map is always north up.
+            MapTool.NORTH_UP -> plain.copy(enabled = !graph.settings.rotationLocked)
+            MapTool.LOCK_ROTATION -> if (graph.settings.rotationLocked) ToolState(stringResource(R.string.tool_unlock_rotation), Icons.Rounded.ScreenRotation, on = true) else plain
+            MapTool.MEASURE_DISTANCE -> plain.copy(on = measuring == MeasureMode.DISTANCE)
+            MapTool.MEASURE_AREA -> plain.copy(on = measuring == MeasureMode.AREA)
+            MapTool.AZIMUTH -> plain.copy(on = measuring == MeasureMode.AZIMUTH)
+            MapTool.PICK -> plain.copy(on = measuring == MeasureMode.PICK)
+            MapTool.TRACK -> if (ownTrack != null) ToolState(stringResource(R.string.tool_track_finish), Icons.Rounded.Stop, on = ownTrack.recording) else plain
+            else -> plain
+        }
+    }
+
     BackHandler(enabled = !placing && drawing == null) { requestLeave() }
     BackHandler(enabled = drawing != null) {
         val d = drawing ?: return@BackHandler
@@ -1004,7 +1049,12 @@ fun MapScreen(
         if (placing || drawing != null) Crosshair(Modifier.align(Alignment.Center))
 
         // The buttons keep clear of the system bars and the camera, in either orientation.
-        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            // The toolbar's tools stand in columns from the right edge: as many to a column as fit between the
+            // title and the bottom buttons (few in landscape), so none is hidden.
+            val toolbar = graph.settings.toolbar
+            val perColumn = ((maxHeight - TOOLBAR_TOP - TOOLBAR_BOTTOM + TOOL_GAP) / (TOOL_SIZE + TOOL_GAP)).toInt().coerceAtLeast(1)
+            val toolColumns = toolbar.chunked(perColumn)
             Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RoundButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.map_leave), onClick = ::requestLeave, solid = true)
@@ -1017,6 +1067,8 @@ fun MapScreen(
                         content = if (modified) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                     )
                 }
+                // Clear of the toolbar on the right.
+                Column(Modifier.padding(end = (TOOL_SIZE + TOOL_GAP) * toolColumns.size)) {
                 if (placing) {
                     Spacer(Modifier.height(8.dp))
                     PlacingHint(
@@ -1074,20 +1126,26 @@ fun MapScreen(
                         onDiscard = { discardingTrack = true },
                     )
                 }
+                }
             }
 
-            Column(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                val projectScope = buildJsonObject { put("scope", Workspace.PROJECT_SCOPE) }
-                RoundButton(Icons.Rounded.Layers, stringResource(R.string.map_layers), onClick = onLayers)
-                RoundButton(
-                    Icons.AutoMirrored.Rounded.Undo, stringResource(R.string.map_undo),
-                    onClick = { once { act(ActionRegistry.UNDO, projectScope) } }, enabled = history.first,
-                )
-                RoundButton(
-                    Icons.AutoMirrored.Rounded.Redo, stringResource(R.string.map_redo),
-                    onClick = { once { act(ActionRegistry.REDO, projectScope) } }, enabled = history.second,
-                )
-                RoundButton(Icons.Rounded.MyLocation, stringResource(R.string.my_position), onClick = ::showMe)
+            // The toolbar: the tools the user put there (MapTool), translucent, the first column at the right edge.
+            // A tool in use is shown on.
+            Box(Modifier.fillMaxSize().padding(top = TOOLBAR_TOP, bottom = TOOLBAR_BOTTOM, end = 12.dp), contentAlignment = Alignment.CenterEnd) {
+                Row(horizontalArrangement = Arrangement.spacedBy(TOOL_GAP), verticalAlignment = Alignment.Top) {
+                    for (column in toolColumns.reversed()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(TOOL_GAP)) {
+                            for (tool in column) {
+                                val shown = stateOf(tool)
+                                RoundButton(
+                                    shown.icon, shown.label, onClick = { runTool(tool) }, enabled = shown.enabled,
+                                    container = if (shown.on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    content = if (shown.on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             Row(
@@ -1178,89 +1236,36 @@ fun MapScreen(
 
     if (menu) {
         // The menu in levels (backlog: tiered menus of GIS and map tools); groups fill up tool by tool.
+        @Composable
+        fun entry(tool: MapTool): MenuTool = stateOf(tool).let { MenuTool(it.label, it.icon) { runTool(tool) } }
+        val groupIcons = mapOf(
+            R.string.menu_edit to Icons.Rounded.EditLocationAlt,
+            R.string.menu_map to Icons.Rounded.Map,
+            R.string.menu_measure to Icons.Rounded.Straighten,
+            R.string.menu_location to Icons.Rounded.GpsFixed,
+            R.string.menu_analysis to Icons.Rounded.Calculate,
+            R.string.menu_data to Icons.Rounded.Storage,
+            R.string.project_section to Icons.Rounded.Folder,
+        )
         MenuSheet(
             title = project,
-            entries = listOf(
-                MenuTool(stringResource(R.string.map_layers), Icons.Rounded.Layers, onLayers),
-                MenuGroup(
-                    stringResource(R.string.menu_edit), Icons.Rounded.EditLocationAlt,
-                    listOf(
-                        MenuTool(stringResource(R.string.tool_add_feature), Icons.Rounded.AddCircleOutline) {
-                            if (drawables.isEmpty()) {
-                                rememberNew = false
-                                naming = true
-                            } else {
-                                picking = true
-                            }
-                        },
-                    ),
-                ),
-                MenuGroup(
-                    stringResource(R.string.menu_map), Icons.Rounded.Map,
-                    listOfNotNull(
-                        MenuTool(stringResource(R.string.tool_show_all), Icons.Rounded.ZoomOutMap, ::showAll),
-                        MenuTool(stringResource(R.string.tool_go_to), Icons.Rounded.NearMe) { goingTo = true },
-                        // A locked map is always north up.
-                        MenuTool(stringResource(R.string.tool_north_up), Icons.Rounded.Explore, ::northUp).takeUnless { graph.settings.rotationLocked },
-                        MenuTool(stringResource(R.string.tool_basemap), Icons.Rounded.Satellite) { choosingBasemap = true },
-                        MenuTool(stringResource(R.string.tool_screenshot), Icons.Rounded.PhotoCamera) {
-                            scope.launch {
-                                // The map alone, without the buttons; saved with the exports, then offered to share.
-                                val file = saveScreenshot(mapView.awaitMap(), File(graph.root, Projects.EXPORTS), project, attributionText.takeIf { key != null }, density)
-                                if (file != null) exported = file else failure = screenshotFailedText
-                            }
-                        },
-                        MenuTool(stringResource(R.string.tool_bookmarks), Icons.Rounded.Bookmarks) { bookmarkAction(Workspace.BOOKMARKS) },
-                        if (graph.settings.rotationLocked) {
-                            MenuTool(stringResource(R.string.tool_unlock_rotation), Icons.Rounded.ScreenRotation) { graph.settings.lockRotation(false) }
-                        } else {
-                            MenuTool(stringResource(R.string.tool_lock_rotation), Icons.Rounded.ScreenLockRotation) { graph.settings.lockRotation(true) }
-                        },
-                    ),
-                ),
-                MenuGroup(
-                    stringResource(R.string.menu_measure), Icons.Rounded.Straighten,
-                    listOf(
-                        MenuTool(stringResource(R.string.tool_measure_distance), Icons.Rounded.Straighten) { measure(MeasureMode.DISTANCE) },
-                        MenuTool(stringResource(R.string.tool_measure_area), Icons.Rounded.SquareFoot) { measure(MeasureMode.AREA) },
-                        MenuTool(stringResource(R.string.tool_azimuth), Icons.Rounded.Explore) { measure(MeasureMode.AZIMUTH) },
-                        MenuTool(stringResource(R.string.tool_pick), Icons.Rounded.PinDrop) { measure(MeasureMode.PICK) },
-                    ),
-                ),
-                MenuGroup(
-                    stringResource(R.string.menu_location), Icons.Rounded.GpsFixed,
-                    listOf(
-                        if (ownTrack == null) {
-                            MenuTool(stringResource(R.string.tool_track), Icons.Rounded.Route, ::requestTrack)
-                        } else {
-                            MenuTool(stringResource(R.string.tool_track_finish), Icons.Rounded.Stop, ::finishTrack)
-                        },
-                    ),
-                ),
-                MenuGroup(
-                    stringResource(R.string.menu_analysis), Icons.Rounded.Calculate,
-                    listOf(
-                        MenuTool(stringResource(R.string.tool_convert), Icons.Rounded.Transform) { converting = true },
-                    ),
-                ),
-                MenuGroup(
-                    stringResource(R.string.menu_data), Icons.Rounded.Storage,
-                    listOf(
-                        MenuTool(stringResource(R.string.export_gpkg), Icons.Rounded.SaveAlt) { export("gpkg") },
-                        MenuTool(stringResource(R.string.export_kml), Icons.Rounded.Public) { export("kml") },
-                        MenuTool(stringResource(R.string.files), Icons.Rounded.FolderOpen, onFiles),
-                    ),
-                ),
-                MenuGroup(
-                    stringResource(R.string.project_section), Icons.Rounded.Folder,
-                    listOf(
-                        MenuTool(stringResource(R.string.project_settings), Icons.Rounded.Tune, onProjectSettings),
-                        MenuTool(stringResource(R.string.project_close), Icons.AutoMirrored.Rounded.Logout, ::requestLeave),
-                    ),
-                ),
-            ),
+            entries = MapTool.entries.filter { it.group == null }.map { entry(it) } + MapTool.GROUPS.map { group ->
+                val tools = MapTool.entries.filter { it.group == group }
+                    // A locked map is always north up.
+                    .filterNot { it == MapTool.NORTH_UP && graph.settings.rotationLocked }
+                    .map { entry(it) }
+                val extra = if (group == R.string.menu_map) {
+                    listOf(MenuTool(stringResource(R.string.toolbar_edit), Icons.Rounded.DashboardCustomize) { editingToolbar = true })
+                } else {
+                    emptyList()
+                }
+                MenuGroup(stringResource(group), groupIcons.getValue(group), tools + extra)
+            },
             onDismiss = { menu = false },
         )
+    }
+    if (editingToolbar) {
+        ToolbarEditor(graph.settings.toolbar, onChange = graph.settings::changeToolbar, onDismiss = { editingToolbar = false })
     }
     if (choosingBasemap) {
         BasemapSheet(
@@ -1703,6 +1708,12 @@ private fun NoKey(onSettings: () -> Unit) {
 }
 
 private val NONE = JsonObject(emptyMap())
+
+// The toolbar's place: below the title row, above the bottom buttons; its buttons and the gaps between them.
+private val TOOLBAR_TOP = 76.dp
+private val TOOLBAR_BOTTOM = 100.dp
+private val TOOL_SIZE = 48.dp
+private val TOOL_GAP = 12.dp
 
 private const val DEGREES = "%.7f"
 

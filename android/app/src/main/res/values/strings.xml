@@ -416,4 +416,12 @@
     <string name="layer_from_file">From file</string>
     <string name="files_add_to">Add to “%1$s”</string>
     <string name="files_added_to">Added to “%1$s”</string>
+    <string name="toolbar_title">Toolbar</string>
+    <string name="toolbar_edit">Edit toolbar</string>
+    <string name="toolbar_default">Default</string>
+    <string name="toolbar_on">On the toolbar</string>
+    <string name="toolbar_empty">Nothing on the toolbar</string>
+    <string name="toolbar_remove">Take off</string>
+    <string name="toolbar_add">Put on</string>
+    <string name="toolbar_more">Other</string>
 </resources>

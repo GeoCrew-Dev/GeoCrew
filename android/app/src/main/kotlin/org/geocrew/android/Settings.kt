@@ -57,6 +57,15 @@ class AppSettings(context: Context) {
         prefs.edit { putBoolean(ROTATION_LOCKED, on) }
     }
 
+    /** The tools on the map's toolbar, in order (MapTool); the default until the user changes it. */
+    var toolbar by mutableStateOf(prefs.getString(TOOLBAR, null)?.split(',')?.mapNotNull(MapTool::of) ?: MapTool.DEFAULT)
+        private set
+
+    fun changeToolbar(tools: List<MapTool>) {
+        toolbar = tools.distinct()
+        prefs.edit { putString(TOOLBAR, toolbar.joinToString(",") { it.id }) }
+    }
+
     /** How the file manager lists a folder. */
     var fileSort by mutableStateOf(FileSort.entries.firstOrNull { it.name == prefs.getString(FILE_SORT, null) } ?: FileSort.NAME)
         private set
@@ -111,6 +120,7 @@ class AppSettings(context: Context) {
         const val RECENT_CRS = "recent_crs"
         const val RECENT_CRS_KEPT = 8
         const val FILE_SORT = "file_sort"
+        const val TOOLBAR = "toolbar"
     }
 }
 
