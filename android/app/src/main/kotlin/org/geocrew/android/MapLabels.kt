@@ -23,6 +23,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression
 
 /**
  * Point labels without glyph files: MapLibre draws text only from glyphs it
@@ -131,7 +132,10 @@ internal object MapLabels {
                 val ring = if (type == "Polygon") positions(coordinates.firstOrNull()) else coordinates.map { positions((it as? JsonArray)?.firstOrNull()) }.maxByOrNull { abs(signedArea(it)) }.orEmpty()
                 if (ring.size < 3) return null
                 val area = signedArea(ring)
-                if (area == 0.0) return Triple(ring.map { it.first }.average() to ring.map { it.second }.average(), 0.0, "area")
+                if (area == 0.0) {
+                    val open = if (ring.first() == ring.last()) ring.dropLast(1) else ring
+                    return Triple(open.map { it.first }.average() to open.map { it.second }.average(), 0.0, "area")
+                }
                 // The centroid of the ring, by the shoelace formula.
                 var cx = 0.0
                 var cy = 0.0
@@ -144,6 +148,21 @@ internal object MapLabels {
             }
             else -> null
         }
+    }
+
+    /**
+     * The turn for line labels when the map faces [bearing]: each label's own,
+     * or half a turn more where that would leave it upside down on the screen.
+     */
+    fun upright(bearing: Double): Expression {
+        val rotate = Expression.get(ROTATE)
+        // The label's angle on the screen, from -180 to 180.
+        val onScreen = Expression.subtract(Expression.mod(Expression.sum(Expression.subtract(rotate, Expression.literal(bearing)), Expression.literal(540)), Expression.literal(360)), Expression.literal(180))
+        return Expression.switchCase(
+            Expression.any(Expression.gt(onScreen, Expression.literal(90)), Expression.lt(onScreen, Expression.literal(-90))),
+            Expression.sum(rotate, Expression.literal(180)),
+            rotate,
+        )
     }
 
     private fun signedArea(ring: List<Pair<Double, Double>>): Double =
