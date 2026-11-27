@@ -29,6 +29,7 @@ import org.geocrew.storage.NativeData
 import org.geocrew.storage.Probe
 import org.geocrew.storage.Projects
 import org.geocrew.storage.RasterActions
+import org.geocrew.storage.SyncActions
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
 
@@ -120,6 +121,8 @@ class AppGraph(private val app: Application) {
         ImportActions(ws, folder) { Probe.inspect(app, it.path) }.actions.forEach(registry::register)
         // Photos and other files go with features (ADR 0004).
         AttachmentActions(ws, folder).actions.forEach(registry::register)
+        // A project syncs with a team's workspace (ADR 0008); each project's sign-in stays in the app's own storage.
+        SyncActions(ws, File(app.noBackupFilesDir, "sync")).actions.forEach(registry::register)
         workspaceRoot = folder
         workspace = ws
         return ws

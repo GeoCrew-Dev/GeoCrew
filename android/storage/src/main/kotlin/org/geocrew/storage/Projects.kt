@@ -1229,6 +1229,9 @@ class Project internal constructor(
     /** The row id of feature [fid] of layer [layerId] in the workspace, once it has one. */
     internal fun rowId(layerId: String, fid: Long): String? = Outbox.rowId(dataset, layerId, fid)
 
+    /** [block] with the project's file, for sync (ProjectSync), which writes GeoCrew's own tables in it. */
+    internal fun <T> data(block: (VectorDataset) -> T): T = block(dataset)
+
     /** Layer [layer]'s fields by name, to the stable ids sync knows them by. */
     internal fun fieldIds(layer: String): Map<String, String> = Outbox.fieldIds(dataset, layer)
 

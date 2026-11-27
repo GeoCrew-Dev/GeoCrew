@@ -101,6 +101,17 @@ object ProjectFormat {
     const val OUTBOX_SCHEMA = "CREATE TABLE IF NOT EXISTS $OUTBOX_TABLE " +
         "(row TEXT NOT NULL, layer_id TEXT NOT NULL, field TEXT NOT NULL, value TEXT NOT NULL, edited_at TEXT NOT NULL, PRIMARY KEY (row, field))"
 
+    /**
+     * Changes on their way to a linked project's workspace (protocol v1 8.1,
+     * 8.4): the edits of a row taken from [OUTBOX_TABLE] under one change id,
+     * which a retry sends again as they are, the row's base seq, the change as
+     * JSON ({set, delete}) and, once the server refused it, why. An edit made
+     * while its change is on its way goes to the outbox again.
+     */
+    const val SENDING_TABLE = "geocrew_sending"
+    const val SENDING_SCHEMA = "CREATE TABLE IF NOT EXISTS $SENDING_TABLE " +
+        "(change TEXT PRIMARY KEY NOT NULL, row TEXT NOT NULL, layer_id TEXT NOT NULL, base_seq INTEGER NOT NULL, body TEXT NOT NULL, rejected TEXT)"
+
     /** The statements that make GeoCrew's own tables in a new project. */
     val SCHEMA = listOf(
         "CREATE TABLE $PROJECT_TABLE (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
