@@ -38,10 +38,10 @@ class LayerStyleTest {
     @Test
     fun featuresTakeTheirValuesColourOrTheLayers() {
         val style = LayerStyle(Color(0xFF757575), field = "rock", classes = listOf(StyleClass("砂岩", Color(0xFFE53935))))
-        assertEquals("#e53935", style.hexFor(properties("砂岩")))
-        assertEquals("#757575", style.hexFor(properties("灰岩")))
-        assertEquals("#757575", style.hexFor(null))
-        assertEquals("#757575", LayerStyle(Color(0xFF757575)).hexFor(properties("砂岩")))
+        assertEquals("#e53935", style.mapColorFor(properties("砂岩")))
+        assertEquals("#757575", style.mapColorFor(properties("灰岩")))
+        assertEquals("#757575", style.mapColorFor(null))
+        assertEquals("#757575", LayerStyle(Color(0xFF757575)).mapColorFor(properties("砂岩")))
     }
 
     @Test

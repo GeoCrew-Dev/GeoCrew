@@ -1781,7 +1781,7 @@ private const val COLOR = "_color"
 private fun tagged(feature: JsonObject, layer: Int, style: LayerStyle, opacity: Double): JsonObject {
     val properties = feature["properties"] as? JsonObject ?: JsonObject(emptyMap())
     val fid = (feature["id"] as? JsonPrimitive)?.contentOrNull
-    val shown = properties + (COLOR to JsonPrimitive(style.hexFor(properties))) + (OPACITY to JsonPrimitive(opacity)) +
+    val shown = properties + (COLOR to JsonPrimitive(style.mapColorFor(properties))) + (OPACITY to JsonPrimitive(opacity)) +
         (SIZE to JsonPrimitive(style.size)) + (WIDTH to JsonPrimitive(style.width)) + (FILL to JsonPrimitive(style.fill)) +
         // The name label starts just right of the point, however big the point is.
         (LABEL_OFFSET to JsonArray(listOf(JsonPrimitive(style.size + 2), JsonPrimitive(0))))

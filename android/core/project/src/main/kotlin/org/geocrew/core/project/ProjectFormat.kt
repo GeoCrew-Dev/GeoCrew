@@ -31,7 +31,7 @@ object ProjectFormat {
     /**
      * How each layer is drawn (ADR 0006), as JSON; made when a style is first
      * set, a layer without one drawn in a colour by when it was made. v1 has
-     * one symbol per layer: {"kind": "single", "color": "#rrggbb", "size": a
+     * one symbol per layer: {"kind": "single", "color": "#rrggbb" (or "#rrggbbaa" with its opacity), "size": a
      * point's radius in dp, "width": a line's width in dp, "fill": an area's
      * fill opacity from 0 to 1}. A categorized style is {"kind":
      * "categorized", the same keys, "field": a field of the layer, "classes":
