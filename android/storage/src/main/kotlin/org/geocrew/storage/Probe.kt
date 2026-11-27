@@ -100,7 +100,7 @@ object Probe {
      * "crs"}]}. Runs in the probe's process; throws when GDAL cannot read it.
      */
     internal fun summarize(path: String): JsonObject {
-        val info = Json.parseToJsonElement(GeoCrewNative.run(arrayOf("info", "--format", "json", path))).jsonObject
+        val info = Json.parseToJsonElement(GeoCrewNative.run(arrayOf("info", "--format", "json", ImportActions.gdalPath(java.io.File(path))))).jsonObject
         val bands = info["bands"] as? JsonArray
         return buildJsonObject {
             put("driver", info.text("driverShortName"))

@@ -17,6 +17,7 @@ import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.files.FileActions
+import org.geocrew.storage.ImportActions
 import org.geocrew.storage.NativeData
 import org.geocrew.storage.Probe
 import org.geocrew.storage.Projects
@@ -95,6 +96,8 @@ class AppGraph(private val app: Application) {
         FileActions(folder, top = storage, busy = { ws.current?.folder }, probe = { Probe.inspect(app, it.path) }).actions.forEach(registry::register)
         // Rasters go under a project's layers, probed the same way first.
         RasterActions(ws, folder) { Probe.inspect(app, it.path) }.actions.forEach(registry::register)
+        // Vector files are imported into the open project the same way (ADR 0002).
+        ImportActions(ws, folder) { Probe.inspect(app, it.path) }.actions.forEach(registry::register)
         workspaceRoot = folder
         workspace = ws
         return ws
