@@ -43,6 +43,7 @@ dependencies {
     implementation(files(nativeAar))
     implementation(project(":storage"))
     implementation(project(":core:files"))
+    testImplementation(kotlin("test-junit"))
     implementation(libs.maplibre)
     implementation(libs.okhttp)
     implementation(platform(libs.compose.bom))

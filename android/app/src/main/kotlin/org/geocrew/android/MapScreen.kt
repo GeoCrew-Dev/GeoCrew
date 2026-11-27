@@ -434,6 +434,14 @@ fun MapScreen(
         }
         map.addOnCameraIdleListener { mapCenter = map.cameraPosition.target?.wrap() }
         map.addOnCameraMoveListener { coneZoom = Math.round(map.cameraPosition.zoom * 4) / 4.0 }
+        // Line names turn with the map; when it has turned far enough to put one upside down, it is turned round.
+        var labelBearing = 0L
+        map.addOnCameraMoveListener {
+            val bearing = Math.round(map.cameraPosition.bearing)
+            if (bearing == labelBearing) return@addOnCameraMoveListener
+            labelBearing = bearing
+            map.style?.getLayer("$SHAPE_LABELS-line")?.setProperties(PropertyFactory.iconRotate(MapLabels.upright(bearing.toDouble())))
+        }
         coneZoom = Math.round(map.cameraPosition.zoom * 4) / 4.0
         // A picture for the home screen only once the map has been drawn in full.
         mapView.addOnDidBecomeIdleListener { drawn = true }
@@ -482,7 +490,7 @@ fun MapScreen(
                 style.addLayer(
                     SymbolLayer("$SHAPE_LABELS-$kind", SHAPE_LABELS).withProperties(
                         PropertyFactory.iconImage(Expression.get(MapLabels.PROPERTY)),
-                        PropertyFactory.iconRotate(Expression.get(MapLabels.ROTATE)),
+                        PropertyFactory.iconRotate(if (kind == "line") MapLabels.upright(map.cameraPosition.bearing) else Expression.literal(0f)),
                         PropertyFactory.iconRotationAlignment(alignment),
                         PropertyFactory.iconOpacity(Expression.get(OPACITY)),
                     ).withFilter(Expression.eq(Expression.get(MapLabels.KIND), Expression.literal(kind))),
@@ -606,9 +614,13 @@ fun MapScreen(
 
     var fitted by remember { mutableStateOf(graph.cameras.containsKey(project)) }
     LaunchedEffect(styleLoads, collections) {
-        if (collections.isEmpty()) return@LaunchedEffect
         val map = mapView.awaitMap()
         val style = map.style ?: return@LaunchedEffect
+        // With no layers left, nothing of theirs stays on the map.
+        if (collections.isEmpty()) {
+            for (source in listOf(POINT_SOURCE, SHAPE_LABELS)) style.getSourceAs<GeoJsonSource>(source)?.setGeoJson(EMPTY_COLLECTION)
+            return@LaunchedEffect
+        }
         // Every layer in one source (points, lines, areas), each feature with its layer's colour and an id that names its layer.
         // Bottom of the list first, so the first layer is drawn on top; hidden layers stay off the map.
         val features = JsonArray(
@@ -1752,6 +1764,8 @@ private fun isType(type: String): Expression =
 
 // Where the names of lines and areas are shown, as points.
 private const val SHAPE_LABELS = "geocrew-shape-labels"
+
+private const val EMPTY_COLLECTION = """{"type":"FeatureCollection","features":[]}"""
 
 // The measuring tool's source on the map, and its colour.
 private const val MEASURE_SOURCE = "geocrew-measure"
