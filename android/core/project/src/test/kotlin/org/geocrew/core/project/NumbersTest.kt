@@ -9,7 +9,6 @@ class NumbersTest {
     fun fullWidthDigitsAndPointsAreRead() {
         assertEquals(123.5, Numbers.double("１２３．５"))
         assertEquals(114.3, Numbers.double("114。3"), "the ideographic full stop a pinyin keyboard gives")
-        assertEquals(1.5, Numbers.double("１，５"), "the full-width comma as a decimal point")
         assertEquals(-5.0, Numbers.double("－5"))
         assertEquals(12.0, Numbers.double("　12 "))
         assertEquals(3_500_000L, Numbers.long("３５０００００"))
@@ -23,6 +22,7 @@ class NumbersTest {
         assertNull(Numbers.double("Infinity"))
         assertNull(Numbers.double(""))
         assertNull(Numbers.double("1,5"), "a plain comma is not read as a decimal point")
+        assertNull(Numbers.double("1，500"), "nor a full-width one: it may be a thousands separator")
         assertNull(Numbers.long("1.5"))
     }
 

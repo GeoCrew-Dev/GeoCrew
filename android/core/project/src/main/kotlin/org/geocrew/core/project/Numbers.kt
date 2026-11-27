@@ -8,14 +8,15 @@ package org.geocrew.core.project
 object Numbers {
     /**
      * [text] trimmed, with full-width digits, letters, signs and marks made
-     * plain, and the ideographic and full-width full stops and the full-width
-     * comma read as the decimal point. A plain comma stays as it is.
+     * plain, and the ideographic and full-width full stops read as the decimal
+     * point. A comma, full-width or plain, stays a comma: 1，500 may be a
+     * thousand and a half, and is better refused than read as 1.5.
      */
     fun plain(text: String): String = buildString(text.length) {
         for (c in text) {
             append(
                 when (c) {
-                    '。', '｡', '．', '，' -> '.'
+                    '。', '｡', '．' -> '.'
                     '－', '−', '﹣' -> '-'
                     '＋', '﹢' -> '+'
                     '　' -> ' '
