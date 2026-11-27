@@ -81,10 +81,11 @@ class AppGraph(private val app: Application) {
     fun hasLocation(context: Context): Boolean =
         context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-    /** Whether the permission screen has something to ask; once everything is granted it is skipped. */
+    /** Whether the permission screen has something to ask: it is left out once each permission is granted or skipped. */
     fun needsPermissions(context: Context): Boolean =
         (!hasAllFilesAccess && !settings.ownFolderChosen) || (!hasLocation(context) && !settings.locationAsked) ||
-            (!mayUseCamera(context) && !settings.cameraAsked)
+            (!mayUseCamera(context) && !settings.cameraAsked) || (!notificationsShown(context) && !settings.notificationsAsked) ||
+            (!unrestricted(context) && !settings.batteryAsked && !settings.batteryPrompted)
 
     /**
      * The GeoCrew folder: the shared one with all-files access, else the app's

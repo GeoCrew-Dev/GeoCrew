@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -62,7 +63,7 @@ import kotlinx.coroutines.withContext
 /** The app's settings: appearance, language, the map's key and where projects are. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
+fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit, onPermissions: () -> Unit) {
     val context = LocalContext.current
     val settings = graph.settings
     var askKey by remember { mutableStateOf(false) }
@@ -167,6 +168,14 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
                 )
             }
             item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+            item {
+                ListItem(
+                    colors = clear,
+                    headlineContent = { Text(stringResource(R.string.settings_permissions)) },
+                    leadingContent = { Icon(Icons.Rounded.VerifiedUser, null) },
+                    modifier = Modifier.clickable(onClick = onPermissions),
+                )
+            }
             item {
                 ListItem(
                     colors = clear,

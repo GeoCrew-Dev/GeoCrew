@@ -1087,8 +1087,18 @@ fun MapScreen(
         if (mayRecord() && !graph.tracks.resume()) failure = trackFailedText
     }
 
+    // The track starts; then, the first time and unless it was answered on the permission screen, the phone asks
+    // whether the app may run in the background unrestricted, for long recordings with the screen off.
+    fun beginTrack() {
+        startTrack()
+        if (graph.tracks.track.value?.recording == true && !unrestricted(context) && !graph.settings.batteryPrompted) {
+            graph.settings.markBatteryPrompted()
+            askUnrestricted(context)
+        }
+    }
+
     // The notification that a track records is asked for once; the track records either way.
-    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { startTrack() }
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { beginTrack() }
 
     // One track at a time: one going into another project is said, and stays.
     fun requestTrack() {
@@ -1099,7 +1109,7 @@ fun MapScreen(
             mayLocate(context) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED ->
                 askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-            else -> startTrack()
+            else -> beginTrack()
         }
     }
 
@@ -1117,6 +1127,17 @@ fun MapScreen(
             return
         }
         if (trackLines.isEmpty()) trackNaming = true else trackPicking = true
+    }
+
+    // The notification's "end": once the map shows the track's project, and is not in the middle of something else,
+    // it asks where the track goes.
+    val finishing by graph.tracks.finishing.collectAsStateWithLifecycle()
+    val free = !placing && drawing == null && measuring == null
+    LaunchedEffect(finishing, ownTrack != null, free) {
+        if (finishing && ownTrack != null && free) {
+            graph.tracks.finishTaken()
+            finishTrack()
+        }
     }
 
     // The track as a line of [layer], like one drawn; once it is in, the recording is gone.

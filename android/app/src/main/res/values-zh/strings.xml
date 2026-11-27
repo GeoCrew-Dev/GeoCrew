@@ -24,8 +24,7 @@
     <string name="permission_grant">授权</string>
     <string name="permission_granted">已授权</string>
     <string name="permissions_continue">继续</string>
-    <string name="permissions_own_folder">暂不授权，工程先放在应用内</string>
-    <string name="permissions_own_folder_warning">放在应用内的工程，卸载同勘时会一起被删除，别的应用也打不开。</string>
+    <string name="permissions_own_folder_warning">不授权文件，工程就放在应用内：卸载同勘时会一起删除，别的应用也打不开。</string>
 
     <!-- 工程 -->
     <string name="projects_title">工程</string>
@@ -509,4 +508,13 @@
     <string name="clino_low_accuracy">指南针精度低</string>
     <string name="clino_no_sensor">这台手机没有罗盘</string>
     <string name="snapshot_failed">今天的工程快照没做成</string>
+    <string name="track_interrupted">轨迹已中断</string>
+    <string name="track_no_notification">通知已关闭，点此打开</string>
+    <string name="permissions_skip">跳过</string>
+    <string name="permissions_later">跳过的权限，以后可以在设置里授权，用到时也会再问。</string>
+    <string name="permission_notifications">通知</string>
+    <string name="permission_notifications_body">在通知栏显示正在记录的轨迹。</string>
+    <string name="permission_background">后台运行</string>
+    <string name="permission_background_body">熄屏长时间记录轨迹时，不受系统省电限制。</string>
+    <string name="settings_permissions">权限</string>
 </resources>

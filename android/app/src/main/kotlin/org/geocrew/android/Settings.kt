@@ -33,6 +33,18 @@ class AppSettings(context: Context) {
     var locationAsked by mutableStateOf(prefs.getBoolean(LOCATION_ASKED, false))
         private set
 
+    /** The permission screen has dealt with notifications: asked for them, or skipped them (the first track asks). */
+    var notificationsAsked by mutableStateOf(prefs.getBoolean(NOTIFICATIONS_ASKED, false))
+        private set
+
+    /** The permission screen has dealt with background running: asked for it, or skipped it (the first track asks). */
+    var batteryAsked by mutableStateOf(prefs.getBoolean(BATTERY_ASKED, false))
+        private set
+
+    /** The phone's own question about background running has come up once; no track brings it up again. */
+    var batteryPrompted by mutableStateOf(prefs.getBoolean(BATTERY_PROMPTED, false))
+        private set
+
     /** The permission screen has asked for the camera once; a photo asks again when taken. */
     var cameraAsked by mutableStateOf(prefs.getBoolean(CAMERA_ASKED, false))
         private set
@@ -120,6 +132,21 @@ class AppSettings(context: Context) {
         prefs.edit { putBoolean(LOCATION_ASKED, true) }
     }
 
+    fun markNotificationsAsked() {
+        notificationsAsked = true
+        prefs.edit { putBoolean(NOTIFICATIONS_ASKED, true) }
+    }
+
+    fun markBatteryAsked() {
+        batteryAsked = true
+        prefs.edit { putBoolean(BATTERY_ASKED, true) }
+    }
+
+    fun markBatteryPrompted() {
+        batteryPrompted = true
+        prefs.edit { putBoolean(BATTERY_PROMPTED, true) }
+    }
+
     fun markCameraAsked() {
         cameraAsked = true
         prefs.edit { putBoolean(CAMERA_ASKED, true) }
@@ -143,6 +170,9 @@ class AppSettings(context: Context) {
         const val OWN_FOLDER = "own_folder"
         const val LOCATION_ASKED = "location_asked"
         const val CAMERA_ASKED = "camera_asked"
+        const val NOTIFICATIONS_ASKED = "notifications_asked"
+        const val BATTERY_ASKED = "battery_asked"
+        const val BATTERY_PROMPTED = "battery_prompted"
         const val BASEMAP_KIND = "basemap_kind:"
         const val ROTATION_LOCKED = "rotation_locked"
         const val SNAPPING = "snapping"

@@ -6,15 +6,21 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.Uri
 import android.os.IBinder
+import android.os.PowerManager
+import android.provider.Settings
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +32,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
@@ -43,8 +50,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -82,7 +91,9 @@ data class TrackPoint(val longitude: Double, val latitude: Double, val altitude:
 /**
  * A track being recorded, or paused: the project it goes into (its id, and its
  * name for saying so), when it started, its points and their length in metres
- * along the ellipsoid, and whether GNSS is recording now.
+ * along the ellipsoid, and whether GNSS is recording now. A track the system
+ * cut off while it recorded (the app stopped, or its service ended) is paused
+ * and [interrupted] until the user goes on with it or ends it.
  */
 data class Track(
     val projectId: String,
@@ -91,21 +102,51 @@ data class Track(
     val points: List<TrackPoint>,
     val length: Double,
     val recording: Boolean,
+    val interrupted: Boolean = false,
 )
+
+/** The launch intent's extra that the notification's "end" sets: the map then asks where the track goes. */
+const val EXTRA_FINISH_TRACK = "org.geocrew.android.FINISH_TRACK"
+
+/** Whether the phone leaves the app out of battery optimization (Doze), as a long recording with the screen off wants. */
+fun unrestricted(context: Context): Boolean =
+    context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
+
+/**
+ * Asks the phone in its own dialog to leave the app out of battery
+ * optimization; with that done already, opens the list where it can be undone.
+ */
+@SuppressLint("BatteryLife") // a GPS tracker, outside Google Play: the use the request is meant for
+fun askUnrestricted(context: Context) {
+    val ask = if (unrestricted(context)) {
+        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+    } else {
+        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))
+    }
+    runCatching { context.startActivity(ask) }.onFailure { runCatching { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } }
+}
 
 /**
  * Records a GPS track, one at a time, through [TrackService]: a foreground
  * service of the location kind, so it goes on with the screen off and the app
  * in the background, with no "allow all the time" (docs/compliance.md). Each
  * point is written to a file as it comes, so a recording the system ends, or
- * a phone turned off, keeps its points: the track comes back paused.
+ * a phone turned off, keeps its points: the track comes back paused, and said
+ * to be cut off ([Track.interrupted]).
  */
 class TrackRecorder(private val context: Context) {
     private val file = File(context.noBackupFilesDir, "track.csv")
+
+    // There while the user means the track to record: one there when the app starts was cut off. Made before the track is read.
+    private val marker = File(context.noBackupFilesDir, "track.recording")
     private val state = MutableStateFlow(read())
+    private val finish = MutableStateFlow(false)
 
     /** The track there is, recording or paused; null when there is none. */
     val track: StateFlow<Track?> = state.asStateFlow()
+
+    /** The notification asked to end the track: the map asks where it goes, then takes the request ([finishTaken]). */
+    val finishing: StateFlow<Boolean> = finish.asStateFlow()
 
     /** Starts recording a track that goes into project [projectId]; false when one is there already or it cannot start. */
     @Synchronized
@@ -117,6 +158,7 @@ class TrackRecorder(private val context: Context) {
             file.writeText("$HEADER,$projectId,$now,$projectName\n")
         }
         if (written.isFailure) return false
+        mark(true)
         state.value = Track(projectId, projectName, now, emptyList(), 0.0, recording = true)
         if (!startService()) {
             discard()
@@ -129,7 +171,8 @@ class TrackRecorder(private val context: Context) {
     @Synchronized
     fun pause() {
         context.stopService(Intent(context, TrackService::class.java))
-        state.value = state.value?.copy(recording = false)
+        mark(false)
+        state.value = state.value?.copy(recording = false, interrupted = false)
     }
 
     /** Goes on recording a paused track; false when it cannot start. */
@@ -137,8 +180,11 @@ class TrackRecorder(private val context: Context) {
     fun resume(): Boolean {
         val track = state.value ?: return false
         if (track.recording) return true
-        state.value = track.copy(recording = true)
+        mark(true)
+        state.value = track.copy(recording = true, interrupted = false)
         if (startService()) return true
+        // As it was: cut off, or paused by the user.
+        mark(track.interrupted)
         state.value = track
         return false
     }
@@ -148,7 +194,22 @@ class TrackRecorder(private val context: Context) {
     fun discard() {
         context.stopService(Intent(context, TrackService::class.java))
         file.delete()
+        mark(false)
         state.value = null
+        finish.value = false
+    }
+
+    /** From the notification: the track stops recording, and the map asks where it goes ([finishing]). */
+    @Synchronized
+    fun requestFinish() {
+        if (state.value == null) return
+        pause()
+        finish.value = true
+    }
+
+    /** The map has taken the request to end the track. */
+    fun finishTaken() {
+        finish.value = false
     }
 
     /**
@@ -173,13 +234,30 @@ class TrackRecorder(private val context: Context) {
     /** The service could not record (no GNSS, or not let into the foreground): the track, if any, is paused. */
     @Synchronized
     internal fun stopped() {
+        mark(false)
         state.value = state.value?.copy(recording = false)
+    }
+
+    /**
+     * The service ended while the track recorded: not by the user, who pauses or ends a track first. The track is
+     * paused, cut off, and still meant to record (its marker stays); true when there was one.
+     */
+    @Synchronized
+    internal fun interrupted(): Boolean {
+        val track = state.value?.takeIf { it.recording } ?: return false
+        state.value = track.copy(recording = false, interrupted = true)
+        return true
+    }
+
+    private fun mark(recording: Boolean) {
+        runCatching { if (recording) marker.createNewFile() else marker.delete() }
     }
 
     private fun startService(): Boolean =
         runCatching { context.startForegroundService(Intent(context, TrackService::class.java)) }.isSuccess
 
-    // The track the file holds, paused: the service does not outlive the process (it is not sticky).
+    // The track the file holds, paused: the service does not outlive the process (it is not sticky), nor may a
+    // service of the location kind start again from the background. Recording when the app stopped, it was cut off.
     private fun read(): Track? {
         val lines = runCatching { file.readLines() }.getOrNull() ?: return null
         val head = lines.firstOrNull()?.split(",", limit = 4) ?: return null
@@ -188,7 +266,7 @@ class TrackRecorder(private val context: Context) {
         // A line cut short as the process died is left out.
         val points = lines.drop(1).mapNotNull(::point)
         val length = points.zipWithNext { a, b -> distance(a.latitude, a.longitude, b.latitude, b.longitude) }.sum()
-        return Track(head[1], head[3], started, points, length, recording = false)
+        return Track(head[1], head[3], started, points, length, recording = false, interrupted = marker.exists())
     }
 
     private fun line(p: TrackPoint) = "${p.time},${p.longitude},${p.latitude},${p.altitude ?: ""},${p.accuracy ?: ""}\n"
@@ -220,13 +298,22 @@ class TrackRecorder(private val context: Context) {
 }
 
 /**
- * Keeps GNSS on for [TrackRecorder] while a track records, with a notification
- * that says so and counts the time; tapping it goes back to the app.
+ * Keeps GNSS on for [TrackRecorder] while a track records: a foreground service
+ * of the location kind, with the notification such a service must show. The
+ * notification counts the time, gives the length, and pauses or ends the
+ * track; tapping it goes back to the app. A partial wake lock keeps the CPU up
+ * for the points and their file with the screen off (in Doze only when the app
+ * is left out of battery optimization, see [askUnrestricted]).
  */
 class TrackService : Service() {
     private val tracks get() = (application as GeoCrewApplication).graph.tracks
     private val executor = Executors.newSingleThreadExecutor()
     private var listener: LocationListener? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    // When the notification's length last changed, and how many points it was made of: on the listener's thread only.
+    private var notified = 0L
+    private var shownPoints = -1
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -235,8 +322,9 @@ class TrackService : Service() {
         val track = tracks.track.value
         // The service was started to be in the foreground: it is, before anything else, or the app is ended.
         val shown = runCatching {
-            startForeground(NOTIFICATION_ID, notification(track?.started ?: System.currentTimeMillis()), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            startForeground(NOTIFICATION_ID, notification(track), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         }.isSuccess
+        getSystemService(NotificationManager::class.java)?.cancel(INTERRUPTED_ID)
         val manager = getSystemService(LocationManager::class.java)
         if (!shown || track?.recording != true || manager == null) {
             tracks.stopped()
@@ -244,7 +332,10 @@ class TrackService : Service() {
             return START_NOT_STICKY
         }
         if (listener == null) {
-            val l = LocationListener { tracks.record(it) }
+            val l = LocationListener { fix ->
+                tracks.record(fix)
+                update()
+            }
             val asked = runCatching { manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, INTERVAL_MS, 0f, executor, l) }.isSuccess
             if (!asked) {
                 tracks.stopped()
@@ -252,44 +343,121 @@ class TrackService : Service() {
                 return START_NOT_STICKY
             }
             listener = l
+            // Held while the track records, and let go when the service ends; the limit is only there if that never comes.
+            wakeLock = getSystemService(PowerManager::class.java)?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GeoCrew:track")?.apply { acquire(WAKE_LIMIT_MS) }
         }
         return START_NOT_STICKY
     }
 
-    // Stopped by the recorder, which has paused or ended the track already.
+    // The notification follows the track's length as points come, every few seconds at most: under the recorder's
+    // lock, so that it never comes back for a track paused meanwhile, after stopping the service took it away.
+    private fun update() {
+        val now = System.currentTimeMillis()
+        if (now - notified < UPDATE_MS) return
+        val notifications = getSystemService(NotificationManager::class.java) ?: return
+        synchronized(tracks) {
+            val track = tracks.track.value?.takeIf { it.recording && it.points.size != shownPoints } ?: return
+            notifications.notify(NOTIFICATION_ID, notification(track))
+            shownPoints = track.points.size
+            notified = now
+        }
+    }
+
+    // Stopped by the recorder, which has paused or ended the track already; or by the system, while it records.
     override fun onDestroy() {
         listener?.let { l -> getSystemService(LocationManager::class.java)?.removeUpdates(l) }
         listener = null
         executor.shutdown()
+        wakeLock?.takeIf { it.isHeld }?.release()
+        wakeLock = null
+        // Ended while the track records: by the system, as the user pauses or ends a track first. Its notification,
+        // should a length have come after the system took it away, gives way to one that says so.
+        if (tracks.interrupted()) {
+            val notifications = getSystemService(NotificationManager::class.java)
+            notifications?.cancel(NOTIFICATION_ID)
+            channel()
+            notifications?.notify(
+                INTERRUPTED_ID,
+                Notification.Builder(this, CHANNEL)
+                    .setSmallIcon(R.drawable.ic_track)
+                    .setContentTitle(getString(R.string.track_interrupted))
+                    .setContentIntent(launch(0, finish = false))
+                    .setAutoCancel(true)
+                    .build(),
+            )
+        }
         super.onDestroy()
     }
 
-    private fun notification(started: Long): Notification {
-        val notifications = getSystemService(NotificationManager::class.java)
-        notifications?.createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.track_channel), NotificationManager.IMPORTANCE_LOW))
-        // Back to the app as it was left, as its icon does.
-        val open = packageManager.getLaunchIntentForPackage(packageName)?.let {
-            PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        }
+    private fun channel() {
+        getSystemService(NotificationManager::class.java)
+            ?.createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.track_channel), NotificationManager.IMPORTANCE_LOW))
+    }
+
+    // The app as it was left, as its icon opens it; with [finish], asked to end the track.
+    private fun launch(request: Int, finish: Boolean): PendingIntent? = packageManager.getLaunchIntentForPackage(packageName)?.let {
+        if (finish) it.putExtra(EXTRA_FINISH_TRACK, true)
+        PendingIntent.getActivity(this, request, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    private fun notification(track: Track?): Notification {
+        channel()
+        val pause = PendingIntent.getBroadcast(
+            this, 1, Intent(this, TrackActionReceiver::class.java).setAction(ACTION_PAUSE), PendingIntent.FLAG_IMMUTABLE,
+        )
+        val icon = Icon.createWithResource(this, R.drawable.ic_track)
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_track)
             .setContentTitle(getString(R.string.track_recording))
-            .setWhen(started)
+            .setContentText(if (track == null || track.points.isEmpty()) getString(R.string.track_waiting) else distanceText(track.length))
+            .setWhen(track?.started ?: System.currentTimeMillis())
             .setShowWhen(true)
             .setUsesChronometer(true)
             .setOngoing(true)
-            .setContentIntent(open)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(launch(0, finish = false))
+            .addAction(Notification.Action.Builder(icon, getString(R.string.track_pause), pause).build())
+            .addAction(Notification.Action.Builder(icon, getString(R.string.track_finish), launch(2, finish = true)).build())
             .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 
-    private companion object {
+    internal companion object {
+        const val ACTION_PAUSE = "org.geocrew.android.PAUSE_TRACK"
         const val CHANNEL = "track"
         const val NOTIFICATION_ID = 1
+        const val INTERRUPTED_ID = 2
+
+        // How often the notification's length is brought up to date, at most.
+        const val UPDATE_MS = 5_000L
+
+        // The wake lock's limit, should the service never end: a long field day.
+        const val WAKE_LIMIT_MS = 16 * 3_600_000L
 
         // How often GNSS gives a position while recording.
         const val INTERVAL_MS = 2_000L
     }
+}
+
+/** Opens the app's notification settings, where notifications (and the track's channel) are turned on. */
+fun openNotificationSettings(context: Context) {
+    runCatching {
+        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+    }
+}
+
+/** The notification's pause: the track stops recording, as from the map. */
+class TrackActionReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == TrackService.ACTION_PAUSE) (context.applicationContext as GeoCrewApplication).graph.tracks.pause()
+    }
+}
+
+/** Whether the track's notification shows: notifications are allowed, and its channel is not turned off. */
+fun notificationsShown(context: Context): Boolean {
+    val manager = NotificationManagerCompat.from(context)
+    return manager.areNotificationsEnabled() &&
+        manager.getNotificationChannelCompat(TrackService.CHANNEL)?.importance != NotificationManagerCompat.IMPORTANCE_NONE
 }
 
 /** Adds the line of the track being recorded to [style], with a white edge so it shows on any imagery. */
@@ -364,6 +532,7 @@ fun trackValues(layer: JsonObject?, collection: JsonObject?, track: Track): Json
  */
 @Composable
 fun TrackPanel(track: Track, onPause: () -> Unit, onResume: () -> Unit, onFinish: () -> Unit, onDiscard: () -> Unit) {
+    val context = LocalContext.current
     // The time goes on while it records.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(track.recording) {
@@ -381,20 +550,35 @@ fun TrackPanel(track: Track, onPause: () -> Unit, onResume: () -> Unit, onFinish
         modifier = Modifier.widthIn(max = 560.dp),
     ) {
         Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (track.recording) {
-                Box(Modifier.size(12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error))
-            } else {
-                Icon(Icons.Rounded.Pause, null, modifier = Modifier.size(20.dp))
+            when {
+                track.recording -> Box(Modifier.size(12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error))
+                track.interrupted -> Icon(Icons.Rounded.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                else -> Icon(Icons.Rounded.Pause, null, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(stringResource(if (track.recording) R.string.track_recording else R.string.track_paused), style = MaterialTheme.typography.titleMedium)
+                val title = when {
+                    track.recording -> R.string.track_recording
+                    track.interrupted -> R.string.track_interrupted
+                    else -> R.string.track_paused
+                }
+                Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
                 val detail = if (track.recording && track.points.isEmpty()) {
                     stringResource(R.string.track_waiting)
                 } else {
                     distanceText(track.length) + " · " + DateUtils.formatElapsedTime(((until - track.started) / 1_000).coerceAtLeast(0))
                 }
                 Text(detail, style = MaterialTheme.typography.bodySmall)
+                // Without notifications the recording goes on unseen in the notification shade: said, with the way to turn them on.
+                // Read every second while it records, so turning them on shows at once.
+                if (track.recording && !notificationsShown(context)) {
+                    Text(
+                        stringResource(R.string.track_no_notification),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.clickable { openNotificationSettings(context) },
+                    )
+                }
             }
             if (track.recording) {
                 IconButton(onClick = onPause) { Icon(Icons.Rounded.Pause, stringResource(R.string.track_pause)) }

@@ -2,7 +2,9 @@ package org.geocrew.android
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,23 +22,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,13 +60,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /**
- * The permissions GeoCrew needs, on one screen before anything else: all-files
- * access for the GeoCrew folder (ADR 0002) and location for points. It is
- * skipped once everything is granted. [resumed] changes whenever the user comes
- * back from the system settings, so the cards show what is granted now.
+ * The permissions GeoCrew asks for, on one screen: before anything else, and
+ * again from the settings ([onBack]). All-files access for the GeoCrew folder
+ * (ADR 0002) comes first, then location, the camera, notifications and
+ * background running. What is not granted can be skipped, all at once: it is
+ * asked for when first needed (without the files, projects stay inside the
+ * app). At start the screen is left out once each is granted or skipped; from
+ * the settings it shows the cards alone. [resumed] changes whenever the user
+ * comes back from the system settings, so the cards show what is granted now.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PermissionScreen(graph: AppGraph, resumed: Int, onDone: () -> Unit) {
+fun PermissionScreen(graph: AppGraph, resumed: Int, onDone: () -> Unit, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     var answered by remember { mutableIntStateOf(0) }
     val location = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -69,14 +82,24 @@ fun PermissionScreen(graph: AppGraph, resumed: Int, onDone: () -> Unit) {
         graph.settings.markCameraAsked()
         answered++
     }
+    val notify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        graph.settings.markNotificationsAsked()
+        answered++
+    }
     // Read again after every return from the settings and every answer.
     val files = remember(resumed, answered) { graph.hasAllFilesAccess }
     val located = remember(resumed, answered) { graph.hasLocation(context) }
     val filming = remember(resumed, answered) { mayUseCamera(context) }
-    // What was not granted is not asked again by this screen; the camera asks when a photo is taken.
+    val notified = remember(resumed, answered) { notificationsShown(context) }
+    val free = remember(resumed, answered) { unrestricted(context) }
+    // What was not granted is skipped: asked for when first needed, and the screen does not come up for it again.
+    // Without the files, projects stay inside the app.
     fun leave() {
+        if (!files) graph.settings.chooseOwnFolder()
         if (!located) graph.settings.markLocationAsked()
         if (!filming) graph.settings.markCameraAsked()
+        if (!notified) graph.settings.markNotificationsAsked()
+        if (!free) graph.settings.markBatteryAsked()
         onDone()
     }
 
@@ -126,32 +149,91 @@ fun PermissionScreen(graph: AppGraph, resumed: Int, onDone: () -> Unit) {
             granted = filming,
             onGrant = { camera.launch(Manifest.permission.CAMERA) },
         )
+        Spacer(Modifier.height(12.dp))
+        PermissionCard(
+            icon = Icons.Rounded.Notifications,
+            title = stringResource(R.string.permission_notifications),
+            body = stringResource(R.string.permission_notifications_body),
+            granted = notified,
+            onGrant = {
+                // Asked for where the system asks (Android 13 on, not allowed yet); else turned on in the app's notification settings.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    notify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    graph.settings.markNotificationsAsked()
+                    openNotificationSettings(context)
+                }
+            },
+        )
+        Spacer(Modifier.height(12.dp))
+        PermissionCard(
+            icon = Icons.Rounded.BatteryFull,
+            title = stringResource(R.string.permission_background),
+            body = stringResource(R.string.permission_background_body),
+            granted = free,
+            onGrant = {
+                graph.settings.markBatteryAsked()
+                graph.settings.markBatteryPrompted()
+                askUnrestricted(context)
+            },
+        )
     }
+    // All granted, the screen goes on; else it skips what is left, saying where that can be granted later.
+    val all = files && located && filming && notified && free
     val actions: @Composable () -> Unit = {
-        Button(
-            onClick = { leave() },
-            enabled = files || graph.settings.ownFolderChosen,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) { Text(stringResource(R.string.permissions_continue)) }
-        if (!files && !graph.settings.ownFolderChosen) {
-            TextButton(
-                onClick = {
-                    graph.settings.chooseOwnFolder()
-                    leave()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.permissions_own_folder)) }
+        if (all) {
+            Button(onClick = { leave() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                Text(stringResource(R.string.permissions_continue))
+            }
+        } else {
             Text(
-                stringResource(R.string.permissions_own_folder_warning),
+                stringResource(R.string.permissions_later),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
+            // Skipped, the projects stay inside the app for good: said before it is chosen.
+            if (!files && !graph.settings.ownFolderChosen) {
+                Text(
+                    stringResource(R.string.permissions_own_folder_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            FilledTonalButton(onClick = { leave() }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                Text(stringResource(R.string.permissions_skip))
+            }
         }
     }
 
-    Scaffold { padding ->
+    Scaffold(
+        topBar = {
+            if (onBack != null) {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.settings_permissions)) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back)) }
+                    },
+                )
+            }
+        },
+    ) { padding ->
+        if (onBack != null) {
+            // From the settings: the cards alone, to change what was chosen.
+            Column(
+                Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Column(Modifier.widthIn(max = 640.dp)) { cards() }
+            }
+            return@Scaffold
+        }
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             if (maxWidth > maxHeight && maxWidth >= 600.dp) {
                 // Landscape: what it is about on the left, what to grant on the right.
