@@ -35,16 +35,19 @@ internal object AttachmentTables {
             dataset,
             "SELECT a.uuid AS uuid, a.file AS file, a.thumb AS thumb, a.type AS type, a.size AS size, a.name AS name, a.meta AS meta " +
                 "FROM ${id(map)} m JOIN $TABLE a ON a.id = m.related_id WHERE m.base_id = $fid ORDER BY m.position",
-        ).map { row ->
-            Attachment(
-                id = row["uuid"].orEmpty(),
-                file = row["file"].orEmpty(),
-                type = row["type"].orEmpty(),
-                size = row["size"]?.toLongOrNull() ?: 0,
-                name = row["name"].orEmpty(),
-                thumb = row["thumb"],
-                meta = row["meta"]?.let { runCatching { Json.parseToJsonElement(it) as? JsonObject }.getOrNull() },
-            )
+        ).mapNotNull { row ->
+            // A row that is no attachment (written by another program) is left out, not the whole list.
+            runCatching {
+                Attachment(
+                    id = row["uuid"].orEmpty(),
+                    file = row["file"].orEmpty(),
+                    type = row["type"].orEmpty(),
+                    size = row["size"]?.toLongOrNull() ?: 0,
+                    name = row["name"].orEmpty(),
+                    thumb = row["thumb"],
+                    meta = row["meta"]?.let { runCatching { Json.parseToJsonElement(it) as? JsonObject }.getOrNull() },
+                )
+            }.getOrNull()
         }
     }
 
