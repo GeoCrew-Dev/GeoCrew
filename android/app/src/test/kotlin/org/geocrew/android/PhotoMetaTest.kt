@@ -11,8 +11,9 @@ class PhotoMetaTest {
 
     @Test
     fun aPhotoSaysWhereItLookedFromTrueNorth() {
-        val meta = photoMeta(magneticHeading = 355.5f, declination = -3.2f, longitude = 114.3, latitude = 30.6, accuracy = 4.25f, taken = taken)
-        val expected = """{"azimuth": 352.3, "longitude": 114.3, "latitude": 30.6, "accuracy": 4.3, "taken": "2026-11-27T02:50:00Z"}"""
+        val located = Instant.parse("2026-11-27T02:49:20.5Z")
+        val meta = photoMeta(magneticHeading = 355.5f, declination = -3.2f, longitude = 114.3, latitude = 30.6, accuracy = 4.25f, taken = taken, located = located)
+        val expected = """{"azimuth": 352.3, "longitude": 114.3, "latitude": 30.6, "accuracy": 4.3, "located": "2026-11-27T02:49:20Z", "taken": "2026-11-27T02:50:00Z"}"""
         assertEquals(Json.parseToJsonElement(expected).jsonObject, meta)
         fun azimuth(magnetic: Float, declination: Float?) = photoMeta(magnetic, declination, 114.3, 30.6, null, taken).let { m ->
             (m["azimuth"] ?: m.getValue("magneticAzimuth")).toString().toDouble()

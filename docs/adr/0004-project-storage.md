@@ -90,7 +90,7 @@
 - 撤销和删除附件行都不删文件；没有附件行引用的文件以后统一清理。
 - 动作：`attachment.import` 把文件拷进附件文件夹，返回 `feature.add`、`feature.attachments.set` 要的描述（AI、插件只能导入 GeoCrew 文件夹里的文件）；`feature.attachments` 给出要素的附件和文件路径；`feature.add` 可以带 `attachments`。
 - 照片、视频这类"字段"不做成单独的列：附件挂在要素上，表单里一个附件区。以后要按用途分组（照片、素描），在 meta 里记组名。
-- 应用内相机拍的照片（ADR 0016 的补充），meta 里记：`azimuth`，拍摄方向，从真北顺时针的度数；没有位置、算不出磁偏角时改记 `magneticAzimuth`。另外记 `longitude`、`latitude`、`accuracy`（米）和 `taken`（UTC）；位置也写进照片的 EXIF。方向和指南针一样：手机平放时是屏幕顶端所指，竖着拿时是背面所指。刚打开相机、GNSS 还没给出位置就拍时，用手机两分钟内的最近位置。
+- 应用内相机拍的照片（ADR 0016 的补充），meta 里记：`azimuth`，拍摄方向，从真北顺时针的度数；没有位置、算不出磁偏角时改记 `magneticAzimuth`。另外记 `longitude`、`latitude`、`accuracy`（米）、`located`（这个位置是什么时候得到的，UTC）和 `taken`（UTC）；位置也写进照片的 EXIF。方向和指南针一样：手机平放时是屏幕顶端所指，竖着拿时是背面所指。刚打开相机、GNSS 还没给出位置就拍时，用手机两分钟内的最近位置。
 - 附件表登记在 `gpkg_contents` 里，导出 KML 时改为只导出工程的图层。导出时带上附件（KMZ、GPKG 打包）仍在待办。
 
 ## 相关
