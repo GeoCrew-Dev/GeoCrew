@@ -478,4 +478,7 @@
     <string name="files_add_to_project">Add to a project</string>
     <string name="files_import_to_project">Import into a project</string>
     <string name="choose_project">Choose a project</string>
+    <string name="pick_date">Choose a date</string>
+    <string name="pick_time">Time</string>
+    <string name="clear">Clear</string>
 </resources>

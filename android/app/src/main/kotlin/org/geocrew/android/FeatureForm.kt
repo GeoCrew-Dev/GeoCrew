@@ -17,7 +17,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
@@ -64,6 +66,8 @@ import androidx.core.view.WindowCompat
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -158,6 +162,9 @@ fun FeatureForm(
     val canSave = problems.values.all { it == null } && (start == null || positionOk)
     val locale = LocalConfiguration.current.locales[0]
     var confirmDelete by remember { mutableStateOf(false) }
+    // A date or date-and-time field whose value is being chosen; for a date and time, its date once chosen.
+    var picking by remember { mutableStateOf<FormField?>(null) }
+    var pickedDate by remember { mutableStateOf<LocalDate?>(null) }
     var locating by remember { mutableStateOf(false) }
     var accuracy by remember { mutableStateOf<Float?>(null) }
 
@@ -197,7 +204,7 @@ fun FeatureForm(
     fun save() {
         val values = fields.filter {
             val text = texts[it.name].orEmpty()
-            editable(it.type) && if (isNew) text.isNotBlank() else text != original[it.name]
+            (editable(it.type) || it.type == "datetime") && if (isNew) text.isNotBlank() else text != original[it.name]
         }
         // Positions compare as typed: a value read with more decimals than shown is no change.
         val position = when {
@@ -305,6 +312,22 @@ fun FeatureForm(
                             onValueChange = { texts[field.name] = it },
                             label = { Text(field.name) },
                             placeholder = if (field.type == "date") ({ Text("2026-11-26") }) else null,
+                            // A date is typed or chosen; a date and time is chosen, and can be cleared.
+                            trailingIcon = if (field.type == "date" || field.type == "datetime") {
+                                {
+                                    Row {
+                                        if (field.type == "datetime" && !texts[field.name].isNullOrBlank()) {
+                                            IconButton(onClick = { texts[field.name] = "" }) { Icon(Icons.Rounded.Clear, stringResource(R.string.clear)) }
+                                        }
+                                        IconButton(onClick = {
+                                            pickedDate = null
+                                            picking = field
+                                        }) { Icon(Icons.Rounded.CalendarMonth, stringResource(R.string.pick_date)) }
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                             singleLine = field.type != "string",
                             readOnly = !editable(field.type),
                             isError = problem != null,
@@ -343,6 +366,29 @@ fun FeatureForm(
                     }
                     Spacer(Modifier.height(24.dp))
                 }
+            }
+        }
+    }
+    picking?.let { field ->
+        val text = texts[field.name].orEmpty()
+        val zone = ZoneId.systemDefault()
+        val day = pickedDate
+        when {
+            field.type == "date" -> DateDialog(dateOf(text), onDismiss = { picking = null }) {
+                texts[field.name] = it.toString()
+                picking = null
+            }
+            day == null -> DateDialog(instantOf(text)?.atZone(zone)?.toLocalDate(), onDismiss = { picking = null }) { pickedDate = it }
+            else -> TimeDialog(
+                instantOf(text)?.atZone(zone)?.toLocalTime() ?: LocalTime.now(),
+                onDismiss = {
+                    picking = null
+                    pickedDate = null
+                },
+            ) {
+                texts[field.name] = storedDateTime(day, it, zone)
+                picking = null
+                pickedDate = null
             }
         }
     }
