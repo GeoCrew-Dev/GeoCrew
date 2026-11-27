@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Landscape
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.LinearScale
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Numbers
@@ -488,7 +489,8 @@ fun LayersScreen(
                                 detail = pluralStringResource(R.plurals.layers_count, group.layers.size, group.layers.size),
                                 visible = group.visible,
                                 onToggle = { display(Workspace.GROUP_DISPLAY, buildJsonObject { put("group", group.id); put("visible", !group.visible) }) },
-                                swatch = { Icon(if (open) Icons.Rounded.FolderOpen else Icons.Rounded.Folder, null) },
+                                // A vector layer's group (its points, lines and areas) apart from a folder of layers.
+                                swatch = { Icon(if (group.vector) Icons.Rounded.Layers else if (open) Icons.Rounded.FolderOpen else Icons.Rounded.Folder, null) },
                                 onClick = { folded[group.id] = open },
                                 modifier = Modifier.animateItem(),
                                 more = {

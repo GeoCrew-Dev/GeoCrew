@@ -30,6 +30,7 @@ import org.geocrew.core.layers.TreeNode
 import org.geocrew.core.project.LayerTemplate
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.core.project.ProjectFormat.quote
+import org.geocrew.core.project.Templates
 import org.geocrew.nativelib.VectorDataset
 
 /**
@@ -214,6 +215,16 @@ private fun readGroups(ds: VectorDataset, display: Map<String, Project.Display> 
         val id = it.getValue("id")!!
         Project.Group(id, it["name"].orEmpty(), it["vector"] == "1", display[Project.groupKey(id)] ?: Project.Display())
     }
+}
+
+// What a layer of [geometry] holds, as a part of a vector layer takes it: POINT, LINESTRING or POLYGON (multi types too);
+// null for mixed geometry, which takes every kind.
+internal fun kindOf(geometry: String?): String? = when {
+    geometry == null -> null
+    geometry.contains("POLYGON") -> "POLYGON"
+    geometry.contains("LINE") -> "LINESTRING"
+    geometry.contains("POINT") -> "POINT"
+    else -> null
 }
 
 // The layers and groups as the tree takes them: a group by its key in the display table, as layers name it as parent.
@@ -569,8 +580,9 @@ class Project internal constructor(
         layer.display.visible && (layer.display.parent?.let { key -> groups.firstOrNull { groupKey(it.id) == key } }?.display?.visible ?: true)
 
     /**
-     * Makes a group named [name] on top of the layer list, a [vector] layer or
-     * not, with layers [inside] in it in that order; saved at once, not undone.
+     * Makes a group named [name], a [vector] layer or not, with layers [inside]
+     * in it in that order, where the first of them was (on top without any);
+     * saved at once, not undone.
      */
     fun createGroup(name: String, vector: Boolean = false, inside: List<String> = emptyList()): Group {
         val trimmed = name.trim()
@@ -582,9 +594,14 @@ class Project internal constructor(
         try {
             dataset.sql(ProjectFormat.GROUPS_SCHEMA)
             dataset.sql("INSERT INTO ${ProjectFormat.GROUPS_TABLE} (id, name, vector) VALUES (${quote(id)}, ${quote(trimmed)}, ${if (vector) 1 else 0})")
+            // Where the first layer is at the top (or the group it is in), before it goes in.
+            val at = ids.firstOrNull()?.let { first ->
+                val tree = LayerTree.tree(treeNodes(layers, groups))
+                tree.indexOfFirst { (node, children) -> node.id == first || children.any { it.id == first } }.takeIf { it >= 0 }
+            } ?: 0
             reload()
             var nodes = treeNodes(layers, groups)
-            nodes = placed(nodes, LayerTree.move(nodes, groupKey(id), null, 0))
+            nodes = placed(nodes, LayerTree.move(nodes, groupKey(id), null, at))
             for ((i, layer) in ids.withIndex()) nodes = placed(nodes, LayerTree.move(nodes, layer, groupKey(id), i))
             writePlaces(nodes)
             dataset.commit()
@@ -595,6 +612,46 @@ class Project internal constructor(
         }
         reload()
         return groups.single { it.id == id }
+    }
+
+    /**
+     * Adds to the vector layer of [layer] (ADR 0017) a part for features of
+     * [geometry] (POINT, LINESTRING or POLYGON): a table of its own with the
+     * fields, CRS and look of [layer] ([color], #rrggbb, when [layer] has no
+     * style of its own), named after the vector layer and the kind in
+     * [language] (断层 线), last in it. A layer in no vector layer yet becomes
+     * one: a group named after it, where it was. Saved at once, not undone.
+     */
+    fun createPart(layer: String, geometry: String, language: String, color: String? = null): Layer {
+        val source = layers.firstOrNull { it.name == layer } ?: throw IllegalArgumentException("there is no layer $layer")
+        val template = requireNotNull(Templates.forGeometry(geometry)) { "a part holds POINT, LINESTRING or POLYGON" }
+        // A layer of mixed geometry takes every kind: it needs no parts.
+        val own = requireNotNull(Templates.forGeometry(kindOf(source.geometry) ?: "")) { "$layer takes every kind already" }
+        require(own != template) { "$layer holds them already" }
+        var group = groups.firstOrNull { it.vector && groupKey(it.id) == source.display.parent }
+        group?.let { g -> require(layers.none { it.display.parent == groupKey(g.id) && kindOf(it.geometry) == geometry }) { "${g.name} has its part already" } }
+        if (group == null) {
+            val base = source.name
+            val name = generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base $it" }.first { n -> groups.none { it.name.equals(n, ignoreCase = true) } }
+            group = createGroup(name, vector = true, inside = listOf(source.name))
+        }
+        val name = freeLayerName("${group.name} ${Templates.partName(geometry, language)}")
+        val fields = VectorLayerStore(dataset, source.name).fields.filter { it.type != FieldType.OTHER } // fields GeoCrew cannot edit stay behind
+        // A field template goes with the kind; another (a track's) stays with its layer.
+        val fieldTemplates = listOf("POINT", "LINESTRING", "POLYGON").mapNotNull(Templates::forGeometry).map { it.id }
+        val kept = if (source.template in fieldTemplates) template.id else null
+        addLayer(dataset, name, geometry, source.srs ?: "EPSG:4490", kept, fields)
+        for (f in fields) f.range?.let { FieldRanges.set(dataset, name, f.name, it) }
+        layers = readLayers(dataset)
+        val made = layers.single { it.name == name }
+        val style = styles[source.id]
+        if (style != null) {
+            dataset.sql("INSERT OR REPLACE INTO ${ProjectFormat.STYLE_TABLE} (layer_id, style) VALUES (${quote(made.id)}, ${quote(style.toString())})")
+        } else if (color != null) {
+            setStyle(name, buildJsonObject { put("color", color) })
+        }
+        move(layer = name, into = group.id, index = Int.MAX_VALUE / 2)
+        return layers.single { it.name == name }
     }
 
     /** Renames group [id]; saved at once. */

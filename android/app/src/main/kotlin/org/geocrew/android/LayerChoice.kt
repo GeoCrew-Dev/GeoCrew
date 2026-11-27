@@ -103,6 +103,8 @@ fun LayerPicker(
     showRemember: Boolean = true,
     kind: LayerKind? = null,
     onKind: (LayerKind) -> Unit = {},
+    entries: List<AddEntry>? = null,
+    onPickEntry: (AddEntry, remember: Boolean) -> Unit = { _, _ -> },
 ) {
     var remember by remember { mutableStateOf(false) }
     val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -122,14 +124,29 @@ fun LayerPicker(
                     }
                 }
             }
-            for (layer in if (kind == null) layers else layers.filter { kind.takenBy(it.geometry) }) {
-                ListItem(
-                    headlineContent = { Text(layer.name) },
-                    supportingContent = { Text(pluralStringResource(countOf(layer.geometry), layer.count, layer.count)) },
-                    leadingContent = { LayerDot(layer.color) },
-                    colors = clear,
-                    modifier = Modifier.fillMaxWidth().clickable { onPick(layer, remember) },
-                )
+            if (kind != null && entries != null) {
+                // Every vector layer takes the kind chosen (ADR 0017); one without a part for it gets one when picked.
+                for (entry in entries) {
+                    ListItem(
+                        headlineContent = { Text(entry.name) },
+                        supportingContent = {
+                            Text(entry.count?.let { pluralStringResource(countOf(kind.geometry), it, it) } ?: stringResource(kind.newLayer))
+                        },
+                        leadingContent = { LegendSwatch(kind.geometry, listOf(entry.color), visible = true) },
+                        colors = clear,
+                        modifier = Modifier.fillMaxWidth().clickable { onPickEntry(entry, remember) },
+                    )
+                }
+            } else {
+                for (layer in if (kind == null) layers else layers.filter { kind.takenBy(it.geometry) }) {
+                    ListItem(
+                        headlineContent = { Text(layer.name) },
+                        supportingContent = { Text(pluralStringResource(countOf(layer.geometry), layer.count, layer.count)) },
+                        leadingContent = { LayerDot(layer.color) },
+                        colors = clear,
+                        modifier = Modifier.fillMaxWidth().clickable { onPick(layer, remember) },
+                    )
+                }
             }
             ListItem(
                 headlineContent = { Text(stringResource(R.string.layer_new)) },
@@ -245,11 +262,24 @@ fun NewLayerDialog(
     )
 }
 
-/** What a feature or a new layer is: a point, a line or an area, and the template a new layer is made from. */
-enum class LayerKind(val template: String, val label: Int) {
-    POINT("field-point", R.string.layer_kind_point),
-    LINE("field-line", R.string.layer_kind_line),
-    POLYGON("field-polygon", R.string.layer_kind_polygon),
+/**
+ * A vector layer a new feature can go into (ADR 0017): a layer, or a vector
+ * layer's group as one; its name and colour, and how many features of the
+ * kind it has, null when it has no part for them yet (made when picked).
+ * [layer] is the layer the feature goes into, or the one a new part is made
+ * like.
+ */
+data class AddEntry(val name: String, val color: Color, val count: Int?, val layer: String)
+
+/**
+ * What a feature or a new layer is: a point, a line or an area, the template
+ * a new layer is made from, the geometry type it holds, and how a vector
+ * layer's part for it yet to be made is said.
+ */
+enum class LayerKind(val template: String, val label: Int, val geometry: String, val newLayer: Int) {
+    POINT("field-point", R.string.layer_kind_point, "POINT", R.string.add_part_point),
+    LINE("field-line", R.string.layer_kind_line, "LINESTRING", R.string.add_part_line),
+    POLYGON("field-polygon", R.string.layer_kind_polygon, "POLYGON", R.string.add_part_polygon),
     ;
 
     /** Whether a layer of [geometry] takes this kind: its own, or any kind for a layer of mixed geometry (GEOMETRY). */

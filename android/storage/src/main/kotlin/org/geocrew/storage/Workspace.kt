@@ -322,6 +322,22 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
+            LAYER_PART, "Add vector layer part",
+            "Adds a part to the vector layer of a layer of the open project (ADR 0017): a table for its points, lines or areas with the layer's fields, " +
+                "CRS and look (color: #rrggbb, when the layer has no style of its own), named after the vector layer and the kind in the language given. " +
+                "A layer in no vector layer yet becomes one: a group named after it. Saved at once, not undone; gives the part's name as part",
+            Risk.EDIT, PART_PARAMS, """{"layer": "断层", "geometry": "POINT", "language": "zh"}""",
+        ) { p ->
+            val project = checkNotNull(current) { "no project is open" }
+            val part = project.createPart(
+                p.getValue("layer").jsonPrimitive.content,
+                p.getValue("geometry").jsonPrimitive.content,
+                (p["language"] as? JsonPrimitive)?.contentOrNull ?: "en",
+                (p["color"] as? JsonPrimitive)?.contentOrNull,
+            )
+            ActionResult.Done(JsonObject(about(project) + ("part" to JsonPrimitive(part.name))))
+        },
+        WorkspaceAction(
             GROUP_RENAME, "Rename layer group", "Renames a group of the open project's layer list; saved at once",
             Risk.EDIT, GROUP_RENAME_PARAMS, """{"group": "…", "to": "水文地质"}""",
         ) { p ->
@@ -586,6 +602,7 @@ class Workspace(private val projects: Projects) {
         const val BASEMAP_DISPLAY = "basemap.display"
         const val LAYER_ORDER = "layer.order"
         const val LAYER_MOVE = "layer.move"
+        const val LAYER_PART = "layer.part.create"
         const val GROUP_CREATE = "layer.group.create"
         const val GROUP_RENAME = "layer.group.rename"
         const val GROUP_REMOVE = "layer.group.remove"
@@ -681,6 +698,11 @@ class Workspace(private val projects: Projects) {
         private val GROUP_DISPLAY_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["group", "visible"],
                 "properties": {"group": {"type": "string"}, "visible": {"type": "boolean"}}}""",
+        )
+        private val PART_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "geometry"],
+                "properties": {"layer": {"type": "string"}, "geometry": {"enum": ["POINT", "LINESTRING", "POLYGON"]}, "language": {"type": "string"},
+                "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}}}""",
         )
         private val MOVE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["index"],

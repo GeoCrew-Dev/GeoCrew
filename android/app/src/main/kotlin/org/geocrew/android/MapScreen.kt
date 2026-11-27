@@ -82,6 +82,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -174,6 +175,8 @@ fun MapScreen(
     val key = remember { TiandituKey.read(context) }
     var projectId by remember { mutableStateOf<String?>(null) }
     var layers by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
+    // The layer list's groups (ADR 0017): which are vector layers, whose parts are tables of their own.
+    var groups by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     // Each layer as layer.features gives it, by name.
     var collections by remember { mutableStateOf<Map<String, JsonObject>>(emptyMap()) }
     // The features by their ids on the map ("layer index/fid"), with their exact coordinates, for snapping to.
@@ -345,6 +348,7 @@ fun MapScreen(
     suspend fun show(about: JsonObject) {
         projectId = (about["id"] as? JsonPrimitive)?.contentOrNull
         layers = about["layers"]?.jsonArray.orEmpty().map { it.jsonObject }
+        groups = about["groups"]?.jsonArray.orEmpty().map { it.jsonObject }
         basemaps = listedBasemaps(about)
         rasters = listedRasters(about)
         val kinds = HashMap<String, String>()
@@ -793,6 +797,66 @@ fun MapScreen(
             LayerKind.POINT -> startPlacing(layer.name)
             LayerKind.LINE -> startDrawing(layer.name, area = false)
             LayerKind.POLYGON -> startDrawing(layer.name, area = true)
+        }
+    }
+
+    // What a new feature of [kind] can go into (ADR 0017), in the layer list's order: every vector layer that shows, a vector
+    // layer's group as one. One with no part for the kind yet gets one when picked; one whose part is hidden is left out.
+    fun addEntries(kind: LayerKind): List<AddEntry> {
+        val vectors = groups.filter { it.text("vector") == "true" }.associateBy { it.text("id") }
+        val groupOf = layers.mapNotNull { l -> l.name()?.let { n -> l.text("group")?.let { n to it } } }.toMap()
+        val seen = HashSet<String>()
+        return drawables.mapNotNull { layer ->
+            val group = groupOf[layer.name]?.let { vectors[it] }
+            if (group == null) {
+                if (!layer.visible) return@mapNotNull null
+                return@mapNotNull AddEntry(layer.name, layer.color, layer.count.takeIf { kind.takenBy(layer.geometry) }, layer.name)
+            }
+            val id = group.text("id") ?: return@mapNotNull null
+            if (!seen.add(id)) return@mapNotNull null
+            val parts = drawables.filter { groupOf[it.name] == id }
+            val part = parts.firstOrNull { kind.takenBy(it.geometry) }
+            val shown = parts.firstOrNull { it.visible } ?: return@mapNotNull null
+            when {
+                part == null -> AddEntry(group.text("name").orEmpty(), shown.color, null, shown.name)
+                part.visible -> AddEntry(group.text("name").orEmpty(), part.color, part.count, part.name)
+                else -> null
+            }
+        }
+    }
+
+    // A feature of [kind] goes into the layer [entry] names, or into the part made for it (ADR 0017), which [remember] keeps.
+    fun pickEntry(entry: AddEntry, kind: LayerKind, remember: Boolean) {
+        val layer = drawables.firstOrNull { it.name == entry.layer } ?: return
+        if (entry.count != null) {
+            if (remember) projectId?.let { graph.settings.setPlacingLayer(it, layer.id) }
+            startAdding(layer)
+            return
+        }
+        once {
+            val params = buildJsonObject {
+                put("layer", layer.name)
+                put("geometry", kind.geometry)
+                put("language", AppLanguage.speaking(context))
+                put("color", "#%06x".format(layer.color.toArgb() and 0xffffff))
+            }
+            when (val made = graph.invoke(Workspace.LAYER_PART, params)) {
+                is Outcome.Done -> {
+                    val about = made.output.jsonObject
+                    show(about)
+                    val part = about.text("part") ?: return@once
+                    if (remember) {
+                        val id = about["layers"]?.jsonArray?.map { it.jsonObject }?.firstOrNull { it.name() == part }?.text("id")
+                        if (id != null) projectId?.let { graph.settings.setPlacingLayer(it, id) }
+                    }
+                    when (kind) {
+                        LayerKind.POINT -> startPlacing(part)
+                        LayerKind.LINE -> startDrawing(part, area = false)
+                        LayerKind.POLYGON -> startDrawing(part, area = true)
+                    }
+                }
+                else -> failure = texts.of(made)
+            }
         }
     }
 
@@ -1564,6 +1628,11 @@ fun MapScreen(
             onDismiss = { picking = false },
             kind = graph.settings.addKind,
             onKind = graph.settings::changeAddKind,
+            entries = addEntries(graph.settings.addKind),
+            onPickEntry = { entry, remember ->
+                picking = false
+                pickEntry(entry, graph.settings.addKind, remember)
+            },
         )
     }
     moving?.let { (layer, fid) ->

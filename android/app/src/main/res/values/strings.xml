@@ -562,4 +562,7 @@
     <string name="layer_group_name">Group name</string>
     <string name="layer_group_taken">There is a group with this name</string>
     <string name="group_ungroup">Ungroup</string>
+    <string name="add_part_point">New point layer</string>
+    <string name="add_part_line">New line layer</string>
+    <string name="add_part_polygon">New area layer</string>
 </resources>
