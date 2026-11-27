@@ -1,7 +1,6 @@
 package org.geocrew.android
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -21,7 +20,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import androidx.core.graphics.scale
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -138,11 +136,7 @@ internal fun fit(map: MapLibreMap, features: JsonArray, density: Float) {
 }
 
 /** Hands a file to another app through the system's share sheet. */
-internal fun share(context: Context, file: File, title: String) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-    val send = Intent(Intent.ACTION_SEND).setType(mimeOf(file)).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    context.startActivity(Intent.createChooser(send, title))
-}
+internal fun share(context: Context, file: File, title: String) = shareAll(context, listOf(file), title)
 
 /**
  * The map as it is now, at full size, as a PNG in [dir] named after [project]
