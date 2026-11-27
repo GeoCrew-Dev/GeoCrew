@@ -493,4 +493,21 @@
     <string name="table_change_values">Edit values</string>
     <string name="table_change_done">Done</string>
     <string name="table_change_value">Edit value</string>
+    <string name="field_range">Value range</string>
+    <string name="field_range_title">Value range of “%1$s”</string>
+    <string name="range_min">Minimum</string>
+    <string name="range_max">Maximum</string>
+    <string name="range_max_below_min">Below the minimum</string>
+    <string name="field_range_between">Must be from %1$s to %2$s</string>
+    <string name="field_range_at_least">Must be at least %1$s</string>
+    <string name="field_range_above">Must be more than %1$s</string>
+    <string name="field_range_at_most">Must be at most %1$s</string>
+    <string name="field_range_below">Must be less than %1$s</string>
+    <string name="field_type_range">%1$s · %2$s</string>
+    <string name="range_closed">%1$s–%2$s</string>
+    <string name="range_from">≥ %1$s</string>
+    <string name="range_above">&gt; %1$s</string>
+    <string name="range_to">≤ %1$s</string>
+    <string name="range_below">&lt; %1$s</string>
+    <string name="range_both">%1$s, %2$s</string>
 </resources>

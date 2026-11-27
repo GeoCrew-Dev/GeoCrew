@@ -911,8 +911,8 @@ fun MapScreen(
     fun requestMove(layer: String, fid: Long, to: String) {
         val feature = collections[layer]?.get("features")?.jsonArray?.map { it.jsonObject }
             ?.firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() == fid } ?: return
-        // A value goes along when the other layer has a field of that name that takes it, as the move itself decides.
-        val takes = formFields(collections[to]).associate { it.name to FieldType.of(it.type) }
+        // A value goes along when the other layer has a field of that name that takes it (its type, its range), as the move itself decides.
+        val takes = formFields(collections[to]).associate { it.name to it.field() }
         val lost = (feature["properties"] as? JsonObject).orEmpty()
             .filter { (name, value) -> value !is JsonNull && takes[name]?.accepts(value) != true }.keys.toList()
         val m = Move(layer, fid, to, lost)

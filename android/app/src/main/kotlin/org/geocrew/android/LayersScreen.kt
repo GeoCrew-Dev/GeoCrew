@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.LinearScale
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Numbers
 import androidx.compose.material.icons.rounded.Palette
@@ -76,6 +78,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -92,6 +95,8 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
+import org.geocrew.core.edit.ValueRange
+import org.geocrew.core.project.Numbers
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.storage.RasterActions
 import org.geocrew.storage.Workspace
@@ -202,6 +207,7 @@ fun LayersScreen(
     var adding by remember { mutableStateOf<LayerInfo?>(null) }
     var renamingField by remember { mutableStateOf<Pair<LayerInfo, FormField>?>(null) }
     var deletingField by remember { mutableStateOf<Pair<LayerInfo, FormField>?>(null) }
+    var rangingField by remember { mutableStateOf<Pair<LayerInfo, FormField>?>(null) }
     var saveFirst by remember { mutableStateOf<FieldChange?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
     var loads by remember { mutableIntStateOf(0) }
@@ -250,6 +256,20 @@ fun LayersScreen(
     // Display changes are saved in the project at once; the page shows them when they are.
     fun display(action: String, params: JsonObject) = scope.launch {
         when (val done = graph.invoke(action, params)) {
+            is Outcome.Done -> loads++
+            else -> failure = texts.of(done)
+        }
+    }
+
+    // A number field's range is set at once, with nothing to save first; values already there stay.
+    fun setRange(layer: String, field: String, min: Double?, max: Double?) = scope.launch {
+        val params = buildJsonObject {
+            put("layer", layer)
+            put("field", field)
+            min?.let { put("min", it) }
+            max?.let { put("max", it) }
+        }
+        when (val done = graph.invoke(Workspace.FIELD_RANGE, params)) {
             is Outcome.Done -> loads++
             else -> failure = texts.of(done)
         }
@@ -375,10 +395,16 @@ fun LayersScreen(
                     items(layer.fields, key = { "field:${layer.name}:${it.name}" }) { field ->
                         ListItem(
                             headlineContent = { Text(field.name) },
-                            supportingContent = { Text(typeName(field.type)) },
+                            supportingContent = {
+                                Text(field.range?.let { stringResource(R.string.field_type_range, typeName(field.type), rangeText(it)) } ?: typeName(field.type))
+                            },
                             leadingContent = { Icon(fieldIcon(field.type), null) },
                             trailingContent = {
-                                FieldMenu(onRename = { renamingField = layer to field }, onDelete = { deletingField = layer to field })
+                                FieldMenu(
+                                    onRename = { renamingField = layer to field },
+                                    onRange = if (field.type in NUMBER_TYPES) ({ rangingField = layer to field }) else null,
+                                    onDelete = { deletingField = layer to field },
+                                )
                             },
                             colors = clear,
                             modifier = Modifier.animateItem().padding(start = 24.dp),
@@ -627,6 +653,12 @@ fun LayersScreen(
             },
         )
     }
+    rangingField?.let { (layer, field) ->
+        RangeDialog(field, onDismiss = { rangingField = null }) { min, max ->
+            rangingField = null
+            setRange(layer.name, field.name, min, max)
+        }
+    }
     renamingField?.let { (layer, field) ->
         RenameFieldDialog(
             current = field.name,
@@ -702,9 +734,9 @@ fun LayersScreen(
     }
 }
 
-/** What can be done to a field from its row: rename it or delete it. */
+/** What can be done to a field from its row: rename it, set the numbers it takes ([onRange], for number fields), delete it. */
 @Composable
-private fun FieldMenu(onRename: () -> Unit, onDelete: () -> Unit) {
+private fun FieldMenu(onRename: () -> Unit, onRange: (() -> Unit)?, onDelete: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.files_more)) }
@@ -717,6 +749,16 @@ private fun FieldMenu(onRename: () -> Unit, onDelete: () -> Unit) {
                     onRename()
                 },
             )
+            if (onRange != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.field_range)) },
+                    leadingIcon = { Icon(Icons.Rounded.LinearScale, null) },
+                    onClick = {
+                        open = false
+                        onRange()
+                    },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
                 leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
@@ -727,6 +769,68 @@ private fun FieldMenu(onRename: () -> Unit, onDelete: () -> Unit) {
             )
         }
     }
+}
+
+/** A range in short, as a field's row shows it: "0–90", "≥ 0", "> 0, ≤ 360". */
+@Composable
+private fun rangeText(range: ValueRange): String {
+    val min = range.min
+    val max = range.max
+    if (min != null && max != null && range.minIncluded && range.maxIncluded) {
+        return stringResource(R.string.range_closed, plainNumber(min), plainNumber(max))
+    }
+    val low = min?.let { stringResource(if (range.minIncluded) R.string.range_from else R.string.range_above, plainNumber(it)) }
+    val high = max?.let { stringResource(if (range.maxIncluded) R.string.range_to else R.string.range_below, plainNumber(it)) }
+    return if (low != null && high != null) stringResource(R.string.range_both, low, high) else low ?: high.orEmpty()
+}
+
+/** The numbers [field] takes: from a minimum, to a maximum, or both, each end in the range; with neither, any number. */
+@Composable
+private fun RangeDialog(field: FormField, onDismiss: () -> Unit, onSave: (min: Double?, max: Double?) -> Unit) {
+    val start = field.range
+    var min by remember { mutableStateOf(start?.min?.let(::plainNumber).orEmpty()) }
+    var max by remember { mutableStateOf(start?.max?.let(::plainNumber).orEmpty()) }
+    val low = Numbers.double(min)
+    val high = Numbers.double(max)
+    val minProblem = if (min.isNotBlank() && low == null) R.string.field_not_a_number else null
+    val maxProblem = when {
+        max.isNotBlank() && high == null -> R.string.field_not_a_number
+        low != null && high != null && high < low -> R.string.range_max_below_min
+        else -> null
+    }
+    AppDialog(
+        onDismissRequest = onDismiss,
+        twoPane = true,
+        title = { Text(stringResource(R.string.field_range_title, field.name)) },
+        text = {
+            Column {
+                RangeEnd(min, { min = it }, stringResource(R.string.range_min), minProblem)
+                RangeEnd(max, { max = it }, stringResource(R.string.range_max), maxProblem)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(low, high) },
+                enabled = (low != start?.min || high != start?.max) && minProblem == null && maxProblem == null,
+            ) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+// One end of a range, a number or nothing.
+@Composable
+private fun RangeEnd(value: String, onChange: (String) -> Unit, label: String, problem: Int?) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label) },
+        singleLine = true,
+        isError = problem != null,
+        supportingText = problem?.let { { Text(stringResource(it)) } },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 /** A field's new name, checked like a new field's: its own in the layer, in any case. */

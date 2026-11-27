@@ -471,4 +471,21 @@
     <string name="table_change_values">改值</string>
     <string name="table_change_done">完成</string>
     <string name="table_change_value">改值</string>
+    <string name="field_range">取值范围</string>
+    <string name="field_range_title">「%1$s」的取值范围</string>
+    <string name="range_min">最小值</string>
+    <string name="range_max">最大值</string>
+    <string name="range_max_below_min">比最小值小</string>
+    <string name="field_range_between">要在 %1$s 到 %2$s 之间</string>
+    <string name="field_range_at_least">不能小于 %1$s</string>
+    <string name="field_range_above">要大于 %1$s</string>
+    <string name="field_range_at_most">不能大于 %1$s</string>
+    <string name="field_range_below">要小于 %1$s</string>
+    <string name="field_type_range">%1$s · %2$s</string>
+    <string name="range_closed">%1$s–%2$s</string>
+    <string name="range_from">≥ %1$s</string>
+    <string name="range_above">&gt; %1$s</string>
+    <string name="range_to">≤ %1$s</string>
+    <string name="range_below">&lt; %1$s</string>
+    <string name="range_both">%1$s，%2$s</string>
 </resources>

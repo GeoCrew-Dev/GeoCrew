@@ -137,12 +137,12 @@ class Editing(private val sharedScope: String? = null, private val open: (String
         },
     )
 
-    // A feature moved to another layer, as QGIS cuts and pastes: the values of
-    // fields the other layer has go along, the rest are dropped and named in
-    // the result. Both layers change in one step of the shared undo history.
+    // A feature moved to another layer, as QGIS cuts and pastes: the values that
+    // fields of the other layer take go along (same name, its type, within its
+    // range), the rest are dropped and named in the result. Both layers change in one step of the shared undo history.
     private inner class Move : Action {
         override val spec = ActionSpec(
-            MOVE, "Move feature", "Moves a feature to another layer being edited; the values of fields that layer lacks are dropped",
+            MOVE, "Move feature", "Moves a feature to another layer being edited; values that layer's fields do not take are dropped",
             MOVE_PARAMS, Risk.EDIT, Stability.PREVIEW, inputs = listOf("vector"), outputs = listOf("vector"),
             examples = listOf(schema("""{"layer": "野外点", "fid": 12, "to": "泉点"}""")),
         )
@@ -165,7 +165,7 @@ class Editing(private val sharedScope: String? = null, private val open: (String
             val dropped = ArrayList<String>()
             for ((name, value) in feature.properties) {
                 if (value is JsonNull) continue
-                if (fields[name]?.type?.accepts(value) == true) kept[name] = value else dropped += name
+                if (fields[name]?.accepts(value) == true) kept[name] = value else dropped += name
             }
             // The copy goes in first: a crash between the two leaves the feature in both layers, never in neither.
             val added = target.add(feature.geometry, JsonObject(kept))

@@ -20,17 +20,24 @@ import org.geocrew.nativelib.VectorDataset
 
 /**
  * Layer [layer] of an open [dataset] as the store of an edit buffer
- * (ADR 0005). The fields and capabilities are read once, when this is made.
+ * (ADR 0005). The fields and capabilities are read once, when this is made;
+ * the fields' ranges each time, as they can change while the layer is edited.
  * VectorDataset does not report whether a layer takes new features, so that
  * follows random writes: both or neither for GeoPackage and Shapefile.
  */
 class VectorLayerStore(private val dataset: VectorDataset, private val layer: String) : LayerStore {
     private val info = Json.parseToJsonElement(dataset.layerInfo(layer)).jsonObject
 
-    override val fields: List<Field> = info.getValue("fields").jsonArray.map {
+    private val plain: List<Field> = info.getValue("fields").jsonArray.map {
         val field = it.jsonObject
         Field(field.getValue("name").jsonPrimitive.content, FieldType.of(field.getValue("type").jsonPrimitive.content))
     }
+
+    override val fields: List<Field>
+        get() {
+            val ranges = FieldRanges.of(dataset, layer)
+            return if (ranges.isEmpty()) plain else plain.map { f -> ranges[f.name]?.let { f.copy(range = it) } ?: f }
+        }
 
     override val capabilities: Capabilities = info.getValue("capabilities").jsonObject.let { caps ->
         fun can(name: String) = caps[name]?.jsonPrimitive?.booleanOrNull == true

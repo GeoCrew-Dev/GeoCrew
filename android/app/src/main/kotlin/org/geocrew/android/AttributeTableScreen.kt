@@ -324,7 +324,7 @@ private fun ValueDialog(field: FormField, initial: String, onDismiss: () -> Unit
         title = { Text(stringResource(R.string.table_change_value)) },
         text = { FieldInput(field, text, onChange = { text = it }, onPick = { picking = true }) },
         confirmButton = {
-            TextButton(onClick = { onSave(text) }, enabled = text != initial && valueProblem(field.type, text) == null) {
+            TextButton(onClick = { onSave(text) }, enabled = text != initial && valueProblem(field, text) == null) {
                 Text(stringResource(R.string.save))
             }
         },

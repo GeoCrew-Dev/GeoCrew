@@ -111,7 +111,6 @@ enum class Recovery {
  */
 class EditBuffer(private val store: LayerStore, private val journal: Journal) {
     private val slots = LinkedHashMap<Long, Slot>()
-    private val fields = store.fields.associateBy { it.name }
     private var nextNew = -1L
     private var stale = false // the journal still holds edits a save wrote
 
@@ -303,10 +302,14 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
         return slot
     }
 
+    // The fields as the store has them now: a field's range can change while its layer is being edited.
     private fun checkValues(values: JsonObject) {
+        val fields = store.fields.associateBy { it.name }
         for ((name, value) in values) {
             val field = requireNotNull(fields[name]) { "there is no field $name" }
             require(field.type.accepts(value)) { "field $name (${field.type.name.lowercase()}) does not take $value" }
+            val range = field.range
+            require(range == null || range.accepts(value)) { "field $name takes numbers ${range?.describe()}, not $value" }
         }
     }
 

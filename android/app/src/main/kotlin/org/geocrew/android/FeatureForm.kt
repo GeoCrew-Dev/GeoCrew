@@ -1,5 +1,6 @@
 package org.geocrew.android
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,12 +77,23 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import org.geocrew.core.edit.Field
 import org.geocrew.core.edit.FieldType
+import org.geocrew.core.edit.ValueRange
 import org.geocrew.core.project.Degrees
 import org.geocrew.core.project.Numbers
 
 /** A field of a layer, as layer.features describes it. */
-data class FormField(val name: String, val type: String)
+data class FormField(val name: String, val type: String, val range: ValueRange? = null) {
+    /** The field as the edit buffer checks values against it. */
+    fun field(): Field = Field(name, FieldType.of(type), range)
+}
+
+/** What is wrong with a value as typed: a string resource and the numbers that go into it. */
+data class ValueProblem(@StringRes val text: Int, val args: List<String> = emptyList())
+
+@Composable
+internal fun ValueProblem.message(): String = stringResource(text, *args.toTypedArray())
 
 /** A point's position: [x] is the longitude or easting, [y] the latitude or northing, in CRS [srs]. */
 data class Position(val x: Double, val y: Double, val srs: String)
@@ -133,7 +145,7 @@ fun FeatureForm(
     val start = remember(coordinates) { coordinates?.let { degrees(it.first) to degrees(it.second) } }
     var longitude by remember(coordinates) { mutableStateOf(start?.first.orEmpty()) }
     var latitude by remember(coordinates) { mutableStateOf(start?.second.orEmpty()) }
-    val problems = fields.associate { it.name to valueProblem(it.type, texts[it.name].orEmpty()) }
+    val problems = fields.associate { it.name to valueProblem(it, texts[it.name].orEmpty()) }
     // X and Y in the layer's projected CRS, entered there when chosen; X is the northing, as surveyors write it.
     // X/Y comes up once the converted values are there; until then, and when conversion fails, longitude and latitude.
     var byXY by remember(coordinates, crs) { mutableStateOf(false) }
@@ -363,7 +375,7 @@ internal fun FieldInput(field: FormField, text: String, onChange: (String) -> Un
         }
         return
     }
-    val problem = valueProblem(field.type, text)
+    val problem = valueProblem(field, text)
     OutlinedTextField(
         value = if (editable(field.type)) text else shownDateTime(field.type, text, LocalConfiguration.current.locales[0]),
         onValueChange = onChange,
@@ -385,7 +397,7 @@ internal fun FieldInput(field: FormField, text: String, onChange: (String) -> Un
         singleLine = field.type != "string" && field.type != "datetime",
         readOnly = !editable(field.type),
         isError = problem != null,
-        supportingText = problem?.let { { Text(stringResource(it)) } },
+        supportingText = problem?.let { { Text(it.message()) } },
         keyboardOptions = KeyboardOptions(keyboardType = keyboard(field.type)),
         modifier = modifier,
     )
@@ -464,17 +476,34 @@ private fun degrees(value: Double): String = BigDecimal.valueOf(value).setScale(
 /** A value as a form keeps it: its text, empty for none. */
 internal fun fieldText(value: JsonElement?): String = (value as? JsonPrimitive)?.takeUnless { it is JsonNull }?.contentOrNull.orEmpty()
 
-/** What is wrong with the text for a field of this type, as a string resource; null when nothing is. */
-internal fun valueProblem(type: String, text: String): Int? {
+/** What is wrong with the text for [field]: not of its type, or out of its range; null when nothing is. */
+internal fun valueProblem(field: FormField, text: String): ValueProblem? {
     if (text.isBlank()) return null
-    return when (type) {
+    val type = when (field.type) {
         "real" -> if (Numbers.double(text) != null) null else R.string.field_not_a_number
         "integer" -> if (Numbers.int(text) != null) null else R.string.field_not_a_whole_number
         "integer64" -> if (Numbers.long(text) != null) null else R.string.field_not_a_whole_number
         "date" -> if (FieldType.DATE.accepts(JsonPrimitive(Numbers.plain(text)))) null else R.string.field_not_a_date
         else -> null
     }
+    if (type != null) return ValueProblem(type)
+    val range = field.range ?: return null
+    val x = if (field.type in NUMBER_TYPES) Numbers.double(text) else null
+    if (x == null || x in range) return null
+    val min = range.min
+    val max = range.max
+    // Both ends when both are in the range; else the end the number is past.
+    return when {
+        min != null && max != null && range.minIncluded && range.maxIncluded -> ValueProblem(R.string.field_range_between, listOf(plainNumber(min), plainNumber(max)))
+        min != null && (x < min || (x == min && !range.minIncluded)) ->
+            ValueProblem(if (range.minIncluded) R.string.field_range_at_least else R.string.field_range_above, listOf(plainNumber(min)))
+        max != null -> ValueProblem(if (range.maxIncluded) R.string.field_range_at_most else R.string.field_range_below, listOf(plainNumber(max)))
+        else -> null
+    }
 }
+
+/** A number as people write it: 90, not 90.0. */
+internal fun plainNumber(x: Double): String = BigDecimal.valueOf(x).stripTrailingZeros().toPlainString()
 
 // What is wrong with a coordinate, as a string resource: a point always has both.
 internal fun coordinateProblem(text: String, limit: Double, outOfRange: Int): Int? {
