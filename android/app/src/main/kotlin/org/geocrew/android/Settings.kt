@@ -57,6 +57,15 @@ class AppSettings(context: Context) {
         prefs.edit { putBoolean(ROTATION_LOCKED, on) }
     }
 
+    /** How the file manager lists a folder. */
+    var fileSort by mutableStateOf(FileSort.entries.firstOrNull { it.name == prefs.getString(FILE_SORT, null) } ?: FileSort.NAME)
+        private set
+
+    fun sortFilesBy(sort: FileSort) {
+        fileSort = sort
+        prefs.edit { putString(FILE_SORT, sort.name) }
+    }
+
     /** CRSs picked lately (AUTH:CODE), newest first, for the CRS picker. */
     var recentCrs by mutableStateOf(prefs.getString(RECENT_CRS, null)?.split(',')?.filter { it.isNotBlank() }.orEmpty())
         private set
@@ -101,6 +110,7 @@ class AppSettings(context: Context) {
         const val ROTATION_LOCKED = "rotation_locked"
         const val RECENT_CRS = "recent_crs"
         const val RECENT_CRS_KEPT = 8
+        const val FILE_SORT = "file_sort"
     }
 }
 

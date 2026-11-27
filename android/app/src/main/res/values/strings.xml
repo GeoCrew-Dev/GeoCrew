@@ -309,4 +309,43 @@
     <string name="track_new_in">New track · %1$s</string>
     <string name="layer_default_track">Tracks</string>
     <string name="location_off">Location is off</string>
+    <string name="files">Files</string>
+    <string name="files_geocrew">GeoCrew</string>
+    <string name="files_downloads">Downloads</string>
+    <string name="files_wechat">WeChat</string>
+    <string name="files_storage">Phone storage</string>
+    <string name="files_sort">Sort</string>
+    <string name="files_sort_name">Name</string>
+    <string name="files_sort_time">Date</string>
+    <string name="files_sort_size">Size</string>
+    <string name="files_hidden">Show hidden files</string>
+    <string name="files_empty">Empty folder</string>
+    <string name="files_unreadable">This folder cannot be read</string>
+    <string name="files_more">More</string>
+    <string name="files_open">Open</string>
+    <string name="files_open_with">Open with</string>
+    <string name="files_copy">Copy</string>
+    <string name="files_move">Move</string>
+    <string name="files_rename">Rename</string>
+    <string name="files_new_folder">New folder</string>
+    <string name="files_name">Name</string>
+    <string name="files_create">Create</string>
+    <string name="files_copying">Copy “%1$s”</string>
+    <string name="files_moving">Move “%1$s”</string>
+    <string name="files_paste">Paste here</string>
+    <string name="files_copied">Copied to “%1$s”</string>
+    <string name="files_moved">Moved to “%1$s”</string>
+    <string name="files_delete_title">Delete “%1$s”?</string>
+    <string name="files_name_taken">That name is taken</string>
+    <string name="files_busy">The open project\'s files cannot be changed</string>
+    <string name="files_protected">This folder stays</string>
+    <string name="files_inside">A folder cannot go into itself</string>
+    <plurals name="files_items">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <plurals name="files_delete_items">
+        <item quantity="one">The %d item in it goes too</item>
+        <item quantity="other">The %d items in it go too</item>
+    </plurals>
 </resources>

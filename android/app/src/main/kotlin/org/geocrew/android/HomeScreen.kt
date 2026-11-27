@@ -21,16 +21,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Settings
@@ -113,7 +114,7 @@ private data class ProjectEntry(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit, onAbout: () -> Unit) {
+fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit, onAbout: () -> Unit, onFiles: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var projects by remember { mutableStateOf<List<ProjectEntry>?>(null) }
@@ -152,6 +153,7 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
             TopAppBar(
                 title = { Text(stringResource(R.string.projects_title)) },
                 actions = {
+                    IconButton(onClick = onFiles) { Icon(Icons.Rounded.Folder, stringResource(R.string.files)) }
                     IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, stringResource(R.string.settings)) }
                     IconButton(onClick = onAbout) { Icon(Icons.Rounded.Info, stringResource(R.string.about)) }
                 },

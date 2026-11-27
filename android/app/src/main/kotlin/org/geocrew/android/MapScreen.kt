@@ -1,22 +1,12 @@
 package org.geocrew.android
 
-import org.geocrew.core.project.Templates
-import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.Route
-import androidx.compose.material.icons.rounded.GpsFixed
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import android.content.pm.PackageManager
-import android.os.Build
-import android.location.LocationManager
-import org.geocrew.storage.Projects
-import androidx.compose.material.icons.rounded.PhotoCamera
-import androidx.compose.material.icons.rounded.Satellite
-import androidx.compose.material.icons.rounded.AddCircleOutline
-import androidx.compose.material.icons.rounded.EditLocationAlt
 import android.Manifest
 import android.app.Activity
-import android.hardware.GeomagneticField
+import android.content.pm.PackageManager
 import android.graphics.RectF
+import android.hardware.GeomagneticField
+import android.location.LocationManager
+import android.os.Build
 import android.view.Gravity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -48,41 +38,48 @@ import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Transform
-import androidx.compose.material.icons.rounded.ScreenLockRotation
-import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.EditLocationAlt
 import androidx.compose.material.icons.rounded.Explore
-import androidx.compose.material.icons.rounded.MyLocation
-import androidx.compose.material.icons.rounded.PinDrop
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Map
-import androidx.compose.material.icons.rounded.NearMe
-import androidx.compose.material.icons.rounded.SquareFoot
-import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.Straighten
-import androidx.compose.material.icons.rounded.ZoomOutMap
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.OpenWith
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.PinDrop
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Route
+import androidx.compose.material.icons.rounded.Satellite
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SaveAlt
+import androidx.compose.material.icons.rounded.ScreenLockRotation
+import androidx.compose.material.icons.rounded.ScreenRotation
+import androidx.compose.material.icons.rounded.SquareFoot
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Straighten
+import androidx.compose.material.icons.rounded.Transform
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -118,11 +115,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.currentStateAsState
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.currentStateAsState
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -149,7 +147,9 @@ import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.project.PointNumbers
+import org.geocrew.core.project.Templates
 import org.geocrew.storage.Crs
+import org.geocrew.storage.Projects
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -183,6 +183,7 @@ fun MapScreen(
     onSettings: () -> Unit,
     onProjectSettings: () -> Unit,
     onLayers: () -> Unit,
+    onFiles: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1208,6 +1209,7 @@ fun MapScreen(
                     listOf(
                         MenuTool(stringResource(R.string.export_gpkg), Icons.Rounded.SaveAlt) { export("gpkg") },
                         MenuTool(stringResource(R.string.export_kml), Icons.Rounded.Public) { export("kml") },
+                        MenuTool(stringResource(R.string.files), Icons.Rounded.FolderOpen, onFiles),
                     ),
                 ),
                 MenuGroup(
