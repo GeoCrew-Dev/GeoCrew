@@ -47,6 +47,7 @@ object Probe {
      */
     suspend fun inspect(context: Context, path: String, timeoutMs: Long = 30_000): JsonObject {
         var bound: ServiceConnection? = null
+        var watched: Pair<IBinder, IBinder.DeathRecipient>? = null
         try {
             return withTimeout(timeoutMs) {
                 suspendCancellableCoroutine { done ->
@@ -68,7 +69,8 @@ object Probe {
                     val connection = object : ServiceConnection {
                         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
                             // The reader dying while it reads means the file broke it.
-                            runCatching { binder.linkToDeath({ fail("the file stopped the reader") }, 0) }
+                            val death = IBinder.DeathRecipient { fail("the file stopped the reader") }
+                            if (runCatching { binder.linkToDeath(death, 0) }.isSuccess) watched = binder to death
                             val ask = Message.obtain(null, PROBE).apply {
                                 data = Bundle().apply { putString(PATH, path) }
                                 replyTo = replies
@@ -83,6 +85,7 @@ object Probe {
                 }
             }
         } finally {
+            watched?.let { (binder, death) -> runCatching { binder.unlinkToDeath(death, 0) } }
             bound?.let { runCatching { context.unbindService(it) } }
         }
     }
@@ -126,8 +129,10 @@ object Probe {
             } else {
                 put("kind", "vector")
                 putJsonArray("layers") {
-                    // GeoCrew's own tables in a project's GeoPackage are not data of their own.
-                    val layers = (info["layers"] as? JsonArray).orEmpty().map { it.jsonObject }.filterNot { it.text("name")?.startsWith("geocrew_") == true }
+                    // GeoCrew's own tables in a project's GeoPackage are not data of their own; others' layers so named are.
+                    val all = (info["layers"] as? JsonArray).orEmpty().map { it.jsonObject }
+                    val project = all.any { it.text("name") == "geocrew_project" }
+                    val layers = all.filterNot { project && it.text("name")?.startsWith("geocrew_") == true }
                     for (layer in layers) addJsonObject {
                         val geometry = (layer["geometryFields"] as? JsonArray)?.firstOrNull() as? JsonObject
                         put("name", layer.text("name"))
