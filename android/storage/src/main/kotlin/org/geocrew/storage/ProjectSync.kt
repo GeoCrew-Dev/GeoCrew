@@ -166,7 +166,12 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         val wrote = when {
             // A deletion or restoration of this phone's own is on its way: what is here stands.
             Outbox.DELETED in mine && existing == null -> false
-            !(Outbox.DELETED in mine) && row.deleted -> existing?.let { store.delete(it.fid); true } ?: false
+            !(Outbox.DELETED in mine) && row.deleted -> existing?.let {
+                // Its attachments go with it, as when this phone deletes one (EditBuffer.save).
+                store.setAttachments(it.fid, emptyList())
+                store.delete(it.fid)
+                true
+            } ?: false
             existing == null -> {
                 val made = store.add(if (takeGeometry) geometry else null, JsonObject(values))
                 project.data { Outbox.map(it, layerId, made, row.id, seq) }
