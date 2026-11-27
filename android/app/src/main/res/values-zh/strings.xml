@@ -419,4 +419,5 @@
     <string name="map_cache_limit">地图缓存上限</string>
     <string name="map_cache_clear">清除</string>
     <string name="map_cache_clear_title">清除地图缓存？</string>
+    <string name="map_cache_clear_failed">地图缓存没能清除</string>
 </resources>

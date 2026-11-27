@@ -230,7 +230,11 @@ object MapCache {
     }
 
     /** How much the cache holds now, in bytes. */
-    fun used(context: Context): Long = File(FileSource.getResourcesCachePath(context), "mbgl-offline.db").length()
+    fun used(context: Context): Long {
+        val dir = File(FileSource.getResourcesCachePath(context))
+        // SQLite may hold recent tiles in its write-ahead log or journal for a while.
+        return listOf("mbgl-offline.db", "mbgl-offline.db-wal", "mbgl-offline.db-journal").sumOf { File(dir, it).length() }
+    }
 
     /** Empties the cache; false when MapLibre could not. */
     suspend fun clear(context: Context): Boolean = suspendCancellableCoroutine { done ->
