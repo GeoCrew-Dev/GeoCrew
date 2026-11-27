@@ -66,6 +66,9 @@ class GraduatedStyleTest {
         val range = json.getValue("ranges").jsonArray.single().jsonObject
         assertEquals("5.5", range.getValue("to").toString())
         assertNull(json["classes"])
-        assertEquals("0 – 5.5", rangeText(StyleRange(0.0, 5.5, red)))
+        assertEquals("5.5", boundText(5.5))
+        assertEquals("120", boundText(120.0))
+        assertEquals("0.0001", boundText(0.0001), "small values keep their digits")
+        assertEquals("3.33333", boundText(10.0 / 3))
     }
 }

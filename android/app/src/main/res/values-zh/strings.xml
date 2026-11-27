@@ -442,4 +442,5 @@
     <string name="legend">图例</string>
     <string name="line_untitled">线 %1$d</string>
     <string name="area_untitled">面 %1$d</string>
+    <string name="style_range">%1$s – %2$s</string>
 </resources>

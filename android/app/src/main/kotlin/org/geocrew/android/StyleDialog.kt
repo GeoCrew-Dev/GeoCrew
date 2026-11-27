@@ -53,8 +53,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
+import java.math.BigDecimal
+import java.math.MathContext
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.serialization.json.JsonArray
@@ -255,9 +255,11 @@ fun rangesFor(features: JsonArray, field: String, count: Int, quantile: Boolean,
 }
 
 /** A range as people read it: 10 – 20. */
-fun rangeText(range: StyleRange): String = "${number(range.from)} – ${number(range.to)}"
+@Composable
+fun rangeText(range: StyleRange): String = stringResource(R.string.style_range, boundText(range.from), boundText(range.to))
 
-private fun number(value: Double): String = DecimalFormat("0.###", DecimalFormatSymbols(Locale.ROOT)).format(value)
+/** A range's bound as people read it: up to six significant digits, no trailing zeros, never in exponent form. */
+fun boundText(value: Double): String = BigDecimal(value).round(MathContext(6)).stripTrailingZeros().toPlainString()
 
 // The palette in an order that puts unlike colours next to each other, for classes; no white or black.
 private val CLASS_COLORS = listOf(5, 0, 9, 14, 2, 7, 12, 16, 3, 10, 1, 13, 6, 18, 4, 11, 15, 8, 17).map { PALETTE[it] }
