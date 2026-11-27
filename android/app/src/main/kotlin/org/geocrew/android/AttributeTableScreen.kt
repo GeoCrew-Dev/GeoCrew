@@ -131,6 +131,7 @@ fun AttributeTableScreen(graph: AppGraph, project: String, layer: String, onBack
     )
 
     LaunchedEffect(project, layer, loads) {
+        failure = null
         val opened = graph.open(project)
         val listed = if (opened is Outcome.Done) graph.invoke(Workspace.FEATURES, buildJsonObject { put("layer", layer) }) else opened
         if (listed !is Outcome.Done) {
@@ -195,6 +196,8 @@ fun AttributeTableScreen(graph: AppGraph, project: String, layer: String, onBack
                     navigationIcon = { IconButton(onClick = { query = null }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back)) } },
                     actions = {
                         if (!query.isNullOrEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, stringResource(R.string.files_clear)) }
+                        // Still says values are being changed, and stops it.
+                        if (changing) IconButton(onClick = { changing = false }) { Icon(Icons.Rounded.Check, stringResource(R.string.table_change_done)) }
                     },
                 )
             } else {
