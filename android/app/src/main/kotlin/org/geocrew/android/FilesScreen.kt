@@ -42,6 +42,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -93,11 +94,11 @@ import org.geocrew.storage.Workspace
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
+fun FilesScreen(graph: AppGraph, onBack: () -> Unit, start: String? = null, onOpenProject: (String) -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    var path by rememberSaveable { mutableStateOf(graph.root.path) }
+    var path by rememberSaveable { mutableStateOf(start?.takeIf { File(it).isDirectory } ?: graph.root.path) }
     // The folders gone through, so back goes to the last one.
     var history by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var listing by remember { mutableStateOf<Listing?>(null) }
@@ -118,6 +119,10 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
     var failure by remember { mutableStateOf<String?>(null) }
     // The project open now, if any: rasters can be added to it.
     var project by remember { mutableStateOf<String?>(null) }
+    // With none open, a project picked to add a file to: opened for it, and closed again once the file is in.
+    var borrowed by remember { mutableStateOf<String?>(null) }
+    // The file to add to a project while the user picks which.
+    var pickingFor by remember { mutableStateOf<FileEntry?>(null) }
     LaunchedEffect(Unit) {
         project = ((graph.invoke(Workspace.CURRENT) as? Outcome.Done)?.output?.jsonObject?.get("name") as? JsonPrimitive)?.contentOrNull
     }
@@ -136,6 +141,7 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
     )
     val addedText = stringResource(R.string.files_added_to)
     val importedText = stringResource(R.string.files_imported_to)
+    val openText = stringResource(R.string.files_open)
     // A file of several layers, while the user picks which to import: its path and its layers as file.probe gives them.
     var importing by remember { mutableStateOf<Pair<String, List<JsonObject>>?>(null) }
     val copiedText = stringResource(R.string.files_copied)
@@ -197,6 +203,51 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
     }
 
     fun act(action: String, params: JsonObject, then: () -> Unit = {}) = actOn(action, listOf(params), then)
+
+    // A project opened here only to add a file to closes again.
+    suspend fun giveBack() {
+        if (borrowed != null) {
+            graph.invoke(Workspace.CLOSE)
+            borrowed = null
+        }
+    }
+
+    // The end of adding to [into]: done is said (offering to open a project opened only for it), a failure shown.
+    suspend fun finish(into: String, outcome: Outcome, said: String) {
+        val opened = borrowed == into
+        giveBack()
+        loads++
+        if (outcome !is Outcome.Done) {
+            failure = texts.of(outcome)
+            return
+        }
+        snackbar.currentSnackbarData?.dismiss()
+        if (snackbar.showSnackbar(said.format(into), actionLabel = openText.takeIf { opened }) == SnackbarResult.ActionPerformed) onOpenProject(into)
+    }
+
+    // Adds [entry] to project [into], open now: a raster goes under its layers, staying where it is; vector data (a zip
+    // of it too) is imported as layers of its own (ADR 0002), read in the probe's own process and picked from when several.
+    suspend fun addFile(entry: FileEntry, into: String) {
+        if (entry.kind == "raster") return finish(into, graph.invoke(RasterActions.ADD, buildJsonObject { put("path", entry.path) }), addedText)
+        val read = graph.invoke(FileActions.PROBE, buildJsonObject { put("path", entry.path) })
+        val layers = ((read as? Outcome.Done)?.output?.jsonObject?.get("layers") as? JsonArray)?.map { it.jsonObject }
+        when {
+            read !is Outcome.Done -> {
+                giveBack()
+                failure = texts.unreadable
+            }
+            layers != null && layers.size > 1 -> importing = entry.path to layers
+            else -> finish(into, graph.invoke(ImportActions.IMPORT, buildJsonObject { put("path", entry.path) }), importedText)
+        }
+    }
+
+    // What came from elsewhere (files another app sent), said once; the folder is read again to show them.
+    LaunchedEffect(graph.notice) {
+        val notice = graph.notice ?: return@LaunchedEffect
+        graph.notice = null
+        loads++
+        if (notice.isNotEmpty()) snackbar.showSnackbar(notice)
+    }
 
     fun pick(entry: FileEntry) {
         picked = if (entry.path in picked) picked - entry.path else picked + entry.path
@@ -414,36 +465,16 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
                 chosen = null
                 details = listOf(entry)
             },
-            // A raster goes under the open project's layers, staying where it is; vector data (a zip of it too)
-            // is imported into the project as layers of its own (ADR 0002).
-            addTo = project?.takeIf { entry.kind == "raster" || entry.kind == "vector" || entry.kind == "archive" },
-            importing = entry.kind != "raster",
+            // Into the open project; with none open (the file manager opened at home), into one picked first.
+            addLabel = when {
+                entry.kind != "raster" && entry.kind != "vector" && entry.kind != "archive" -> null
+                project != null -> stringResource(if (entry.kind == "raster") R.string.files_add_to else R.string.files_import_to, project.orEmpty())
+                else -> stringResource(if (entry.kind == "raster") R.string.files_add_to_project else R.string.files_import_to_project)
+            },
             onAdd = {
                 chosen = null
-                if (entry.kind == "raster") {
-                    act(RasterActions.ADD, buildJsonObject { put("path", entry.path) }) {
-                        scope.launch {
-                            snackbar.currentSnackbarData?.dismiss()
-                            snackbar.showSnackbar(addedText.format(project.orEmpty()))
-                        }
-                    }
-                } else {
-                    scope.launch {
-                        // What is in it, read in the probe's own process: several layers are picked from, one goes straight in.
-                        val read = graph.invoke(FileActions.PROBE, buildJsonObject { put("path", entry.path) })
-                        val layers = ((read as? Outcome.Done)?.output?.jsonObject?.get("layers") as? JsonArray)?.map { it.jsonObject }
-                        when {
-                            read !is Outcome.Done -> failure = texts.unreadable
-                            layers != null && layers.size > 1 -> importing = entry.path to layers
-                            else -> act(ImportActions.IMPORT, buildJsonObject { put("path", entry.path) }) {
-                                scope.launch {
-                                    snackbar.currentSnackbarData?.dismiss()
-                                    snackbar.showSnackbar(importedText.format(project.orEmpty()))
-                                }
-                            }
-                        }
-                    }
-                }
+                val into = project
+                if (into != null) scope.launch { addFile(entry, into) } else pickingFor = entry
             },
             onDelete = {
                 chosen = null
@@ -507,19 +538,39 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
         )
     }
     importing?.let { (path, layers) ->
+        val into = project ?: borrowed.orEmpty()
         ImportDialog(
             layers = layers,
-            onDismiss = { importing = null },
+            onDismiss = {
+                importing = null
+                scope.launch { giveBack() }
+            },
             onImport = { names ->
                 importing = null
-                act(ImportActions.IMPORT, buildJsonObject { put("path", path); putJsonArray("layers") { names.forEach { add(it) } } }) {
-                    scope.launch {
-                        snackbar.currentSnackbarData?.dismiss()
-                        snackbar.showSnackbar(importedText.format(project.orEmpty()))
-                    }
+                scope.launch {
+                    val params = buildJsonObject { put("path", path); putJsonArray("layers") { names.forEach { add(it) } } }
+                    finish(into, graph.invoke(ImportActions.IMPORT, params), importedText)
                 }
             },
         )
+    }
+    pickingFor?.let { entry ->
+        ProjectPickDialog(
+            graph,
+            title = stringResource(R.string.choose_project),
+            onDismiss = { pickingFor = null },
+        ) { name ->
+            pickingFor = null
+            scope.launch {
+                when (val opened = graph.open(name)) {
+                    is Outcome.Done -> {
+                        borrowed = name
+                        addFile(entry, name)
+                    }
+                    else -> failure = texts.of(opened)
+                }
+            }
+        }
     }
     details?.let { entries ->
         DetailsDialog(

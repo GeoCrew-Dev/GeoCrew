@@ -149,6 +149,9 @@ class Projects(private val root: File, private val journals: File) {
     companion object {
         /** The folder in the GeoCrew folder where exports (and map screenshots) go. */
         const val EXPORTS = "导出"
+
+        /** The folder in the GeoCrew folder where files other apps open with GeoCrew or share to it are put. */
+        const val IMPORTS = "导入"
     }
 
     // A copied project folder keeps the project's id; its path tells the copies'

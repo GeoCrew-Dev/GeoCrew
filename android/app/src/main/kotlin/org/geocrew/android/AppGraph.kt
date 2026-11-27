@@ -5,6 +5,9 @@ import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Environment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -54,6 +57,9 @@ class AppGraph(private val app: Application) {
 
     /** What the map shows when it comes back, as asked from the layers page or a table; it is taken once. */
     var zoomTo: Zoom? = null
+
+    /** A word for the file manager to show once, such as how many files came from another app. */
+    var notice by mutableStateOf<String?>(null)
     private var workspace: Workspace? = null
     private var workspaceRoot: File? = null
 
