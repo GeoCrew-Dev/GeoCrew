@@ -35,7 +35,6 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -221,7 +220,7 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
         )
     }
     failure?.let { message ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { failure = null },
             confirmButton = { TextButton(onClick = { failure = null }) { Text(stringResource(R.string.ok)) } },
             text = { Text(message) },
@@ -323,8 +322,9 @@ private fun NewProjectDialog(existing: List<String>, onDismiss: () -> Unit, onCr
     var name by remember { mutableStateOf("") }
     val problem = ProjectFormat.nameProblem(name)
     val taken = existing.any { it.equals(name, ignoreCase = true) } // memory cards ignore case
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         icon = { Icon(Icons.Rounded.CreateNewFolder, null) },
         title = { Text(stringResource(R.string.project_new)) },
         text = {

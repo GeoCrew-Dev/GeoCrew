@@ -16,7 +16,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddLocationAlt
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -179,12 +178,13 @@ fun NewLayerDialog(
     // Names of GeoPackage's, SQLite's and GeoCrew's own tables.
     val reserved = listOf("gpkg_", "rtree_", "sqlite_", "geocrew_").any { trimmed.startsWith(it, ignoreCase = true) }
     val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && !taken && !reserved
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         icon = { Icon(Icons.Rounded.AddLocationAlt, null) },
         title = { Text(stringResource(R.string.layer_new)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },

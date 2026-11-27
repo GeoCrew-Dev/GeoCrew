@@ -37,7 +37,6 @@ import androidx.compose.material.icons.rounded.ToggleOn
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.ZoomIn
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -504,7 +503,7 @@ fun LayersScreen(
     }
 
     removing?.let { raster ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { removing = null },
             title = { Text(stringResource(R.string.raster_remove_title, raster.name)) },
             text = { Text(stringResource(R.string.raster_remove_body)) },
@@ -569,7 +568,7 @@ fun LayersScreen(
         )
     }
     deleting?.let { layer ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { deleting = null },
             icon = { Icon(Icons.Rounded.DeleteOutline, null) },
             title = { Text(stringResource(R.string.layer_delete_title, layer.name)) },
@@ -594,7 +593,7 @@ fun LayersScreen(
         )
     }
     saveFirst?.let { field ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { saveFirst = null },
             icon = { Icon(Icons.Rounded.Save, null) },
             title = { Text(stringResource(R.string.save_first_title)) },
@@ -614,7 +613,7 @@ fun LayersScreen(
         )
     }
     failure?.let { message ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { failure = null },
             confirmButton = { TextButton(onClick = { failure = null }) { Text(stringResource(R.string.ok)) } },
             text = { Text(message) },
@@ -630,8 +629,9 @@ private fun RenameLayerDialog(current: String, existing: List<String>, onDismiss
     val taken = existing.any { it.equals(trimmed, ignoreCase = true) && !it.equals(current, ignoreCase = true) }
     val reserved = listOf("gpkg_", "rtree_", "sqlite_", "geocrew_").any { trimmed.startsWith(it, ignoreCase = true) }
     val valid = trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME && trimmed != current && !taken && !reserved
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         title = { Text(stringResource(R.string.layer_rename)) },
         text = {
             OutlinedTextField(

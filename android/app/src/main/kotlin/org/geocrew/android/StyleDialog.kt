@@ -9,17 +9,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -321,12 +319,19 @@ fun StyleDialog(
         field?.let { if (mode == StyleMode.CATEGORIZED) classes = classesFor(features, it, classes) }
         if (mode == StyleMode.GRADUATED && ranges.isEmpty()) grade()
     }
-    AlertDialog(
+    // The symbol as the map will draw it: in the first class's or range's colour when there are some.
+    val shown = when (mode) {
+        StyleMode.CATEGORIZED -> classes.firstOrNull()?.color
+        StyleMode.GRADUATED -> ranges.firstOrNull()?.color
+        StyleMode.SINGLE -> null
+    } ?: color
+    AppDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Palette, null) },
         title = { Text(stringResource(R.string.style_title, layer)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+        // How the features are coloured, and the preview: on the left on a phone in landscape.
+        side = { sideBySide ->
+            Column(if (sideBySide) Modifier.fillMaxHeight() else Modifier) {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
                     SegmentedButton(selected = mode == StyleMode.SINGLE, onClick = { mode = StyleMode.SINGLE }, shape = SegmentedButtonDefaults.itemShape(0, 3)) {
                         Text(stringResource(R.string.style_single), maxLines = 1)
@@ -353,74 +358,7 @@ fun StyleDialog(
                         shape = SegmentedButtonDefaults.itemShape(2, 3),
                     ) { Text(stringResource(R.string.style_graduated), maxLines = 1) }
                 }
-                val shown = when (mode) {
-                    StyleMode.CATEGORIZED -> classes.firstOrNull()?.color
-                    StyleMode.GRADUATED -> ranges.firstOrNull()?.color
-                    StyleMode.SINGLE -> null
-                } ?: color
-                Preview(shown, size, width, fill, point, area)
-                when (mode) {
-                    StyleMode.CATEGORIZED -> {
-                        val chosen = field
-                        FieldChips(fields, chosen) { if (it != chosen) categorize(it) }
-                        classes.forEachIndexed { i, c -> ClassRow(c.value, c.color) { picking = Pick.Class(i) } }
-                        ClassRow(stringResource(R.string.style_other), color) { picking = Pick.Other }
-                    }
-                    StyleMode.GRADUATED -> {
-                        val chosen = number
-                        FieldChips(numbers, chosen) {
-                            if (it != chosen) {
-                                number = it
-                                grade()
-                            }
-                        }
-                        StyleSlider(stringResource(R.string.style_count), count.toFloat(), MIN_RANGES.toFloat()..MAX_RANGES.toFloat(), steps = MAX_RANGES - MIN_RANGES - 1) {
-                            val n = it.roundToInt()
-                            if (n != count) {
-                                count = n
-                                grade()
-                            }
-                        }
-                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            for ((i, q) in listOf(false, true).withIndex()) {
-                                SegmentedButton(
-                                    selected = quantile == q,
-                                    onClick = {
-                                        quantile = q
-                                        grade()
-                                    },
-                                    shape = SegmentedButtonDefaults.itemShape(i, 2),
-                                ) { Text(stringResource(if (q) R.string.style_quantile else R.string.style_equal), maxLines = 1) }
-                            }
-                        }
-                        // The colour ramp, from its first colour to its last; a tap on either chooses another.
-                        Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(stringResource(R.string.style_ramp), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                            ColorDot(rampStart, 32.dp, Modifier.clickable { picking = Pick.RampStart })
-                            Box(
-                                Modifier.padding(horizontal = 8.dp).width(64.dp).height(12.dp).clip(CircleShape)
-                                    .background(Brush.horizontalGradient(listOf(rampStart, rampEnd))),
-                            )
-                            ColorDot(rampEnd, 32.dp, Modifier.clickable { picking = Pick.RampEnd })
-                        }
-                        ranges.forEachIndexed { i, r -> ClassRow(rangeText(r), r.color) { picking = Pick.Range(i) } }
-                        ClassRow(stringResource(R.string.style_other), color) { picking = Pick.Other }
-                    }
-                    // A colour of the palette keeps the opacity there was.
-                    StyleMode.SINGLE -> ColorPalette(color, onMore = { picking = Pick.Other }) { color = it.copy(alpha = color.alpha) }
-                }
-                if (point) StyleSlider(stringResource(R.string.style_size), size, 2f..16f) { size = it }
-                if (!point) StyleSlider(stringResource(R.string.style_width), width, 1f..10f) { width = it }
-                if (area) StyleSlider(stringResource(R.string.style_fill), fill, 0f..1f, percent = true) { fill = it }
-                if (collection != null) {
-                    // Which field labels the features: the name field until another is chosen, or none.
-                    val labelled = labelField(LayerStyle(color, label = label), collection)
-                    Text(stringResource(R.string.style_label), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = labelled == null, onClick = { label = "" }, label = { Text(stringResource(R.string.style_label_none)) })
-                        for (f in fields) FilterChip(selected = f == labelled, onClick = { label = f }, label = { Text(f) })
-                    }
-                }
+                Preview(shown, size, width, fill, point, area, if (sideBySide) Modifier.weight(1f) else Modifier.height(72.dp))
             }
         },
         confirmButton = {
@@ -448,7 +386,72 @@ fun StyleDialog(
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             }
         },
-    )
+    ) {
+        Column {
+            when (mode) {
+                StyleMode.CATEGORIZED -> {
+                    val chosen = field
+                    FieldChips(fields, chosen) { if (it != chosen) categorize(it) }
+                    classes.forEachIndexed { i, c -> ClassRow(c.value, c.color) { picking = Pick.Class(i) } }
+                    ClassRow(stringResource(R.string.style_other), color) { picking = Pick.Other }
+                }
+                StyleMode.GRADUATED -> {
+                    val chosen = number
+                    FieldChips(numbers, chosen) {
+                        if (it != chosen) {
+                            number = it
+                            grade()
+                        }
+                    }
+                    StyleSlider(stringResource(R.string.style_count), count.toFloat(), MIN_RANGES.toFloat()..MAX_RANGES.toFloat(), steps = MAX_RANGES - MIN_RANGES - 1) {
+                        val n = it.roundToInt()
+                        if (n != count) {
+                            count = n
+                            grade()
+                        }
+                    }
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        for ((i, q) in listOf(false, true).withIndex()) {
+                            SegmentedButton(
+                                selected = quantile == q,
+                                onClick = {
+                                    quantile = q
+                                    grade()
+                                },
+                                shape = SegmentedButtonDefaults.itemShape(i, 2),
+                            ) { Text(stringResource(if (q) R.string.style_quantile else R.string.style_equal), maxLines = 1) }
+                        }
+                    }
+                    // The colour ramp, from its first colour to its last; a tap on either chooses another.
+                    Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.style_ramp), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        ColorDot(rampStart, 32.dp, Modifier.clickable { picking = Pick.RampStart })
+                        Box(
+                            Modifier.padding(horizontal = 8.dp).width(64.dp).height(12.dp).clip(CircleShape)
+                                .background(Brush.horizontalGradient(listOf(rampStart, rampEnd))),
+                        )
+                        ColorDot(rampEnd, 32.dp, Modifier.clickable { picking = Pick.RampEnd })
+                    }
+                    ranges.forEachIndexed { i, r -> ClassRow(rangeText(r), r.color) { picking = Pick.Range(i) } }
+                    ClassRow(stringResource(R.string.style_other), color) { picking = Pick.Other }
+                }
+                // A colour of the palette keeps the opacity there was.
+                StyleMode.SINGLE -> ColorPalette(color, onMore = { picking = Pick.Other }) { color = it.copy(alpha = color.alpha) }
+            }
+            if (point) StyleSlider(stringResource(R.string.style_size), size, 2f..16f) { size = it }
+            if (!point) StyleSlider(stringResource(R.string.style_width), width, 1f..10f) { width = it }
+            if (area) StyleSlider(stringResource(R.string.style_fill), fill, 0f..1f, percent = true) { fill = it }
+            if (collection != null) {
+                // Which field labels the features: the name field until another is chosen, or none.
+                val labelled = labelField(LayerStyle(color, label = label), collection)
+                Text(stringResource(R.string.style_label), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = labelled == null, onClick = { label = "" }, label = { Text(stringResource(R.string.style_label_none)) })
+                    for (f in fields) FilterChip(selected = f == labelled, onClick = { label = f }, label = { Text(f) })
+                }
+            }
+        }
+    }
     picking?.let { p ->
         val (title, current) = when (p) {
             is Pick.Class -> classes.getOrNull(p.index)?.let { it.value to it.color } ?: (layer to color)
@@ -521,8 +524,8 @@ private fun StyleSlider(label: String, value: Float, range: ClosedFloatingPointR
 
 // The symbol as the map draws it: a point, a line, or an area with its outline.
 @Composable
-private fun Preview(color: Color, size: Float, width: Float, fill: Float, point: Boolean, area: Boolean) {
-    Canvas(Modifier.fillMaxWidth().height(72.dp).clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
+private fun Preview(color: Color, size: Float, width: Float, fill: Float, point: Boolean, area: Boolean, modifier: Modifier) {
+    Canvas(modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
         val d = density
         when {
             point -> {

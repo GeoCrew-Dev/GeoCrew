@@ -55,7 +55,6 @@ import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Straighten
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -1542,7 +1541,7 @@ fun MapScreen(
         )
     }
     dropping?.let { m ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { dropping = null },
             title = { Text(stringResource(R.string.move_drops_title)) },
             text = { Text(stringResource(R.string.move_drops_body, m.to, m.lost.joinToString("、"))) },
@@ -1705,7 +1704,7 @@ fun MapScreen(
         }
     }
     if (discardingTrack) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { discardingTrack = false },
             title = { Text(stringResource(R.string.track_discard_title)) },
             confirmButton = {
@@ -1718,7 +1717,7 @@ fun MapScreen(
         )
     }
     if (cancellingDrawing) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { cancellingDrawing = false },
             title = { Text(stringResource(R.string.draw_drop_title)) },
             confirmButton = {
@@ -1731,7 +1730,7 @@ fun MapScreen(
         )
     }
     if (droppingDrawing) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { droppingDrawing = false },
             title = { Text(stringResource(R.string.draw_drop_title)) },
             confirmButton = {
@@ -1745,7 +1744,7 @@ fun MapScreen(
         )
     }
     if (leaving) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { leaving = false },
             title = { Text(stringResource(R.string.unsaved_title)) },
             text = { Text(stringResource(R.string.unsaved_body)) },
@@ -1767,7 +1766,7 @@ fun MapScreen(
         )
     }
     if (ai) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { ai = false },
             icon = { Icon(Icons.Rounded.AutoAwesome, null) },
             title = { Text(stringResource(R.string.map_ai)) },
@@ -1777,7 +1776,7 @@ fun MapScreen(
     }
     exported?.let { file ->
         val title = stringResource(R.string.share_title)
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { exported = null },
             icon = { Icon(Icons.Rounded.SaveAlt, null) },
             text = { Text(stringResource(R.string.exported, file.path)) },
@@ -1791,7 +1790,7 @@ fun MapScreen(
         )
     }
     failure?.let { message ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { failure = null },
             confirmButton = { TextButton(onClick = { failure = null }) { Text(stringResource(R.string.ok)) } },
             text = { Text(message) },

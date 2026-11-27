@@ -23,7 +23,6 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MyLocation
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -347,7 +346,7 @@ fun FeatureForm(
         }
     }
     if (confirmDelete && onDelete != null) {
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { confirmDelete = false },
             icon = { Icon(Icons.Rounded.DeleteOutline, null) },
             title = { Text(deleteTitle) },

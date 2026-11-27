@@ -7,14 +7,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.SwapVert
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -125,11 +122,12 @@ fun GoToDialog(graph: AppGraph, near: Pair<Double, Double>?, onDismiss: () -> Un
         projected = isProjected(graph, srs) ?: false
     }
     val position = projected?.let { positionOf(texts, it, srs) }
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         title = { Text(stringResource(R.string.tool_go_to)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column {
                 CrsField(graph, srs, onPick = { if (it != srs) texts = CoordinateTexts(); srs = it }, near = near)
                 CoordinateFields(texts, projected == true) { texts = it }
             }
@@ -178,11 +176,12 @@ fun CoordinateConvertDialog(graph: AppGraph, near: Pair<Double, Double>?, onDism
         convertPosition(graph, Position(lon, lat, Crs.LONGITUDE_LATITUDE), from)?.let { texts = textsOf(it, projected) }
     }
 
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onDismiss,
+        twoPane = true,
         title = { Text(stringResource(R.string.tool_convert)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column {
                 CrsField(graph, from, onPick = { if (it != from) texts = CoordinateTexts(); from = it }, label = stringResource(R.string.convert_from), near = near)
                 CoordinateFields(texts, fromProjected == true) { texts = it }
                 Row(verticalAlignment = Alignment.CenterVertically) {
