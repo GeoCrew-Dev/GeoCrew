@@ -1054,7 +1054,8 @@ fun MapScreen(
             // title and the bottom buttons (few in landscape), so none is hidden.
             val toolbar = graph.settings.toolbar
             val perColumn = ((maxHeight - TOOLBAR_TOP - TOOLBAR_BOTTOM + TOOL_GAP) / (TOOL_SIZE + TOOL_GAP)).toInt().coerceAtLeast(1)
-            val toolColumns = toolbar.chunked(perColumn)
+            // At most three columns: a window too short for that (split screen) shows the first tools only.
+            val toolColumns = toolbar.chunked(perColumn).take(3)
             Column(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RoundButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.map_leave), onClick = ::requestLeave, solid = true)
