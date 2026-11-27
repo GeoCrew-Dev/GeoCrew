@@ -570,4 +570,6 @@
     <string name="snapshot_restore">Restore</string>
     <string name="snapshot_restore_title">Restore the snapshot of %1$s?</string>
     <string name="snapshot_restore_body">The project as it is now is kept in the snapshot folder first.</string>
+    <string name="export_kmz">Export KMZ</string>
+    <string name="format_kmz" translatable="false">KMZ</string>
 </resources>

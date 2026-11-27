@@ -49,6 +49,7 @@ import kotlin.math.floor
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import org.geocrew.core.project.LayerColors
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.storage.Crs
 
@@ -78,10 +79,8 @@ fun layerColor(index: Int): Color = LAYER_COLORS[index % LAYER_COLORS.size]
 /** [layerColor] as MapLibre takes it. */
 fun layerColorHex(index: Int): String = "#%06x".format(layerColor(index).toArgb() and 0xffffff)
 
-private val LAYER_COLORS = listOf(
-    Color(0xFFE53935), Color(0xFF1E88E5), Color(0xFF43A047), Color(0xFFFB8C00),
-    Color(0xFF8E24AA), Color(0xFF00897B), Color(0xFF6D4C41), Color(0xFFD81B60),
-)
+// The same colours exports take (core:project), as Compose takes them.
+private val LAYER_COLORS = LayerColors.HEX.map { Color(0xFF000000 or it.removePrefix("#").toLong(16)) }
 
 private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 

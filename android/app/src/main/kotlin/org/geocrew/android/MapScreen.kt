@@ -1275,6 +1275,7 @@ fun MapScreen(
             MapTool.CONVERT -> converting = true
             MapTool.EXPORT_GPKG -> export("gpkg")
             MapTool.EXPORT_KML -> export("kml")
+            MapTool.EXPORT_KMZ -> export("kmz")
             MapTool.FILES -> onFiles()
             MapTool.PROJECT_SETTINGS -> onProjectSettings()
             MapTool.CLOSE_PROJECT -> requestLeave()
