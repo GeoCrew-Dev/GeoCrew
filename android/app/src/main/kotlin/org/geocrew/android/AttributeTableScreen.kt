@@ -1,5 +1,6 @@
 package org.geocrew.android
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,15 +36,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.text.Collator
+import java.text.Normalizer
+import java.util.Locale
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -60,12 +67,25 @@ private data class TableRow(val fid: Long, val cells: List<String>)
 // The fid column's header, the name GeoPackage gives it.
 private const val FID = "fid"
 
+/**
+ * Whether a row's [cells] hold [query] (trimmed): in any column, whatever the
+ * case, full-width letters and digits as their plain forms. A blank query holds every row.
+ */
+internal fun matches(cells: List<String>, query: String): Boolean {
+    val q = folded(query.trim())
+    return q.isEmpty() || cells.any { folded(it).contains(q) }
+}
+
+// Text as compared in a search: full-width forms as plain ones (NFKC), lower case.
+private fun folded(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFKC).lowercase()
+
 /** A column sorted by, ascending or not. */
 private data class Sorting(val column: Int, val ascending: Boolean)
 
 /**
  * A layer's features as a table, one column per field, as edited (layer.features,
  * ADR 0010). A tap on a header sorts by it; a tap on a row shows the feature on the map.
+ * The search in the top bar keeps the rows that hold what is typed.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -73,6 +93,8 @@ fun AttributeTableScreen(graph: AppGraph, project: String, layer: String, onBack
     var fields by remember { mutableStateOf<List<FormField>>(emptyList()) }
     var rows by remember { mutableStateOf<List<TableRow>?>(null) }
     var sorting by remember { mutableStateOf<Sorting?>(null) }
+    var query by rememberSaveable { mutableStateOf<String?>(null) }
+    val locale = LocalConfiguration.current.locales[0]
     var failure by remember { mutableStateOf<String?>(null) }
     val yes = stringResource(R.string.yes)
     val no = stringResource(R.string.no)
@@ -98,19 +120,33 @@ fun AttributeTableScreen(graph: AppGraph, project: String, layer: String, onBack
             val feature = f.jsonObject
             val fid = (feature["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
             val properties = feature["properties"] as? JsonObject
-            TableRow(fid, listOf(fid.toString()) + read.map { cell(properties?.get(it.name), it.type, yes, no) })
+            TableRow(fid, listOf(fid.toString()) + read.map { cell(properties?.get(it.name), it.type, yes, no, locale) })
         }
     }
 
-    val shown = remember(rows, sorting) { sorted(rows.orEmpty(), sorting) }
+    BackHandler(enabled = query != null) { query = null }
+    val shown = remember(rows, sorting, query) { sorted(rows.orEmpty(), sorting).filter { matches(it.cells, query.orEmpty()) } }
     val widths = remember(fields, rows) { fields.mapIndexed { i, f -> columnWidth(listOf(f.name) + rows.orEmpty().map { it.cells[i] }) } }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(layer, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back)) } },
-            )
+            if (query != null) {
+                TopAppBar(
+                    title = { SearchField(query.orEmpty(), onChange = { query = it }, hint = stringResource(R.string.table_search_hint)) },
+                    navigationIcon = { IconButton(onClick = { query = null }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back)) } },
+                    actions = {
+                        if (!query.isNullOrEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, stringResource(R.string.files_clear)) }
+                    },
+                )
+            } else {
+                TopAppBar(
+                    title = { Text(layer, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back)) } },
+                    actions = {
+                        if (!rows.isNullOrEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Search, stringResource(R.string.files_search)) }
+                    },
+                )
+            }
         },
     ) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
@@ -120,7 +156,8 @@ fun AttributeTableScreen(graph: AppGraph, project: String, layer: String, onBack
             when {
                 failure != null -> Message(failure!!)
                 rows == null -> Unit
-                shown.isEmpty() -> Message(stringResource(R.string.no_features))
+                rows!!.isEmpty() -> Message(stringResource(R.string.no_features))
+                shown.isEmpty() -> Message(stringResource(R.string.table_no_matches))
                 else -> Column(Modifier.fillMaxHeight().horizontalScroll(rememberScrollState())) {
                     LazyColumn(Modifier.width(widths.fold(0.dp) { a, b -> a + b })) {
                         stickyHeader {
@@ -183,10 +220,13 @@ private fun Message(text: String) {
     }
 }
 
-// A value as the table shows it: empty for none, yes or no for a boolean.
-private fun cell(value: Any?, type: String, yes: String, no: String): String {
+// A value as the table shows it: empty for none, yes or no for a boolean, a date and time where the phone is.
+private fun cell(value: Any?, type: String, yes: String, no: String, locale: Locale): String {
     val text = (value as? JsonPrimitive)?.takeUnless { it is JsonNull }?.contentOrNull ?: return ""
-    return if (type == "boolean") if (text == "true" || text == "1") yes else no else text
+    return when (type) {
+        "boolean" -> if (text == "true" || text == "1") yes else no
+        else -> shownDateTime(type, text, locale)
+    }
 }
 
 // Numbers sort as numbers, the rest as text; empty cells go last either way.

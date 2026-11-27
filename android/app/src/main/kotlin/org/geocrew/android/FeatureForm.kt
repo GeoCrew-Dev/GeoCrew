@@ -68,8 +68,6 @@ import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.launch
@@ -307,7 +305,7 @@ fun FeatureForm(
                             continue
                         }
                         OutlinedTextField(
-                            value = if (editable(field.type)) texts[field.name].orEmpty() else shown(field.type, texts[field.name].orEmpty(), locale),
+                            value = if (editable(field.type)) texts[field.name].orEmpty() else shownDateTime(field.type, texts[field.name].orEmpty(), locale),
                             onValueChange = { texts[field.name] = it },
                             label = { Text(field.name) },
                             placeholder = if (field.type == "date") ({ Text("2026-11-26") }) else null,
@@ -439,14 +437,6 @@ internal fun CoordinateField(value: String, onChange: (String) -> Unit, label: S
 }
 
 private fun editable(type: String) = type in setOf("string", "real", "integer", "integer64", "date", "boolean")
-
-// A date and time stored as UTC, shown in the phone's time zone and the app's language.
-private fun shown(type: String, text: String, locale: Locale): String {
-    if (type != "datetime" || text.isBlank()) return text
-    return runCatching {
-        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(locale).withZone(ZoneId.systemDefault()).format(instantOf(text)!!)
-    }.getOrDefault(text)
-}
 
 private fun keyboard(type: String) = when (type) {
     "real" -> KeyboardType.Decimal
