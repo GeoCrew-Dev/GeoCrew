@@ -162,7 +162,12 @@ fun VisibilityButton(visible: Boolean, onToggle: () -> Unit) {
  */
 @Composable
 fun LegendSwatch(geometry: String?, colors: List<Color>, visible: Boolean) {
-    val brush = if (colors.size > 1) Brush.horizontalGradient(colors) else SolidColor(colors.firstOrNull() ?: Color.Gray)
+    // Several colours side by side, each a band of its own: classes are not blended.
+    val brush = if (colors.size > 1) {
+        Brush.horizontalGradient(*colors.flatMapIndexed { i, c -> listOf(i.toFloat() / colors.size to c, (i + 1f) / colors.size to c) }.toTypedArray())
+    } else {
+        SolidColor(colors.firstOrNull() ?: Color.Gray)
+    }
     Box(Modifier.size(24.dp).alpha(if (visible) 1f else 0.38f), contentAlignment = Alignment.Center) {
         when (LayerKind.of(geometry)) {
             LayerKind.LINE -> Box(Modifier.size(width = 20.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(brush))
