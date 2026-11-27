@@ -508,4 +508,5 @@
     <string name="clino_record">记下</string>
     <string name="clino_low_accuracy">指南针精度低</string>
     <string name="clino_no_sensor">这台手机没有罗盘</string>
+    <string name="snapshot_failed">今天的工程快照没做成</string>
 </resources>

@@ -300,6 +300,7 @@ fun MapScreen(
     val points = pointLayers(layers) { name -> (collections[name]?.get("features") as? JsonArray)?.size ?: 0 }
     val drawables = drawLayers(layers) { name -> (collections[name]?.get("features") as? JsonArray)?.size ?: 0 }
     val savedText = stringResource(R.string.saved)
+    val snapshotFailedText = stringResource(R.string.snapshot_failed)
     val addedText = stringResource(R.string.place_added)
     val outsideText = stringResource(R.string.position_outside)
     val movedText = stringResource(R.string.moved)
@@ -382,6 +383,10 @@ fun MapScreen(
         when (val opened = graph.open(project)) {
             is Outcome.Done -> {
                 show(opened.output.jsonObject)
+                // The day's snapshot could not be made (ADR 0004): said once, the project opens all the same.
+                if (opened.output.jsonObject["snapshotFailure"] != null) {
+                    scope.launch { snackbar.showSnackbar(snapshotFailedText, duration = SnackbarDuration.Long) }
+                }
                 // Every layer opens for editing, so edits left unsaved when the app was
                 // stopped come back at once: they show, and new points are named after them.
                 val closed = layers.mapNotNull { it.name() }.filterNot { collections[it].flag("editing") }

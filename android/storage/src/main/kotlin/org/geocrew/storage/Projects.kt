@@ -3,6 +3,7 @@ package org.geocrew.storage
 import java.io.File
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -113,14 +114,16 @@ class Projects(private val root: File, private val journals: File) {
             folder.deleteRecursively() // nothing half-made stays behind
             throw e
         }
-        return open(name)
+        return open(name, snapshot = false) // an empty project needs no snapshot yet
     }
 
     /**
      * Opens project [name] for editing, after checking its file is whole and
-     * not from a newer GeoCrew.
+     * not from a newer GeoCrew. With [snapshot], the first opening of a day
+     * makes the day's snapshot ([Project.snapshot]); a snapshot that cannot be
+     * made does not stop the project opening, and [Project.snapshotFailure] says why.
      */
-    fun open(name: String): Project {
+    fun open(name: String, snapshot: Boolean = true): Project {
         val file = gpkg(name)
         require(file.isFile) { "there is no project called $name" }
         val ds = VectorDataset.open(file.path, update = true, wal = true)
@@ -132,7 +135,9 @@ class Projects(private val root: File, private val journals: File) {
             check(version != null) { "$file is not a GeoCrew project" }
             check(version <= ProjectFormat.VERSION) { "the project was saved by a newer GeoCrew (format $version)" }
             val id = about.getValue("id")!!
-            return Project(name, File(dir, name), ds, id, readLayers(ds), File(journals, "$id-${pathKey(file)}"))
+            val project = Project(name, File(dir, name), ds, id, readLayers(ds), File(journals, "$id-${pathKey(file)}"))
+            if (snapshot) project.snapshotFailure = runCatching { project.snapshot() }.exceptionOrNull()?.let { it.message ?: it.toString() }
+            return project
         } catch (e: Exception) {
             ds.close()
             throw e
@@ -244,6 +249,12 @@ internal fun rowCount(ds: VectorDataset, layer: String): Long {
  * An open project: its [layers] and where its attachments go. Close it when done;
  * its layers are edited through [target].
  */
+/** How many daily snapshots a project keeps: a week of field days. */
+const val SNAPSHOTS_KEPT = 7
+
+// A snapshot's name: its date.
+private val SNAPSHOT = Regex("""\d{4}-\d{2}-\d{2}\.gpkg""")
+
 class Project internal constructor(
     val name: String,
     val folder: File,
@@ -550,6 +561,39 @@ class Project internal constructor(
 
     /** The project's GeoPackage. */
     val file: File get() = File(folder, "$name.gpkg")
+
+    /** The folder of the project's daily snapshots. */
+    val snapshots: File get() = File(folder, ProjectFormat.SNAPSHOTS)
+
+    /** Why the day's snapshot could not be made when the project opened; null when it was, or was there already. */
+    var snapshotFailure: String? = null
+        internal set
+
+    /**
+     * Makes the snapshot of [day] unless there is one (ADR 0004): a consistent
+     * copy of the project's GeoPackage, made by SQLite itself (VACUUM INTO, as
+     * GDAL gives no way to its backup interface), written under another name and
+     * then named after the date, in rollback-journal mode so it is a file of its
+     * own. Only the newest [keep] stay. The attachments are not copied: their
+     * files are never changed or deleted by edits. Returns the snapshot made, or
+     * null when the day had one.
+     */
+    fun snapshot(day: LocalDate = LocalDate.now(), keep: Int = SNAPSHOTS_KEPT): File? {
+        val target = File(snapshots, "$day.gpkg")
+        if (target.exists()) return null
+        check(snapshots.isDirectory || snapshots.mkdirs()) { "cannot make the folder $snapshots" }
+        val part = File(snapshots, ".$day.part.gpkg")
+        part.delete()
+        try {
+            dataset.sql("VACUUM INTO ${quote(part.path)}")
+            VectorDataset.open(part.path, update = true).use { it.sql("PRAGMA journal_mode=DELETE") }
+            check(part.renameTo(target)) { "cannot name the snapshot $target" }
+        } finally {
+            part.delete()
+        }
+        snapshots.listFiles { f -> SNAPSHOT.matches(f.name) }.orEmpty().sortedByDescending { it.name }.drop(keep).forEach { it.delete() }
+        return target
+    }
 
     /**
      * Moves what is in the write-ahead log into the GeoPackage itself, so a copy
