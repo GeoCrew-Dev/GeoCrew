@@ -14,6 +14,8 @@ class DegreesTest {
         near(114.3, "114。3")
         near(114.305138888888889, "１１４°１８′１８．５″")
         near(-30.5, "Ｓ30。5")
+        near(30.5, "30，5")
+        assertNull(Degrees.parse("30,114"), "a plain comma is no decimal point: it may part two numbers")
         assertNull(Degrees.parse("Ｓ30", Degrees.Axis.LONGITUDE), "a full-width hemisphere letter of the other axis")
         assertFalse(Degrees.isSexagesimal("114。3"), "plain decimal degrees, only typed full-width")
     }

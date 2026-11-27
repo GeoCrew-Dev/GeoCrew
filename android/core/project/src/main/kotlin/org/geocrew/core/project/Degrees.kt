@@ -24,7 +24,8 @@ object Degrees {
      * Full-width digits and marks are read too (Numbers.plain), as a Chinese keyboard types them.
      */
     fun parse(text: String, axis: Axis? = null): Double? {
-        val plain = Numbers.plain(text).uppercase()
+        // Degrees never have thousands: a full-width comma there is the decimal point, as it always was here (a plain one is not).
+        val plain = Numbers.plain(text.replace('，', '.')).uppercase()
         if (axis != null) {
             val wrong = LETTERS.getValue(if (axis == Axis.LONGITUDE) Axis.LATITUDE else Axis.LONGITUDE)
             if (plain.any { it in wrong }) return null
