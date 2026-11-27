@@ -93,7 +93,8 @@ internal fun AttachmentStrip(
     onRemove: (JsonObject) -> Unit,
 ) {
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-        items(files, key = { it.text("id") ?: it.text("file").orEmpty() }) { file ->
+        // No keys: a file picked twice is two tiles with the same hash until the feature gives them ids.
+        items(files) { file ->
             Box(Modifier.size(TILE)) {
                 AttachmentTile(file, Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { onOpen(file) })
                 Box(
@@ -181,8 +182,9 @@ internal fun PhotoViewer(file: JsonObject, onDismiss: () -> Unit) {
     val path = file.text("path").orEmpty()
     val name = file.text("name").orEmpty()
     val openText = stringResource(R.string.attachment_open_with)
-    val picture by produceState<ImageBitmap?>(null, path) {
-        value = withContext(Dispatchers.IO) { runCatching { decodeFitted(File(path)) }.getOrNull() }
+    // Null while it is read; a failure when it cannot be shown here, which another app may still open.
+    val picture by produceState<Result<ImageBitmap>?>(null, path) {
+        value = withContext(Dispatchers.IO) { runCatching { decodeFitted(File(path)) } }
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(
@@ -204,7 +206,8 @@ internal fun PhotoViewer(file: JsonObject, onDismiss: () -> Unit) {
             },
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                picture?.let { Image(it, name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+                picture?.onSuccess { Image(it, name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+                    ?.onFailure { Icon(Icons.Rounded.Image, null, tint = Color.White, modifier = Modifier.size(48.dp)) }
             }
         }
     }
