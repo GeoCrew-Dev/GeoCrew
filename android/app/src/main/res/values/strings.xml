@@ -439,4 +439,5 @@
     <string name="map_cache_limit">Map cache size</string>
     <string name="map_cache_clear">Clear</string>
     <string name="map_cache_clear_title">Clear the map cache?</string>
+    <string name="map_cache_clear_failed">The map cache could not be cleared</string>
 </resources>

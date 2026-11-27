@@ -74,6 +74,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
     var cacheReads by remember { mutableIntStateOf(0) }
     LaunchedEffect(cacheReads) { cacheUsed = withContext(Dispatchers.IO) { MapCache.used(context) } }
     val scope = rememberCoroutineScope()
+    var cacheFailed by remember { mutableStateOf(false) }
     var askLanguage by remember { mutableStateOf(false) }
     var key by remember { mutableStateOf(TiandituKey.read(context)) }
     val language = remember { AppLanguage.current(context) }
@@ -211,12 +212,19 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onAbout: () -> Unit) {
                 TextButton(onClick = {
                     clearingCache = false
                     scope.launch {
-                        MapCache.clear(context)
+                        if (!MapCache.clear(context)) cacheFailed = true
                         cacheReads++
                     }
                 }) { Text(stringResource(R.string.map_cache_clear)) }
             },
             dismissButton = { TextButton(onClick = { clearingCache = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    if (cacheFailed) {
+        AlertDialog(
+            onDismissRequest = { cacheFailed = false },
+            text = { Text(stringResource(R.string.map_cache_clear_failed)) },
+            confirmButton = { TextButton(onClick = { cacheFailed = false }) { Text(stringResource(R.string.ok)) } },
         )
     }
     if (askKey) {
