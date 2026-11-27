@@ -1,6 +1,6 @@
 # 同勘 GeoCrew 协同协议 v1（草案）
 
-> 状态：草案，M2 期间逐节写，M3 实现。依据 [ADR 0008](../../docs/adr/0008-sync-and-merge.md)（同步与合并）和 [ADR 0009](../../docs/adr/0009-roles-and-permissions.md)（身份与权限）。v1 不兼容 v0，v0 的客户端不再支持；[v0 文档](protocol-v0.md)在 v1 写完之前只作参考。v1 的接口在 M3 实现时逐个写进 [`openapi.yaml`](openapi.yaml)（标签 `v1`），和 v0 的并存；已经写进去的有信息、建工作区、加入、工作区（2026-11-28）。
+> 状态：草案，M2 期间逐节写，M3 实现。依据 [ADR 0008](../../docs/adr/0008-sync-and-merge.md)（同步与合并）和 [ADR 0009](../../docs/adr/0009-roles-and-permissions.md)（身份与权限）。v1 不兼容 v0，v0 的客户端不再支持；[v0 文档](protocol-v0.md)在 v1 写完之前只作参考。v1 的接口在 M3 实现时逐个写进 [`openapi.yaml`](openapi.yaml)（标签 `v1`），和 v0 的并存；已经写进去的有信息、建工作区、加入、工作区、共享图层、结构变更、提交、拉取、处理冲突（2026-11-28）。
 
 ## 1. 和 v0 的主要区别
 
@@ -391,7 +391,7 @@ POST /api/v1/workspaces/{ws}/layers/{layer}/schema
 }
 ```
 
-- 只能在线做。服务端的 `schema_version` 不等于 `base_version` 时返回 409 `stale`，带上当前结构；客户端更新本地结构后，让用户在新结构上重做。
+- 只能在线做。服务端的 `schema_version` 不等于 `base_version` 时返回 409 `stale`，响应的 `layer` 是图层现在的样子（5.6 建图层时结构不同也这样）；客户端更新本地结构后，让用户在新结构上重做。
 - 一次请求里的操作按顺序执行，要么全部成功，要么一个都不做。成功后 `schema_version` 加 1，响应带新的结构。
 - 字段类型、`geometry_type` 和 `crs` 都不能改。要换字段类型，就新增一个字段、迁移数据、再删掉旧字段。
 - 删除字段：行里不再返回这个字段，旧值留在服务端的历史里；之后对它的修改进冲突记录（6.4 规则 4）。
