@@ -6,12 +6,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -34,12 +37,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
-/** The size of the window clear of the system bars, cutouts and the keyboard. */
+/** The size of the window clear of the system bars, cutouts and, unless [keyboard] is false, the keyboard. */
 @Composable
-fun clearWindowSize(): DpSize {
+fun clearWindowSize(keyboard: Boolean = true): DpSize {
     val density = LocalDensity.current
     val window = LocalWindowInfo.current.containerSize
-    val clear = WindowInsets.safeDrawing
+    val clear = if (keyboard) WindowInsets.safeDrawing else WindowInsets.systemBars.union(WindowInsets.displayCutout)
     return with(density) {
         DpSize(
             (window.width - clear.getLeft(this, LayoutDirection.Ltr) - clear.getRight(this, LayoutDirection.Ltr)).toDp(),
@@ -54,7 +57,7 @@ fun clearWindowSize(): DpSize {
  */
 @Composable
 fun isShortLandscape(): Boolean {
-    val clear = clearWindowSize()
+    val clear = clearWindowSize(keyboard = false)
     return clear.width > clear.height && clear.height < SHORT_HEIGHT
 }
 
@@ -97,8 +100,11 @@ fun AppDialog(
     properties: DialogProperties = DialogProperties(),
     text: @Composable (() -> Unit)? = null,
 ) {
+    // Whether the panes go side by side is told by the window without the keyboard, so that opening it never swaps the
+    // layout (and the dialog's window) under the field being typed into; how tight they are, by the window with it.
     val clear = clearWindowSize()
-    val short = clear.width > clear.height && clear.height < SHORT_HEIGHT
+    val bare = clearWindowSize(keyboard = false)
+    val short = bare.width > bare.height && bare.height < SHORT_HEIGHT
     if (short && twoPane && (text != null || side != null)) {
         // Side by side the dialog is wider than a dialog usually is, so it sets its own width and height.
         val wide = DialogProperties(
