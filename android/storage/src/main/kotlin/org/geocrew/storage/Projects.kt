@@ -5,6 +5,7 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.geocrew.core.edit.EditTarget
 import org.geocrew.core.edit.Field
@@ -474,6 +476,56 @@ class Project internal constructor(
         checkNewName(name)
         if (srs != null) Crs.describe(srs) // a CRS GDAL does not know is refused before anything is made
         addLayer(dataset, name, template.geometryType, srs ?: template.crs, template.id, template.fields(language))
+        layers = readLayers(dataset)
+        putOnTop(name)
+        return layers.single { it.name == name }
+    }
+
+    /**
+     * A name for a layer brought in as [wanted]: as it is when it can name a
+     * layer, else cut to length, with GeoPackage's and GeoCrew's own prefixes
+     * kept off, and numbered when taken (路线 2, 路线 3, ...).
+     */
+    fun freeLayerName(wanted: String): String {
+        var base = wanted.trim().ifEmpty { "layer" }.take(ProjectFormat.MAX_NAME - 4).trim()
+        if (RESERVED_PREFIXES.any { base.startsWith(it, ignoreCase = true) }) base = "_$base"
+        return generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base $it" }.first { n -> dataset.layers.none { it.equals(n, ignoreCase = true) } }
+    }
+
+    /**
+     * Copies layer [sourceLayer] of [source] into the project as new layer
+     * [name] (ADR 0002's import): its geometry type, its CRS, the fields
+     * GeoCrew can edit, and every feature, in one transaction. Like a new
+     * layer it is saved at once and not undone; a copy that fails leaves no
+     * layer behind. Refused for a layer that does not say its CRS.
+     */
+    fun importLayer(source: VectorDataset, sourceLayer: String, name: String): Layer {
+        checkNewName(name)
+        val info = Json.parseToJsonElement(source.layerInfo(sourceLayer)).jsonObject
+        val srs = (info["srs"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("$sourceLayer does not say its CRS")
+        val geometry = (info["geometryType"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: "GEOMETRY"
+        // Fields GeoCrew cannot edit (binary, lists) stay behind; so does a second field of the same name in another case.
+        val fields = info.getValue("fields").jsonArray.map { f ->
+            Field(f.jsonObject.getValue("name").jsonPrimitive.content, FieldType.of(f.jsonObject.getValue("type").jsonPrimitive.content))
+        }.filter { it.type != FieldType.OTHER && it.name.isNotBlank() }.distinctBy { it.name.lowercase() }
+        val kept = fields.map { it.name }.toSet()
+        val features = Json.parseToJsonElement(source.features(sourceLayer)).jsonArray
+        addLayer(dataset, name, geometry, srs, null, fields)
+        try {
+            dataset.begin()
+            for (f in features) {
+                val feature = f.jsonObject
+                val properties = (feature["properties"] as? JsonObject).orEmpty().filterKeys { it in kept }
+                dataset.add(name, buildJsonObject { put("geometry", feature["geometry"] ?: JsonNull); put("properties", JsonObject(properties)) }.toString())
+            }
+            dataset.commit()
+        } catch (e: Exception) {
+            runCatching { dataset.rollback() }
+            layers = readLayers(dataset)
+            runCatching { deleteLayer(name) }
+            throw e
+        }
         layers = readLayers(dataset)
         putOnTop(name)
         return layers.single { it.name == name }

@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.LibraryAdd
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -105,6 +106,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.files.FileActions
+import org.geocrew.storage.ImportActions
 import org.geocrew.storage.RasterActions
 
 /** A file or folder as file.list gives it. */
@@ -130,6 +132,7 @@ internal class FileTexts(
     val gone: String,
     val failed: String,
     val notRaster: String,
+    val notVector: String,
     val noCrs: String,
     val unreadable: String,
 ) {
@@ -141,6 +144,7 @@ internal class FileTexts(
             FileActions.INSIDE -> inside
             FileActions.NOT_FOUND -> gone
             RasterActions.NOT_RASTER -> notRaster
+            ImportActions.NOT_VECTOR -> notVector
             RasterActions.NO_CRS -> noCrs
             RasterActions.UNREADABLE -> unreadable
             else -> failed.format(outcome.message)
@@ -281,6 +285,7 @@ internal fun FileSheet(
     onDetails: () -> Unit,
     onDelete: () -> Unit,
     addTo: String? = null,
+    importing: Boolean = false,
     onAdd: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -304,7 +309,7 @@ internal fun FileSheet(
             // Into the open project first: what a GIS user came for.
             if (addTo != null) {
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.files_add_to, addTo), color = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(stringResource(if (importing) R.string.files_import_to else R.string.files_add_to, addTo), color = MaterialTheme.colorScheme.primary) },
                     leadingContent = { Icon(Icons.Rounded.LibraryAdd, null, tint = MaterialTheme.colorScheme.primary) },
                     colors = clear,
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onAdd),
@@ -385,6 +390,48 @@ internal fun ClipBar(clip: Clip, canPaste: Boolean, onCancel: () -> Unit, onPast
             }
         }
     }
+}
+
+/**
+ * Which layers of a file to import ([layers] as file.probe gives them): each
+ * with its geometry and how many features it has, all ticked to start with.
+ */
+@Composable
+internal fun ImportDialog(layers: List<JsonObject>, onDismiss: () -> Unit, onImport: (List<String>) -> Unit) {
+    val names = layers.mapNotNull { (it["name"] as? JsonPrimitive)?.contentOrNull }
+    var ticked by remember { mutableStateOf(names.toSet()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.import_which)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                for (layer in layers) {
+                    val name = (layer["name"] as? JsonPrimitive)?.contentOrNull ?: continue
+                    val count = (layer["features"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+                    val kind = when ((layer["geometry"] as? JsonPrimitive)?.contentOrNull?.removePrefix("Multi")?.substringBefore(' ')) {
+                        "Point" -> stringResource(R.string.layer_kind_point)
+                        "LineString" -> stringResource(R.string.layer_kind_line)
+                        "Polygon" -> stringResource(R.string.layer_kind_polygon)
+                        else -> null
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clickable { ticked = if (name in ticked) ticked - name else ticked + name }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = name in ticked, onCheckedChange = null)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(name, style = MaterialTheme.typography.bodyLarge)
+                            val detail = listOfNotNull(kind, count?.let { pluralStringResource(R.plurals.files_features, it, it) }).joinToString(" · ")
+                            if (detail.isNotEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onImport(names.filter { it in ticked }) }, enabled = ticked.isNotEmpty()) { Text(stringResource(R.string.import_go)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 /**

@@ -412,7 +412,7 @@
     <string name="raster_remove_title">Remove “%1$s” from the project?</string>
     <string name="raster_remove_body">The file is not deleted</string>
     <string name="raster_not_raster">This is not a raster</string>
-    <string name="raster_no_crs">This raster does not say where it is</string>
+    <string name="raster_no_crs">It does not say where it is</string>
     <string name="layer_from_file">From file</string>
     <string name="files_add_to">Add to “%1$s”</string>
     <string name="files_added_to">Added to “%1$s”</string>
@@ -424,4 +424,9 @@
     <string name="toolbar_remove">Take off</string>
     <string name="toolbar_add">Put on</string>
     <string name="toolbar_more">Other</string>
+    <string name="files_import_to">Import into “%1$s”</string>
+    <string name="files_imported_to">Imported into “%1$s”</string>
+    <string name="import_which">Import which layers</string>
+    <string name="import_go">Import</string>
+    <string name="import_not_vector">There is no vector data in it</string>
 </resources>

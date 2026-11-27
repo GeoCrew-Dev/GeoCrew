@@ -67,14 +67,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.File
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.files.FileActions
+import org.geocrew.storage.ImportActions
 import org.geocrew.storage.RasterActions
 import org.geocrew.storage.Workspace
 
@@ -127,10 +131,14 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
         gone = stringResource(R.string.files_gone),
         failed = stringResource(R.string.action_failed),
         notRaster = stringResource(R.string.raster_not_raster),
+        notVector = stringResource(R.string.import_not_vector),
         noCrs = stringResource(R.string.raster_no_crs),
         unreadable = stringResource(R.string.files_cannot_read),
     )
     val addedText = stringResource(R.string.files_added_to)
+    val importedText = stringResource(R.string.files_imported_to)
+    // A file of several layers, while the user picks which to import: its path and its layers as file.probe gives them.
+    var importing by remember { mutableStateOf<Pair<String, List<JsonObject>>?>(null) }
     val copiedText = stringResource(R.string.files_copied)
     val movedText = stringResource(R.string.files_moved)
     val shareText = stringResource(R.string.share)
@@ -407,14 +415,34 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
                 chosen = null
                 details = listOf(entry)
             },
-            // A raster goes under the open project's layers; it stays where it is.
-            addTo = project?.takeIf { entry.kind == "raster" },
+            // A raster goes under the open project's layers, staying where it is; vector data (a zip of it too)
+            // is imported into the project as layers of its own (ADR 0002).
+            addTo = project?.takeIf { entry.kind == "raster" || entry.kind == "vector" || entry.kind == "archive" },
+            importing = entry.kind != "raster",
             onAdd = {
                 chosen = null
-                act(RasterActions.ADD, buildJsonObject { put("path", entry.path) }) {
+                if (entry.kind == "raster") {
+                    act(RasterActions.ADD, buildJsonObject { put("path", entry.path) }) {
+                        scope.launch {
+                            snackbar.currentSnackbarData?.dismiss()
+                            snackbar.showSnackbar(addedText.format(project.orEmpty()))
+                        }
+                    }
+                } else {
                     scope.launch {
-                        snackbar.currentSnackbarData?.dismiss()
-                        snackbar.showSnackbar(addedText.format(project.orEmpty()))
+                        // What is in it, read in the probe's own process: several layers are picked from, one goes straight in.
+                        val read = graph.invoke(FileActions.PROBE, buildJsonObject { put("path", entry.path) })
+                        val layers = ((read as? Outcome.Done)?.output?.jsonObject?.get("layers") as? JsonArray)?.map { it.jsonObject }
+                        when {
+                            read !is Outcome.Done -> failure = texts.unreadable
+                            layers != null && layers.size > 1 -> importing = entry.path to layers
+                            else -> act(ImportActions.IMPORT, buildJsonObject { put("path", entry.path) }) {
+                                scope.launch {
+                                    snackbar.currentSnackbarData?.dismiss()
+                                    snackbar.showSnackbar(importedText.format(project.orEmpty()))
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -477,6 +505,21 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
                 }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    importing?.let { (path, layers) ->
+        ImportDialog(
+            layers = layers,
+            onDismiss = { importing = null },
+            onImport = { names ->
+                importing = null
+                act(ImportActions.IMPORT, buildJsonObject { put("path", path); putJsonArray("layers") { names.forEach { add(it) } } }) {
+                    scope.launch {
+                        snackbar.currentSnackbarData?.dismiss()
+                        snackbar.showSnackbar(importedText.format(project.orEmpty()))
+                    }
+                }
+            },
         )
     }
     details?.let { entries ->

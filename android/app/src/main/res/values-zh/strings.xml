@@ -392,7 +392,7 @@
     <string name="raster_remove_title">从工程中移除「%1$s」？</string>
     <string name="raster_remove_body">文件不会删除</string>
     <string name="raster_not_raster">这不是栅格</string>
-    <string name="raster_no_crs">这个栅格没有坐标，放不到地图上</string>
+    <string name="raster_no_crs">没有坐标系，放不到地图上</string>
     <string name="layer_from_file">从文件添加</string>
     <string name="files_add_to">添加到「%1$s」</string>
     <string name="files_added_to">已添加到「%1$s」</string>
@@ -404,4 +404,9 @@
     <string name="toolbar_remove">移出</string>
     <string name="toolbar_add">加入</string>
     <string name="toolbar_more">其他</string>
+    <string name="files_import_to">导入到「%1$s」</string>
+    <string name="files_imported_to">已导入到「%1$s」</string>
+    <string name="import_which">导入哪些图层</string>
+    <string name="import_go">导入</string>
+    <string name="import_not_vector">里面没有矢量数据</string>
 </resources>
