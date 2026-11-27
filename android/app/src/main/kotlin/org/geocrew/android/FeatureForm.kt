@@ -1,5 +1,9 @@
 package org.geocrew.android
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -64,6 +70,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import java.io.File
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
@@ -119,6 +126,10 @@ private const val DEGREES_CRS = "EPSG:4490"
  * changed; [onDelete] deletes it and [onMove] moves it to another layer.
  * Longitude and latitude also take degrees, minutes and seconds; with [locate]
  * the position can come from the phone's GNSS.
+ *
+ * With [attachments] (the feature's, as feature.attachments gives them) the
+ * form shows its photos and files, takes more through [importFile] and lets
+ * them go; [onSave] gets the new list, or null when it did not change.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,13 +140,15 @@ fun FeatureForm(
     coordinates: Pair<Double, Double>?,
     isNew: Boolean,
     onDismiss: () -> Unit,
-    onSave: (values: JsonObject, position: Position?) -> Unit,
+    onSave: (values: JsonObject, position: Position?, attachments: List<JsonObject>?) -> Unit,
     onDelete: (() -> Unit)?,
     onMove: (() -> Unit)? = null,
     onReshape: (() -> Unit)? = null,
     crs: FormCrs? = null,
     locate: (suspend () -> Fix?)? = null,
     area: Boolean? = null,
+    attachments: List<JsonObject>? = null,
+    importFile: (suspend (Uri) -> JsonObject?)? = null,
 ) {
     // What is deleted: a point, or with [area] a line (false) or an area (true).
     val deleteText = stringResource(when (area) { null -> R.string.feature_delete; false -> R.string.line_delete; true -> R.string.area_delete })
@@ -174,6 +187,25 @@ fun FeatureForm(
     var picking by remember { mutableStateOf<FormField?>(null) }
     var locating by remember { mutableStateOf(false) }
     var accuracy by remember { mutableStateOf<Float?>(null) }
+    val files = remember(attachments) { mutableStateListOf<JsonObject>().apply { attachments?.let(::addAll) } }
+    var adding by remember { mutableStateOf(false) }
+    var viewing by remember { mutableStateOf<JsonObject?>(null) }
+    var addFailed by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val openText = stringResource(R.string.attachment_open_with)
+    // A picked file goes into the project at once; the feature gets it when the form is saved.
+    fun attach(uri: Uri?) {
+        val import = importFile ?: return
+        if (uri == null) return
+        adding = true
+        scope.launch {
+            val imported = import(uri)
+            adding = false
+            if (imported == null) addFailed = true else files += imported
+        }
+    }
+    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { attach(it) }
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { attach(it) }
 
     // The phone's position goes into the fields shown: longitude and latitude, or X and Y converted.
     fun useMyPosition() {
@@ -226,7 +258,8 @@ fun FeatureForm(
                 if (moved) Position(Degrees.parse(longitude, Degrees.Axis.LONGITUDE)!!, Degrees.parse(latitude, Degrees.Axis.LATITUDE)!!, DEGREES_CRS) else null
             }
         }
-        onSave(JsonObject(values.associate { it.name to fieldValue(it.type, texts[it.name].orEmpty()) }), position)
+        val attached = files.toList().takeIf { attachments != null && it != attachments }
+        onSave(JsonObject(values.associate { it.name to fieldValue(it.type, texts[it.name].orEmpty()) }), position, attached)
     }
 
     // Edge to edge like the app's screens: the map does not show above the form.
@@ -305,6 +338,29 @@ fun FeatureForm(
                     for (field in fields) {
                         FieldInput(field, texts[field.name].orEmpty(), onChange = { texts[field.name] = it }, onPick = { picking = field })
                     }
+                    if (attachments != null) {
+                        FormHeader(stringResource(R.string.attachments))
+                        AttachmentStrip(
+                            files = files,
+                            adding = adding,
+                            onAdd = { source ->
+                                when (source) {
+                                    AttachmentSource.GALLERY -> pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                                    AttachmentSource.FILE -> pickFile.launch(arrayOf("*/*"))
+                                }
+                            },
+                            onOpen = { file ->
+                                val path = (file["path"] as? JsonPrimitive)?.contentOrNull
+                                val type = (file["type"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                                when {
+                                    path == null || !File(path).exists() -> Unit
+                                    type.startsWith("image/") -> viewing = file
+                                    else -> openWith(context, File(path), openText)
+                                }
+                            },
+                            onRemove = { files.remove(it) },
+                        )
+                    }
                     if (onReshape != null) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(onClick = onReshape, modifier = Modifier.fillMaxWidth()) {
@@ -337,6 +393,14 @@ fun FeatureForm(
                 }
             }
         }
+    }
+    viewing?.let { PhotoViewer(it, onDismiss = { viewing = null }) }
+    if (addFailed) {
+        AppDialog(
+            onDismissRequest = { addFailed = false },
+            confirmButton = { TextButton(onClick = { addFailed = false }) { Text(stringResource(R.string.ok)) } },
+            text = { Text(stringResource(R.string.attachment_failed)) },
+        )
     }
     picking?.let { field ->
         FieldPicker(field, texts[field.name].orEmpty(), onDismiss = { picking = null }) {

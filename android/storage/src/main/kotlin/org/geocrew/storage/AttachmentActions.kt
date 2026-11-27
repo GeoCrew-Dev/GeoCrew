@@ -33,7 +33,7 @@ class AttachmentActions(private val workspace: Workspace, private val geocrew: F
         AttachmentAction(
             IMPORT, "Import attachment",
             "Copies the file at [path] into the open project's attachment folder, named by its SHA-256, with a thumbnail for a photo or a video; " +
-                "gives the attachment as feature.add and feature.attachments.set take it. [name] and [type] (MIME) default to the file's",
+                "gives the attachment as feature.add and feature.attachments.set take it, with where its files are. [name] and [type] (MIME) default to the file's",
             Risk.EDIT, IMPORT_PARAMS, """{"path": "/storage/emulated/0/GeoCrew/导入/露头.jpg"}""",
         ) { caller, p ->
             val project = workspace.current ?: return@AttachmentAction ActionResult.Failed(NO_PROJECT, "no project is open")
@@ -51,6 +51,8 @@ class AttachmentActions(private val workspace: Workspace, private val geocrew: F
                     put("type", stored.type)
                     put("size", stored.size)
                     put("name", name)
+                    put("path", AttachmentFiles.fileOf(project.attachments, stored.file, stored.type).path)
+                    stored.thumb?.let { put("thumbPath", AttachmentFiles.fileOf(project.attachments, it, "image/jpeg").path) }
                 },
             )
         },
