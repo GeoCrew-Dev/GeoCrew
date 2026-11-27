@@ -92,7 +92,7 @@ class AppSettings(context: Context) {
     }
 
     /** The tools on the map's toolbar, in order (MapTool); the default until the user changes it. */
-    var toolbar by mutableStateOf(prefs.getString(TOOLBAR, null)?.split(',')?.mapNotNull(MapTool::of) ?: MapTool.DEFAULT)
+    var toolbar by mutableStateOf(prefs.getString(TOOLBAR, null)?.split(',')?.mapNotNull(MapTool::of)?.distinct() ?: MapTool.DEFAULT)
         private set
 
     fun changeToolbar(tools: List<MapTool>) {

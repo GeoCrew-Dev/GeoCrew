@@ -47,9 +47,7 @@ internal class Kml(private val project: Project, private val photos: Boolean) {
         // The saved layer, as exports hold only what is saved.
         val store = project.target(layer.name).store
         val names = store.fields.map { it.name }
-        // The name field of the layer's template, else one called so.
-        val nameField = Templates.byId(layer.template)?.column(Templates.NAME, names)
-            ?: names.firstOrNull { it.trim().lowercase() in NAME_FIELDS }
+        val nameField = nameField(layer, names)
         val features = store.features()
         val geometries = Crs.transform(features.map { it.geometry }, layer.srs ?: Crs.LONGITUDE_LATITUDE, WGS84)
         out.write("<Folder><name>${xml(layer.name)}</name>\n")
@@ -138,6 +136,10 @@ internal class Kml(private val project: Project, private val photos: Boolean) {
 
         // Fields that name a feature when the layer's template does not say which.
         private val NAME_FIELDS = setOf("name", "名称", "点名", "title", "标题")
+
+        /** The field that names [layer]'s features: its template's name field, else one called so. */
+        fun nameField(layer: Project.Layer, names: List<String>): String? =
+            Templates.byId(layer.template)?.column(Templates.NAME, names) ?: names.firstOrNull { it.trim().lowercase() in NAME_FIELDS }
 
         // [hex] (#rrggbb, or #rrggbbaa) as KML writes colours: alpha, blue, green, red; [alpha] from 0 to 255.
         fun kmlColor(hex: String, alpha: Int): String {

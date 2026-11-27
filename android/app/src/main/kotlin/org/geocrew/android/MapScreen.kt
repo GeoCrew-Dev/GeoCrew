@@ -299,6 +299,7 @@ fun MapScreen(
     var discardingTrack by remember { mutableStateOf(false) }
     var ai by remember { mutableStateOf(false) }
     var exported by remember { mutableStateOf<File?>(null) }
+    var exporting by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val modified = collections.values.any { it.flag("projectModified") }
     val points = pointLayers(layers) { name -> (collections[name]?.get("features") as? JsonArray)?.size ?: 0 }
@@ -1223,8 +1224,9 @@ fun MapScreen(
         measured = emptyList()
     }
 
+    // The whole project, in a format chosen from the list.
     fun export(format: String) = once {
-        when (val outcome = graph.invoke(Workspace.EXPORT, buildJsonObject { put("format", format) })) {
+        when (val outcome = graph.invoke(Workspace.EXPORT, buildJsonObject { put("format", format); put("language", AppLanguage.speaking(context)) })) {
             is Outcome.Done -> exported = File(outcome.output.jsonObject.getValue("path").jsonPrimitive.content)
             else -> failure = texts.of(outcome)
         }
@@ -1273,9 +1275,7 @@ fun MapScreen(
             MapTool.MY_LOCATION -> showMe()
             MapTool.TRACK -> if (ownTrack == null) requestTrack() else finishTrack()
             MapTool.CONVERT -> converting = true
-            MapTool.EXPORT_GPKG -> export("gpkg")
-            MapTool.EXPORT_KML -> export("kml")
-            MapTool.EXPORT_KMZ -> export("kmz")
+            MapTool.EXPORT -> exporting = true
             MapTool.FILES -> onFiles()
             MapTool.PROJECT_SETTINGS -> onProjectSettings()
             MapTool.CLOSE_PROJECT -> requestLeave()
@@ -1913,6 +1913,18 @@ fun MapScreen(
             title = { Text(stringResource(R.string.map_ai)) },
             text = { Text(stringResource(R.string.map_ai_coming)) },
             confirmButton = { TextButton(onClick = { ai = false }) { Text(stringResource(R.string.ok)) } },
+        )
+    }
+    if (exporting) {
+        ExportSheet(
+            title = stringResource(R.string.layer_export_title, project),
+            geometry = null,
+            wholeProject = true,
+            onPick = { format ->
+                exporting = false
+                export(format.id)
+            },
+            onDismiss = { exporting = false },
         )
     }
     exported?.let { file ->

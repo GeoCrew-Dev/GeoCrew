@@ -124,22 +124,23 @@ class Workspace(private val projects: Projects) {
         },
         WorkspaceAction(
             EXPORT, "Export project",
-            "Writes the open project's saved data, or one layer of it, to a new file in the export folder: a GeoPackage, KML, or KMZ with the photos",
+            "Writes the open project's saved data, or one layer of it, to a new file in the export folder: GeoPackage, Shapefile (zip), " +
+                "KML, KMZ with the photos, GeoJSON, CSV, Excel, GPX (points and lines) or DXF; a project's layers in a format of one layer go in a zip. " +
+                "language (zh or en) names the coordinate columns of CSV and Excel",
             Risk.SEND, EXPORT_PARAMS, """{"format": "kml"}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
             unsaved()?.let { return@WorkspaceAction it }
-            val format = p.getValue("format").jsonPrimitive.content
+            val format = ExportFormat.of(p.getValue("format").jsonPrimitive.content)
             val layer = (p["layer"] as? JsonPrimitive)?.contentOrNull
-            if (layer != null) require(project.layers.any { it.name == layer }) { "the project has no layer $layer" }
-            // GDAL makes no KML of a GeoPackage without layers, as a new project is.
-            if (format != "gpkg" && project.layers.isEmpty()) return@WorkspaceAction ActionResult.Failed("empty", "the project has no layers")
-            val exports = Exports(projects.exports)
-            val file = when {
-                layer != null -> exports.layer(project, layer, format)
-                format == "gpkg" -> exports.gpkg(project)
-                else -> exports.kml(project, zipped = format == "kmz")
+            val language = (p["language"] as? JsonPrimitive)?.contentOrNull ?: "en"
+            val layers = if (layer == null) project.layers else listOf(requireNotNull(project.layers.firstOrNull { it.name == layer }) { "the project has no layer $layer" })
+            // GDAL makes nothing of a GeoPackage without layers, as a new project is.
+            if (format != ExportFormat.GPKG && project.layers.isEmpty()) return@WorkspaceAction ActionResult.Failed("empty", "the project has no layers")
+            if (format == ExportFormat.GPX && layers.none(Gpx(project)::holds)) {
+                return@WorkspaceAction ActionResult.Failed("unsupported", "GPX holds points and lines only")
             }
+            val file = Exports(projects.exports).export(project, format, layer, language)
             ActionResult.Done(buildJsonObject { put("path", file.path) })
         },
         WorkspaceAction(
@@ -679,7 +680,8 @@ class Workspace(private val projects: Projects) {
                 "properties": {"layer": {"type": "string"}, "field": {"type": "string"}, "min": {"type": "number"}, "max": {"type": "number"}}}""",
         )
         private val EXPORT_PARAMS = schema(
-            """{"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"enum": ["gpkg", "kml", "kmz"]}, "layer": {"type": "string"}}}""",
+            """{"type": "object", "additionalProperties": false, "required": ["format"], "properties": {"format": {"enum": ${ExportFormat.entries.joinToString(prefix = "[", postfix = "]") { "\"${it.id}\"" }}}, """ +
+                """"layer": {"type": "string"}, "language": {"enum": ["zh", "en"]}}}""",
         )
         private val LAYER_CREATE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["name"],

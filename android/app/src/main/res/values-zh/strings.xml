@@ -241,8 +241,6 @@
     <string name="attribution_tianditu">© 天地图</string>
     <string name="unsaved_title">有未保存的修改</string>
     <string name="unsaved_body">离开前保存修改吗？</string>
-    <string name="export_gpkg">导出 GeoPackage</string>
-    <string name="export_kml">导出 KML</string>
     <string name="exported">已导出到：%1$s</string>
     <string name="share">分享</string>
     <string name="share_title">分享导出的文件</string>
@@ -547,5 +545,4 @@
     <string name="snapshot_restore">恢复</string>
     <string name="snapshot_restore_title">恢复到 %1$s 的快照？</string>
     <string name="snapshot_restore_body">现在的工程会先另存一份到快照文件夹。</string>
-    <string name="export_kmz">导出 KMZ</string>
 </resources>

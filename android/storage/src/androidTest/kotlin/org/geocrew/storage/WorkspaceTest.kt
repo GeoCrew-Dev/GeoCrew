@@ -121,7 +121,7 @@ class WorkspaceTest {
         val text = kml.readText()
         assertTrue(text.contains("花岗岩露头") && text.contains("114.3"), text)
         assertTrue(!text.contains("geocrew_"), "GeoCrew's own tables are not exported")
-        assertIs<Outcome.Invalid>(run(Workspace.EXPORT, """{"format": "shp"}"""))
+        assertIs<Outcome.Invalid>(run(Workspace.EXPORT, """{"format": "pdf"}"""))
 
         // One layer on its own, from its ⋮ menu (ADR 0017).
         run(Workspace.LAYER_CREATE, """{"name": "野外线", "language": "zh", "template": "field-line"}""")
