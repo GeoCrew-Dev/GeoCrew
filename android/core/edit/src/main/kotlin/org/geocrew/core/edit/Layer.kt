@@ -118,6 +118,33 @@ data class Field(val name: String, val type: FieldType, val range: ValueRange? =
     fun accepts(value: JsonElement): Boolean = type.accepts(value) && range?.accepts(value) != false
 }
 
+/**
+ * A file kept with a feature (ADR 0004, protocol v1 section 9.1): a photo, a
+ * sketch, a recording. [file] and [thumb] are the SHA-256 hashes (lower-case
+ * hex) of files in the project's attachment folder, [type] the file's MIME
+ * type, [name] what it was called; [id] is the attachment's own UUID, as sync
+ * needs; [meta] holds the rest, such as where a photo looked.
+ */
+@Serializable
+data class Attachment(
+    val id: String,
+    val file: String,
+    val type: String,
+    val size: Long,
+    val name: String,
+    val thumb: String? = null,
+    val meta: JsonObject? = null,
+) {
+    init {
+        require(HASH.matches(file) && (thumb == null || HASH.matches(thumb))) { "an attachment's files are named by their SHA-256 in lower-case hex" }
+        require(type.isNotBlank() && size >= 0) { "an attachment has a type and a size" }
+    }
+
+    companion object {
+        private val HASH = Regex("[0-9a-f]{64}")
+    }
+}
+
 /** What a layer's driver can do (ADR 0005: edits follow the driver's capabilities). */
 data class Capabilities(val add: Boolean, val update: Boolean, val delete: Boolean, val transactions: Boolean)
 
@@ -141,6 +168,14 @@ interface LayerStore {
 
     /** Every feature of the layer. */
     fun features(): List<Feature>
+
+    /** Feature [fid]'s attachments, in their order; none where the store keeps none. */
+    fun attachments(fid: Long): List<Attachment> = emptyList()
+
+    /** Gives feature [fid] these [attachments] and no others, in this order. */
+    fun setAttachments(fid: Long, attachments: List<Attachment>) {
+        require(attachments.isEmpty()) { "this layer keeps no attachments" }
+    }
 
     /** Adds a feature and returns the fid the store gave it. */
     fun add(geometry: JsonObject?, properties: JsonObject): Long

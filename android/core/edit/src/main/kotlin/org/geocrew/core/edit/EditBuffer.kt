@@ -10,7 +10,9 @@ private val NO_VALUES = JsonObject(emptyMap())
 /**
  * The unsaved state of one feature: a new feature ([added], with a negative
  * fid), or a stored one that is [deleted] or has a new geometry
- * ([geometryChanged]) and new [values]. The empty slot means nothing unsaved.
+ * ([geometryChanged]) and new [values]; either with its [attachments] when
+ * they changed (a new feature's, when it has any). The empty slot means
+ * nothing unsaved.
  */
 @Serializable
 data class Slot(
@@ -19,6 +21,7 @@ data class Slot(
     val geometryChanged: Boolean = false,
     val geometry: JsonObject? = null,
     val values: JsonObject = NO_VALUES,
+    val attachments: List<Attachment>? = null,
 ) {
     val isEmpty: Boolean get() = this == EMPTY
 
@@ -138,13 +141,28 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
         return stored + newOnes().mapNotNull { slots[it]?.added }
     }
 
-    /** Adds a new feature; fields left out of [properties] are null. */
-    fun add(geometry: JsonObject?, properties: JsonObject = NO_VALUES): Edit {
+    /** Adds a new feature, with [attachments] if any; fields left out of [properties] are null. */
+    fun add(geometry: JsonObject?, properties: JsonObject = NO_VALUES, attachments: List<Attachment> = emptyList()): Edit {
         require(store.capabilities.add) { "this layer does not take new features" }
         checkValues(properties)
+        checkAttachments(attachments)
         val fid = nextNew--
         val all = JsonObject(store.fields.associate { it.name to (properties[it.name] ?: JsonNull) })
-        return change(fid, Slot(added = Feature(fid, geometry, all)))
+        return change(fid, Slot(added = Feature(fid, geometry, all), attachments = attachments.ifEmpty { null }))
+    }
+
+    /** Feature [fid]'s attachments as edited. */
+    fun attachments(fid: Long): List<Attachment> {
+        val slot = slot(fid)
+        slot.attachments?.let { return it }
+        return if (fid >= 0 && !slot.deleted) store.attachments(fid) else emptyList()
+    }
+
+    /** Gives feature [fid] [attachments] in place of the ones it has, as one change. */
+    fun changeAttachments(fid: Long, attachments: List<Attachment>): Edit {
+        checkAttachments(attachments)
+        val before = existing(fid)
+        return change(fid, before.copy(attachments = attachments))
     }
 
     /** Gives feature [fid] a new geometry, or none. */
@@ -209,17 +227,22 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
             if (transaction) store.begin()
             for ((fid, slot) in slots) {
                 if (fid < 0 || slot.deleted) continue
-                store.update(fid, slot.values, slot.geometryChanged, slot.geometry)
+                if (slot.values.isNotEmpty() || slot.geometryChanged) store.update(fid, slot.values, slot.geometryChanged, slot.geometry)
+                slot.attachments?.let { store.setAttachments(fid, it) }
                 written += fid
             }
             for ((fid, slot) in slots) {
                 if (!slot.deleted) continue
+                store.setAttachments(fid, emptyList()) // a deleted feature's attachments go with it
                 store.delete(fid)
                 written += fid
             }
             for (fid in newOnes()) {
-                val f = slots.getValue(fid).added ?: continue
-                ids[fid] = store.add(f.geometry, f.properties)
+                val slot = slots.getValue(fid)
+                val f = slot.added ?: continue
+                val stored = store.add(f.geometry, f.properties)
+                ids[fid] = stored
+                slot.attachments?.takeIf { it.isNotEmpty() }?.let { store.setAttachments(stored, it) }
                 written += fid
             }
             if (transaction) store.commit()
@@ -311,6 +334,10 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal) {
             val range = field.range
             require(range == null || range.accepts(value)) { "field $name takes numbers ${range?.describe()}, not $value" }
         }
+    }
+
+    private fun checkAttachments(attachments: List<Attachment>) {
+        require(attachments.map { it.id }.toSet().size == attachments.size) { "an attachment is on a feature once" }
     }
 
     private fun change(fid: Long, after: Slot): Edit = Edit(fid, slot(fid), after).also { set(fid, after) }

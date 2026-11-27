@@ -795,6 +795,7 @@ class Project internal constructor(
             }
             dataset.sql("UPDATE ${ProjectFormat.LAYERS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
             dataset.sql("UPDATE ${ProjectFormat.FIELDS_TABLE} SET table_name = ${quote(to)} WHERE table_name = ${quote(layer)}")
+            AttachmentTables.tableRenamed(dataset, layers.single { it.name == layer }.id, to)
             dataset.commit()
         } catch (e: Exception) {
             dataset.rollback()
@@ -809,7 +810,9 @@ class Project internal constructor(
      */
     fun deleteLayer(layer: String) {
         val found = layers.firstOrNull { it.name == layer } ?: throw IllegalArgumentException("there is no layer $layer")
-        FieldRanges.droppingTable(dataset, layer) { dataset.sql("DROP TABLE ${ProjectFormat.identifier(layer)}") }
+        AttachmentTables.droppingTable(dataset, found.id) {
+            FieldRanges.droppingTable(dataset, layer) { dataset.sql("DROP TABLE ${ProjectFormat.identifier(layer)}") }
+        }
         dataset.sql("DELETE FROM ${ProjectFormat.FIELDS_TABLE} WHERE table_name = ${quote(layer)}")
         dataset.sql("DELETE FROM ${ProjectFormat.LAYERS_TABLE} WHERE table_name = ${quote(layer)}")
         dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
@@ -841,7 +844,7 @@ class Project internal constructor(
     fun target(layer: String): EditTarget {
         val found = layers.firstOrNull { it.name == layer } ?: throw IllegalArgumentException("there is no layer $layer")
         journals.mkdirs()
-        return EditTarget(VectorLayerStore(dataset, found.name), FileJournal(File(journals, "${found.id}.jsonl")), found.srs)
+        return EditTarget(VectorLayerStore(dataset, found.name, found.id), FileJournal(File(journals, "${found.id}.jsonl")), found.srs)
     }
 
     override fun close() = dataset.close()

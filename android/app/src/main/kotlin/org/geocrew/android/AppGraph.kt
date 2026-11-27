@@ -23,6 +23,7 @@ import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.files.FileActions
+import org.geocrew.storage.AttachmentActions
 import org.geocrew.storage.ImportActions
 import org.geocrew.storage.NativeData
 import org.geocrew.storage.Probe
@@ -115,6 +116,8 @@ class AppGraph(private val app: Application) {
         RasterActions(ws, folder) { Probe.inspect(app, it.path) }.actions.forEach(registry::register)
         // Vector files are imported into the open project the same way (ADR 0002).
         ImportActions(ws, folder) { Probe.inspect(app, it.path) }.actions.forEach(registry::register)
+        // Photos and other files go with features (ADR 0004).
+        AttachmentActions(ws, folder).actions.forEach(registry::register)
         workspaceRoot = folder
         workspace = ws
         return ws
