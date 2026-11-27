@@ -459,7 +459,6 @@ fun LayersScreen(
             )
         },
     ) { padding ->
-        val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
         LazyColumn(Modifier.fillMaxSize().padding(padding), state = listState) {
             if (layers.isEmpty()) {
                 item {
@@ -1061,13 +1060,6 @@ private fun RenameLayerDialog(current: String, existing: List<String>, onDismiss
         confirmButton = { TextButton(onClick = { onRename(trimmed) }, enabled = valid) { Text(stringResource(R.string.save)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
-}
-
-// The layer list with the layer at [from] moved to [to], for layer.order.
-private fun order(layers: List<LayerInfo>, from: Int, to: Int): JsonObject {
-    val names = layers.map { it.name }.toMutableList()
-    names.add(to, names.removeAt(from))
-    return buildJsonObject { putJsonArray("layers") { names.forEach { add(it) } } }
 }
 
 /** How opaque a layer is, set when the finger lifts: each change is written to the project. */

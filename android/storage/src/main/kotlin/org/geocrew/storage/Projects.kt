@@ -640,6 +640,7 @@ class Project internal constructor(
      * top); saved at once.
      */
     fun move(layer: String? = null, group: String? = null, into: String? = null, index: Int) {
+        require((layer == null) != (group == null)) { "a layer or a group, not both" }
         val key = when {
             layer != null -> layers.firstOrNull { it.name == layer }?.id ?: throw IllegalArgumentException("there is no layer $layer")
             group != null -> group.takeIf { g -> groups.any { it.id == g } }?.let(::groupKey) ?: throw IllegalArgumentException("there is no group $group")
