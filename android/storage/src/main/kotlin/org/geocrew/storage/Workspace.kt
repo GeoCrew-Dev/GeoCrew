@@ -429,6 +429,7 @@ class Workspace(private val projects: Projects) {
         put("name", project.name)
         put("id", project.id)
         put("folder", project.folder.path)
+        project.snapshotFailure?.let { put("snapshotFailure", it) }
         putJsonArray("layers") {
             for (layer in project.layers) {
                 addJsonObject {

@@ -530,4 +530,5 @@
     <string name="clino_record">Record</string>
     <string name="clino_low_accuracy">The compass is not accurate</string>
     <string name="clino_no_sensor">This phone has no compass</string>
+    <string name="snapshot_failed">Today\'s snapshot of the project was not made</string>
 </resources>

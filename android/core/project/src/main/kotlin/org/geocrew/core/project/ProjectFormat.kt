@@ -14,6 +14,9 @@ object ProjectFormat {
     const val PROJECTS = "工程"
     const val ATTACHMENTS = "附件"
 
+    /** The folder in a project's folder where its daily snapshots go (ADR 0004), named by their dates. */
+    const val SNAPSHOTS = "快照"
+
     const val PROJECT_TABLE = "geocrew_project"
     const val LAYERS_TABLE = "geocrew_layers"
     const val FIELDS_TABLE = "geocrew_fields"
