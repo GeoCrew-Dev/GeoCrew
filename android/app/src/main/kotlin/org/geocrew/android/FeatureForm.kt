@@ -1,6 +1,7 @@
 package org.geocrew.android
 
 import android.Manifest
+import android.hardware.GeomagneticField
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material3.ButtonDefaults
@@ -131,6 +133,10 @@ private const val DEGREES_CRS = "EPSG:4490"
  * With [attachments] (the feature's, as feature.attachments gives them) the
  * form shows its photos and files, takes more through [importFile] and lets
  * them go; [onSave] gets the new list, or null when it did not change.
+ *
+ * A layer with dip direction and dip fields (attitudeFields) gets a button
+ * that measures them with the phone (ClinometerScreen) and fills them in,
+ * the strike too when the layer has it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -194,6 +200,15 @@ fun FeatureForm(
     var addFailed by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val openText = stringResource(R.string.attachment_open_with)
+    val attitude = remember(fields) { attitudeFields(fields) }
+    var measuring by remember { mutableStateOf(false) }
+    // The declination where the feature is, else where the phone was in the last ten minutes; none when neither is known.
+    fun declinationHere(): Float {
+        val lon = Degrees.parse(longitude, Degrees.Axis.LONGITUDE) ?: coordinates?.first
+        val lat = Degrees.parse(latitude, Degrees.Axis.LATITUDE) ?: coordinates?.second
+        val (x, y) = if (lon != null && lat != null) lon to lat else lastLocation(context, 600_000)?.let { it.longitude to it.latitude } ?: return 0f
+        return GeomagneticField(y.toFloat(), x.toFloat(), 0f, System.currentTimeMillis()).declination
+    }
     var shooting by remember { mutableStateOf(false) }
     var cameraDenied by remember { mutableStateOf(false) }
     // A picked file or a photo goes into the project at once, with what the camera knew ([meta]);
@@ -350,6 +365,14 @@ fun FeatureForm(
                     for (field in fields) {
                         FieldInput(field, texts[field.name].orEmpty(), onChange = { texts[field.name] = it }, onPick = { picking = field })
                     }
+                    if (attitude != null) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(onClick = { measuring = true }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Rounded.Explore, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.clino_title))
+                        }
+                    }
                     if (attachments != null) {
                         FormHeader(stringResource(R.string.attachments))
                         AttachmentStrip(
@@ -408,6 +431,19 @@ fun FeatureForm(
         }
     }
     viewing?.let { PhotoViewer(it, onDismiss = { viewing = null }) }
+    if (measuring && attitude != null) {
+        ClinometerScreen(
+            declination = remember { declinationHere() },
+            onRecord = { a ->
+                measuring = false
+                val direction = wholeDirection(a.dipDirection)
+                texts[attitude.dipDirection.name] = direction.toString()
+                texts[attitude.dip.name] = wholeDip(a.dip).toString()
+                attitude.strike?.let { texts[it.name] = ((direction + 270) % 360).toString() }
+            },
+            onDismiss = { measuring = false },
+        )
+    }
     if (shooting) {
         CameraScreen(
             onTaken = { shot ->

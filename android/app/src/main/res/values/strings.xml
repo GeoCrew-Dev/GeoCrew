@@ -523,4 +523,11 @@
     <string name="camera_denied">The camera is not allowed. Allow it in the system settings.</string>
     <string name="permission_camera">Camera</string>
     <string name="permission_camera_body">Take photos for points, lines and areas.</string>
+    <string name="clino_title">Measure attitude</string>
+    <string name="clino_dip_direction">Dip direction</string>
+    <string name="clino_dip">Dip</string>
+    <string name="clino_strike">Strike %1$s</string>
+    <string name="clino_record">Record</string>
+    <string name="clino_low_accuracy">The compass is not accurate</string>
+    <string name="clino_no_sensor">This phone has no compass</string>
 </resources>
