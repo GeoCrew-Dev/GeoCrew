@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddLocationAlt
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -30,16 +32,26 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.geocrew.core.action.Outcome
+import org.geocrew.storage.Workspace
 
 /**
  * A project's settings, opened from its map's menu: the project and which layer
@@ -55,6 +67,10 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
     // The layer new points go into without asking, by id; null to ask each time.
     var placing by remember { mutableStateOf<String?>(null) }
     var choosingPlacing by remember { mutableStateOf(false) }
+    // The days with a snapshot (ADR 0004), newest first, and the one about to be restored.
+    var snapshots by remember { mutableStateOf<List<String>>(emptyList()) }
+    var restoring by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     var failure by remember { mutableStateOf<String?>(null) }
     val texts = FailureTexts(
         unsaved = stringResource(R.string.failure_unsaved),
@@ -74,6 +90,8 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
         layers = listedLayers(about)
         // A remembered layer that has gone is forgotten: placing asks again.
         placing = projectId?.let(graph.settings::placingLayer)?.takeIf { id -> layers.any { it.id == id } }
+        snapshots = (graph.invoke(Workspace.SNAPSHOTS) as? Outcome.Done)?.output?.jsonObject?.get("days")?.jsonArray
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
     }
 
     Scaffold(
@@ -119,7 +137,47 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
                     modifier = Modifier.clickable { choosingPlacing = true },
                 )
             }
+            item { SectionHeader(stringResource(R.string.snapshots_section)) }
+            if (snapshots.isEmpty()) {
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.snapshots_none)) },
+                        leadingContent = { Icon(Icons.Rounded.History, null) },
+                        colors = clear,
+                    )
+                }
+            }
+            items(snapshots, key = { it }) { day ->
+                ListItem(
+                    headlineContent = { Text(dayText(day)) },
+                    leadingContent = { Icon(Icons.Rounded.History, null) },
+                    trailingContent = { TextButton(onClick = { restoring = day }) { Text(stringResource(R.string.snapshot_restore)) } },
+                    colors = clear,
+                )
+            }
         }
+    }
+
+    restoring?.let { day ->
+        AppDialog(
+            onDismissRequest = { restoring = null },
+            icon = { Icon(Icons.Rounded.History, null) },
+            title = { Text(stringResource(R.string.snapshot_restore_title, dayText(day))) },
+            text = { Text(stringResource(R.string.snapshot_restore_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    restoring = null
+                    scope.launch {
+                        // Back to the map, which shows the project as restored.
+                        when (val done = graph.invoke(Workspace.RESTORE, buildJsonObject { put("day", day) })) {
+                            is Outcome.Done -> onBack()
+                            else -> failure = texts.of(done)
+                        }
+                    }
+                }) { Text(stringResource(R.string.snapshot_restore), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { restoring = null }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
 
     if (choosingPlacing) {
@@ -156,4 +214,11 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
             text = { Text(message) },
         )
     }
+}
+
+// A snapshot's day as the phone writes dates: 2026年11月27日, November 27, 2026.
+@Composable
+private fun dayText(day: String): String {
+    val locale = LocalConfiguration.current.locales[0]
+    return runCatching { LocalDate.parse(day).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale)) }.getOrDefault(day)
 }

@@ -541,4 +541,9 @@
     <string name="add_part_point">新建点图层</string>
     <string name="add_part_line">新建线图层</string>
     <string name="add_part_polygon">新建面图层</string>
+    <string name="snapshots_section">快照</string>
+    <string name="snapshots_none">还没有快照</string>
+    <string name="snapshot_restore">恢复</string>
+    <string name="snapshot_restore_title">恢复到 %1$s 的快照？</string>
+    <string name="snapshot_restore_body">现在的工程会先另存一份到快照文件夹。</string>
 </resources>
