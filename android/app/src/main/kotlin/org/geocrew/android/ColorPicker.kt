@@ -63,8 +63,11 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -396,9 +399,16 @@ private fun ChannelBar(color: Color, shift: Int, modifier: Modifier, onChange: (
     val all = Color(argb or (0xff shl shift))
     val value = (argb shr shift) and 0xff
     // The thumb's centre runs from one end's rounding to the other's, so 0 and 255 are reached at the ends.
-    fun at(x: Float, w: Float, r: Float) = latest((((x - r) / (w - 2 * r)).coerceIn(0f, 1f) * 255).roundToInt())
+    fun at(x: Float, w: Float, r: Float) {
+        if (w > 2 * r) latest((((x - r) / (w - 2 * r)).coerceIn(0f, 1f) * 255).roundToInt())
+    }
     Canvas(
         modifier.height(CHANNEL)
+            // Read and moved by a screen reader as a slider from 0 to 255, by steps of one.
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), 0f..255f, steps = 254)
+                setProgress { v -> latest(v.roundToInt().coerceIn(0, 255)); true }
+            }
             .pointerInput(Unit) { detectTapGestures { at(it.x, size.width.toFloat(), size.height / 2f) } }
             .pointerInput(Unit) { detectDragGestures { change, _ -> at(change.position.x, size.width.toFloat(), size.height / 2f) } },
     ) {
