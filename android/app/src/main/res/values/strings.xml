@@ -555,4 +555,11 @@
     <string name="layer_export_title">Export %1$s</string>
     <string name="format_kml" translatable="false">KML</string>
     <string name="format_gpkg" translatable="false">GeoPackage</string>
+    <string name="layer_move_to_group">Move to group</string>
+    <string name="layer_move_title">Move %1$s to</string>
+    <string name="layer_move_out">Out of the group</string>
+    <string name="layer_group_new">New group</string>
+    <string name="layer_group_name">Group name</string>
+    <string name="layer_group_taken">There is a group with this name</string>
+    <string name="group_ungroup">Ungroup</string>
 </resources>

@@ -531,4 +531,11 @@
     <string name="layer_kind_mixed">混合</string>
     <string name="layer_export">导出</string>
     <string name="layer_export_title">导出「%1$s」</string>
+    <string name="layer_move_to_group">移到分组</string>
+    <string name="layer_move_title">把「%1$s」移到</string>
+    <string name="layer_move_out">移出分组</string>
+    <string name="layer_group_new">新建分组</string>
+    <string name="layer_group_name">分组名称</string>
+    <string name="layer_group_taken">已有同名的分组</string>
+    <string name="group_ungroup">取消分组</string>
 </resources>
