@@ -20,6 +20,7 @@ import org.geocrew.core.files.FileActions
 import org.geocrew.storage.NativeData
 import org.geocrew.storage.Probe
 import org.geocrew.storage.Projects
+import org.geocrew.storage.RasterActions
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
 
@@ -88,6 +89,8 @@ class AppGraph(private val app: Application) {
         val storage = { if (hasAllFilesAccess) Environment.getExternalStorageDirectory() else folder }
         // Files are probed in a process of their own (ADR 0003).
         FileActions(folder, top = storage, busy = { ws.current?.folder }, probe = { Probe.inspect(app, it.path) }).actions.forEach(registry::register)
+        // Rasters go under a project's layers, probed the same way first.
+        RasterActions(ws, folder) { Probe.inspect(app, it.path) }.actions.forEach(registry::register)
         workspaceRoot = folder
         workspace = ws
         return ws

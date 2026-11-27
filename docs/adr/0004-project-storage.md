@@ -73,6 +73,8 @@
 
 2026-11-27 再补充：新加轨迹模板 `track`（中文"轨迹"，英文 Tracks；线，CGCS2000 经纬度），字段是名称、描述、开始时间、结束时间（日期时间，按 UTC 存）、长度（米，保存时沿 WGS84 椭球算），字段键 `name`、`description`、`started`、`ended`、`length`。正在记的轨迹不进工程文件：点先写进应用私有目录的 `no_backup/track.csv`，结束并保存后才作为一条线加进图层（`feature.add`，能撤销）。逐点时间（协议 v0 §6.13 的 `times_s`）和高程先不存。
 
+2026-11-27 再补充：栅格（GeoTIFF 等）按路径加到工程里，文件留在原处，和 QGIS 一样，不复制、也不随工作组同步。新表 `geocrew_rasters`（ID、在工程里的名称、路径、加入时间、试读结果的 JSON），加第一个栅格时才建；路径在工程文件夹里的按相对路径存，工程文件夹整个搬走也找得到。显示与否和不透明度跟矢量图层一样放在 `geocrew_layer_display`（按栅格 ID）。加入前先在独立进程里试读（ADR 0003），不是栅格、读不了、没有坐标系或范围的都不收。动作是 `raster.add`、`raster.display`、`raster.remove`（拿掉只是从工程里去掉，文件还在）；`project.current` 多了 `rasters`，文件不见了的标 `missing`。栅格画在所有矢量图层下面、底图上面，后加的在上面。
+
 ## 相关
 
 - [ADR 0002](0002-android-baseline.md)
