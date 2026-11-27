@@ -33,6 +33,15 @@ class AppSettings(context: Context) {
     var locationAsked by mutableStateOf(prefs.getBoolean(LOCATION_ASKED, false))
         private set
 
+    /** The kind of feature the add sheet chose last: point, line or area (ADR 0017). */
+    var addKind by mutableStateOf(LayerKind.entries.firstOrNull { it.name == prefs.getString(ADD_KIND, null) } ?: LayerKind.POINT)
+        private set
+
+    fun changeAddKind(kind: LayerKind) {
+        addKind = kind
+        prefs.edit { putString(ADD_KIND, kind.name) }
+    }
+
     /** The permission screen has dealt with notifications: asked for them, or skipped them (the first track asks). */
     var notificationsAsked by mutableStateOf(prefs.getBoolean(NOTIFICATIONS_ASKED, false))
         private set
@@ -171,6 +180,7 @@ class AppSettings(context: Context) {
         const val LOCATION_ASKED = "location_asked"
         const val CAMERA_ASKED = "camera_asked"
         const val NOTIFICATIONS_ASKED = "notifications_asked"
+        const val ADD_KIND = "add_kind"
         const val BATTERY_ASKED = "battery_asked"
         const val BATTERY_PROMPTED = "battery_prompted"
         const val BASEMAP_KIND = "basemap_kind:"
