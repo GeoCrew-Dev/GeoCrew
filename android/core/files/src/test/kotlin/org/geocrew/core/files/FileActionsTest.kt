@@ -107,7 +107,7 @@ class FileActionsTest {
         assertEquals(FileActions.BUSY, failed(FileActions.RENAME, """{"path": ${json(project)}, "name": "二号"}"""))
         assertEquals(FileActions.PROTECTED, failed(FileActions.DELETE, """{"path": ${json(geocrew)}}"""))
         assertEquals(FileActions.PROTECTED, failed(FileActions.DELETE, """{"path": ${json(storage)}}"""))
-        assertIs<ActionResult.Done>(run(FileActions.COPY, """{"path": ${json(gpkg)}, "to": ${json(geocrew)}}"""), "copying out of it is fine")
+        assertEquals(FileActions.BUSY, failed(FileActions.COPY, """{"path": ${json(gpkg)}, "to": ${json(geocrew)}}"""), "its saved edits may be in the -wal file")
         open = null
         assertIs<ActionResult.Done>(run(FileActions.DELETE, """{"path": ${json(project)}}"""))
     }
