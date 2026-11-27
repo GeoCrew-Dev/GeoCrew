@@ -279,11 +279,14 @@ internal fun rows(ds: VectorDataset, sql: String): List<Map<String, String?>> =
  * such table, or a count that cannot be put right, is left as it is.
  */
 internal fun fixFeatureCounts(ds: VectorDataset, layers: Collection<String>) {
-    if (rows(ds, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'gpkg_ogr_contents'").isEmpty()) return
-    for (layer in layers) {
-        runCatching {
-            val n = rowCount(ds, layer)
-            ds.sql("UPDATE gpkg_ogr_contents SET feature_count = $n WHERE lower(table_name) = lower(${quote(layer)}) AND feature_count IS NOT $n")
+    // Never fails: after a save it runs on data already committed, which must not look unsaved.
+    runCatching {
+        if (rows(ds, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'gpkg_ogr_contents'").isEmpty()) return
+        for (layer in layers) {
+            runCatching {
+                val n = rowCount(ds, layer)
+                ds.sql("UPDATE gpkg_ogr_contents SET feature_count = $n WHERE lower(table_name) = lower(${quote(layer)}) AND feature_count IS NOT $n")
+            }
         }
     }
 }
