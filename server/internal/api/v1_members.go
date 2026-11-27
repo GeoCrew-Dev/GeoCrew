@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/perm"
@@ -62,6 +63,13 @@ func (s *Server) v1UpdateMember(w http.ResponseWriter, r *http.Request) {
 	if req.Nickname != nil && target != actor {
 		writeErr(w, http.StatusForbidden, "forbidden", "only your own nickname can be changed")
 		return
+	}
+	// Checked before anything changes: a request is done whole or not at all.
+	if req.Nickname != nil {
+		if n := len([]rune(strings.TrimSpace(*req.Nickname))); n < 1 || n > 32 {
+			writeErr(w, http.StatusBadRequest, "invalid", "nickname is 1 to 32 characters")
+			return
+		}
 	}
 	var m v1.Member
 	var err error
