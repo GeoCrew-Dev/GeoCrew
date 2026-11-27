@@ -290,6 +290,8 @@ fun LayersScreen(
     // for its drag opens again then.
     var draft by remember { mutableStateOf<List<TopNode>?>(null) }
     var unfoldAfter by remember { mutableStateOf<String?>(null) }
+    // The order last sent to be saved, until the project shows it: a drag before then starts from there.
+    var saving by remember { mutableStateOf<List<TopNode>?>(null) }
     val reorder = rememberReorderState(listState)
     LaunchedEffect(loads) {
         val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
@@ -301,6 +303,7 @@ fun LayersScreen(
         basemaps = listedBasemaps(opened.output.jsonObject)
         tree = listedTree(opened.output.jsonObject)
         draft = null
+        saving = null
         if (atTop) listState.requestScrollToItem(0)
         rasters = listedRasters(opened.output.jsonObject)
         kind = (opened.output.jsonObject["id"] as? JsonPrimitive)?.contentOrNull?.let(graph.settings::basemapKind) ?: "img"
@@ -351,15 +354,18 @@ fun LayersScreen(
     reorder.onDrop = { key ->
         unfoldAfter?.let { folded.remove(it) }
         unfoldAfter = null
-        val params = moveParams(tree, draft ?: tree, key)
+        val order = draft ?: tree
+        val params = moveParams(saving ?: tree, order, key)
         if (params == null) {
-            draft = null
+            if (saving == null) draft = null
         } else {
+            saving = order
             scope.launch {
                 when (val done = graph.invoke(Workspace.LAYER_MOVE, params)) {
                     is Outcome.Done -> loads++
                     else -> {
                         draft = null
+                        saving = null
                         failure = texts.of(done)
                     }
                 }

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -168,10 +169,13 @@ class ReorderState internal constructor(
         while (dragging == key) {
             val now = withFrameMillis { it }
             val layout = listState.layoutInfo
-            val size = info(key)?.size ?: 0
+            val slot = info(key)
+            val size = slot?.size ?: 0
+            // Never so far that the row's own place leaves the window: its row would go with it.
             val direction = when {
-                top < layout.viewportStartOffset + edge && listState.canScrollBackward -> -1f
-                top + size > layout.viewportEndOffset - edge && listState.canScrollForward -> 1f
+                slot == null -> 0f
+                top < layout.viewportStartOffset + edge && listState.canScrollBackward && slot.offset + slot.size < layout.viewportEndOffset -> -1f
+                top + size > layout.viewportEndOffset - edge && listState.canScrollForward && slot.offset > layout.viewportStartOffset -> 1f
                 else -> 0f
             }
             if (direction == 0f) {
@@ -212,6 +216,10 @@ fun rememberReorderState(listState: LazyListState): ReorderState {
 /** The ≡ that drags row [key]; a tap on it does nothing. */
 @Composable
 fun DragHandle(state: ReorderState, key: Any, onStart: () -> Unit = {}) {
+    // A row that leaves the list mid-drag is dropped where it is.
+    DisposableEffect(key, state) {
+        onDispose { if (state.dragging == key) state.end() }
+    }
     Box(
         Modifier
             .size(48.dp)
