@@ -463,4 +463,7 @@
     <string name="line_untitled">Line %1$d</string>
     <string name="area_untitled">Area %1$d</string>
     <string name="style_range">%1$s – %2$s</string>
+    <string name="raster_grey">Grey</string>
+    <string name="raster_hillshade">Hillshade</string>
+    <string name="raster_relief">Relief</string>
 </resources>

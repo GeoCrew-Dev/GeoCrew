@@ -65,6 +65,11 @@ class RasterActionsTest {
 
         val shown = rasters(run(RasterActions.DISPLAY, """{"name": "影像", "visible": false, "opacity": 0.5}""")).single { it.getValue("name").jsonPrimitive.content == "影像" }
         assertEquals(listOf("false", "0.5"), listOf("visible", "opacity").map { shown.getValue(it).jsonPrimitive.content })
+        assertEquals("default", shown.getValue("render").jsonPrimitive.content, "drawn as it is until told otherwise")
+        val shaded = rasters(run(RasterActions.DISPLAY, """{"name": "影像", "render": "hillshade"}""")).single { it.getValue("name").jsonPrimitive.content == "影像" }
+        assertEquals("hillshade", shaded.getValue("render").jsonPrimitive.content)
+        assertEquals("0.5", shaded.getValue("opacity").jsonPrimitive.content, "the rest of the display stays")
+        assertIs<Outcome.Invalid>(run(RasterActions.DISPLAY, """{"name": "影像", "render": "contours"}"""))
 
         // Kept in the project: open it again and they are there; taken out, the file stays.
         run(Workspace.CLOSE)
