@@ -20,7 +20,7 @@ v0 的合并规则会丢数据。两人都基于同一个版本修改时，落�
 - **优先级**：离线队列的可靠性 > 晚上回驻地后的批量同步和冲突处理界面 > 实时功能。"谁在编辑"这类实时提示放到后面做。
 - **测试**：
   - 做随机交错测试，保证任何一次编辑要么在结果里，要么在冲突记录里；
-  - 合并规则用一份 Go 与 Kotlin 共用的测试样例，放在 `protocol/` 下，具体路径待定。
+  - 合并规则用一份 Go 与 Kotlin 共用的测试样例：`protocol/testdata/merge/cases.json`；权限规则的在 `protocol/testdata/permissions/cases.json`。Go 在 `server/internal/merge`、`server/internal/perm`，Kotlin 在安卓的 `core:sync`（2026-11-28），两边都读同一份样例。
 - **附件**分块上传，支持断点续传，先传缩略图。
 
 ## 理由
