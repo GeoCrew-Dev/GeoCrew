@@ -539,4 +539,7 @@
     <string name="permission_background">Background running</string>
     <string name="permission_background_body">Keep a track recording for long with the screen off, free of battery saving limits.</string>
     <string name="settings_permissions">Permissions</string>
+    <string name="type_attitude">Attitude</string>
+    <string name="clino_hold">Hold</string>
+    <string name="clino_release">Let go</string>
 </resources>

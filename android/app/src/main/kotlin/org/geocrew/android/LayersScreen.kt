@@ -275,31 +275,46 @@ fun LayersScreen(
         }
     }
 
-    // A layer's fields change in a project with nothing unsaved: its file is opened again.
+    // A layer's fields change in a project with nothing unsaved: its file is opened again. An attitude is two
+    // whole-number fields, dip direction and dip, added one after the other.
+    val attitudeNames = attitudeNames()
     fun changeField(change: FieldChange) = scope.launch {
-        val params = buildJsonObject {
-            put("layer", change.layer)
-            when (change) {
-                is FieldChange.Add -> {
-                    put("name", change.name)
-                    put("type", change.type)
+        val steps = if (change is FieldChange.Add && change.type == ATTITUDE) {
+            attitudeNames.map { FieldChange.Add(change.layer, it, "integer") }
+        } else {
+            listOf(change)
+        }
+        for (step in steps) {
+            val params = buildJsonObject {
+                put("layer", step.layer)
+                when (step) {
+                    is FieldChange.Add -> {
+                        put("name", step.name)
+                        put("type", step.type)
+                    }
+                    is FieldChange.Rename -> {
+                        put("field", step.field)
+                        put("to", step.to)
+                    }
+                    is FieldChange.Delete -> put("field", step.field)
                 }
-                is FieldChange.Rename -> {
-                    put("field", change.field)
-                    put("to", change.to)
-                }
-                is FieldChange.Delete -> put("field", change.field)
             }
-        }
-        val action = when (change) {
-            is FieldChange.Add -> Workspace.FIELD_ADD
-            is FieldChange.Rename -> Workspace.FIELD_RENAME
-            is FieldChange.Delete -> Workspace.FIELD_DELETE
-        }
-        when (val done = graph.invoke(action, params)) {
-            is Outcome.Done -> loads++
-            is Outcome.Failed -> if (done.code == "unsaved") saveFirst = change else failure = texts.of(done)
-            else -> failure = texts.of(done)
+            val action = when (step) {
+                is FieldChange.Add -> Workspace.FIELD_ADD
+                is FieldChange.Rename -> Workspace.FIELD_RENAME
+                is FieldChange.Delete -> Workspace.FIELD_DELETE
+            }
+            when (val done = graph.invoke(action, params)) {
+                is Outcome.Done -> loads++
+                is Outcome.Failed -> {
+                    if (done.code == "unsaved") saveFirst = change else failure = texts.of(done)
+                    return@launch
+                }
+                else -> {
+                    failure = texts.of(done)
+                    return@launch
+                }
+            }
         }
     }
 

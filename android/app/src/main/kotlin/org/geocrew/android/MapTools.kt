@@ -16,6 +16,7 @@ import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.FilterCenterFocus
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -77,6 +78,7 @@ enum class MapTool(val id: String, val group: Int?, val label: Int, val icon: Im
     MEASURE_AREA("measure_area", R.string.menu_measure, R.string.tool_measure_area, Icons.Rounded.SquareFoot),
     AZIMUTH("azimuth", R.string.menu_measure, R.string.tool_azimuth, Icons.Rounded.Explore),
     PICK("pick", R.string.menu_measure, R.string.tool_pick, Icons.Rounded.PinDrop),
+    CLINOMETER("clinometer", R.string.menu_measure, R.string.clino_title, Icons.Rounded.Terrain),
     MY_LOCATION("my_location", R.string.menu_location, R.string.my_position, Icons.Rounded.MyLocation),
     TRACK("track", R.string.menu_location, R.string.tool_track, Icons.Rounded.Route),
     CONVERT("convert", R.string.menu_analysis, R.string.tool_convert, Icons.Rounded.Transform),

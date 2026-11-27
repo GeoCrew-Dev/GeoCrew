@@ -37,6 +37,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -363,15 +364,18 @@ fun FeatureForm(
                     }
                     if (fields.isNotEmpty()) FormHeader(stringResource(R.string.attributes))
                     for (field in fields) {
-                        FieldInput(field, texts[field.name].orEmpty(), onChange = { texts[field.name] = it }, onPick = { picking = field })
-                    }
-                    if (attitude != null) {
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = { measuring = true }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Rounded.Explore, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.clino_title))
+                        if (attitude != null && field.name == attitude.dip.name) continue
+                        if (attitude != null && field.name == attitude.dipDirection.name) {
+                            // The attitude, a field of its own kind: dip direction and dip side by side, measured with the phone.
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                for (part in listOf(attitude.dipDirection, attitude.dip)) {
+                                    FieldInput(part, texts[part.name].orEmpty(), onChange = { texts[part.name] = it }, onPick = {}, modifier = Modifier.weight(1f))
+                                }
+                                FilledTonalIconButton(onClick = { measuring = true }) { Icon(Icons.Rounded.Explore, stringResource(R.string.clino_title)) }
+                            }
+                            continue
                         }
+                        FieldInput(field, texts[field.name].orEmpty(), onChange = { texts[field.name] = it }, onPick = { picking = field })
                     }
                     if (attachments != null) {
                         FormHeader(stringResource(R.string.attachments))
