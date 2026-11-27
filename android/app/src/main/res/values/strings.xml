@@ -252,8 +252,6 @@
     <string name="attribution_tianditu">© Tianditu</string>
     <string name="unsaved_title">Unsaved changes</string>
     <string name="unsaved_body">Save your changes before leaving?</string>
-    <string name="export_gpkg">Export GeoPackage</string>
-    <string name="export_kml">Export KML</string>
     <string name="exported">Exported to %1$s</string>
     <string name="share">Share</string>
     <string name="share_title">Share the exported file</string>
@@ -556,6 +554,12 @@
     <string name="layer_export_title">Export %1$s</string>
     <string name="format_kml" translatable="false">KML</string>
     <string name="format_gpkg" translatable="false">GeoPackage</string>
+    <string name="format_shp" translatable="false">Shapefile</string>
+    <string name="format_geojson" translatable="false">GeoJSON</string>
+    <string name="format_csv" translatable="false">CSV</string>
+    <string name="format_xlsx" translatable="false">Excel</string>
+    <string name="format_gpx" translatable="false">GPX</string>
+    <string name="format_dxf" translatable="false">DXF</string>
     <string name="layer_move_to_group">Move to group</string>
     <string name="layer_move_title">Move %1$s to</string>
     <string name="layer_move_out">Out of the group</string>
@@ -571,6 +575,5 @@
     <string name="snapshot_restore">Restore</string>
     <string name="snapshot_restore_title">Restore the snapshot of %1$s?</string>
     <string name="snapshot_restore_body">The project as it is now is kept in the snapshot folder first.</string>
-    <string name="export_kmz">Export KMZ</string>
     <string name="format_kmz" translatable="false">KMZ</string>
 </resources>

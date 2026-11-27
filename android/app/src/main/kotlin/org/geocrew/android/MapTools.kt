@@ -83,9 +83,7 @@ enum class MapTool(val id: String, val group: Int?, val label: Int, val icon: Im
     MY_LOCATION("my_location", R.string.menu_location, R.string.my_position, Icons.Rounded.MyLocation),
     TRACK("track", R.string.menu_location, R.string.tool_track, Icons.Rounded.Route),
     CONVERT("convert", R.string.menu_analysis, R.string.tool_convert, Icons.Rounded.Transform),
-    EXPORT_GPKG("export_gpkg", R.string.menu_data, R.string.export_gpkg, Icons.Rounded.SaveAlt),
-    EXPORT_KML("export_kml", R.string.menu_data, R.string.export_kml, Icons.Rounded.Public),
-    EXPORT_KMZ("export_kmz", R.string.menu_data, R.string.export_kmz, Icons.Rounded.PhotoLibrary),
+    EXPORT("export", R.string.menu_data, R.string.layer_export, Icons.Rounded.SaveAlt),
     FILES("files", R.string.menu_data, R.string.files, Icons.Rounded.FolderOpen),
     PROJECT_SETTINGS("project_settings", R.string.project_section, R.string.project_settings, Icons.Rounded.Tune),
     CLOSE_PROJECT("close_project", R.string.project_section, R.string.project_close, Icons.AutoMirrored.Rounded.Logout),
@@ -98,7 +96,8 @@ enum class MapTool(val id: String, val group: Int?, val label: Int, val icon: Im
         /** The menu's groups, in order. */
         val GROUPS = listOf(R.string.menu_edit, R.string.menu_map, R.string.menu_measure, R.string.menu_location, R.string.menu_analysis, R.string.menu_data, R.string.project_section)
 
-        fun of(id: String): MapTool? = entries.firstOrNull { it.id == id }
+        // The export of one format each (export_gpkg, export_kml, export_kmz) became one export with a list of formats.
+        fun of(id: String): MapTool? = entries.firstOrNull { it.id == id } ?: EXPORT.takeIf { id.startsWith("export_") }
     }
 }
 

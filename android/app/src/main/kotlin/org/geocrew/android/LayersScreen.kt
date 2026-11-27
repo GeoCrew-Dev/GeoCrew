@@ -769,30 +769,24 @@ fun LayersScreen(
         )
     }
     exporting?.let { layer ->
-        // A layer on its own, for another program: KML for Google Earth and the like, KMZ with its photos, a GeoPackage
-        // with its CRS and fields as they are.
-        AppDialog(
-            onDismissRequest = { exporting = null },
-            icon = { Icon(Icons.Rounded.SaveAlt, null) },
-            title = { Text(stringResource(R.string.layer_export_title, layer.name)) },
-            text = {
-                Column {
-                    for ((format, label) in listOf("kml" to R.string.format_kml, "kmz" to R.string.format_kmz, "gpkg" to R.string.format_gpkg)) {
-                        Text(
-                            stringResource(label),
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                exporting = null
-                                scope.launch {
-                                    val done = graph.invoke(Workspace.EXPORT, buildJsonObject { put("format", format); put("layer", layer.name) })
-                                    if (done is Outcome.Done) exported = java.io.File(done.output.jsonObject.getValue("path").jsonPrimitive.content) else failure = texts.of(done)
-                                }
-                            }.padding(vertical = 14.dp),
-                        )
+        // A layer on its own, for another program, in a format chosen from the list.
+        ExportSheet(
+            title = stringResource(R.string.layer_export_title, layer.name),
+            geometry = layer.geometry,
+            wholeProject = false,
+            onPick = { format ->
+                exporting = null
+                scope.launch {
+                    val params = buildJsonObject {
+                        put("format", format.id)
+                        put("layer", layer.name)
+                        put("language", AppLanguage.speaking(context))
                     }
+                    val done = graph.invoke(Workspace.EXPORT, params)
+                    if (done is Outcome.Done) exported = java.io.File(done.output.jsonObject.getValue("path").jsonPrimitive.content) else failure = texts.of(done)
                 }
             },
-            confirmButton = { TextButton(onClick = { exporting = null }) { Text(stringResource(R.string.cancel)) } },
+            onDismiss = { exporting = null },
         )
     }
     exported?.let { file ->
