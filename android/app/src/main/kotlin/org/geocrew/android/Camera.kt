@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.GeomagneticField
 import android.location.Location
+import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.view.CameraController
@@ -61,9 +62,18 @@ fun mayUseCamera(context: Context): Boolean = context.checkSelfPermission(Manife
  * What a photo's attachment keeps besides the file (protocol v1 9.1 "meta"):
  * where the camera looked, in degrees clockwise from true north when the
  * phone's position gives the declination, else from magnetic north; where the
- * phone was and how sure that was; and when it was taken, in UTC.
+ * phone was, how sure that was and when that position was found ([located]);
+ * and when it was taken, in UTC.
  */
-fun photoMeta(magneticHeading: Float?, declination: Float?, longitude: Double?, latitude: Double?, accuracy: Float?, taken: Instant): JsonObject =
+fun photoMeta(
+    magneticHeading: Float?,
+    declination: Float?,
+    longitude: Double?,
+    latitude: Double?,
+    accuracy: Float?,
+    taken: Instant,
+    located: Instant? = null,
+): JsonObject =
     buildJsonObject {
         if (magneticHeading != null) {
             // To a tenth of a degree, in 0 to 360: 359.97 is 0.0, not 360.0.
@@ -74,6 +84,7 @@ fun photoMeta(magneticHeading: Float?, declination: Float?, longitude: Double?, 
             put("longitude", longitude)
             put("latitude", latitude)
             accuracy?.let { put("accuracy", Math.round(it * 10) / 10.0) }
+            located?.let { put("located", it.truncatedTo(ChronoUnit.SECONDS).toString()) }
         }
         put("taken", taken.toString())
     }
@@ -93,6 +104,8 @@ fun CameraScreen(onTaken: (Shot) -> Unit, onDismiss: () -> Unit) {
     val heading by rememberHeading(true)
     val position by rememberPhonePosition(mayLocate(context))
     var taking by remember { mutableStateOf(false) }
+    // Closed while a photo was being written: that photo is not wanted.
+    var closed by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     val controller = remember {
         LifecycleCameraController(context).apply {
@@ -102,6 +115,12 @@ fun CameraScreen(onTaken: (Shot) -> Unit, onDismiss: () -> Unit) {
     }
     DisposableEffect(lifecycle) {
         controller.bindToLifecycle(lifecycle)
+        // A phone or tablet with only a front camera uses that one.
+        controller.initializationFuture.addListener({
+            if (!controller.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) && controller.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                controller.cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+            }
+        }, context.mainExecutor)
         onDispose { controller.unbind() }
     }
 
@@ -120,6 +139,7 @@ fun CameraScreen(onTaken: (Shot) -> Unit, onDismiss: () -> Unit) {
             latitude = at?.latitude,
             accuracy = at?.takeIf { it.hasAccuracy() }?.accuracy,
             taken = Instant.now().truncatedTo(ChronoUnit.SECONDS),
+            located = at?.let { Instant.ofEpochMilli(it.time) },
         )
         controller.takePicture(
             ImageCapture.OutputFileOptions.Builder(file).setMetadata(metadata).build(),
@@ -127,7 +147,7 @@ fun CameraScreen(onTaken: (Shot) -> Unit, onDismiss: () -> Unit) {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     taking = false
-                    onTaken(Shot(file, meta))
+                    if (closed) file.delete() else onTaken(Shot(file, meta))
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -139,7 +159,12 @@ fun CameraScreen(onTaken: (Shot) -> Unit, onDismiss: () -> Unit) {
         )
     }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    fun close() {
+        closed = true
+        onDismiss()
+    }
+
+    Dialog(onDismissRequest = ::close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             AndroidView(
                 factory = { PreviewView(it).apply {
@@ -149,7 +174,7 @@ fun CameraScreen(onTaken: (Shot) -> Unit, onDismiss: () -> Unit) {
                 modifier = Modifier.fillMaxSize(),
             )
             Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-                IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
+                IconButton(onClick = ::close, modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
                     Icon(Icons.Rounded.Close, stringResource(R.string.close), tint = Color.White)
                 }
                 if (failed) {
