@@ -110,4 +110,25 @@ object Templates {
     val all: List<LayerTemplate> = listOf(FIELD_POINT, FIELD_LINE, FIELD_POLYGON, TRACK)
 
     fun byId(id: String?): LayerTemplate? = all.firstOrNull { it.id == id }
+
+    /** The field template for features of [geometry] (POINT, LINESTRING, POLYGON): points, lines or areas. */
+    fun forGeometry(geometry: String): LayerTemplate? = when (geometry) {
+        "POINT" -> FIELD_POINT
+        "LINESTRING" -> FIELD_LINE
+        "POLYGON" -> FIELD_POLYGON
+        else -> null
+    }
+
+    /**
+     * What the part of a vector layer (ADR 0017) holding [geometry] is called
+     * after the layer's name, in [language]: 断层 线, Faults lines.
+     */
+    fun partName(geometry: String, language: String): String {
+        val zh = language.startsWith("zh")
+        return when (geometry) {
+            "POINT" -> if (zh) "点" else "points"
+            "LINESTRING" -> if (zh) "线" else "lines"
+            else -> if (zh) "面" else "areas"
+        }
+    }
 }

@@ -538,4 +538,7 @@
     <string name="layer_group_name">分组名称</string>
     <string name="layer_group_taken">已有同名的分组</string>
     <string name="group_ungroup">取消分组</string>
+    <string name="add_part_point">新建点图层</string>
+    <string name="add_part_line">新建线图层</string>
+    <string name="add_part_polygon">新建面图层</string>
 </resources>

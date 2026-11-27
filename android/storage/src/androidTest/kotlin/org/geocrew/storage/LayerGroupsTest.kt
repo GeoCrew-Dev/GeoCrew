@@ -52,13 +52,14 @@ class LayerGroupsTest {
 
         var about = output(run(Workspace.GROUP_CREATE, """{"name": "水文", "layers": ["丙", "甲"]}"""))
         val group = about.getValue("groups").jsonArray.single().jsonObject.getValue("id").jsonPrimitive.content
-        assertEquals(listOf("[丙+甲]", "乙"), tree(about))
-        assertEquals(listOf("丙", "甲", "乙"), names(about), "drawn together, on top")
-        assertEquals(group, about.getValue("layers").jsonArray.first().jsonObject.getValue("group").jsonPrimitive.content)
+        assertEquals(listOf("乙", "[丙+甲]"), tree(about), "where its first layer was")
+        assertEquals(listOf("乙", "丙", "甲"), names(about), "drawn together")
+        val layer = { about: JsonObject, name: String -> about.getValue("layers").jsonArray.map { it.jsonObject }.single { it.getValue("name").jsonPrimitive.content == name } }
+        assertEquals(group, layer(about, "丙").getValue("group").jsonPrimitive.content)
 
         // Hidden with its group; each layer keeps its own switch.
         about = output(run(Workspace.GROUP_DISPLAY, """{"group": "$group", "visible": false}"""))
-        val first = about.getValue("layers").jsonArray.first().jsonObject
+        val first = layer(about, "丙")
         assertEquals("false", first.getValue("visible").jsonPrimitive.content)
         assertEquals("true", first.getValue("ownVisible").jsonPrimitive.content)
 
@@ -87,5 +88,35 @@ class LayerGroupsTest {
         about = output(run(Workspace.GROUP_REMOVE, """{"group": "$group"}"""))
         assertEquals(listOf("甲", "丙", "乙", "丁"), tree(about))
         assertEquals(0, about.getValue("groups").jsonArray.size)
+    }
+
+    // Any vector layer takes points, lines and areas (ADR 0017): each kind a table of its own, made when first used.
+    @Test
+    fun aVectorLayerGetsItsPartsWhenUsed() {
+        run(Workspace.CREATE, """{"name": "部分", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "泉点", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "断层", "language": "zh", "template": "field-line"}""")
+        run(Workspace.LAYER_ORDER, """{"layers": ["泉点", "断层"]}""")
+
+        var made = output(run(Workspace.LAYER_PART, """{"layer": "断层", "geometry": "POINT", "language": "zh", "color": "#e53935"}"""))
+        assertEquals("断层 点", made.getValue("part").jsonPrimitive.content)
+        val group = made.getValue("groups").jsonArray.single().jsonObject
+        assertEquals("断层", group.getValue("name").jsonPrimitive.content)
+        assertEquals("true", group.getValue("vector").jsonPrimitive.content)
+        assertEquals(listOf("泉点", "[断层+断层 点]"), tree(made), "the group where the layer was")
+        val part = made.getValue("layers").jsonArray.map { it.jsonObject }.single { it.getValue("name").jsonPrimitive.content == "断层 点" }
+        assertEquals("POINT", part.getValue("geometry").jsonPrimitive.content)
+        assertEquals("#e53935", part.getValue("style").jsonObject.getValue("color").jsonPrimitive.content)
+        val fields = { layer: String ->
+            output(run(Workspace.LAYER_INFO, """{"layer": "$layer"}""")).getValue("fields").jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content }
+        }
+        assertEquals(fields("断层"), fields("断层 点"), "the same fields")
+
+        // From any part, into the same vector layer; a kind it has, or its own, is refused.
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_PART, """{"layer": "断层", "geometry": "POINT", "language": "zh"}"""))
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_PART, """{"layer": "泉点", "geometry": "POINT", "language": "zh"}"""))
+        made = output(run(Workspace.LAYER_PART, """{"layer": "断层 点", "geometry": "POLYGON", "language": "zh"}"""))
+        assertEquals("断层 面", made.getValue("part").jsonPrimitive.content)
+        assertEquals(listOf("泉点", "[断层+断层 点+断层 面]"), tree(made))
     }
 }
