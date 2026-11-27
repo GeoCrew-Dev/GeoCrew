@@ -453,4 +453,5 @@
     <string name="color_percent">%1$d%%</string>
     <string name="style_label">Label</string>
     <string name="style_label_none">None</string>
+    <string name="tool_snap">Snap</string>
 </resources>

@@ -433,4 +433,5 @@
     <string name="color_percent">%1$d%%</string>
     <string name="style_label">标注</string>
     <string name="style_label_none">无</string>
+    <string name="tool_snap">捕捉</string>
 </resources>
