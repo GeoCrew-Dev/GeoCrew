@@ -290,6 +290,63 @@ class Project internal constructor(
         dataset.sql("INSERT OR REPLACE INTO ${ProjectFormat.STYLE_TABLE} (layer_id, style) VALUES (${quote(id)}, ${quote(stored.toString())})")
     }
 
+    /**
+     * A raster under the layers: its stable [id], its [name] in the project,
+     * the [file] it shows, what the probe made of it ([info], see Probe), how
+     * it shows, and when it was [added].
+     */
+    data class Raster(val id: String, val name: String, val file: File, val info: JsonObject, val display: Display, val added: String)
+
+    /** The rasters, newest on top: the first is drawn over the others. */
+    val rasters: List<Raster>
+        get() {
+            val made = rows(dataset, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${ProjectFormat.RASTERS_TABLE}'").isNotEmpty()
+            if (!made) return emptyList()
+            val display = readDisplay(dataset)
+            return rows(dataset, "SELECT id, name, path, added, info FROM ${ProjectFormat.RASTERS_TABLE} ORDER BY rowid DESC").mapNotNull { row ->
+                val id = row["id"] ?: return@mapNotNull null
+                val path = row["path"] ?: return@mapNotNull null
+                val info = runCatching { Json.parseToJsonElement(row["info"].orEmpty()).jsonObject }.getOrNull() ?: return@mapNotNull null
+                val file = File(path).let { if (it.isAbsolute) it else File(folder, path) }
+                Raster(id, row["name"].orEmpty(), file, info, display[id] ?: Display(), row["added"].orEmpty())
+            }
+        }
+
+    /**
+     * Adds raster [file] under the layers, as [name] or else the file's own
+     * name (numbered when taken), with what the probe made of it ([info]).
+     * The file stays where it is; one in the project's folder is kept by its
+     * path from there, so the folder can move. Saved at once.
+     */
+    fun addRaster(file: File, info: JsonObject, name: String? = null): Raster {
+        val taken = rasters.map { it.name }
+        val chosen = if (name != null) {
+            val trimmed = name.trim()
+            require(trimmed.isNotEmpty() && trimmed.length <= ProjectFormat.MAX_NAME) { "a raster name has 1 to ${ProjectFormat.MAX_NAME} characters" }
+            require(taken.none { it.equals(trimmed, ignoreCase = true) }) { "the project already has a raster $trimmed" }
+            trimmed
+        } else {
+            val base = file.nameWithoutExtension.take(ProjectFormat.MAX_NAME - 4).ifBlank { "raster" }
+            generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base $it" }.first { n -> taken.none { it.equals(n, ignoreCase = true) } }
+        }
+        val inside = file.canonicalFile.relativeToOrNull(folder.canonicalFile)?.takeUnless { it.path.startsWith("..") }
+        val id = UUID.randomUUID().toString()
+        dataset.sql(ProjectFormat.RASTERS_SCHEMA)
+        dataset.sql(
+            "INSERT INTO ${ProjectFormat.RASTERS_TABLE} (id, name, path, added, info) VALUES " +
+                "(${quote(id)}, ${quote(chosen)}, ${quote(inside?.path ?: file.canonicalPath)}, ${quote(Instant.now().toString())}, ${quote(info.toString())})",
+        )
+        return rasters.single { it.id == id }
+    }
+
+    /** Takes raster [name] out of the project; its file stays. */
+    fun removeRaster(name: String) {
+        val found = rasters.firstOrNull { it.name == name } ?: throw IllegalArgumentException("there is no raster $name")
+        dataset.sql("DELETE FROM ${ProjectFormat.RASTERS_TABLE} WHERE id = ${quote(found.id)}")
+        dataset.sql(ProjectFormat.DISPLAY_SCHEMA)
+        dataset.sql("DELETE FROM ${ProjectFormat.DISPLAY_TABLE} WHERE layer_id = ${quote(found.id)}")
+    }
+
     /** A saved map view: where the map looked, how far in (zoom) and how turned (bearing, degrees). */
     data class Bookmark(val id: Long, val name: String, val longitude: Double, val latitude: Double, val zoom: Double, val bearing: Double)
 
@@ -342,11 +399,12 @@ class Project internal constructor(
      * its opacity; saved in the project at once. Not part of editing: it is not
      * undone and needs no save.
      */
-    fun setDisplay(layer: String? = null, basemap: String? = null, visible: Boolean? = null, opacity: Double? = null) {
+    fun setDisplay(layer: String? = null, basemap: String? = null, visible: Boolean? = null, opacity: Double? = null, raster: String? = null) {
         val id = when {
             layer != null -> layers.firstOrNull { it.name == layer }?.id ?: throw IllegalArgumentException("there is no layer $layer")
             basemap != null -> basemap.takeIf { it in BASEMAPS }?.let { "basemap:$it" } ?: throw IllegalArgumentException("there is no basemap $basemap")
-            else -> throw IllegalArgumentException("a layer or a basemap")
+            raster != null -> rasters.firstOrNull { it.name == raster }?.id ?: throw IllegalArgumentException("there is no raster $raster")
+            else -> throw IllegalArgumentException("a layer, a basemap or a raster")
         }
         require(opacity == null || opacity in 0.0..1.0) { "opacity goes from 0 to 1" }
         dataset.sql(ProjectFormat.DISPLAY_SCHEMA)

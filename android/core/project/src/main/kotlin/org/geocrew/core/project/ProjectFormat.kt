@@ -40,6 +40,18 @@ object ProjectFormat {
     const val STYLE_SCHEMA = "CREATE TABLE IF NOT EXISTS $STYLE_TABLE (layer_id TEXT PRIMARY KEY NOT NULL, style TEXT NOT NULL)"
 
     /**
+     * Rasters shown under the layers (GeoTIFF and the like), kept where they
+     * are, as QGIS keeps them, and not synced with the team: each with a
+     * stable id, a name in the project, its path (from the project's folder
+     * when inside it), when it was added, and what the probe made of it (ADR
+     * 0003) as JSON. Whether one shows and how opaque it is go in the display
+     * table, by id. Made when the first raster is added.
+     */
+    const val RASTERS_TABLE = "geocrew_rasters"
+    const val RASTERS_SCHEMA = "CREATE TABLE IF NOT EXISTS $RASTERS_TABLE " +
+        "(id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL, added TEXT NOT NULL, info TEXT NOT NULL)"
+
+    /**
      * Saved map views, by name: where the map looked (WGS84 / CGCS2000), how far
      * in and how turned. Made when the first one is saved.
      */

@@ -367,6 +367,9 @@ class Workspace(private val projects: Projects) {
         return layers.map(editing::scopeOf).distinct()
     }
 
+    /** The open project as project.current gives it; an empty object when none is open. */
+    fun about(): JsonObject = current?.let(::about) ?: JsonObject(emptyMap())
+
     private fun about(project: Project): JsonObject = buildJsonObject {
         val styles = project.styles
         put("name", project.name)
@@ -384,6 +387,20 @@ class Workspace(private val projects: Projects) {
                     put("visible", layer.display.visible)
                     put("opacity", layer.display.opacity)
                     styles[layer.id]?.let { put("style", it) }
+                }
+            }
+        }
+        putJsonArray("rasters") {
+            for (raster in project.rasters) {
+                addJsonObject {
+                    put("name", raster.name)
+                    put("id", raster.id)
+                    put("path", raster.file.path)
+                    // A raster whose file has gone (moved, deleted) stays listed, to be found again or taken out.
+                    if (!raster.file.exists()) put("missing", true)
+                    put("visible", raster.display.visible)
+                    put("opacity", raster.display.opacity)
+                    put("info", raster.info)
                 }
             }
         }
