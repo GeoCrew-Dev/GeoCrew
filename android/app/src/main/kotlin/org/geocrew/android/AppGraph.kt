@@ -9,7 +9,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -60,6 +63,14 @@ class AppGraph(private val app: Application) {
 
     /** A word for the file manager to show once, such as how many files came from another app. */
     var notice by mutableStateOf<String?>(null)
+
+    // Work that outlives the screen that starts it.
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /** Closes the open project soon, from a screen that is going away. */
+    fun closeLater() {
+        background.launch { invoke(Workspace.CLOSE) }
+    }
     private var workspace: Workspace? = null
     private var workspaceRoot: File? = null
 

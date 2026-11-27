@@ -48,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -203,6 +204,11 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit, start: String? = null, onOp
     }
 
     fun act(action: String, params: JsonObject, then: () -> Unit = {}) = actOn(action, listOf(params), then)
+
+    // Leaving with a project still opened here for a file (its layers being picked), it closes as well.
+    DisposableEffect(Unit) {
+        onDispose { if (borrowed != null) graph.closeLater() }
+    }
 
     // A project opened here only to add a file to closes again.
     suspend fun giveBack() {

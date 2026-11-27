@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Environment
 import android.provider.OpenableColumns
 import androidx.core.content.IntentCompat
 import java.io.File
@@ -12,13 +13,32 @@ import java.io.IOException
 /**
  * The files another app hands GeoCrew: one opened with it (ACTION_VIEW) or
  * shared to it (ACTION_SEND, ACTION_SEND_MULTIPLE); none for any other intent.
+ * GeoCrew reads them with its own rights, so only what another app may hand
+ * it is taken: content from other apps' providers, and files in shared
+ * storage, never GeoCrew's own (which would leak into the GeoCrew folder).
  */
-fun receivedUris(intent: Intent?): List<Uri> = when (intent?.action) {
+fun receivedUris(context: Context, intent: Intent?): List<Uri> = when (intent?.action) {
     Intent.ACTION_VIEW -> listOfNotNull(intent.data)
     Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
     Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
     else -> emptyList()
-}.filter { it.scheme == ContentResolver.SCHEME_CONTENT || it.scheme == ContentResolver.SCHEME_FILE }
+}.filter { uri ->
+    when (uri.scheme) {
+        ContentResolver.SCHEME_CONTENT -> uri.authority?.startsWith(context.packageName) == false
+        ContentResolver.SCHEME_FILE -> uri.path?.let { inShared(File(it)) } == true
+        else -> false
+    }
+}
+
+// Whether [file] is in shared storage, its links followed, and not in an app's own folder there.
+@Suppress("DEPRECATION") // with all-files access shared storage is read by path (ADR 0002)
+private fun inShared(file: File): Boolean = try {
+    val path = file.canonicalPath
+    val shared = Environment.getExternalStorageDirectory().canonicalPath
+    path.startsWith("$shared/") && !path.startsWith("$shared/Android/")
+} catch (e: IOException) {
+    false
+}
 
 /** What came of receiving files: those copied in, and how many could not be read. */
 data class Received(val files: List<File>, val failed: Int)
