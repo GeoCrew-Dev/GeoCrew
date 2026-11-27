@@ -436,10 +436,12 @@ fun FeatureForm(
             declination = remember { declinationHere() },
             onRecord = { a ->
                 measuring = false
+                val dip = wholeDip(a.dip)
                 val direction = wholeDirection(a.dipDirection)
-                texts[attitude.dipDirection.name] = direction.toString()
-                texts[attitude.dip.name] = wholeDip(a.dip).toString()
-                attitude.strike?.let { texts[it.name] = ((direction + 270) % 360).toString() }
+                // A flat plane dips nowhere: no dip direction nor strike.
+                texts[attitude.dipDirection.name] = if (dip == 0) "" else direction.toString()
+                texts[attitude.dip.name] = dip.toString()
+                attitude.strike?.let { texts[it.name] = if (dip == 0) "" else ((direction + 270) % 360).toString() }
             },
             onDismiss = { measuring = false },
         )

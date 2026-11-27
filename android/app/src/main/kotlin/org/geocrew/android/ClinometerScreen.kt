@@ -45,8 +45,9 @@ import androidx.compose.ui.window.DialogProperties
  * The compass-clinometer (charter: field tools): with the phone's back on a
  * plane, its dip direction from true north ([declination] added to the
  * compass) and its dip, the mean of the last moment's readings, shown in the
- * theme's colour while the hand is steady. [onRecord] takes the reading. The
- * screen stays on while it is open.
+ * theme's colour while the hand is steady. [onRecord] takes the last steady
+ * reading, so the tap on the button does not spoil it (the current one when
+ * there was none). The screen stays on while it is open.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,6 +58,7 @@ fun ClinometerScreen(declination: Float, onRecord: (Attitude) -> Unit, onDismiss
     val rotationSensor = remember { sensors?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) }
     var reading by remember { mutableStateOf<Attitude?>(null) }
     var steady by remember { mutableStateOf(false) }
+    var lastSteady by remember { mutableStateOf<Attitude?>(null) }
     var lowAccuracy by remember { mutableStateOf(false) }
     val window = remember { NormalWindow() }
 
@@ -76,6 +78,7 @@ fun ClinometerScreen(declination: Float, onRecord: (Attitude) -> Unit, onDismiss
                     shown = now
                     window.mean()?.let { m -> reading = attitudeOf(m[0], m[1], m[2], declination.toDouble()) }
                     steady = window.steady()
+                    if (steady) lastSteady = reading
                 }
             }
 
@@ -85,10 +88,11 @@ fun ClinometerScreen(declination: Float, onRecord: (Attitude) -> Unit, onDismiss
         }
         rotationSensor?.let { sensors?.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME) }
         magnetic?.let { sensors?.registerListener(listener, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        val wasOn = view.keepScreenOn
         view.keepScreenOn = true
         onDispose {
             sensors?.unregisterListener(listener)
-            view.keepScreenOn = false
+            view.keepScreenOn = wasOn
         }
     }
 
@@ -126,7 +130,7 @@ fun ClinometerScreen(declination: Float, onRecord: (Attitude) -> Unit, onDismiss
                 }
                 Spacer(Modifier.height(32.dp))
                 Button(
-                    onClick = { shown?.let(onRecord) },
+                    onClick = { (lastSteady ?: shown)?.let(onRecord) },
                     enabled = shown != null,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                 ) { Text(stringResource(R.string.clino_record)) }
