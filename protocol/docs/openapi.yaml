@@ -857,7 +857,7 @@ paths:
               required: [name, nickname, device]
               properties:
                 name: { type: string, minLength: 1, maxLength: 64 }
-                nickname: { type: string, minLength: 1, maxLength: 64 }
+                nickname: { type: string, minLength: 1, maxLength: 32 }
                 device: { type: string, minLength: 1, maxLength: 64, description: Device name shown to people }
       responses:
         "201":
@@ -885,7 +885,7 @@ paths:
                   required: [invite_code, nickname, device]
                   properties:
                     invite_code: { type: string, description: "8 characters, case-insensitive" }
-                    nickname: { type: string, minLength: 1, maxLength: 64 }
+                    nickname: { type: string, minLength: 1, maxLength: 32 }
                     device: { type: string, minLength: 1, maxLength: 64 }
                 - type: object
                   required: [transfer_code, device]
@@ -1166,6 +1166,134 @@ paths:
                   conflict: { $ref: "#/components/schemas/V1Conflict" }
                   result: { $ref: "#/components/schemas/V1Result" }
         "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/members:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+    get:
+      tags: [v1]
+      operationId: v1ListMembers
+      summary: The workspace's current members, earliest first; every member may read it (v1 5.2)
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/V1Member" } }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/members/{member}:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+      - { name: member, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [v1]
+      operationId: v1UpdateMember
+      summary: Change one's own nickname, or the roles of a member one can manage (v1 5.2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname: { type: string, minLength: 1, maxLength: 32 }
+                roles: { type: array, items: { type: string }, description: "The whole new list, besides the base role" }
+      responses:
+        "200":
+          description: The member
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/V1Member" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [v1]
+      operationId: v1RemoveMember
+      summary: Take a member one can manage out, or leave; the leader hands over first (409 leader_must_transfer) (v1 5.2)
+      responses:
+        "204": { description: Removed }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/leader:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+    post:
+      tags: [v1]
+      operationId: v1TransferLeader
+      summary: Hand the lead to another member; only the leader may (v1 5.2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [member]
+              properties:
+                member: { type: string }
+      responses:
+        "200":
+          description: The workspace, with its new leader
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/V1Workspace" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/members/{member}/devices:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+      - { name: member, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [v1]
+      operationId: v1ListDevices
+      summary: A member's signed-in devices; the member and those who can manage them may read it (v1 5.3)
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/V1Device" } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/devices/{device}:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+      - { name: device, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [v1]
+      operationId: v1RevokeDevice
+      summary: End a device's token; its owner and those who can manage the owner may (v1 5.3)
+      responses:
+        "204": { description: Revoked }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/members/{member}/transfer-code:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+      - { name: member, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [v1]
+      operationId: v1CreateTransferCode
+      summary: A one-time code that signs a new device in as the member, for 10 minutes; only the member and the leader may (v1 5.3)
+      responses:
+        "201":
+          description: The code
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, expires_at]
+                properties:
+                  code: { type: string, description: 12 characters }
+                  expires_at: { type: string, format: date-time }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
@@ -1715,3 +1843,12 @@ components:
         conflicts: { type: array, items: { $ref: "#/components/schemas/V1Conflict" } }
         error: { type: string, enum: [unknown_layer, invalid_value, forbidden, archived] }
         message: { type: string }
+
+    V1Device:
+      type: object
+      required: [id, device, created_at]
+      properties:
+        id: { type: string }
+        device: { type: string }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
