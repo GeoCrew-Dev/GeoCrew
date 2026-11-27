@@ -18,6 +18,7 @@ import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.files.FileActions
 import org.geocrew.storage.NativeData
+import org.geocrew.storage.Probe
 import org.geocrew.storage.Projects
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
@@ -85,7 +86,8 @@ class AppGraph(private val app: Application) {
         // the open project's files stay as they are.
         @Suppress("DEPRECATION") // with all-files access the shared storage is read by path
         val storage = { if (hasAllFilesAccess) Environment.getExternalStorageDirectory() else folder }
-        FileActions(folder, top = storage, busy = { ws.current?.folder }).actions.forEach(registry::register)
+        // Files are probed in a process of their own (ADR 0003).
+        FileActions(folder, top = storage, busy = { ws.current?.folder }, probe = { Probe.inspect(app, it.path) }).actions.forEach(registry::register)
         workspaceRoot = folder
         workspace = ws
         return ws

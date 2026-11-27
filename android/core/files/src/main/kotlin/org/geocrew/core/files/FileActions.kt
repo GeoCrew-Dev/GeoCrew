@@ -26,7 +26,12 @@ import org.geocrew.core.action.Stability
  * folder [busy] gives (the open project's) is renamed, moved or deleted, nor
  * a folder holding it, nor [top] or [geocrew] themselves.
  */
-class FileActions(private val geocrew: File, private val top: () -> File, private val busy: () -> File?) {
+class FileActions(
+    private val geocrew: File,
+    private val top: () -> File,
+    private val busy: () -> File?,
+    private val probe: (suspend (File) -> JsonObject)? = null,
+) {
     val actions: List<Action> = listOf(
         FileAction(
             LIST, "List folder",
@@ -91,6 +96,18 @@ class FileActions(private val geocrew: File, private val top: () -> File, privat
                     put("folders", folders)
                 },
             )
+        },
+        FileAction(
+            PROBE, "Probe file",
+            "What GDAL makes of the file at [path], read in a process of its own so a broken file cannot stop the app (ADR 0003): " +
+                "a raster's format, size, bands, CRS, pixel size and WGS84 extent, or vector data's layers with their geometry, " +
+                "feature count and CRS. A file GDAL cannot read fails",
+            Risk.VIEW, PATH_PARAMS, """{"path": "/storage/emulated/0/Download/影像.tif"}""",
+        ) { caller, p ->
+            val file = resolve(caller, p.text("path"))
+            if (!file.exists()) refuse(NOT_FOUND, "${file.path} is not there")
+            val read = probe ?: refuse(FAILED, "files cannot be probed here")
+            ActionResult.Done(read(file))
         },
         FileAction(
             MAKE_FOLDER, "Make folder", "Makes folder [name] in folder [path]; a name already there is refused",
@@ -226,7 +243,7 @@ class FileActions(private val geocrew: File, private val top: () -> File, privat
         risk: Risk,
         params: JsonObject,
         example: String,
-        private val body: (Caller, JsonObject) -> ActionResult,
+        private val body: suspend (Caller, JsonObject) -> ActionResult,
     ) : Action {
         override val spec = ActionSpec(id, name, description, params, risk, Stability.PREVIEW, examples = listOf(schema(example)))
 
@@ -241,6 +258,7 @@ class FileActions(private val geocrew: File, private val top: () -> File, privat
     companion object {
         const val LIST = "file.list"
         const val INFO = "file.info"
+        const val PROBE = "file.probe"
         const val MAKE_FOLDER = "file.folder.make"
         const val RENAME = "file.rename"
         const val COPY = "file.copy"

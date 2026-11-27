@@ -39,3 +39,5 @@
 已采纳。构建方式已由 M1 验证确认，见[验证报告](../spikes/m1-gdal-android.md)。
 
 2026-11-26 补充：选坐标系时直接用 Android 自带的 SQLite 只读打开 PROJ 的 proj.db，按名称、代码和适用范围查（EPSG、ESRI、IGNF 等约 1.4 万个，去掉作废的和其他天体的），一次查询二十毫秒以内，不用改原生库。proj.db 的表结构不是 PROJ 承诺的接口，用的是 PROJ 6 起就有的 `crs_view`、`usage`、`extent`；升级 PROJ 时 `crsSearchFindsByCodeNameChineseAndPlace` 测试会发现变化。
+
+2026-11-27 补充：试读放进了独立进程。`storage` 模块的 `ProbeService` 声明在进程 `:probe` 里，应用通过 Messenger 把路径发过去；它跑 GeoCrew-Native 带的 `gdal info --format json`，在那边就把结果压成简短的 JSON 再传回来：栅格的格式、像素、波段、调色板、金字塔层数、坐标系、像元大小和 WGS84 范围，矢量的各图层、几何类型、要素数和坐标系（同勘工程自己的 `geocrew_` 表不算）。读文件的进程死了（文件让 GDAL 崩溃）、读不了或 30 秒没回应，都当"读不了这个文件"，应用本身不受影响。对外是动作 `file.probe`。之后把文件加到地图、导入工程，都先经过它。

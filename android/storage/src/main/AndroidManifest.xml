@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Reads files GeoCrew has not opened before in a process of its own (ADR 0003):
+             a file that makes GDAL crash stops only this process, not the app. -->
+        <service
+            android:name="org.geocrew.storage.ProbeService"
+            android:exported="false"
+            android:process=":probe" />
+    </application>
+</manifest>

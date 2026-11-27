@@ -456,7 +456,11 @@ fun FilesScreen(graph: AppGraph, onBack: () -> Unit) {
         )
     }
     details?.let { entries ->
-        DetailsDialog(entries, info = { p -> (graph.invoke(FileActions.INFO, buildJsonObject { put("path", p) }) as? Outcome.Done)?.output?.jsonObject }) { details = null }
+        DetailsDialog(
+            entries,
+            info = { p -> (graph.invoke(FileActions.INFO, buildJsonObject { put("path", p) }) as? Outcome.Done)?.output?.jsonObject },
+            probe = { p -> (graph.invoke(FileActions.PROBE, buildJsonObject { put("path", p) }) as? Outcome.Done)?.output?.jsonObject },
+        ) { details = null }
     }
     failure?.let { message ->
         AlertDialog(

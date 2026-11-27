@@ -387,4 +387,23 @@
         <item quantity="one">Move %d item</item>
         <item quantity="other">Move %d items</item>
     </plurals>
+    <string name="files_format">Format</string>
+    <string name="files_reading">Reading…</string>
+    <string name="files_cannot_read">This file cannot be read</string>
+    <string name="files_pixels">Pixels</string>
+    <string name="files_bands">Bands</string>
+    <string name="files_bands_value">%1$d (%2$s)</string>
+    <string name="files_cell">Pixel size</string>
+    <string name="files_metres">%1$s m</string>
+    <string name="files_crs">CRS</string>
+    <string name="files_no_crs">None</string>
+    <string name="files_extent">Extent</string>
+    <string name="files_extent_value">Longitude %1$s to %2$s\nLatitude %3$s to %4$s</string>
+    <string name="files_layers">Layers</string>
+    <string name="files_layer_value">%1$s: %2$s</string>
+    <string name="files_no_geometry">No geometry</string>
+    <plurals name="files_features">
+        <item quantity="one">%d feature</item>
+        <item quantity="other">%d features</item>
+    </plurals>
 </resources>

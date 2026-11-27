@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
@@ -93,6 +94,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import java.io.File
 import java.util.Calendar
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -400,10 +402,18 @@ internal fun NameDialog(
 /**
  * The details of [entries]: for one, where it is (the path can be copied) and
  * when it changed; for all, how big they are and how many files and folders
- * they hold, counted through [info] (file.info) while the dialog shows.
+ * they hold, counted through [info] (file.info) while the dialog shows. One
+ * GIS file also says what GDAL makes of it, read through [probe] (file.probe,
+ * in a process of its own): a raster's format, pixels, bands, pixel size, CRS
+ * and extent, vector data's layers.
  */
 @Composable
-internal fun DetailsDialog(entries: List<FileEntry>, info: suspend (String) -> JsonObject?, onDismiss: () -> Unit) {
+internal fun DetailsDialog(
+    entries: List<FileEntry>,
+    info: suspend (String) -> JsonObject?,
+    probe: (suspend (String) -> JsonObject?)? = null,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var counted by remember { mutableStateOf<List<JsonObject>?>(null) }
@@ -421,7 +431,8 @@ internal fun DetailsDialog(entries: List<FileEntry>, info: suspend (String) -> J
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // A file with many layers says a lot: it scrolls.
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (one != null) {
                     Detail(stringResource(R.string.files_location), File(one.path).parent.orEmpty()) {
                         IconButton(onClick = { clipboard.setText(AnnotatedString(one.path)) }) {
@@ -447,11 +458,78 @@ internal fun DetailsDialog(entries: List<FileEntry>, info: suspend (String) -> J
                     }
                     Detail(stringResource(R.string.files_contains), held)
                 }
+                if (one != null && probe != null && (one.kind == "raster" || one.kind == "vector")) {
+                    var read by remember { mutableStateOf<JsonObject?>(null) }
+                    var unreadable by remember { mutableStateOf(false) }
+                    LaunchedEffect(one.path) {
+                        val got = probe(one.path)
+                        if (got == null) unreadable = true else read = got
+                    }
+                    val got = read
+                    when {
+                        unreadable -> Detail(stringResource(R.string.files_format), stringResource(R.string.files_cannot_read))
+                        got == null -> Detail(stringResource(R.string.files_format), stringResource(R.string.files_reading))
+                        else -> GisDetails(got)
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
     )
 }
+
+/** What file.probe says of a GIS file, a row each. */
+@Composable
+private fun GisDetails(read: JsonObject) {
+    fun JsonObject.text(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull
+    fun JsonObject.number(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()
+    Detail(stringResource(R.string.files_format), read.text("format") ?: read.text("driver").orEmpty())
+    @Composable
+    fun crsText(crs: JsonObject?): String =
+        crs?.let { c -> listOfNotNull(c.text("name"), c.text("id")?.let { "($it)" }).joinToString(" ") } ?: stringResource(R.string.files_no_crs)
+    if (read.text("kind") == "raster") {
+        val width = read.number("width")?.toLong()
+        val height = read.number("height")?.toLong()
+        if (width != null && height != null) Detail(stringResource(R.string.files_pixels), "$width × $height")
+        val bands = (read["bands"] as? JsonArray).orEmpty().map { it.jsonObject }
+        val types = bands.mapNotNull { it.text("type") }.distinct().joinToString("、")
+        Detail(stringResource(R.string.files_bands), stringResource(R.string.files_bands_value, bands.size, types))
+        val crs = read["crs"] as? JsonObject
+        val pixel = (read["pixel"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() }
+        if (pixel != null && pixel.size == 2) {
+            val geographic = crs?.text("geographic") == "true"
+            fun one(v: Double) = if (geographic) "${short(v)}°" else short(v)
+            val shown = if (pixel[0] == pixel[1]) one(pixel[0]) else "${one(pixel[0])} × ${one(pixel[1])}"
+            Detail(stringResource(R.string.files_cell), if (geographic || crs == null) shown else stringResource(R.string.files_metres, shown))
+        }
+        Detail(stringResource(R.string.files_crs), crsText(crs))
+        val extent = (read["extent"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() }
+        if (extent != null && extent.size == 4) {
+            val (west, south, east, north) = extent.map { "%.4f".format(java.util.Locale.ROOT, it) }
+            Detail(stringResource(R.string.files_extent), stringResource(R.string.files_extent_value, west, east, south, north))
+        }
+    } else {
+        val layers = (read["layers"] as? JsonArray).orEmpty().map { it.jsonObject }
+        val lines = layers.map { l ->
+            val kind = when (l.text("geometry")?.removePrefix("Multi")?.removeSuffix(" Z")?.removeSuffix(" M")) {
+                "Point" -> stringResource(R.string.layer_kind_point)
+                "LineString" -> stringResource(R.string.layer_kind_line)
+                "Polygon" -> stringResource(R.string.layer_kind_polygon)
+                "None", null -> stringResource(R.string.files_no_geometry)
+                else -> l.text("geometry").orEmpty()
+            }
+            val count = l.number("features")?.toInt()
+            val features = count?.let { pluralStringResource(R.plurals.files_features, it, it) }
+            stringResource(R.string.files_layer_value, l.text("name").orEmpty(), listOfNotNull(kind, features).joinToString(" · "))
+        }
+        Detail(stringResource(R.string.files_layers), lines.joinToString("\n").ifEmpty { "—" })
+        val crss = layers.map { crsText(it["crs"] as? JsonObject) }.distinct()
+        if (crss.isNotEmpty()) Detail(stringResource(R.string.files_crs), crss.joinToString("\n"))
+    }
+}
+
+// A number as people read it: at most six significant digits, no trailing zeros.
+private fun short(v: Double): String = java.math.BigDecimal(v).round(java.math.MathContext(6)).stripTrailingZeros().toPlainString()
 
 @Composable
 private fun Detail(label: String, value: String, action: (@Composable () -> Unit)? = null) {
