@@ -1,6 +1,6 @@
 # 同勘 GeoCrew 协同协议 v1（草案）
 
-> 状态：草案，M2 期间逐节写，M3 实现。依据 [ADR 0008](../../docs/adr/0008-sync-and-merge.md)（同步与合并）和 [ADR 0009](../../docs/adr/0009-roles-and-permissions.md)（身份与权限）。v1 不兼容 v0，v0 的客户端不再支持；[v0 文档](protocol-v0.md)在 v1 写完之前只作参考。v1 的接口在 M3 实现时逐个写进 [`openapi.yaml`](openapi.yaml)（标签 `v1`），和 v0 的并存；已经写进去的有信息、建工作区、加入、工作区、共享图层、结构变更、提交、拉取、处理冲突（2026-11-28）。
+> 状态：草案，M2 期间逐节写，M3 实现。依据 [ADR 0008](../../docs/adr/0008-sync-and-merge.md)（同步与合并）和 [ADR 0009](../../docs/adr/0009-roles-and-permissions.md)（身份与权限）。v1 不兼容 v0，v0 的客户端不再支持；[v0 文档](protocol-v0.md)在 v1 写完之前只作参考。v1 的接口在 M3 实现时逐个写进 [`openapi.yaml`](openapi.yaml)（标签 `v1`），和 v0 的并存；已经写进去的有信息、建工作区、加入、工作区、成员、设备、共享图层、结构变更、提交、拉取、处理冲突（2026-11-28）。
 
 ## 1. 和 v0 的主要区别
 

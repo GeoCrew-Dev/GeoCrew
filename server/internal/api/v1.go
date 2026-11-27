@@ -30,6 +30,7 @@ func (s *Server) v1Routes(mux *http.ServeMux, joins *limiter) {
 	mux.Handle("PATCH "+ws, s.v1Auth(s.v1UpdateWorkspace))
 	mux.Handle("POST "+ws+"/invite/reset", s.v1Auth(s.v1ResetInvite))
 	s.v1RowRoutes(mux)
+	s.v1MemberRoutes(mux)
 }
 
 type v1Limits struct {
