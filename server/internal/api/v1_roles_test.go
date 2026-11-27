@@ -40,6 +40,9 @@ func TestV1RolesOverridesAndAudit(t *testing.T) {
 	if c := e.call("POST", ws+"/roles", leader.Token, map[string]any{"name": "x", "position": 5, "permissions": map[string]any{"fly": true}}, nil); c != 400 {
 		t.Fatalf("unknown permission: %d", c)
 	}
+	if c := e.call("POST", ws+"/roles", leader.Token, map[string]any{"name": "x", "position": 5, "permissions": map[string]any{"edit_rows": "maybe"}}, &fail); c != 400 || fail.Error != "invalid" {
+		t.Fatalf("unknown level: %d %+v", c, fail)
+	}
 	var role v1RoleResp
 	if c := e.call("POST", ws+"/roles", leader.Token, newRole, &role); c != 201 || role.Permissions["edit_rows"] != "own" || role.Permissions["export_data"] != true {
 		t.Fatalf("make a role: %d %+v", c, role)
@@ -76,6 +79,10 @@ func TestV1RolesOverridesAndAudit(t *testing.T) {
 	e.call("PUT", ws+"/layers/"+v1LayerID+"/overrides/member", leader.Token, map[string]any{"view_layer": false}, nil)
 	if c := e.call("GET", ws+"/layers/"+v1LayerID+"/overrides", a.Token, nil, nil); c != 404 {
 		t.Fatalf("overrides of a layer the member cannot see: %d", c)
+	}
+	e.call("DELETE", ws+"/layers/"+v1LayerID, leader.Token, nil, nil)
+	if c := e.call("GET", ws+"/layers/"+v1LayerID+"/overrides", leader.Token, nil, nil); c != 404 {
+		t.Fatalf("overrides of a deleted layer: %d", c)
 	}
 	if c := e.call("DELETE", ws+"/roles/"+role.ID, leader.Token, nil, nil); c != 204 {
 		t.Fatalf("delete a role: %d", c)

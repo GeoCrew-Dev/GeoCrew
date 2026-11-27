@@ -65,18 +65,22 @@ func (s *Server) v1WriteRole(w http.ResponseWriter, r *http.Request, status int,
 
 func (s *Server) v1CreateRole(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string                `json:"name"`
-		Position    *int                  `json:"position"`
-		Permissions map[string]perm.Level `json:"permissions"`
+		Name        string          `json:"name"`
+		Position    *int            `json:"position"`
+		Permissions json.RawMessage `json:"permissions"`
 	}
 	if !decode(w, r, &req) {
+		return
+	}
+	ps, ok := v1Levels(w, req.Permissions)
+	if !ok {
 		return
 	}
 	if req.Position == nil {
 		writeErr(w, http.StatusBadRequest, "invalid", "position is required")
 		return
 	}
-	role, err := s.V1.CreateRole(r.Context(), r.PathValue("ws"), v1Who(r).Member.ID, req.Name, *req.Position, req.Permissions)
+	role, err := s.V1.CreateRole(r.Context(), r.PathValue("ws"), v1Who(r).Member.ID, req.Name, *req.Position, ps)
 	if err != nil {
 		s.v1Refused(w, r, err, perm.ManageRoles)
 		return
@@ -88,12 +92,16 @@ func (s *Server) v1CreateRole(w http.ResponseWriter, r *http.Request) {
 // since answers 409 stale with the role as it is now (protocol 5.4).
 func (s *Server) v1UpdateRole(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        *string               `json:"name"`
-		Position    *int                  `json:"position"`
-		Permissions map[string]perm.Level `json:"permissions"`
-		BaseVersion *int64                `json:"base_version"`
+		Name        *string         `json:"name"`
+		Position    *int            `json:"position"`
+		Permissions json.RawMessage `json:"permissions"`
+		BaseVersion *int64          `json:"base_version"`
 	}
 	if !decode(w, r, &req) {
+		return
+	}
+	ps, ok := v1Levels(w, req.Permissions)
+	if !ok {
 		return
 	}
 	if req.BaseVersion == nil {
@@ -101,7 +109,7 @@ func (s *Server) v1UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role, err := s.V1.UpdateRole(r.Context(), r.PathValue("ws"), v1Who(r).Member.ID, r.PathValue("role"),
-		v1.RoleUpdate{Name: req.Name, Position: req.Position, Permissions: req.Permissions}, *req.BaseVersion)
+		v1.RoleUpdate{Name: req.Name, Position: req.Position, Permissions: ps}, *req.BaseVersion)
 	if errors.Is(err, store.ErrStale) {
 		current, merr := v1Role(role)
 		if merr != nil {
@@ -126,10 +134,37 @@ func (s *Server) v1DeleteRole(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// v1Levels reads permissions as the protocol writes them (protocol 4.2): an
+// object of levels, or nothing (nil). A level it does not know is 400 invalid.
+func v1Levels(w http.ResponseWriter, raw json.RawMessage) (map[string]perm.Level, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, true
+	}
+	var levels map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &levels); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid", "permissions are an object of levels")
+		return nil, false
+	}
+	out := make(map[string]perm.Level, len(levels))
+	for name, value := range levels {
+		var l perm.Level
+		if err := l.UnmarshalJSON(value); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid", name+": "+err.Error())
+			return nil, false
+		}
+		out[name] = l
+	}
+	return out, true
+}
+
 // v1Overrides lists a layer's overrides to those who can see the layer (protocol 5.5).
 func (s *Server) v1Overrides(w http.ResponseWriter, r *http.Request) {
 	ws, layer := r.PathValue("ws"), r.PathValue("layer")
-	if _, err := s.V1.Layer(r.Context(), ws, layer); err != nil {
+	l, err := s.V1.Layer(r.Context(), ws, layer)
+	if err == nil && l.Deleted != nil && string(l.Deleted.Value) == "true" {
+		err = store.ErrNotFound // a deleted layer is hidden with its rows (protocol 5.6)
+	}
+	if err != nil {
 		s.v1Fail(w, r, err)
 		return
 	}
@@ -159,8 +194,12 @@ func (s *Server) v1Overrides(w http.ResponseWriter, r *http.Request) {
 
 // v1SetOverride replaces a role's overrides on a layer; an empty set removes them.
 func (s *Server) v1SetOverride(w http.ResponseWriter, r *http.Request) {
-	var set map[string]perm.Level
-	if !decode(w, r, &set) {
+	var raw json.RawMessage
+	if !decode(w, r, &raw) {
+		return
+	}
+	set, ok := v1Levels(w, raw)
+	if !ok {
 		return
 	}
 	if set == nil {
