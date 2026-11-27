@@ -17,6 +17,7 @@ import org.geocrew.core.edit.Feature
 import org.geocrew.core.edit.Field
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.edit.LayerStore
+import org.geocrew.core.edit.Saved
 import org.geocrew.nativelib.VectorDataset
 
 /**
@@ -79,6 +80,12 @@ class VectorLayerStore(private val dataset: VectorDataset, private val layer: St
     override fun setAttachments(fid: Long, attachments: List<Attachment>) {
         val id = layerId ?: return super.setAttachments(fid, attachments)
         AttachmentTables.set(dataset, layer, id, fid, attachments)
+    }
+
+    // What sync is to send, for a project linked to a workspace (Outbox); a layer outside a project has nothing to send.
+    override fun saved(changes: List<Saved>) {
+        val id = layerId ?: return
+        Outbox.record(dataset, layer, id, changes, whole = { feature(it) })
     }
 
     override fun begin() = dataset.begin()

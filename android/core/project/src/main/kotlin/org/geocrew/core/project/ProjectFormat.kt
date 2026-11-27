@@ -82,6 +82,25 @@ object ProjectFormat {
         "(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, longitude REAL NOT NULL, latitude REAL NOT NULL, " +
         "zoom REAL NOT NULL, bearing REAL NOT NULL DEFAULT 0, created TEXT NOT NULL)"
 
+    /**
+     * A linked project's rows (protocol v1 6.1, ADR 0008): each feature's row id
+     * (a UUID) and the server sequence number it was last seen at, 0 until the
+     * server has it. Made by the first save of a linked project.
+     */
+    const val ROWS_TABLE = "geocrew_rows"
+    const val ROWS_SCHEMA = "CREATE TABLE IF NOT EXISTS $ROWS_TABLE " +
+        "(layer_id TEXT NOT NULL, fid INTEGER NOT NULL, uuid TEXT NOT NULL UNIQUE, seq INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (layer_id, fid))"
+
+    /**
+     * What a linked project has to send its workspace (protocol v1 8.4): each
+     * field edited since it was last sent, by row and field id ("geom" the
+     * geometry, "deleted" a deletion), with its value as JSON and when it was
+     * edited (UTC, the phone's clock); the last edit of a field kept.
+     */
+    const val OUTBOX_TABLE = "geocrew_outbox"
+    const val OUTBOX_SCHEMA = "CREATE TABLE IF NOT EXISTS $OUTBOX_TABLE " +
+        "(row TEXT NOT NULL, layer_id TEXT NOT NULL, field TEXT NOT NULL, value TEXT NOT NULL, edited_at TEXT NOT NULL, PRIMARY KEY (row, field))"
+
     /** The statements that make GeoCrew's own tables in a new project. */
     val SCHEMA = listOf(
         "CREATE TABLE $PROJECT_TABLE (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
