@@ -1297,6 +1297,161 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v1/workspaces/{ws}/roles:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+    get:
+      tags: [v1]
+      operationId: v1ListRoles
+      summary: The workspace's roles, most senior first; the base role is member at position 0 (v1 5.4)
+      responses:
+        "200":
+          description: Roles
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/V1Role" } }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [v1]
+      operationId: v1CreateRole
+      summary: Add a role below one's own rank, with permissions one can grant; needs manage_roles (v1 5.4)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, position, permissions]
+              properties:
+                name: { type: string }
+                position: { type: integer, minimum: 1 }
+                permissions: { $ref: "#/components/schemas/V1Permissions" }
+      responses:
+        "201":
+          description: The new role
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/V1Role" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/roles/{role}:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+      - { name: role, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [v1]
+      operationId: v1UpdateRole
+      summary: "Change a role one can manage, from the version one saw; the base role takes permissions only, from the leader (v1 5.4)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base_version]
+              properties:
+                name: { type: string }
+                position: { type: integer, minimum: 1 }
+                permissions: { $ref: "#/components/schemas/V1Permissions" }
+                base_version: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: The role
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/V1Role" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The role changed since base_version; it comes as it is now
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message, role]
+                properties:
+                  error: { type: string, const: stale }
+                  message: { type: string }
+                  role: { $ref: "#/components/schemas/V1Role" }
+    delete:
+      tags: [v1]
+      operationId: v1DeleteRole
+      summary: Remove a role one can manage, from every member and override; the base role stays (400) (v1 5.4)
+      responses:
+        "204": { description: Removed }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/layers/{layer}/overrides:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+      - { name: layer, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [v1]
+      operationId: v1ListOverrides
+      summary: A layer's overrides by role; those who can see the layer may read them (v1 5.5)
+      responses:
+        "200":
+          description: Overrides
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { $ref: "#/components/schemas/V1Override" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/layers/{layer}/overrides/{role}:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+      - { name: layer, in: path, required: true, schema: { type: string } }
+      - { name: role, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [v1]
+      operationId: v1SetOverride
+      summary: "Replace a role's overrides on a layer, an empty object removes them; only the leader sets the base role's (v1 5.5)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/V1Override" }
+      responses:
+        "204": { description: Set }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/audit:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+    get:
+      tags: [v1]
+      operationId: v1Audit
+      summary: The audit log, newest first; only the leader may read it (v1 5.7)
+      parameters:
+        - { name: before, in: query, description: Entries below this id, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        "200":
+          description: Entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, at, by, action]
+                  properties:
+                    id: { type: integer, format: int64 }
+                    at: { type: string, format: date-time }
+                    by: { type: string }
+                    action: { type: string, examples: [remove_member, leave, transfer_leader, revoke_device, transfer_code, transfer_code_used, create_role, update_role, delete_role, set_roles, set_override] }
+                    target: { type: string }
+                    detail: {}
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearer:
@@ -1852,3 +2007,28 @@ components:
         device: { type: string }
         created_at: { type: string, format: date-time }
         last_seen_at: { type: string, format: date-time }
+
+    V1Permissions:
+      type: object
+      description: "edit_rows and delete_rows take none, own or all; the rest true or false (v1 4.2)"
+      additionalProperties:
+        oneOf:
+          - { type: boolean }
+          - { type: string, enum: [none, own, all] }
+
+    V1Role:
+      type: object
+      required: [id, name, position, permissions, version]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        position: { type: integer }
+        permissions: { $ref: "#/components/schemas/V1Permissions" }
+        version: { type: integer, format: int64 }
+
+    V1Override:
+      type: object
+      properties:
+        view_layer: { type: boolean }
+        edit_rows: { type: string, enum: [none, own, all] }
+        delete_rows: { type: string, enum: [none, own, all] }

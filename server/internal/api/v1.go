@@ -17,9 +17,9 @@ import (
 // creating and joining a workspace, signing in with a device token
 // (sections 3.3, 3.4) and the workspace itself (5.1).
 
-// v1Capabilities are the v1 features served so far (protocol 3.3). "sync"
-// comes once members and roles (5.2-5.5) are served too.
-var v1Capabilities = []string{}
+// v1Capabilities are the v1 features served so far (protocol 3.3): rows,
+// merge and conflicts with members and permissions (sections 4-8).
+var v1Capabilities = []string{"sync"}
 
 func (s *Server) v1Routes(mux *http.ServeMux, joins *limiter) {
 	mux.HandleFunc("GET /api/v1/info", s.v1Info)
@@ -31,6 +31,7 @@ func (s *Server) v1Routes(mux *http.ServeMux, joins *limiter) {
 	mux.Handle("POST "+ws+"/invite/reset", s.v1Auth(s.v1ResetInvite))
 	s.v1RowRoutes(mux)
 	s.v1MemberRoutes(mux)
+	s.v1RoleRoutes(mux)
 }
 
 type v1Limits struct {
