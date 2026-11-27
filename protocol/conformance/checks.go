@@ -582,6 +582,7 @@ func (s *suite) checks() []check {
 	checks = append(checks, s.mcpChecks()...)
 	checks = append(checks, s.archiveChecks()...)
 	checks = append(checks, s.v1Checks()...)
+	checks = append(checks, s.v1RowChecks()...)
 	return append(checks, tail...)
 }
 

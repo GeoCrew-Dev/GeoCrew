@@ -18,7 +18,7 @@ import (
 // (sections 3.3, 3.4) and the workspace itself (5.1).
 
 // v1Capabilities are the v1 features served so far (protocol 3.3). "sync"
-// comes with rows, pull and conflicts.
+// comes once members and roles (5.2-5.5) are served too.
 var v1Capabilities = []string{}
 
 func (s *Server) v1Routes(mux *http.ServeMux, joins *limiter) {
@@ -29,6 +29,7 @@ func (s *Server) v1Routes(mux *http.ServeMux, joins *limiter) {
 	mux.Handle("GET "+ws, s.v1Auth(s.v1Workspace))
 	mux.Handle("PATCH "+ws, s.v1Auth(s.v1UpdateWorkspace))
 	mux.Handle("POST "+ws+"/invite/reset", s.v1Auth(s.v1ResetInvite))
+	s.v1RowRoutes(mux)
 }
 
 type v1Limits struct {
