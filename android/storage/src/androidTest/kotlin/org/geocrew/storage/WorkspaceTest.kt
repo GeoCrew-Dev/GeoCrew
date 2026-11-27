@@ -402,6 +402,12 @@ class WorkspaceTest {
         assertEquals("#1e88e5", style(set)!!.getValue("color").jsonPrimitive.content)
         assertEquals("single", style(set)!!.getValue("kind").jsonPrimitive.content)
         assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "blue"}}"""), "not #rrggbb")
+        assertEquals(
+            "#1e88e580",
+            style(output(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1E88E580"}}""")))!!.getValue("color").jsonPrimitive.content,
+            "with its opacity",
+        )
+        assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1E88E5800"}}"""), "nine digits")
         assertIs<Outcome.Failed>(run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"size": 99}}"""), "too big")
 
         val byValue = style(

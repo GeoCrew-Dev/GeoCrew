@@ -227,7 +227,7 @@ class Workspace(private val projects: Projects) {
         },
         WorkspaceAction(
             LAYER_STYLE, "Layer style",
-            "Sets how a layer of the open project is drawn (ADR 0006): one colour (#rrggbb), a point's size and a line's width in dp " +
+            "Sets how a layer of the open project is drawn (ADR 0006): one colour (#rrggbb, or #rrggbbaa with its opacity), a point's size and a line's width in dp " +
                 "(size 1 to 30, width 0.5 to 20), an area's fill opacity (0 to 1); what is left out takes its default, an empty style " +
                 "goes back to the default. Saved in the project at once, not undone",
             Risk.EDIT, STYLE_PARAMS, """{"layer": "野外点", "style": {"color": "#1e88e5", "size": 8}}""",

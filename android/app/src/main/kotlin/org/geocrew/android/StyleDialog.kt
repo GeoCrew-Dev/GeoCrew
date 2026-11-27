@@ -2,10 +2,8 @@ package org.geocrew.android
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -16,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Palette
@@ -81,28 +78,26 @@ data class LayerStyle(
     val field: String? = null,
     val classes: List<StyleClass> = emptyList(),
 ) {
-    /** The colour as MapLibre and the project take it, #rrggbb. */
-    val hex: String get() = hex(color)
+    private val byValue: Map<String, String> by lazy { classes.associate { it.value to mapColor(it.color) } }
 
-    private val byValue: Map<String, String> by lazy { classes.associate { it.value to hex(it.color) } }
-
-    /** The colour a feature with [properties] is drawn in, #rrggbb. */
-    fun hexFor(properties: JsonObject?): String {
-        val field = field ?: return hex
-        val value = (properties?.get(field) as? JsonPrimitive)?.contentOrNull ?: return hex
-        return byValue[value] ?: hex
+    /** The colour a feature with [properties] is drawn in, as MapLibre takes it (see [mapColor]). */
+    fun mapColorFor(properties: JsonObject?): String {
+        val other = mapColor(color)
+        val field = field ?: return other
+        val value = (properties?.get(field) as? JsonPrimitive)?.contentOrNull ?: return other
+        return byValue[value] ?: other
     }
 
     /** As layer.style takes it. */
     fun json(): JsonObject = buildJsonObject {
-        put("color", hex)
+        put("color", colorHex(color))
         put("size", size.toDouble())
         put("width", width.toDouble())
         put("fill", fill.toDouble())
         if (field != null) {
             put("field", field)
             putJsonArray("classes") {
-                for (c in classes) addJsonObject { put("value", c.value); put("color", hex(c.color)) }
+                for (c in classes) addJsonObject { put("value", c.value); put("color", colorHex(c.color)) }
             }
         }
     }
@@ -136,9 +131,18 @@ fun styleOf(layer: JsonObject, fallback: Color): LayerStyle {
     )
 }
 
-private fun colorOf(hex: String): Color? = runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
+private fun colorOf(hex: String): Color? = if (hex.startsWith("#")) colorOfCode(hex.substring(1)) else null
 
-private fun hex(color: Color): String = "#%06x".format(color.toArgb() and 0xffffff)
+/** A colour as a style keeps it: #rrggbb, or #rrggbbaa when it is not opaque. */
+fun colorHex(color: Color): String = "#" + hexCode(color, alpha = true).lowercase()
+
+/** A colour as MapLibre takes it: #rrggbb, or rgba() when it is not opaque. */
+fun mapColor(color: Color): String {
+    val argb = color.toArgb()
+    val a = (argb ushr 24) and 0xff
+    if (a == 0xff) return "#%06x".format(argb and 0xffffff)
+    return "rgba(%d, %d, %d, %.3f)".format(Locale.ROOT, (argb shr 16) and 0xff, (argb shr 8) and 0xff, argb and 0xff, a / 255.0)
+}
 
 /** The most values a categorized style lists; features with others keep the layer's colour. */
 const val MAX_CLASSES = 100
@@ -232,7 +236,8 @@ fun StyleDialog(
                     classes.forEachIndexed { i, c -> ClassRow(c.value, c.color) { picking = i } }
                     ClassRow(stringResource(R.string.style_other), color) { picking = OTHER }
                 } else {
-                    ColorPalette(color, onMore = { picking = OTHER }) { color = it }
+                    // A colour of the palette keeps the opacity there was.
+                    ColorPalette(color, onMore = { picking = OTHER }) { color = it.copy(alpha = color.alpha) }
                 }
                 if (point) StyleSlider(stringResource(R.string.style_size), size, 2f..16f) { size = it }
                 if (!point) StyleSlider(stringResource(R.string.style_width), width, 1f..10f) { width = it }
@@ -274,7 +279,7 @@ private fun ClassRow(value: String, color: Color, onClick: () -> Unit) {
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 6.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(24.dp).clip(CircleShape).background(color).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape))
+        ColorDot(color, 24.dp)
         Spacer(Modifier.width(12.dp))
         Text(value, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

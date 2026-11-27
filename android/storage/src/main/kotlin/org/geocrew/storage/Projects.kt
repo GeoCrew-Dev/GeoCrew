@@ -207,6 +207,9 @@ private val STYLE_KEYS = setOf("color", "size", "width", "fill", "field", "class
 // The most values a categorized style may colour.
 private const val MAX_CLASSES = 100
 
+// A style's colour: #rrggbb, or #rrggbbaa with its opacity.
+private val STYLE_COLOR = Regex("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")
+
 // The rows of a query, as column name to text.
 private fun rows(ds: VectorDataset, sql: String): List<Map<String, String?>> =
     Json.parseToJsonElement(ds.sql(sql)).jsonArray.map { row ->
@@ -263,7 +266,8 @@ class Project internal constructor(
         }
 
     /**
-     * Sets how layer [layer] is drawn: one colour (#rrggbb), a point's [size]
+     * Sets how layer [layer] is drawn: one colour (#rrggbb, or #rrggbbaa with
+     * its opacity), a point's [size]
      * and a line's width in dp, an area's fill opacity; what is left out takes
      * its default. With a "field" of the layer and "classes" ([{"value",
      * "color"}], each value once, at most 100) features are coloured by that
@@ -281,7 +285,7 @@ class Project internal constructor(
             return n
         }
         val color = style["color"]?.let { (it as? JsonPrimitive)?.contentOrNull }
-        require(style["color"] == null || (color != null && Regex("#[0-9a-fA-F]{6}").matches(color))) { "color is #rrggbb" }
+        require(style["color"] == null || (color != null && STYLE_COLOR.matches(color))) { "color is #rrggbb or #rrggbbaa" }
         val size = number("size", 1.0..30.0)
         val width = number("width", 0.5..20.0)
         val fill = number("fill", 0.0..1.0)
@@ -294,8 +298,8 @@ class Project internal constructor(
             listed.map { o ->
                 val value = (o?.get("value") as? JsonPrimitive)?.contentOrNull
                 val shown = (o?.get("color") as? JsonPrimitive)?.contentOrNull
-                require(o != null && o.keys == setOf("value", "color") && value != null && shown != null && Regex("#[0-9a-fA-F]{6}").matches(shown)) {
-                    "each class is {\"value\", \"color\": #rrggbb}"
+                require(o != null && o.keys == setOf("value", "color") && value != null && shown != null && STYLE_COLOR.matches(shown)) {
+                    "each class is {\"value\", \"color\": #rrggbb or #rrggbbaa}"
                 }
                 value to shown.lowercase()
             }.also { pairs -> require(pairs.map { it.first }.toSet().size == pairs.size) { "each value has one class" } }
