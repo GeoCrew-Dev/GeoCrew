@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.text.Collator
 import java.text.Normalizer
+import java.time.Instant
 import java.util.Locale
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -61,8 +62,8 @@ import kotlinx.serialization.json.put
 import org.geocrew.core.action.Outcome
 import org.geocrew.storage.Workspace
 
-/** A feature as a row of the table: its fid and its values as shown, one per field. */
-private data class TableRow(val fid: Long, val cells: List<String>)
+/** A feature as a row of the table: its fid, its values as shown, one per field, and the moments its dates and times say (null elsewhere). */
+private data class TableRow(val fid: Long, val cells: List<String>, val moments: List<Instant?>)
 
 // The fid column's header, the name GeoPackage gives it.
 private const val FID = "fid"
@@ -120,7 +121,12 @@ fun AttributeTableScreen(graph: AppGraph, project: String, layer: String, onBack
             val feature = f.jsonObject
             val fid = (feature["id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
             val properties = feature["properties"] as? JsonObject
-            TableRow(fid, listOf(fid.toString()) + read.map { cell(properties?.get(it.name), it.type, yes, no, locale) })
+            val raw = read.map { (properties?.get(it.name) as? JsonPrimitive)?.takeUnless { p -> p is JsonNull }?.contentOrNull.orEmpty() }
+            TableRow(
+                fid,
+                listOf(fid.toString()) + read.mapIndexed { i, f -> cell(raw[i], f.type, yes, no, locale) },
+                listOf<Instant?>(null) + read.mapIndexed { i, f -> if (f.type == "datetime") instantOf(raw[i]) else null },
+            )
         }
     }
 
@@ -221,22 +227,27 @@ private fun Message(text: String) {
 }
 
 // A value as the table shows it: empty for none, yes or no for a boolean, a date and time where the phone is.
-private fun cell(value: Any?, type: String, yes: String, no: String, locale: Locale): String {
-    val text = (value as? JsonPrimitive)?.takeUnless { it is JsonNull }?.contentOrNull ?: return ""
+private fun cell(text: String, type: String, yes: String, no: String, locale: Locale): String {
+    if (text.isEmpty()) return ""
     return when (type) {
         "boolean" -> if (text == "true" || text == "1") yes else no
         else -> shownDateTime(type, text, locale)
     }
 }
 
-// Numbers sort as numbers, the rest as text; empty cells go last either way.
+// Dates and times sort by their moments, numbers as numbers, the rest as text; empty cells go last either way.
 private fun sorted(rows: List<TableRow>, sorting: Sorting?): List<TableRow> {
     sorting ?: return rows
     val i = sorting.column
     val (empty, filled) = rows.partition { it.cells[i].isEmpty() }
     val numeric = filled.all { it.cells[i].toDoubleOrNull() != null }
+    val timed = filled.all { it.moments[i] != null }
     val collator = Collator.getInstance()
-    val ordered = if (numeric) filled.sortedBy { it.cells[i].toDouble() } else filled.sortedWith { a, b -> collator.compare(a.cells[i], b.cells[i]) }
+    val ordered = when {
+        timed -> filled.sortedBy { it.moments[i] }
+        numeric -> filled.sortedBy { it.cells[i].toDouble() }
+        else -> filled.sortedWith { a, b -> collator.compare(a.cells[i], b.cells[i]) }
+    }
     return (if (sorting.ascending) ordered else ordered.reversed()) + empty
 }
 
