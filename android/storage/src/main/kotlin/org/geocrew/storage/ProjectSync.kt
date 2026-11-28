@@ -172,13 +172,15 @@ internal class ProjectSync(
         var done = Pulled(0, 0, 0)
         do {
             val page = client.pull(account.workspace, account.token, since, batch)
-            followDeletions(page.layers)
+            followDeletions(page.layers, restored = true)
             val layers = makeLayers(page.layers)
             restructure(page.layers)
             writeLayerProps(page.layers)
             val rows = writeRows(page.rows, page.seq)
             writeAttachments(page.rows.filter { it.layer == Outbox.ATTACHMENTS }, page.seq, rowsCame = rows > 0)
             keepConflicts(page.conflicts)
+            // Hidden after its rows of the page are written: changes made before the deletion stay for a restore.
+            followDeletions(page.layers, restored = false)
             done = Pulled(done.rows + rows, done.layers + layers, done.conflicts + page.conflicts.size)
             since = page.seq
             // After the page is written: a pull cut short writes it again, to the same end.
@@ -336,10 +338,10 @@ internal class ProjectSync(
      * to send goes all the same: the server refuses it, and it stays as not
      * accepted (4.6).
      */
-    private fun followDeletions(layers: List<PulledLayer>) {
+    private fun followDeletions(layers: List<PulledLayer>, restored: Boolean) {
         val hidden = project.hiddenLayers()
-        val hide = layers.filter { l -> l.deleted && project.layers.any { it.id == l.id } }.map { it.id }
-        val show = layers.filter { !it.deleted && it.id in hidden }.map { it.id }
+        val hide = if (restored) emptyList() else layers.filter { l -> l.deleted && project.layers.any { it.id == l.id } }.map { it.id }
+        val show = if (restored) layers.filter { !it.deleted && it.id in hidden }.map { it.id } else emptyList()
         if (hide.isEmpty() && show.isEmpty()) return
         // Nothing is unsaved while a pull comes in; were it, the page would come again with the next pull.
         project = changing(project) {
