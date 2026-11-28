@@ -597,6 +597,11 @@
     <string name="sync_mixed">A layer mixes points, lines and areas</string>
     <string name="sync_not_linked">Not shared with a team</string>
     <string name="sync_archived">The workspace is archived</string>
+    <string name="sync_untrusted">The server\'s certificate is not trusted</string>
+    <string name="sync_key_changed">The server\'s key has changed</string>
+    <string name="team_check_key">Check the server key</string>
+    <string name="team_key_matches">Matches</string>
+    <string name="team_fingerprint">Server key</string>
     <plurals name="team_waiting">
         <item quantity="one">%d change to send</item>
         <item quantity="other">%d changes to send</item>

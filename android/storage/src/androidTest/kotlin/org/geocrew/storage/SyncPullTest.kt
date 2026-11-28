@@ -72,7 +72,7 @@ class SyncPullTest {
         val accounts = File(context.noBackupFilesDir, "sync-pull").apply { deleteRecursively() }
         registry = ActionRegistry().apply {
             workspace.actions.forEach(::register)
-            SyncActions(workspace, accounts) { server }.actions.forEach(::register)
+            SyncActions(workspace, accounts) { _, _ -> server }.actions.forEach(::register)
         }
     }
 

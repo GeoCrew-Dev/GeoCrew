@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.GroupAdd
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -20,9 +21,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.geocrew.core.action.Outcome
 import org.geocrew.storage.SyncActions
 
@@ -39,6 +47,8 @@ internal class SyncTexts(
     private val notLinked: String,
     private val archived: String,
     private val unsaved: String,
+    private val untrusted: String,
+    private val keyChanged: String,
     private val failed: String,
 ) {
     fun of(outcome: Outcome): String = when ((outcome as? Outcome.Failed)?.code) {
@@ -50,6 +60,8 @@ internal class SyncTexts(
         SyncActions.NOT_LINKED -> notLinked
         "archived" -> archived
         SyncActions.UNSAVED -> unsaved
+        SyncActions.UNTRUSTED -> untrusted
+        SyncActions.KEY_CHANGED -> keyChanged
         else -> failed.format((outcome as? Outcome.Failed)?.message ?: outcome.toString())
     }
 }
@@ -64,6 +76,8 @@ internal fun syncTexts() = SyncTexts(
     notLinked = stringResource(R.string.sync_not_linked),
     archived = stringResource(R.string.sync_archived),
     unsaved = stringResource(R.string.failure_unsaved),
+    untrusted = stringResource(R.string.sync_untrusted),
+    keyChanged = stringResource(R.string.sync_key_changed),
     failed = stringResource(R.string.action_failed),
 )
 
@@ -147,6 +161,42 @@ private fun ServerField(value: String, onChange: (String) -> Unit) {
         placeholder = { Text("https://") },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+    )
+}
+
+/** What sharing or joining on a server needs first about its key (ADR 0014, protocol v1 3.4). */
+internal sealed interface KeyCheck {
+    /** A certificate authority vouches for the server (or it is plain HTTP, in debug builds): nothing to pin. */
+    data object Vouched : KeyCheck
+
+    /** The user checks [fingerprint] with the leader; it is pinned once they say it matches. */
+    data class Ask(val fingerprint: String) : KeyCheck
+
+    data class Failed(val outcome: Outcome) : KeyCheck
+}
+
+internal suspend fun checkKey(graph: AppGraph, server: String): KeyCheck {
+    if (!server.startsWith("https://")) return KeyCheck.Vouched
+    val done = graph.invoke(SyncActions.KEY, buildJsonObject { put("server", server) })
+    if (done !is Outcome.Done) return KeyCheck.Failed(done)
+    val key = done.output.jsonObject
+    val fingerprint = (key["fingerprint"] as? JsonPrimitive)?.contentOrNull ?: return KeyCheck.Failed(done)
+    return if ((key["trusted"] as? JsonPrimitive)?.booleanOrNull == true) KeyCheck.Vouched else KeyCheck.Ask(fingerprint)
+}
+
+/** A key fingerprint in groups of four, to read out and compare. */
+internal fun grouped(fingerprint: String): String = fingerprint.chunked(4).joinToString(" ")
+
+/** The server's key, to check with the leader's before it is taken. */
+@Composable
+fun KeyDialog(fingerprint: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AppDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Rounded.Key, null) },
+        title = { Text(stringResource(R.string.team_check_key)) },
+        text = { Text(grouped(fingerprint), style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Monospace) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.team_key_matches)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

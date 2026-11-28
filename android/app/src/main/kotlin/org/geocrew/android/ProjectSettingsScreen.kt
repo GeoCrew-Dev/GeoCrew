@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.Sync
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -86,6 +88,7 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
     var sharing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var shownInvite by remember { mutableStateOf<String?>(null) }
+    var keyToCheck by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     val scope = rememberCoroutineScope()
     var failure by remember { mutableStateOf<String?>(null) }
     val sync = syncTexts()
@@ -137,10 +140,11 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
         team = (graph.invoke(SyncActions.STATUS) as? Outcome.Done)?.output?.jsonObject
     }
 
-    fun share(server: String, name: String, nickname: String) = scope.launch {
+    fun share(server: String, name: String, nickname: String, pin: String?) = scope.launch {
         busy = true
         val params = buildJsonObject {
             put("server", server)
+            pin?.let { put("pin", it) }
             put("name", name)
             put("nickname", nickname)
             put("device", deviceName())
@@ -155,6 +159,18 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
             else -> failure = sync.of(done)
         }
         team = (graph.invoke(SyncActions.STATUS) as? Outcome.Done)?.output?.jsonObject
+    }
+
+    // The server's key first: one no certificate authority vouches for is checked with the leader's, then pinned.
+    fun checkThenShare(server: String, name: String, nickname: String) = scope.launch {
+        busy = true
+        val key = checkKey(graph, server)
+        busy = false
+        when (key) {
+            KeyCheck.Vouched -> share(server, name, nickname, null)
+            is KeyCheck.Ask -> keyToCheck = key.fingerprint to { share(server, name, nickname, key.fingerprint) }
+            is KeyCheck.Failed -> failure = sync.of(key.outcome)
+        }
     }
 
     Scaffold(
@@ -240,6 +256,16 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
                         colors = clear,
                     )
                 }
+                team?.text("fingerprint")?.let { fingerprint ->
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.team_fingerprint)) },
+                            supportingContent = { Text(grouped(fingerprint), fontFamily = FontFamily.Monospace) },
+                            leadingContent = { Icon(Icons.Rounded.Key, null) },
+                            colors = clear,
+                        )
+                    }
+                }
                 item {
                     val waiting = team?.number("waiting") ?: 0
                     val rejected = team?.number("rejected") ?: 0
@@ -275,9 +301,12 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
             onDismiss = { sharing = false },
             onShare = { server, name, nickname ->
                 sharing = false
-                share(server, name, nickname)
+                checkThenShare(server, name, nickname)
             },
         )
+    }
+    keyToCheck?.let { (fingerprint, go) ->
+        KeyDialog(fingerprint, onDismiss = { keyToCheck = null }, onConfirm = { keyToCheck = null; go() })
     }
     shownInvite?.let { code -> InviteDialog(code, onDismiss = { shownInvite = null }) }
 

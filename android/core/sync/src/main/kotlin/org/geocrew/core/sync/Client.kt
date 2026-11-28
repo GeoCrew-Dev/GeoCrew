@@ -6,6 +6,7 @@ import java.net.URI
 import java.net.URLEncoder
 import java.time.Instant
 import java.time.OffsetDateTime
+import javax.net.ssl.HttpsURLConnection
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -275,12 +276,34 @@ class SyncClient(private val transport: Transport) {
 /**
  * The transport over HTTP(S) to the server at [base] (its root, as an invite
  * gives it), with [HttpURLConnection]: no library of its own. PATCH is not
- * among the methods it sends; sync does not use it. Certificate pinning
- * (ADR 0014) comes with the join screen.
+ * among the methods it sends; sync does not use it.
+ *
+ * With a [pin] (ADR 0014, protocol v1 3.4) it takes only a certificate with
+ * that key, over https, and not a name or an authority: a different key is
+ * [KeyChanged]. Without one the system's certificate authorities decide, and
+ * a certificate they do not vouch for is [Untrusted].
  */
-class HttpTransport(private val base: String, private val timeoutMs: Int = 30_000) : Transport {
-    override fun send(method: String, path: String, token: String?, body: String?): Reply {
+class HttpTransport(private val base: String, private val pin: String? = null, private val timeoutMs: Int = 30_000) : Transport {
+    private val pinned = pin?.let(Pins::pinned)
+
+    override fun send(method: String, path: String, token: String?, body: String?): Reply = try {
+        exchange(method, path, token, body)
+    } catch (e: IOException) {
+        val mismatch = Pins.mismatchIn(e)
+        throw when {
+            mismatch != null -> KeyChanged(mismatch.seen)
+            pin == null && Pins.isTrustFailure(e) -> Untrusted(e)
+            else -> e
+        }
+    }
+
+    private fun exchange(method: String, path: String, token: String?, body: String?): Reply {
         val c = URI(base.trimEnd('/') + path).toURL().openConnection() as HttpURLConnection
+        if (pinned != null) {
+            if (c !is HttpsURLConnection) throw IOException("a pinned key needs an https address")
+            c.sslSocketFactory = pinned.socketFactory
+            c.setHostnameVerifier { _, _ -> true }
+        }
         try {
             c.requestMethod = method
             c.connectTimeout = timeoutMs
