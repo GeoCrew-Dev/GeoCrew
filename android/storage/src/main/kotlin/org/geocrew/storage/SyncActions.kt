@@ -5,6 +5,7 @@ import java.io.IOException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -129,6 +130,7 @@ class SyncActions(
                         put("workspace", joined.workspace)
                         put("pulled", pulled.rows)
                         put("layers", pulled.layers)
+                        renamed(sync)
                     },
                     endsUndo = ended.distinct(),
                 )
@@ -159,9 +161,7 @@ class SyncActions(
                         put("conflicts", pushed.conflicts + (pulled?.conflicts ?: 0))
                         put("open_conflicts", Conflicts.open(sync.project))
                         put("structure", sync.project.data { SharedSchema.unsent(it, sync.project) }.size)
-                        putJsonArray("renamed") {
-                            for (r in sync.renamed) add(buildJsonObject { put("layer", r.layer); put("from", r.from); put("to", r.to) })
-                        }
+                        renamed(sync)
                         if (pulled == null) put("pulled", JsonNull) else put("pulled", pulled.rows)
                         put("layers", pulled?.layers ?: 0)
                     },
@@ -257,12 +257,18 @@ class SyncActions(
                     buildJsonObject {
                         put("open_conflicts", Conflicts.open(sync.project))
                         if (pulled == null) put("pulled", JsonNull) else put("pulled", pulled.rows)
+                        renamed(sync)
                     },
                     endsUndo = ended.distinct(),
                 )
             }
         },
     )
+
+    // The fields of this phone's that sync gave other names, the team having theirs (protocol v1 7.4), to tell the user.
+    private fun JsonObjectBuilder.renamed(sync: ProjectSync) = putJsonArray("renamed") {
+        for (r in sync.renamed) add(buildJsonObject { put("layer", r.layer); put("from", r.from); put("to", r.to) })
+    }
 
     // Fields changed for sync (protocol v1 7.4), the project opened again after; the undo histories that end go into [ended].
     private fun changing(ended: MutableList<String>): (Project, () -> Unit) -> Project? = { p, change ->
