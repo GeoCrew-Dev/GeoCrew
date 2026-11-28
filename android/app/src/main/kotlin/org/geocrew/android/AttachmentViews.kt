@@ -229,14 +229,15 @@ internal fun PhotoViewer(file: JsonObject, note: String? = null, onDismiss: () -
 }
 
 /** Fetches [file]'s original from the team's workspace (protocol v1 9.2): null once it is here, else what to tell the user. */
-internal suspend fun fetchAttachment(graph: AppGraph, texts: SyncTexts, file: JsonObject): String? {
+internal suspend fun fetchAttachment(graph: AppGraph, texts: SyncTexts, missing: String, file: JsonObject): String? {
     val params = buildJsonObject {
         put("file", file.text("file").orEmpty())
         put("type", file.text("type").orEmpty())
     }
     return when (val done = graph.invoke(SyncActions.FILE, params)) {
         is Outcome.Done -> null
-        else -> texts.of(done)
+        // A project with no team to fetch it from: the file is just not on this phone.
+        else -> if ((done as? Outcome.Failed)?.code == SyncActions.NOT_LINKED) missing else texts.of(done)
     }
 }
 

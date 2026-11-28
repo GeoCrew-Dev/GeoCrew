@@ -199,6 +199,8 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         val layer = project.layers.firstOrNull { it.id == text("target_layer") } ?: return false
         val fid = Outbox.fidOf(ds, layer.id, text("target_row") ?: return false) ?: return false
         val store = project.target(layer.name).store
+        // A feature deleted here: a photo waits for it to come back (its fid may go to another); a deletion has nothing to do.
+        if (store.feature(fid) == null) return deleted
         val had = store.attachments(fid)
         val now = if (deleted) {
             had.filterNot { it.id == id }

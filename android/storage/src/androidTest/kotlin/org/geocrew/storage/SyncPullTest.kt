@@ -264,6 +264,15 @@ class SyncPullTest {
         server.pages[6] = """{"layers": [], "rows": [$gone], "conflicts": [], "seq": 7, "more": false}"""
         output(run(SyncActions.NOW))
         assertTrue(on("r1").isEmpty())
+
+        // A photo for a feature deleted here waits: it is not put on the fid, which a new feature may get.
+        run(Editing.START, """{"layer": "野外点"}""")
+        run(Editing.DELETE, """{"layer": "野外点", "fid": ${project.data { Outbox.fidOf(it, "L1", "r2") }}}""")
+        run(Editing.SAVE, """{"layer": "野外点"}""")
+        server.pages[7] = """{"layers": [], "rows": [${attachment("a3", "r2", sha(original), null, 8)}], "conflicts": [], "seq": 8, "more": false}"""
+        output(run(SyncActions.NOW))
+        assertTrue(project.data { rows(it, "SELECT uuid FROM geocrew_attachments WHERE uuid = 'a3'") }.isEmpty(), "not on the deleted feature")
+        assertEquals(1, project.data { rows(it, "SELECT uuid FROM geocrew_pending_attachments WHERE uuid = 'a3'") }.size, "waiting for it")
     }
 
     @Test

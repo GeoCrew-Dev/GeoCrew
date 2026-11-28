@@ -305,6 +305,7 @@ fun MapScreen(
     val syncedText = stringResource(R.string.team_synced)
     val sentOnlyText = stringResource(R.string.team_sent_only)
     val viewText = stringResource(R.string.conflicts_view)
+    val missingFileText = stringResource(R.string.attachment_missing)
     var exporting by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val modified = collections.values.any { it.flag("projectModified") }
@@ -1818,7 +1819,7 @@ fun MapScreen(
                     ?.takeUnless { it.endsWith("Point") }?.contains("Polygon"),
                 attachments = selectedFiles,
                 importFile = { importAttachment(context, graph, it) },
-                fetchFile = { fetchAttachment(graph, syncFailures, it) },
+                fetchFile = { fetchAttachment(graph, syncFailures, missingFileText, it) },
             )
         }
     }
