@@ -22,7 +22,9 @@ import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.Editing
+import org.geocrew.core.sync.KeyChanged
 import org.geocrew.core.sync.Reply
+import org.geocrew.core.sync.ServerKey
 import org.geocrew.core.sync.Transport
 import org.junit.Before
 import org.junit.Test
@@ -105,7 +107,7 @@ class SyncPushTest {
         val accounts = File(context.noBackupFilesDir, "sync-test").apply { deleteRecursively() }
         registry = ActionRegistry().apply {
             workspace.actions.forEach(::register)
-            SyncActions(workspace, accounts) { server }.actions.forEach(::register)
+            SyncActions(workspace, accounts) { _, _ -> server }.actions.forEach(::register)
         }
     }
 
@@ -119,6 +121,27 @@ class SyncPushTest {
 
     private fun add(name: String, x: Double) {
         run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [$x, 30.6]}, "properties": {"点名": "$name"}}""")
+    }
+
+    @Test
+    fun theServerKeyCheckedIsPinnedAndAChangedKeyRefused() {
+        val pins = mutableListOf<String?>()
+        var changed = false
+        registry = ActionRegistry().apply {
+            workspace.actions.forEach(::register)
+            SyncActions(workspace, File(context.noBackupFilesDir, "sync-test-pin").apply { deleteRecursively() }, { ServerKey("the-key", trusted = false) }) { _, pin ->
+                pins += pin
+                if (changed) Transport { _, _, _, _ -> throw KeyChanged("another-key") } else server
+            }.actions.forEach(::register)
+        }
+        assertEquals("the-key", output(run(SyncActions.KEY, """{"server": "https://fake"}""")).getValue("fingerprint").jsonPrimitive.content)
+        run(Workspace.CREATE, """{"name": "固定", "language": "zh"}""")
+        output(run(SyncActions.SHARE, """{"server": "https://fake", "pin": "the-key", "nickname": "组长", "device": "test"}"""))
+        assertEquals("the-key", output(run(SyncActions.STATUS)).getValue("fingerprint").jsonPrimitive.content)
+        output(run(SyncActions.NOW))
+        assertEquals(listOf<String?>("the-key"), pins.distinct(), "every call takes only the pinned key")
+        changed = true
+        assertEquals(SyncActions.KEY_CHANGED, (run(SyncActions.NOW) as Outcome.Failed).code)
     }
 
     @Test

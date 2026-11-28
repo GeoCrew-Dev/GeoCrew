@@ -566,6 +566,11 @@
     <string name="sync_mixed">有图层混合了点、线、面</string>
     <string name="sync_not_linked">工程未共享</string>
     <string name="sync_archived">工作区已归档</string>
+    <string name="sync_untrusted">服务器证书不受信任</string>
+    <string name="sync_key_changed">服务器的密钥变了</string>
+    <string name="team_check_key">核对服务器指纹</string>
+    <string name="team_key_matches">一致</string>
+    <string name="team_fingerprint">服务器指纹</string>
     <plurals name="team_waiting">
         <item quantity="other">待上传 %d 条</item>
     </plurals>

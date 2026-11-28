@@ -17,38 +17,65 @@ import org.geocrew.core.action.Caller
 import org.geocrew.core.action.Risk
 import org.geocrew.core.action.Stability
 import org.geocrew.core.sync.HttpTransport
+import org.geocrew.core.sync.KeyChanged
+import org.geocrew.core.sync.Pins
 import org.geocrew.core.sync.ServerError
+import org.geocrew.core.sync.ServerKey
 import org.geocrew.core.sync.SyncClient
 import org.geocrew.core.sync.Transport
+import org.geocrew.core.sync.Untrusted
 
 /**
  * Syncing the open project with a team workspace (protocol v1, ADR 0008):
  * sharing it on a server, sending its saved edits, and how far it is. Each
  * project's account is kept in [accountsDir] on this phone; [transport] reaches a
- * server by its address (HTTP, or a fake in tests).
+ * server by its address and the key pinned for it, if any (HTTP, or a fake in
+ * tests), and [keyOf] reads a server's key for the user to check.
  */
-class SyncActions(private val workspace: Workspace, accountsDir: File, private val transport: (String) -> Transport = { HttpTransport(it) }) {
+class SyncActions(
+    private val workspace: Workspace,
+    accountsDir: File,
+    private val keyOf: (String) -> ServerKey = { Pins.keyOf(it) },
+    private val transport: (server: String, pin: String?) -> Transport = { server, pin -> HttpTransport(server, pin) },
+) {
     private val accounts = SyncAccounts(accountsDir)
 
     val actions: List<Action> = listOf(
         SyncAction(
+            KEY, "Server key",
+            "The key of the server at [server] (an https address): its fingerprint, and whether a certificate authority vouches for " +
+                "it. One not vouched for is checked with the leader, then given as the [pin] to share or join",
+            Risk.VIEW, KEY_PARAMS, """{"server": "https://192.168.1.20:8080"}""",
+        ) { p ->
+            remote {
+                val key = keyOf(p.text("server")!!.trim())
+                ActionResult.Done(
+                    buildJsonObject {
+                        put("fingerprint", key.fingerprint)
+                        put("trusted", key.trusted)
+                    },
+                )
+            }
+        },
+        SyncAction(
             SHARE, "Share project",
-            "Creates a team workspace for the open project on the server at [server], with the user as its leader ([nickname], on " +
-                "[device]), sends it the project's layers and features, and syncs the project with it from then on; gives the invite code",
+            "Creates a team workspace for the open project on the server at [server] (taking only the key [pin] when given), with " +
+                "the user as its leader ([nickname], on [device]), sends it the project's layers and features, and syncs the project with it from then on; gives the invite code",
             Risk.SEND, SHARE_PARAMS, """{"server": "https://geo.example.org", "nickname": "张三", "device": "Galaxy S24"}""",
         ) { p ->
             val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
             if (accounts.of(project.id) != null) return@SyncAction ActionResult.Failed(LINKED, "the project already syncs with a workspace")
             val server = p.text("server")!!.trim()
+            val pin = p.text("pin")?.takeIf { it.isNotBlank() }
             remote {
-                val client = SyncClient(transport(server))
+                val client = SyncClient(transport(server, pin))
                 val info = client.info()
                 if (info.protocol != 1 || "sync" !in info.capabilities) return@remote ActionResult.Failed(UNSUPPORTED, "the server does not speak protocol v1 sync")
                 if ("create" !in info.capabilities) return@remote ActionResult.Failed(UNSUPPORTED, "the server takes no new workspaces")
                 // Every layer is checked before the workspace is made: none is left behind for a project that cannot go.
                 ProjectSync.specs(project)
                 val joined = client.create(p.text("name")?.takeIf { it.isNotBlank() } ?: project.name, p.text("nickname")!!, p.text("device")!!)
-                val account = SyncAccount(server, joined.workspace, joined.member, joined.token)
+                val account = SyncAccount(server, joined.workspace, joined.member, joined.token, pin)
                 accounts.put(project.id, account)
                 val sync = ProjectSync(project, client, account)
                 sync.share()
@@ -65,7 +92,7 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
         },
         SyncAction(
             JOIN, "Join workspace",
-            "Joins the team workspace on the server at [server] with an [invite_code] as a new member ([nickname], on [device]), or with " +
+            "Joins the team workspace on the server at [server] (taking only the key [pin] when given) with an [invite_code] as a new member ([nickname], on [device]), or with " +
                 "a [transfer_code] as the member it was issued for, makes a new project for it (named in [language]) and brings in its " +
                 "layers and features; the open project closes, and nothing in it may be unsaved",
             Risk.SEND, JOIN_PARAMS, """{"server": "https://geo.example.org", "invite_code": "K7QX2MPA", "nickname": "李四", "device": "Mate 60"}""",
@@ -74,17 +101,18 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
             val server = p.text("server")!!.trim()
             val invite = p.text("invite_code")?.takeIf { it.isNotBlank() }
             val transfer = p.text("transfer_code")?.takeIf { it.isNotBlank() }
+            val pin = p.text("pin")?.takeIf { it.isNotBlank() }
             if ((invite == null) == (transfer == null)) return@SyncAction ActionResult.Failed(BAD_REQUEST, "an invite code or a transfer code, one of them")
             if (invite != null && p.text("nickname").isNullOrBlank()) return@SyncAction ActionResult.Failed(BAD_REQUEST, "a nickname comes with an invite code")
             remote {
-                val client = SyncClient(transport(server))
+                val client = SyncClient(transport(server, pin))
                 val info = client.info()
                 if (info.protocol != 1 || "sync" !in info.capabilities) return@remote ActionResult.Failed(UNSUPPORTED, "the server does not speak protocol v1 sync")
                 val joined = if (transfer != null) client.joinWithTransferCode(transfer, p.text("device")!!) else client.join(invite!!, p.text("nickname")!!, p.text("device")!!)
                 val opened = workspace.createAndOpen(joined.workspaceName, p.text("language") ?: "en")
                 if (opened !is ActionResult.Done) return@remote opened
                 val project = checkNotNull(workspace.current)
-                val account = SyncAccount(server, joined.workspace, joined.member, joined.token)
+                val account = SyncAccount(server, joined.workspace, joined.member, joined.token, pin)
                 accounts.put(project.id, account)
                 project.link(joined.workspace)
                 val pulled = ProjectSync(project, client, account).pull(info.maxPullBatch)
@@ -108,7 +136,7 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
             val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
             val account = accounts.of(project.id) ?: return@SyncAction ActionResult.Failed(NOT_LINKED, "the project syncs with no workspace")
             remote {
-                val client = SyncClient(transport(account.server))
+                val client = SyncClient(transport(account.server, account.pin))
                 val info = client.info()
                 val sync = ProjectSync(project, client, account)
                 if (!project.data(Outbox::linked)) sync.share()
@@ -134,7 +162,7 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
             val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
             val account = accounts.of(project.id) ?: return@SyncAction ActionResult.Failed(NOT_LINKED, "the project syncs with no workspace")
             remote {
-                val code = SyncClient(transport(account.server)).inviteCode(account.workspace, account.token)
+                val code = SyncClient(transport(account.server, account.pin)).inviteCode(account.workspace, account.token)
                 ActionResult.Done(buildJsonObject { if (code == null) put("invite_code", JsonNull) else put("invite_code", code) })
             }
         },
@@ -152,6 +180,7 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
                     account?.let {
                         put("server", it.server)
                         put("workspace", it.workspace)
+                        it.pin?.let { pin -> put("fingerprint", pin) }
                     }
                     put("waiting", waiting)
                     put("rejected", rejected)
@@ -171,6 +200,10 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
         block()
     } catch (e: ServerError) {
         ActionResult.Failed(e.code, e.message ?: "the server refused")
+    } catch (e: Untrusted) {
+        ActionResult.Failed(UNTRUSTED, "the server's certificate is not vouched for: check its key (sync.key) with the leader, then give it as the pin")
+    } catch (e: KeyChanged) {
+        ActionResult.Failed(KEY_CHANGED, "the server's key changed to ${e.seen}: never taken without the leader's word")
     } catch (e: ProjectSync.Unsupported) {
         ActionResult.Failed(MIXED, e.message ?: "a layer the workspace cannot take")
     } catch (e: IOException) {
@@ -197,6 +230,7 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
         const val INVITE = "sync.invite"
         const val NOW = "sync.now"
         const val STATUS = "sync.status"
+        const val KEY = "sync.key"
 
         /** Failure codes besides the server's own (protocol v1 3.2). */
         const val NO_PROJECT = "no_project"
@@ -207,17 +241,23 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
         const val OFFLINE = "offline"
         const val UNSAVED = "unsaved"
         const val BAD_REQUEST = "invalid"
+        const val UNTRUSTED = "untrusted"
+        const val KEY_CHANGED = "key_changed"
 
         private fun schema(s: String) = Json.parseToJsonElement(s).jsonObject
 
         private val SHARE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["server", "nickname", "device"],
-                "properties": {"server": {"type": "string"}, "name": {"type": "string"}, "nickname": {"type": "string"}, "device": {"type": "string"}}}""",
+                "properties": {"server": {"type": "string"}, "pin": {"type": "string"}, "name": {"type": "string"}, "nickname": {"type": "string"},
+                "device": {"type": "string"}}}""",
         )
         private val JOIN_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["server", "device"],
-                "properties": {"server": {"type": "string"}, "invite_code": {"type": "string"}, "transfer_code": {"type": "string"},
+                "properties": {"server": {"type": "string"}, "pin": {"type": "string"}, "invite_code": {"type": "string"}, "transfer_code": {"type": "string"},
                 "nickname": {"type": "string"}, "device": {"type": "string"}, "language": {"enum": ["zh", "en"]}}}""",
+        )
+        private val KEY_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["server"], "properties": {"server": {"type": "string"}}}""",
         )
         private val NO_PARAMS = schema("""{"type": "object", "additionalProperties": false, "properties": {}}""")
     }

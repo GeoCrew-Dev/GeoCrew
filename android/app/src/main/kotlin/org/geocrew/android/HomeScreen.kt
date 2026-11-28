@@ -125,6 +125,7 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
     // Joining a team's workspace makes a project of it and opens it (ADR 0008).
     var joining by remember { mutableStateOf(false) }
     var joiningBusy by remember { mutableStateOf(false) }
+    var keyToCheck by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     val sync = syncTexts()
     var failure by remember { mutableStateOf<String?>(null) }
     val failedText = stringResource(R.string.action_failed)
@@ -234,9 +235,11 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
             onJoin = { server, code, nickname ->
                 joining = false
                 joiningBusy = true
-                scope.launch {
+                fun join(pin: String?) = scope.launch {
+                    joiningBusy = true
                     val params = buildJsonObject {
                         put("server", server)
+                        pin?.let { put("pin", it) }
                         put("invite_code", code)
                         put("nickname", nickname)
                         put("device", deviceName())
@@ -250,8 +253,25 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
                         else -> failure = sync.of(joined)
                     }
                 }
+                // The server's key first: one no certificate authority vouches for is checked with the leader, then pinned.
+                scope.launch {
+                    when (val key = checkKey(graph, server)) {
+                        KeyCheck.Vouched -> join(null)
+                        is KeyCheck.Ask -> {
+                            joiningBusy = false
+                            keyToCheck = key.fingerprint to { join(key.fingerprint) }
+                        }
+                        is KeyCheck.Failed -> {
+                            joiningBusy = false
+                            failure = sync.of(key.outcome)
+                        }
+                    }
+                }
             },
         )
+    }
+    keyToCheck?.let { (fingerprint, go) ->
+        KeyDialog(fingerprint, onDismiss = { keyToCheck = null }, onConfirm = { keyToCheck = null; go() })
     }
     if (joiningBusy) {
         // Joining brings the whole workspace in: it takes a while, and nothing else should start meanwhile.
