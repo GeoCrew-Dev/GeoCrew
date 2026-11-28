@@ -28,7 +28,9 @@ geo.example.org {
 }
 ```
 
-Caddy 会自动申请证书，并原样转发 WebSocket。放在反向代理后面时请设置 `GEOCREW_TRUST_PROXY=true`，否则所有人共用一个限流额度。已经有证书文件（Let's Encrypt 等）的，用 `GEOCREW_TLS=files` 加 `GEOCREW_TLS_CERT`、`GEOCREW_TLS_KEY`。
+Caddy 会自动申请证书，并原样转发 WebSocket。放在反向代理后面时请设置 `GEOCREW_TRUST_PROXY=true`，否则所有人共用一个限流额度。已经有证书文件（Let's Encrypt 等）的，用 `GEOCREW_TLS=files` 加 `GEOCREW_TLS_CERT`、`GEOCREW_TLS_KEY`；证书只在启动时读取，续期后要重启服务端。
+
+**从旧版本升级**：以前的版本只说明文 HTTP，新版本默认改说 HTTPS。已经放在反向代理后面的，升级前先设 `GEOCREW_TLS=off`，否则代理转发过来的请求都会失败。
 
 ## 不用 Docker
 

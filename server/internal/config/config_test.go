@@ -30,6 +30,25 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+func TestTLSOptions(t *testing.T) {
+	if c, err := Load(nil); err != nil || c.TLS != TLSSelf {
+		t.Fatalf("its own certificate by default: %+v %v", c, err)
+	}
+	t.Setenv("GEOCREW_TLS", "off")
+	if c, err := Load(nil); err != nil || c.TLS != TLSOff {
+		t.Fatalf("env: %+v %v", c, err)
+	}
+	if _, err := Load([]string{"-tls", "files", "-tls-cert", "c.pem"}); err == nil {
+		t.Fatal("files without a key accepted")
+	}
+	if c, err := Load([]string{"-tls", "files", "-tls-cert", "c.pem", "-tls-key", "k.pem"}); err != nil || c.TLSCert != "c.pem" || c.TLSKey != "k.pem" {
+		t.Fatalf("files: %+v %v", c, err)
+	}
+	if _, err := Load([]string{"-tls", "on"}); err == nil {
+		t.Fatal("unknown mode accepted")
+	}
+}
+
 func TestBackupOptions(t *testing.T) {
 	c, err := Load(nil)
 	if err != nil || c.BackupDir != "" || c.BackupKeep != 7 || c.BackupEvery.Hours() != 24 {

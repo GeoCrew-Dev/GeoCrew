@@ -299,12 +299,13 @@ func healthcheck(base string) error {
 		bases = []string{"https://" + base, "http://" + base}
 	}
 	c := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	var resp *http.Response
-	var err error
-	for _, b := range bases {
-		if resp, err = c.Get(strings.TrimRight(b, "/") + "/healthz"); err == nil {
-			break
-		}
+	resp, err := c.Get(strings.TrimRight(bases[0], "/") + "/healthz")
+	// Plain HTTP only when the other end does not speak TLS at all: a TLS server asked over HTTP answers 400, which
+	// would hide why the TLS probe failed.
+	// (net/http words a plain HTTP answer to a TLS probe as an error of its own, not exported.)
+	var notTLS tls.RecordHeaderError
+	if err != nil && len(bases) > 1 && (errors.As(err, &notTLS) || strings.Contains(err.Error(), "HTTP response to HTTPS client")) {
+		resp, err = c.Get(bases[1] + "/healthz")
 	}
 	if err != nil {
 		return err
