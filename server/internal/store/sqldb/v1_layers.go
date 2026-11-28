@@ -51,6 +51,14 @@ func validField(f v1.FieldDef) bool {
 	return validOptions(f.Options)
 }
 
+// nameKey is how field names compare (protocol 7.2): trimmed, ignoring case.
+func nameKey(name string) string { return strings.ToLower(strings.TrimSpace(name)) }
+
+// sameField reports whether a and b are one definition: the same id, name, type and options.
+func sameField(a, b v1.FieldDef) bool {
+	return a.ID == b.ID && a.Name == b.Name && a.Type == b.Type && bytes.Equal(compactJSON(a.Options), compactJSON(b.Options))
+}
+
 func validOptions(o json.RawMessage) bool {
 	if o == nil {
 		return true
@@ -147,12 +155,12 @@ func (v *V1) CreateLayer(ctx context.Context, workspaceID, actor string, in v1.L
 		return v1.Layer{}, store.ErrInvalid
 	}
 	in.Fields = append([]v1.FieldDef(nil), in.Fields...) // normalised below; the caller's slice stays as it was
-	seen := map[string]bool{}
+	seen, named := map[string]bool{}, map[string]bool{}
 	for i, f := range in.Fields {
-		if !validField(f) || seen[f.ID] {
+		if !validField(f) || seen[f.ID] || named[nameKey(f.Name)] {
 			return v1.Layer{}, store.ErrInvalid
 		}
-		seen[f.ID] = true
+		seen[f.ID], named[nameKey(f.Name)] = true, true
 		in.Fields[i].Name = strings.TrimSpace(f.Name)
 		if f.Options != nil {
 			in.Fields[i].Options = compactJSON(f.Options)
@@ -303,11 +311,17 @@ func (v *V1) ChangeSchema(ctx context.Context, workspaceID, actor, id string, ba
 	if !acc.Has(actor, perm.EditSchema) || acc.Level(actor, perm.ViewLayer, id) == perm.None {
 		return v1.Layer{}, store.ErrForbidden
 	}
-	if baseVersion != l.SchemaVersion {
-		return l, store.ErrStale
-	}
 	if len(ops) == 0 {
 		return v1.Layer{}, store.ErrInvalid
+	}
+	// Adding fields cannot clash with what others changed meanwhile (an id is the adder's own): a request of adds only
+	// goes onto the structure as it is now, so a phone can add a field offline and send it later (protocol 7.3).
+	addsOnly := true
+	for _, op := range ops {
+		addsOnly = addsOnly && op.Op == "add_field"
+	}
+	if !addsOnly && baseVersion != l.SchemaVersion {
+		return l, store.ErrStale
 	}
 	fields := append([]v1.FieldDef{}, l.Fields...)
 	used := map[string]bool{}
@@ -325,32 +339,63 @@ func (v *V1) ChangeSchema(ctx context.Context, workspaceID, actor, id string, ba
 		}
 		return -1
 	}
+	// The field other than [except] that has [name], if any: a name is one field's in a layer.
+	named := func(name string, except int) int {
+		for i, f := range fields {
+			if i != except && nameKey(f.Name) == nameKey(name) {
+				return i
+			}
+		}
+		return -1
+	}
+	changed := false
 	for _, op := range ops {
 		i := find(op.ID)
 		switch {
-		case op.Op == "add_field" && op.Field != nil && validField(*op.Field) && !used[op.Field.ID]:
+		case op.Op == "add_field" && op.Field != nil && validField(*op.Field):
 			f := *op.Field
 			f.Name = strings.TrimSpace(f.Name)
 			if f.Options != nil {
 				f.Options = compactJSON(f.Options)
 			}
+			if at := find(f.ID); at >= 0 && sameField(fields[at], f) {
+				continue // sent again: it is there already
+			}
+			if used[f.ID] {
+				return l, v1.ErrIDTaken
+			}
+			if at := named(f.Name, -1); at >= 0 {
+				return l, &v1.NameTakenError{Field: fields[at]}
+			}
 			fields = append(fields, f)
 			used[f.ID] = true
+			changed = true
 		case op.Op == "rename_field" && i >= 0:
-			if fields[i].Name, err = clean(op.Name, 64); err != nil {
+			name, err := clean(op.Name, 64)
+			if err != nil {
 				return v1.Layer{}, err
 			}
+			if at := named(name, i); at >= 0 {
+				return l, &v1.NameTakenError{Field: fields[at]}
+			}
+			fields[i].Name = name
+			changed = true
 		case op.Op == "set_options" && i >= 0 && validOptions(op.Options):
 			fields[i].Options = nil
 			if op.Options != nil {
 				fields[i].Options = compactJSON(op.Options)
 			}
+			changed = true
 		case op.Op == "delete_field" && i >= 0:
 			fields = append(fields[:i], fields[i+1:]...)
 			retired = append(retired, op.ID)
+			changed = true
 		default:
 			return v1.Layer{}, store.ErrInvalid
 		}
+	}
+	if !changed {
+		return l, nil // every add sent again: the structure stays as it is, its version too
 	}
 	seq, err := nextSeq(ctx, tx, ws.ID)
 	if err != nil {

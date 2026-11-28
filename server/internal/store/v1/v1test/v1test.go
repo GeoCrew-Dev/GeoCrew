@@ -748,6 +748,7 @@ func layers(t *testing.T, open Opener) {
 		func(in *v1.LayerInput) { in.CRS = " " },
 		func(in *v1.LayerInput) { in.Fields[0].ID = "geom" },
 		func(in *v1.LayerInput) { in.Fields[1].ID = "f1" },
+		func(in *v1.LayerInput) { in.Fields[1].Name = " " + strings.ToUpper(in.Fields[0].Name) }, // a name is one field's
 		func(in *v1.LayerInput) { in.Fields[0].Type = "float" },
 		func(in *v1.LayerInput) { in.Fields[0].Options = json.RawMessage(`"花岗岩"`) },
 		func(in *v1.LayerInput) { in.Style = json.RawMessage(`{`) },
@@ -803,15 +804,45 @@ func layers(t *testing.T, open Opener) {
 		nil,
 		{{Op: "drop_table"}},
 		{{Op: "rename_field", ID: "nope", Name: "x"}},
-		{{Op: "add_field", Field: &v1.FieldDef{ID: "f4", Name: "x", Type: "string"}}, {Op: "add_field", Field: &v1.FieldDef{ID: "f2", Name: "x", Type: "string"}}},
 	} {
 		if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 2, ops); !errors.Is(err, store.ErrInvalid) {
 			t.Fatalf("bad ops %d: %v", i, err)
 		}
 	}
+	// An id the layer had is never another field's.
+	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 2, []v1.SchemaOp{
+		{Op: "add_field", Field: &v1.FieldDef{ID: "f4", Name: "x", Type: "string"}}, {Op: "add_field", Field: &v1.FieldDef{ID: "f2", Name: "y", Type: "string"}},
+	}); !errors.Is(err, v1.ErrIDTaken) {
+		t.Fatalf("a deleted field's id: %v", err)
+	}
 	if got, _ := s.Layer(ctx, tm.ws, layerA); got.SchemaVersion != 2 || len(got.Fields) != 2 {
 		t.Fatalf("a refused change left a trace (f4, or f2 back): %+v", got)
 	}
+
+	// Adding fields only: onto the structure as it is, whatever version the phone knew; sent again, nothing changes.
+	added, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 1, []v1.SchemaOp{{Op: "add_field", Field: &v1.FieldDef{ID: "f5", Name: "样品编号", Type: "string"}}})
+	if err != nil || added.SchemaVersion != 3 || len(added.Fields) != 3 {
+		t.Fatalf("adds only, from an old version: %v %+v", err, added)
+	}
+	if again, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 1, []v1.SchemaOp{{Op: "add_field", Field: &v1.FieldDef{ID: "f5", Name: " 样品编号 ", Type: "string"}}}); err != nil || again.SchemaVersion != 3 || again.Seq != added.Seq {
+		t.Fatalf("an add sent again: %v %+v", err, again)
+	}
+	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 3, []v1.SchemaOp{{Op: "add_field", Field: &v1.FieldDef{ID: "f5", Name: "样品编号", Type: "integer"}}}); !errors.Is(err, v1.ErrIDTaken) {
+		t.Fatalf("the same id defined otherwise: %v", err)
+	}
+	// A name is one field's: compared trimmed and ignoring case, the field that has it comes with the refusal.
+	var taken *v1.NameTakenError
+	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 3, []v1.SchemaOp{{Op: "add_field", Field: &v1.FieldDef{ID: "f6", Name: " 岩石名称", Type: "string"}}}); !errors.As(err, &taken) || taken.Field.ID != "f1" {
+		t.Fatalf("an add with a name taken: %v", err)
+	}
+	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 3, []v1.SchemaOp{{Op: "rename_field", ID: "f3", Name: "样品编号"}}); !errors.As(err, &taken) || taken.Field.ID != "f5" {
+		t.Fatalf("a rename to a name taken: %v", err)
+	}
+	// A rename still goes by version.
+	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 2, []v1.SchemaOp{{Op: "rename_field", ID: "f3", Name: "编号"}}); !errors.Is(err, store.ErrStale) {
+		t.Fatalf("a rename from an old version: %v", err)
+	}
+	changed = added
 
 	// Deleting keeps the layer as a tombstone, which can come back.
 	if _, err := s.DeleteLayer(ctx, tm.ws, a, layerA); !errors.Is(err, store.ErrForbidden) {

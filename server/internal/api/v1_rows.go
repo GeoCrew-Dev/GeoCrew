@@ -172,7 +172,15 @@ func (s *Server) v1ChangeSchema(w http.ResponseWriter, r *http.Request) {
 		ops[i] = v1.SchemaOp{Op: o.Op, Field: o.Field, ID: o.ID, Name: o.Name, Options: o.Options}
 	}
 	l, err := s.V1.ChangeSchema(r.Context(), r.PathValue("ws"), v1Who(r).Member.ID, r.PathValue("layer"), *req.BaseVersion, ops)
-	if err != nil {
+	var taken *v1.NameTakenError
+	switch {
+	case errors.As(err, &taken):
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "name_taken", "message": "another field of the layer has that name", "field": taken.Field})
+		return
+	case errors.Is(err, v1.ErrIDTaken):
+		writeErr(w, http.StatusConflict, "id_taken", "the layer has, or had, a field of that id defined otherwise")
+		return
+	case err != nil:
 		s.v1Stale(w, r, l, err, perm.EditSchema)
 		return
 	}

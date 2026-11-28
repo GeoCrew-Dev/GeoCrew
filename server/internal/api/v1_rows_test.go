@@ -167,3 +167,46 @@ func TestV1LayersPushPullAndConflicts(t *testing.T) {
 		t.Fatalf("restore layer: %d", c)
 	}
 }
+
+func TestV1SchemaAddsOnlyAndNamesTaken(t *testing.T) {
+	e := newEnv(t)
+	var leader v1JoinedResp
+	e.call("POST", "/api/v1/workspaces", "", map[string]string{"name": "结构", "nickname": "组长", "device": "a"}, &leader)
+	ws := "/api/v1/workspaces/" + leader.Workspace.ID
+	layer := map[string]any{"id": v1LayerID, "name": "野外点", "geometry_type": "Point", "crs": "EPSG:4490",
+		"fields": []map[string]any{{"id": "f1", "name": "点名", "type": "string"}}}
+	if c := e.call("POST", ws+"/layers", leader.Token, layer, nil); c != 200 {
+		t.Fatalf("layer: %d", c)
+	}
+	schema := ws + "/layers/" + v1LayerID + "/schema"
+	add := func(base int, id, name, typ string) map[string]any {
+		return map[string]any{"base_version": base, "ops": []map[string]any{{"op": "add_field", "field": map[string]any{"id": id, "name": name, "type": typ}}}}
+	}
+	// Made offline from version 0: adds only go onto the structure as it is.
+	var got struct {
+		SchemaVersion int64 `json:"schema_version"`
+	}
+	if c := e.call("POST", schema, leader.Token, add(0, "f2", "岩性", "string"), &got); c != 200 || got.SchemaVersion != 2 {
+		t.Fatalf("adds only: %d %+v", c, got)
+	}
+	if c := e.call("POST", schema, leader.Token, add(0, "f2", "岩性", "string"), &got); c != 200 || got.SchemaVersion != 2 {
+		t.Fatalf("sent again: %d %+v", c, got)
+	}
+	var fail struct {
+		Error string `json:"error"`
+		Field struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		} `json:"field"`
+	}
+	if c := e.call("POST", schema, leader.Token, add(2, "f2", "岩性", "integer"), &fail); c != 409 || fail.Error != "id_taken" {
+		t.Fatalf("the id defined otherwise: %d %+v", c, fail)
+	}
+	if c := e.call("POST", schema, leader.Token, add(2, "f3", " 岩性 ", "integer"), &fail); c != 409 || fail.Error != "name_taken" || fail.Field.ID != "f2" || fail.Field.Type != "string" {
+		t.Fatalf("a name taken: %d %+v", c, fail)
+	}
+	rename := map[string]any{"base_version": 0, "ops": []map[string]any{{"op": "rename_field", "id": "f2", "name": "岩石"}}}
+	if c := e.call("POST", schema, leader.Token, rename, &fail); c != 409 || fail.Error != "stale" {
+		t.Fatalf("a rename goes by version: %d %+v", c, fail)
+	}
+}
