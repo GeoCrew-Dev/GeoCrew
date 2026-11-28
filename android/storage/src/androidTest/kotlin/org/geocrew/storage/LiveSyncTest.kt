@@ -197,32 +197,42 @@ class LiveSyncTest {
         leader.run(SyncActions.LAYER_DELETE, """{"layer": "泉点"}""")
         assertTrue(leader.workspace.current!!.layers.none { it.name == "泉点" })
 
-        // The member's next sync brings the fields in as the team has them.
+        // The member's next sync brings the fields in as the team has them, and hides the layer the team deleted.
         member.run(SyncActions.NOW)
         val theirs = member.workspace.current!!.fieldIds("野外点")
         assertEquals(describe, theirs["备注"])
         assertTrue("描述" !in theirs && "产状" !in theirs, theirs.toString())
+        val spring = member.workspace.current!!.hiddenLayers().single()
+        assertTrue(member.workspace.current!!.layers.none { it.name == "泉点" })
+
+        // Restored on the server, it is back at the member's next sync.
+        call(base, checkNotNull(SyncAccounts(leader.accounts).of(leader.workspace.current!!.id)), "POST", "/layers/$spring/restore", null)
+        member.run(SyncActions.NOW)
+        assertTrue(member.workspace.current!!.layers.any { it.name == "泉点" })
     }
 
     // The leader of [account]'s workspace lets every member [permission] (protocol v1 4.1, 5.x: PATCH /roles/member).
     private fun grant(base: String, account: SyncAccount, permission: String) {
-        fun call(method: String, path: String, body: String?): String {
-            val c = URI("$base/api/v1/workspaces/${account.workspace}$path").toURL().openConnection() as HttpURLConnection
-            c.requestMethod = method
-            c.setRequestProperty("Authorization", "Bearer ${account.token}")
-            if (body != null) {
-                c.doOutput = true
-                c.setRequestProperty("Content-Type", "application/json")
-                c.outputStream.use { it.write(body.toByteArray()) }
-            }
-            assertEquals(200, c.responseCode, "$method $path")
-            return c.inputStream.use { it.readBytes().decodeToString() }
-        }
-        val role = Json.parseToJsonElement(call("GET", "/roles", null)).jsonArray.map { it.jsonObject }.single { it.getValue("id").jsonPrimitive.content == "member" }
+        val role = Json.parseToJsonElement(call(base, account, "GET", "/roles", null)).jsonArray.map { it.jsonObject }
+            .single { it.getValue("id").jsonPrimitive.content == "member" }
         val permissions = buildJsonObject {
             role.getValue("permissions").jsonObject.forEach { (k, v) -> put(k, v) }
             put(permission, true)
         }
-        call("PATCH", "/roles/member", buildJsonObject { put("permissions", permissions); put("base_version", role.getValue("version")) }.toString())
+        call(base, account, "PATCH", "/roles/member", buildJsonObject { put("permissions", permissions); put("base_version", role.getValue("version")) }.toString())
+    }
+
+    // A call to [account]'s workspace as its member, which must answer 200; what it answered.
+    private fun call(base: String, account: SyncAccount, method: String, path: String, body: String?): String {
+        val c = URI("$base/api/v1/workspaces/${account.workspace}$path").toURL().openConnection() as HttpURLConnection
+        c.requestMethod = method
+        c.setRequestProperty("Authorization", "Bearer ${account.token}")
+        if (body != null) {
+            c.doOutput = true
+            c.setRequestProperty("Content-Type", "application/json")
+            c.outputStream.use { it.write(body.toByteArray()) }
+        }
+        assertEquals(200, c.responseCode, "$method $path")
+        return c.inputStream.use { it.readBytes().decodeToString() }
     }
 }

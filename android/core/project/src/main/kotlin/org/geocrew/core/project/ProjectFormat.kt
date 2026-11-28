@@ -140,6 +140,14 @@ object ProjectFormat {
      * by the team; one here on the phone but not there is this phone's own, yet
      * to be sent, and its values wait with it.
      */
+    /**
+     * A linked project's shared layers the team deleted (protocol v1 5.6):
+     * kept in the file with their features, left out of the project's layers,
+     * and back when the team restores them.
+     */
+    const val HIDDEN_LAYERS_TABLE = "geocrew_hidden_layers"
+    const val HIDDEN_LAYERS_SCHEMA = "CREATE TABLE IF NOT EXISTS $HIDDEN_LAYERS_TABLE (layer_id TEXT PRIMARY KEY NOT NULL)"
+
     const val LAYER_SCHEMA_TABLE = "geocrew_layer_schema"
     const val LAYER_SCHEMA_SCHEMA = "CREATE TABLE IF NOT EXISTS $LAYER_SCHEMA_TABLE (layer_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, fields TEXT NOT NULL)"
 

@@ -172,6 +172,7 @@ internal class ProjectSync(
         var done = Pulled(0, 0, 0)
         do {
             val page = client.pull(account.workspace, account.token, since, batch)
+            followDeletions(page.layers)
             val layers = makeLayers(page.layers)
             restructure(page.layers)
             writeLayerProps(page.layers)
@@ -311,7 +312,7 @@ internal class ProjectSync(
     private fun makeLayers(layers: List<PulledLayer>): Int {
         var made = 0
         for (l in layers) {
-            if (l.deleted || project.layers.any { it.id == l.id }) continue
+            if (l.deleted || project.layers.any { it.id == l.id } || l.id in project.hiddenLayers()) continue
             val geometry = when (l.geometryType) {
                 "Point" -> "POINT"
                 "LineString" -> "LINESTRING"
@@ -327,6 +328,24 @@ internal class ProjectSync(
             made++
         }
         return made
+    }
+
+    /**
+     * Shared layers the team deleted, hidden here with their features, and
+     * ones it restored, shown again (protocol v1 5.6). What a hidden one has
+     * to send goes all the same: the server refuses it, and it stays as not
+     * accepted (4.6).
+     */
+    private fun followDeletions(layers: List<PulledLayer>) {
+        val hidden = project.hiddenLayers()
+        val hide = layers.filter { l -> l.deleted && project.layers.any { it.id == l.id } }.map { it.id }
+        val show = layers.filter { !it.deleted && it.id in hidden }.map { it.id }
+        if (hide.isEmpty() && show.isEmpty()) return
+        // Nothing is unsaved while a pull comes in; were it, the page would come again with the next pull.
+        project = changing(project) {
+            hide.forEach { project.hideLayer(it, true) }
+            show.forEach { project.hideLayer(it, false) }
+        } ?: throw IllegalStateException("edits are unsaved")
     }
 
     /**

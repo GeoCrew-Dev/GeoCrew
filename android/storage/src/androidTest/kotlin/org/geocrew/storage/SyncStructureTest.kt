@@ -443,6 +443,21 @@ class SyncStructureTest {
     }
 
     @Test
+    fun aLayerTheTeamDeletedIsHiddenHereAndComesBackRestored() {
+        shared("团队删图层")
+        val point = layerId
+        server.layers.getValue(point).apply { deleted = true; seq = ++server.seq }
+        output(run(SyncActions.NOW))
+        assertTrue(workspace.current!!.layers.none { it.id == point }, "hidden with its features")
+        assertTrue(workspace.current!!.hiddenLayers() == setOf(point))
+
+        server.layers.getValue(point).apply { deleted = false; seq = ++server.seq }
+        output(run(SyncActions.NOW))
+        assertEquals(listOf("D001"), workspace.current!!.target("野外点").store.features().map { it.properties["点名"]?.jsonPrimitive?.contentOrNull })
+        assertTrue(workspace.current!!.hiddenLayers().isEmpty())
+    }
+
+    @Test
     fun whatTheTeamHasChangesWithTheTeamOnly() {
         shared("拦截")
         val shared = listOf(
