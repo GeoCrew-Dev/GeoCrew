@@ -14,8 +14,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -268,6 +270,35 @@ class SyncPushTest {
         run(Editing.ATTACHMENTS, """{"layer": "野外点", "fid": $fid, "attachments": []}""")
         run(Editing.SAVE, """{"layer": "野外点"}""")
         assertEquals(2, output(run(SyncActions.STATUS)).getValue("files").jsonPrimitive.int)
+    }
+
+    @Test
+    fun layersGoWithTheirStyleAndPlaceAndChangesOfThemAfter() {
+        run(Workspace.CREATE, """{"name": "样式", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "泉点", "language": "zh"}""")
+        run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1e88e5", "size": 8}}""")
+        output(run(SyncActions.SHARE, """{"server": "http://fake", "nickname": "组长", "device": "test"}"""))
+        val project = workspace.current!!
+        val point = project.layers.single { it.name == "野外点" }
+        val made = server.layers.associateBy { it.getValue("id").jsonPrimitive.content }
+        assertEquals("#1e88e5", made.getValue(point.id).getValue("style").jsonObject.getValue("color").jsonPrimitive.content)
+        assertEquals(project.layers.map { it.id }, project.layers.sortedBy { made.getValue(it.id).getValue("order").jsonPrimitive.double }.map { it.id }, "each with its place")
+
+        // Changed here after: the style goes as the layer's row, from the seq its creation was given.
+        run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#e53935"}}""")
+        output(run(SyncActions.NOW))
+        val style = server.pushes.last().single()
+        assertEquals("layers" to point.id, style.getValue("layer").jsonPrimitive.content to style.getValue("row").jsonPrimitive.content)
+        assertEquals("#e53935", style.getValue("set").jsonObject.getValue("style").jsonObject.getValue("value").jsonObject.getValue("color").jsonPrimitive.content)
+        assertTrue(style.getValue("base_seq").jsonPrimitive.long > 0)
+
+        // Moved: the layers whose place changed go with their new one.
+        val before = project.layers.map { it.name }
+        run(Workspace.LAYER_ORDER, buildJsonObject { put("layers", buildJsonArray { before.reversed().forEach { add(JsonPrimitive(it)) } }) }.toString())
+        output(run(SyncActions.NOW))
+        val moved = server.pushes.last().associate { it.getValue("row").jsonPrimitive.content to it.getValue("set").jsonObject.getValue("order").jsonObject.getValue("value").jsonPrimitive.int }
+        assertEquals(project.layers.withIndex().associate { (i, l) -> l.id to i }, moved)
     }
 
     @Test

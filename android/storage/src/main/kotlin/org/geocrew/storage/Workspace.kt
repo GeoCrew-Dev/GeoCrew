@@ -276,7 +276,10 @@ class Workspace(private val projects: Projects) {
             Risk.EDIT, STYLE_PARAMS, """{"layer": "野外点", "style": {"color": "#1e88e5", "size": 8}}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
-            project.setStyle(p.getValue("layer").jsonPrimitive.content, p.getValue("style").jsonObject)
+            val layer = p.getValue("layer").jsonPrimitive.content
+            project.setStyle(layer, p.getValue("style").jsonObject)
+            // To the team as well, for a linked project (protocol v1 7.1).
+            project.layers.firstOrNull { it.name == layer }?.id?.let { id -> project.data { Outbox.recordLayer(it, id, Outbox.STYLE, project.styles[id] ?: JsonNull) } }
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
@@ -313,7 +316,9 @@ class Workspace(private val projects: Projects) {
             Risk.EDIT, ORDER_PARAMS, """{"layers": ["泉点", "野外点"]}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
+            val before = project.layers.map { it.id }
             project.setOrder(p.getValue("layers").jsonArray.map { it.jsonPrimitive.content })
+            sendOrder(project, before)
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
@@ -323,7 +328,9 @@ class Workspace(private val projects: Projects) {
             Risk.EDIT, GROUP_CREATE_PARAMS, """{"name": "水文", "layers": ["泉点", "水井"]}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
+            val before = project.layers.map { it.id }
             project.createGroup(p.name(), p.flag("vector") ?: false, (p["layers"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty())
+            sendOrder(project, before)
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
@@ -355,7 +362,9 @@ class Workspace(private val projects: Projects) {
             Risk.EDIT, GROUP_PARAMS, """{"group": "…"}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
+            val before = project.layers.map { it.id }
             project.removeGroup(p.getValue("group").jsonPrimitive.content)
+            sendOrder(project, before)
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
@@ -373,12 +382,14 @@ class Workspace(private val projects: Projects) {
             Risk.EDIT, MOVE_PARAMS, """{"layer": "泉点", "into": "…", "index": 0}""",
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
+            val before = project.layers.map { it.id }
             project.move(
                 layer = (p["layer"] as? JsonPrimitive)?.contentOrNull,
                 group = (p["group"] as? JsonPrimitive)?.contentOrNull,
                 into = (p["into"] as? JsonPrimitive)?.contentOrNull,
                 index = p.getValue("index").jsonPrimitive.content.toInt(),
             )
+            sendOrder(project, before)
             ActionResult.Done(about(project))
         },
         WorkspaceAction(
@@ -458,6 +469,16 @@ class Workspace(private val projects: Projects) {
             }
         },
     ) + editing.actions
+
+    // For a project linked to a team: the layers whose place in the draw order ([before]: ids, the top first) changed go
+    // to it with their new place (the merged property order, protocol v1 7.1).
+    private fun sendOrder(project: Project, before: List<String>) {
+        val after = project.layers.map { it.id }
+        if (after == before) return
+        project.data { ds ->
+            for ((i, id) in after.withIndex()) if (before.indexOf(id) != i) Outbox.recordLayer(ds, id, Outbox.ORDER, JsonPrimitive(i))
+        }
+    }
 
     private fun bookmarksOf(project: Project) = buildJsonObject {
         putJsonArray("bookmarks") {

@@ -39,6 +39,13 @@ internal object Outbox {
     /** The system table attachment rows are in (protocol v1 9.1): a change's layer for them. */
     const val ATTACHMENTS = "attachments"
 
+    /** The system table of layers, whose merged properties change as a row's fields do (protocol v1 7.1); a layer is a row by its id. */
+    const val LAYERS = "layers"
+
+    /** Merged properties of a layer (protocol v1 7.1): how it is drawn (ADR 0006) and its place, 0 drawn on top. */
+    const val STYLE = "style"
+    const val ORDER = "order"
+
     /** The project's key in its own table naming the workspace it is linked to. */
     const val WORKSPACE_KEY = "workspace"
 
@@ -105,14 +112,14 @@ internal object Outbox {
      * the row comes back with them if it is restored.
      */
     private fun recordAttachments(ds: VectorDataset, layerId: String, row: String, before: List<Attachment>, after: List<Attachment>, now: Long) {
-        ds.sql(ProjectFormat.ATTACHMENT_ROWS_SCHEMA)
+        ds.sql(ProjectFormat.SYSTEM_ROWS_SCHEMA)
         ds.sql(ProjectFormat.UPLOADS_SCHEMA)
         val had = before.associateBy { it.id }
         for (a in after) {
             val fields = attachmentFields(a, layerId, row)
             val old = had[a.id]?.takeIf { knownAttachment(ds, a.id) }
             if (old == null) {
-                ds.sql("INSERT OR IGNORE INTO ${ProjectFormat.ATTACHMENT_ROWS_TABLE} (uuid) VALUES (${quote(a.id)})")
+                ds.sql("INSERT OR IGNORE INTO ${ProjectFormat.SYSTEM_ROWS_TABLE} (uuid) VALUES (${quote(a.id)})")
                 upload(ds, a.file, a.type, thumb = false)
                 a.thumb?.let { upload(ds, it, "image/jpeg", thumb = true) }
                 for ((field, value) in fields) put(ds, a.id, ATTACHMENTS, field, value, now)
@@ -132,7 +139,7 @@ internal object Outbox {
 
     // Whether attachment row [uuid] has gone, or is going, to the server: seen there, or in a change on its way.
     private fun sentAttachment(ds: VectorDataset, uuid: String): Boolean {
-        val seq = rows(ds, "SELECT seq FROM ${ProjectFormat.ATTACHMENT_ROWS_TABLE} WHERE uuid = ${quote(uuid)}").firstOrNull()?.get("seq")?.toLongOrNull() ?: 0
+        val seq = rows(ds, "SELECT seq FROM ${ProjectFormat.SYSTEM_ROWS_TABLE} WHERE uuid = ${quote(uuid)}").firstOrNull()?.get("seq")?.toLongOrNull() ?: 0
         return seq > 0 || (exists(ds, ProjectFormat.SENDING_TABLE) && rows(ds, "SELECT row FROM ${ProjectFormat.SENDING_TABLE} WHERE row = ${quote(uuid)}").isNotEmpty())
     }
 
@@ -154,17 +161,30 @@ internal object Outbox {
     )
 
     private fun knownAttachment(ds: VectorDataset, uuid: String): Boolean =
-        rows(ds, "SELECT uuid FROM ${ProjectFormat.ATTACHMENT_ROWS_TABLE} WHERE uuid = ${quote(uuid)}").isNotEmpty()
+        rows(ds, "SELECT uuid FROM ${ProjectFormat.SYSTEM_ROWS_TABLE} WHERE uuid = ${quote(uuid)}").isNotEmpty()
 
     // A file to upload; the same one named twice goes once.
     private fun upload(ds: VectorDataset, sha: String, type: String, thumb: Boolean) {
         ds.sql("INSERT OR IGNORE INTO ${ProjectFormat.UPLOADS_TABLE} (sha, type, thumb) VALUES (${quote(sha)}, ${quote(type)}, ${if (thumb) 1 else 0})")
     }
 
+    /**
+     * Merged property [field] of layer [layerId] changed here (protocol v1
+     * 7.1): it goes as a change of the layer's row in the system table
+     * layers, when the project is linked.
+     */
+    fun recordLayer(ds: VectorDataset, layerId: String, field: String, value: JsonElement, now: Long = System.currentTimeMillis()) {
+        if (!linked(ds)) return
+        ds.sql(ProjectFormat.OUTBOX_SCHEMA)
+        ds.sql(ProjectFormat.SYSTEM_ROWS_SCHEMA)
+        ds.sql("INSERT OR IGNORE INTO ${ProjectFormat.SYSTEM_ROWS_TABLE} (uuid) VALUES (${quote(layerId)})")
+        put(ds, layerId, LAYERS, field, value, now)
+    }
+
     /** Attachment row [uuid] was last seen at [seq]: its next change's base seq; the workspace has it. */
-    fun seenAttachment(ds: VectorDataset, uuid: String, seq: Long) {
-        ds.sql(ProjectFormat.ATTACHMENT_ROWS_SCHEMA)
-        ds.sql("INSERT OR REPLACE INTO ${ProjectFormat.ATTACHMENT_ROWS_TABLE} (uuid, seq) VALUES (${quote(uuid)}, $seq)")
+    fun seenSystemRow(ds: VectorDataset, uuid: String, seq: Long) {
+        ds.sql(ProjectFormat.SYSTEM_ROWS_SCHEMA)
+        ds.sql("INSERT OR REPLACE INTO ${ProjectFormat.SYSTEM_ROWS_TABLE} (uuid, seq) VALUES (${quote(uuid)}, $seq)")
     }
 
     /** How many attachment files wait to be uploaded. */

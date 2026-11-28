@@ -18,6 +18,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -79,8 +80,20 @@ data class Member(val id: String, val nickname: String)
 /** A field of a shared layer (protocol v1 7.2), by the stable id rows use. */
 data class FieldDef(val id: String, val name: String, val type: String, val options: JsonArray? = null)
 
-/** A shared layer to create (protocol v1 5.6): its id is the client's, kept from the local project. */
-data class LayerSpec(val id: String, val name: String, val geometryType: String, val crs: String, val fields: List<FieldDef>)
+/**
+ * A shared layer to create (protocol v1 5.6): its id is the client's, kept
+ * from the local project; with its [style] (ADR 0006) and [order] (its place,
+ * 0 drawn on top) when it has them (7.1).
+ */
+data class LayerSpec(
+    val id: String,
+    val name: String,
+    val geometryType: String,
+    val crs: String,
+    val fields: List<FieldDef>,
+    val style: JsonObject? = null,
+    val order: Double? = null,
+)
 
 /** One row's edits to push (protocol v1 6.2, 8.1); [id] is the change's, the same again when it is retried. */
 data class PushChange(val id: String, val layer: String, val row: String, val baseSeq: Long, val set: Map<String, FieldEdit>, val delete: FieldEdit? = null)
@@ -94,7 +107,11 @@ data class PushResult(val id: String, val status: String, val seq: Long?, val co
     }
 }
 
-/** A shared layer as a pull gives it (protocol v1 7.1, 8.2). */
+/**
+ * A shared layer as a pull gives it (protocol v1 7.1, 8.2). Its merged
+ * [style] is null when nobody set one, JsonNull when it was cleared; [order]
+ * null when nobody set one.
+ */
 data class PulledLayer(
     val id: String,
     val geometryType: String,
@@ -104,6 +121,8 @@ data class PulledLayer(
     val name: String?,
     val deleted: Boolean,
     val seq: Long,
+    val style: JsonElement? = null,
+    val order: Double? = null,
 )
 
 /** A row as a pull gives it: every field with who set it, when and at which seq. */
@@ -204,6 +223,8 @@ class SyncClient(private val transport: Transport) {
             put("geometry_type", layer.geometryType)
             put("crs", layer.crs)
             putJsonArray("fields") { for (f in layer.fields) add(fieldJson(f)) }
+            layer.style?.let { put("style", it) }
+            layer.order?.let { put("order", it) }
         }
         return layerOf(call("POST", "/api/v1/workspaces/${segment(workspace)}/layers", token, body))
     }
@@ -309,6 +330,8 @@ class SyncClient(private val transport: Transport) {
         name = (o["name"] as? JsonObject)?.let { (it["value"] as? JsonPrimitive)?.contentOrNull },
         deleted = (o["deleted"] as? JsonObject)?.let { it["value"] == JsonPrimitive(true) } == true,
         seq = o.long("seq"),
+        style = (o["style"] as? JsonObject)?.let { it["value"] ?: JsonNull },
+        order = ((o["order"] as? JsonObject)?.get("value") as? JsonPrimitive)?.doubleOrNull,
     )
 
     private fun pulledConflictOf(o: JsonObject) =

@@ -7,6 +7,7 @@ import java.time.LocalDate
 import java.util.UUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -377,6 +378,20 @@ class Project internal constructor(
                 id to style
             }.toMap()
         }
+
+    /**
+     * Draws layer [id] as the team's workspace has it (protocol v1 7.1): with
+     * [style] as it came, or the default one for JsonNull. Not checked as
+     * [setStyle] checks the user's: a newer phone may have more in it.
+     */
+    internal fun applyStyle(id: String, style: JsonElement) {
+        dataset.sql(ProjectFormat.STYLE_SCHEMA)
+        if (style is JsonObject && style.isNotEmpty()) {
+            dataset.sql("INSERT OR REPLACE INTO ${ProjectFormat.STYLE_TABLE} (layer_id, style) VALUES (${quote(id)}, ${quote(style.toString())})")
+        } else {
+            dataset.sql("DELETE FROM ${ProjectFormat.STYLE_TABLE} WHERE layer_id = ${quote(id)}")
+        }
+    }
 
     /**
      * Sets how layer [layer] is drawn: one colour (#rrggbb, or #rrggbbaa with
@@ -1241,6 +1256,7 @@ class Project internal constructor(
         val described = buildJsonArray {
             for ((_, field, type) in fields) add(buildJsonObject { put("name", field); put("type", type.name.lowercase()) })
         }
+        fieldsPerLayer()
         dataset.createLayer(name, geometry, crs, described.toString())
         dataset.sql("INSERT INTO ${ProjectFormat.LAYERS_TABLE} VALUES (${quote(name)}, ${quote(id)}, NULL)")
         for ((fieldId, field, _) in fields) {
@@ -1248,6 +1264,21 @@ class Project internal constructor(
         }
         layers = readLayers(dataset)
         return layers.single { it.name == name }
+    }
+
+    // Field ids unique within their layer, not among all layers, as a workspace has them (protocol v1 7.2): another
+    // layer of the team's may use an id one here uses. A project made before kept them unique among all: made again.
+    private fun fieldsPerLayer() {
+        val made = rows(dataset, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ${quote(ProjectFormat.FIELDS_TABLE)}").firstOrNull()?.get("sql").orEmpty()
+        if (made.contains("UNIQUE (table_name, id)")) return
+        dataset.begin()
+        try {
+            ProjectFormat.FIELDS_PER_LAYER.forEach(dataset::sql)
+            dataset.commit()
+        } catch (e: Exception) {
+            runCatching { dataset.rollback() }
+            throw e
+        }
     }
 
     /** [block] with the project's file, for sync (ProjectSync), which writes GeoCrew's own tables in it. */
