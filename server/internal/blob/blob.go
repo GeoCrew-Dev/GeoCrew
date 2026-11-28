@@ -142,6 +142,10 @@ func (d *Disk) Commit(workspaceID, upload, sha string) error {
 		return ErrMismatch
 	}
 	dst := d.path(workspaceID, sha)
+	// Someone else's upload of the same file got there first: the bytes are the same, and the one there may be open.
+	if _, err := os.Stat(dst); err == nil {
+		return os.Remove(p)
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}
