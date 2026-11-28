@@ -9,6 +9,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -191,6 +192,13 @@ class SyncPullTest {
         assertEquals(0 to 1, settled.getValue("open_conflicts").jsonPrimitive.int to settled.getValue("pulled").jsonPrimitive.int)
         assertEquals("D009", feature("r1")!!.first)
         assertTrue(output(run(SyncActions.CONFLICTS)).getValue("conflicts").jsonArray.isEmpty())
+
+        // Keeping a value changes nothing here: no pull, the record only settled.
+        workspace.current!!.data { it.sql("UPDATE geocrew_conflicts SET resolved = 0 WHERE id = 'k1'") }
+        val keeping = output(run(SyncActions.RESOLVE, """{"conflict": "k1", "choose": "kept"}"""))
+        assertEquals("k1" to "kept", server.resolved.last())
+        assertTrue(keeping["pulled"] is JsonNull, keeping.toString())
+        assertEquals(0, keeping.getValue("open_conflicts").jsonPrimitive.int)
     }
 
     @Test

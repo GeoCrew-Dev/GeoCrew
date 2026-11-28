@@ -24,7 +24,8 @@ internal object Conflicts {
     }
 
     /**
-     * The conflicts waiting to be settled, oldest first. [me] is this phone's
+     * The conflicts waiting to be settled, in the order their records last
+     * came (a record that comes again moves to the end). [me] is this phone's
      * member, [members] the nicknames by member id. A feature this phone does
      * not have (a layer not here, a row deleted) comes without its fid.
      */
