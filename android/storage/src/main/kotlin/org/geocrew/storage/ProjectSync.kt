@@ -14,7 +14,9 @@ import org.geocrew.core.sync.PulledConflict
 import org.geocrew.core.sync.PulledLayer
 import org.geocrew.core.sync.PulledRow
 import org.geocrew.core.sync.PushResult
+import org.geocrew.core.sync.Sent
 import org.geocrew.core.sync.SyncClient
+import org.geocrew.core.sync.sendFile
 
 /**
  * A project and the team workspace it syncs with (protocol v1 8.4, ADR
@@ -25,8 +27,8 @@ internal class ProjectSync(private val project: Project, private val client: Syn
     /** A layer the workspace cannot take: one whose features are of mixed kinds (backlog: GEOMETRY layers). */
     class Unsupported(val layer: String) : Exception("layer $layer mixes points, lines and areas")
 
-    /** What a push did: changes the server has, changes it refused (all so far), and conflicts it recorded. */
-    data class Pushed(val sent: Int, val rejected: Int, val conflicts: Int)
+    /** What a push did: changes the server has, changes it refused (all so far), conflicts it recorded, and files still to upload. */
+    data class Pushed(val sent: Int, val rejected: Int, val conflicts: Int, val files: Int = 0)
 
     /** What a pull did: rows written, layers made, conflict records kept. */
     data class Pulled(val rows: Int, val layers: Int, val conflicts: Int)
@@ -44,7 +46,10 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         project.data { ds ->
             ds.begin()
             try {
-                for (layer in project.layers) Outbox.enqueueNew(ds, layer.name, layer.id, project.target(layer.name).store.features())
+                for (layer in project.layers) {
+                    val store = project.target(layer.name).store
+                    Outbox.enqueueNew(ds, layer.name, layer.id, store.features(), attachmentsOf = { store.attachments(it) })
+                }
                 ds.commit()
             } catch (e: Exception) {
                 runCatching { ds.rollback() }
@@ -53,9 +58,16 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         }
     }
 
-    /** Sends what the project has to send, at most [batch] changes a request, until nothing is left or the network fails. */
-    fun push(batch: Int): Pushed {
+    /**
+     * Sends what the project has to send, at most [batch] changes a request,
+     * until nothing is left or the network fails: the thumbnails first, for
+     * [thumbsFor] at most, so the team sees a photo as soon as its row is in
+     * (protocol v1 9.3); then the changes; then the original files for
+     * [originalsFor], the rest going on from where it stopped the next time.
+     */
+    fun push(batch: Int, thumbsFor: Long = THUMBS_MS, originalsFor: Long = ORIGINALS_MS): Pushed {
         project.data(Sending::prepare)
+        sendFiles(thumbs = true, until = System.currentTimeMillis() + thumbsFor)
         var sent = 0
         var conflicts = 0
         while (true) {
@@ -68,7 +80,20 @@ internal class ProjectSync(private val project: Project, private val client: Syn
             // A server that answers for none of them would be asked again and again.
             if (results.none { r -> changes.any { it.id == r.id } }) break
         }
-        return Pushed(sent, project.data(Sending::counts).second, conflicts)
+        sendFiles(thumbs = false, until = System.currentTimeMillis() + originalsFor)
+        return Pushed(sent, project.data(Sending::counts).second, conflicts, project.data(Outbox::filesWaiting))
+    }
+
+    // The files waiting, thumbnails or originals, until the clock passes [until]. One gone from the phone, or not
+    // the file its hash names, can never go: it waits no more.
+    private fun sendFiles(thumbs: Boolean, until: Long) {
+        for ((sha, type) in project.data { Outbox.uploads(it, thumbs) }) {
+            if (System.currentTimeMillis() > until) return
+            val file = AttachmentFiles.fileOf(project.attachments, sha, type)
+            val sent = if (file.isFile) client.sendFile(account.workspace, account.token, file, sha, type, until) else Sent.BROKEN
+            if (sent == Sent.LATER) return
+            project.data { Outbox.uploaded(it, sha) }
+        }
     }
 
     /**
@@ -135,6 +160,10 @@ internal class ProjectSync(private val project: Project, private val client: Syn
 
     // [rows] into their layers, each layer in one transaction; how many were written.
     private fun writeRows(rows: List<PulledRow>, seq: Long): Int {
+        // This phone's attachment rows: the seq their next change goes from. Others' come in with the download half (backlog).
+        rows.filter { it.layer == Outbox.ATTACHMENTS }.takeIf { it.isNotEmpty() }?.let { attached ->
+            project.data { ds -> for (r in attached) Outbox.seenAttachment(ds, r.id, seq) }
+        }
         val waiting = project.data(Outbox::waiting)
         var written = 0
         for ((layerId, layerRows) in rows.groupBy { it.layer }) {
@@ -222,6 +251,10 @@ internal class ProjectSync(private val project: Project, private val client: Syn
     }
 
     companion object {
+        // How long a sync spends on files: thumbnails, then originals (a phone in the field may have little signal).
+        private const val THUMBS_MS = 30_000L
+        private const val ORIGINALS_MS = 20_000L
+
         /** Each layer of [project] as the workspace will have it; [Unsupported] for one it cannot take, before anything is made. */
         fun specs(project: Project): List<LayerSpec> = project.layers.map { spec(project, it) }
 

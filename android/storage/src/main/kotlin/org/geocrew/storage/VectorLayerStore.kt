@@ -85,7 +85,7 @@ class VectorLayerStore(private val dataset: VectorDataset, private val layer: St
     // What sync is to send, for a project linked to a workspace (Outbox); a layer outside a project has nothing to send.
     override fun saved(changes: List<Saved>) {
         val id = layerId ?: return
-        Outbox.record(dataset, layer, id, changes, whole = { feature(it) })
+        Outbox.record(dataset, layer, id, changes, whole = { feature(it) }, attachmentsOf = { attachments(it) })
     }
 
     override fun begin() = dataset.begin()

@@ -177,6 +177,7 @@ class SyncActions(
             val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
             val account = accounts.of(project.id)
             val (waiting, rejected) = project.data(Sending::counts)
+            val files = project.data(Outbox::filesWaiting)
             ActionResult.Done(
                 buildJsonObject {
                     put("linked", account != null)
@@ -187,6 +188,7 @@ class SyncActions(
                     }
                     put("waiting", waiting)
                     put("rejected", rejected)
+                    put("files", files)
                     put("conflicts", Conflicts.open(project))
                 },
             )

@@ -34,14 +34,15 @@ internal object Sending {
         if (pending.isEmpty()) return
         ds.sql(ProjectFormat.SENDING_SCHEMA)
         val waiting = rows(ds, "SELECT row FROM ${ProjectFormat.SENDING_TABLE} WHERE rejected IS NULL").mapNotNull { it["row"] }.toSet()
-        val seqs = if (exists(ds, ProjectFormat.ROWS_TABLE)) {
-            rows(ds, "SELECT uuid, seq FROM ${ProjectFormat.ROWS_TABLE}").associate { it["uuid"] to (it["seq"]?.toLongOrNull() ?: 0L) }
-        } else {
-            emptyMap()
+        val seqs = HashMap<String?, Long>()
+        for (table in listOf(ProjectFormat.ROWS_TABLE, ProjectFormat.ATTACHMENT_ROWS_TABLE)) {
+            if (exists(ds, table)) rows(ds, "SELECT uuid, seq FROM $table").forEach { seqs[it["uuid"]] = it["seq"]?.toLongOrNull() ?: 0L }
         }
+        // Attachment rows after the feature rows: the server takes an attachment only on a row it has (protocol v1 9.1).
+        val changes = pending.groupBy { it.getValue("row")!! }.entries.sortedBy { it.value.first()["layer_id"] == Outbox.ATTACHMENTS }
         ds.begin()
         try {
-            for ((row, entries) in pending.groupBy { it.getValue("row")!! }) {
+            for ((row, entries) in changes) {
                 if (row in waiting) continue
                 val body = buildJsonObject {
                     val set = entries.filter { it["field"] != Outbox.DELETED }
@@ -83,7 +84,10 @@ internal object Sending {
         try {
             for (r in results) {
                 when (r.status) {
-                    PushResult.APPLIED, PushResult.DUPLICATE -> ds.sql("DELETE FROM ${ProjectFormat.SENDING_TABLE} WHERE change = ${quote(r.id)}")
+                    PushResult.APPLIED, PushResult.DUPLICATE -> {
+                        r.seq?.let { firstSeen(ds, r.id, it) }
+                        ds.sql("DELETE FROM ${ProjectFormat.SENDING_TABLE} WHERE change = ${quote(r.id)}")
+                    }
                     PushResult.REJECTED -> {
                         val why = listOfNotNull(r.error, r.message).joinToString(": ").ifEmpty { "rejected" }
                         ds.sql("UPDATE ${ProjectFormat.SENDING_TABLE} SET rejected = ${quote(why)} WHERE change = ${quote(r.id)}")
@@ -94,6 +98,21 @@ internal object Sending {
         } catch (e: Exception) {
             runCatching { ds.rollback() }
             throw e
+        }
+    }
+
+    /**
+     * A row the server did not have before change [change] made it, at [seq]:
+     * that seq is its base from now on. Nobody can have changed it on the
+     * server before it was there, so nothing goes unseen (protocol v1 8.2 asks
+     * a row's base to come from a pull for that reason); without this, its next
+     * change would be taken for one made alongside its own creation, and a
+     * deletion of it refused. A row a pull has seen already keeps that pull's seq.
+     */
+    private fun firstSeen(ds: VectorDataset, change: String, seq: Long) {
+        val row = rows(ds, "SELECT row FROM ${ProjectFormat.SENDING_TABLE} WHERE change = ${quote(change)}").firstOrNull()?.get("row") ?: return
+        for (table in listOf(ProjectFormat.ROWS_TABLE, ProjectFormat.ATTACHMENT_ROWS_TABLE)) {
+            if (exists(ds, table)) ds.sql("UPDATE $table SET seq = $seq WHERE uuid = ${quote(row)} AND seq = 0")
         }
     }
 

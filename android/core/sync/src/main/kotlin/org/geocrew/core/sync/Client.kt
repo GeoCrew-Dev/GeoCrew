@@ -28,6 +28,10 @@ import kotlinx.serialization.json.putJsonArray
 fun interface Transport {
     /** Sends [body] (JSON, or null) to [path] with [method], signed in with [token] when there is one. */
     fun send(method: String, path: String, token: String?, body: String?): Reply
+
+    /** Sends [body] as raw bytes (a chunk of a file) to [path] with [method]; the answer is JSON as with [send]. */
+    fun sendBytes(method: String, path: String, token: String?, body: ByteArray): Reply =
+        throw UnsupportedOperationException("this transport sends no files")
 }
 
 /** A server's answer: HTTP [status] and the [body] as text. */
@@ -52,6 +56,13 @@ data class ServerInfo(
 
 /** Signed in to a workspace (protocol v1 3.4): who the member is, and the device's token, given only once. */
 data class Joined(val workspace: String, val workspaceName: String, val member: String, val leader: String, val inviteCode: String?, val token: String)
+
+/**
+ * Where the upload of a file stands (protocol v1 9.2): the workspace has the
+ * file already ([exists]), or [upload] goes on from [offset], in chunks of at
+ * most [chunkSize] bytes.
+ */
+data class UploadStart(val exists: Boolean, val upload: String, val offset: Long, val chunkSize: Long)
 
 /** A member as the workspace lists them (protocol v1 5.2): the id conflict records and fields name, and their nickname. */
 data class Member(val id: String, val nickname: String)
@@ -139,6 +150,30 @@ class SyncClient(private val transport: Transport) {
         return listed.mapNotNull { it as? JsonObject }.map { Member(it.text("id").orEmpty(), it.text("nickname").orEmpty()) }
     }
 
+    /** Begins the upload of the file [sha256], or picks up this member's unfinished one of it (protocol v1 9.2). */
+    fun startUpload(workspace: String, token: String, sha256: String, size: Long, type: String): UploadStart {
+        val o = call("POST", "/api/v1/workspaces/${segment(workspace)}/uploads", token, buildJsonObject {
+            put("sha256", sha256)
+            put("size", size)
+            put("type", type)
+        })
+        if ((o["exists"] as? JsonPrimitive)?.booleanOrNull == true) return UploadStart(true, "", 0, 0)
+        return UploadStart(false, o.text("upload").orEmpty(), o.long("offset"), o.long("chunk_size"))
+    }
+
+    /**
+     * Sends [bytes] at [offset] of [upload]: the bytes the server has after
+     * them, or null once the file is whole and stored. A chunk that does not
+     * start where the upload stands is a [ServerError] offset_mismatch whose
+     * body has the right offset; bytes that are not the file named, hash_mismatch.
+     */
+    fun putChunk(workspace: String, token: String, upload: String, offset: Long, bytes: ByteArray): Long? {
+        val path = "/api/v1/workspaces/${segment(workspace)}/uploads/${segment(upload)}?offset=$offset"
+        val reply = transport.sendBytes("PUT", path, token, bytes)
+        val o = answer("PUT", path, reply) as? JsonObject ?: throw IOException("the server's answer to PUT $path is not a JSON object")
+        return if (reply.status == 201) null else o.long("offset")
+    }
+
     /** Creates a shared layer; the same id again with the same schema gives the layer as it is (a retry). */
     fun createLayer(workspace: String, token: String, layer: LayerSpec): PulledLayer {
         val body = buildJsonObject {
@@ -223,8 +258,10 @@ class SyncClient(private val transport: Transport) {
         request(method, path, token, body) as? JsonObject ?: throw IOException("the server's answer to $method $path is not a JSON object")
 
     // The server's answer as JSON, an object or an array; a refusal as a ServerError.
-    private fun request(method: String, path: String, token: String?, body: JsonObject?): JsonElement? {
-        val reply = transport.send(method, path, token, body?.toString())
+    private fun request(method: String, path: String, token: String?, body: JsonObject?): JsonElement? =
+        answer(method, path, transport.send(method, path, token, body?.toString()))
+
+    private fun answer(method: String, path: String, reply: Reply): JsonElement? {
         val parsed = runCatching { json.parseToJsonElement(reply.body) }.getOrNull()
         if (reply.status !in 200..299) {
             val o = parsed as? JsonObject
@@ -301,8 +338,15 @@ class SyncClient(private val transport: Transport) {
 class HttpTransport(private val base: String, private val pin: String? = null, private val timeoutMs: Int = 30_000) : Transport {
     private val pinned = pin?.let(Pins::pinned)
 
-    override fun send(method: String, path: String, token: String?, body: String?): Reply = try {
-        exchange(method, path, token, body)
+    override fun send(method: String, path: String, token: String?, body: String?): Reply =
+        guarded { exchange(method, path, token, body?.toByteArray(Charsets.UTF_8), "application/json; charset=utf-8") }
+
+    override fun sendBytes(method: String, path: String, token: String?, body: ByteArray): Reply =
+        guarded { exchange(method, path, token, body, "application/octet-stream") }
+
+    // A failure of the certificate as what it means here: a key changed, or one not to be trusted.
+    private inline fun guarded(block: () -> Reply): Reply = try {
+        block()
     } catch (e: IOException) {
         val mismatch = Pins.mismatchIn(e)
         throw when {
@@ -312,7 +356,7 @@ class HttpTransport(private val base: String, private val pin: String? = null, p
         }
     }
 
-    private fun exchange(method: String, path: String, token: String?, body: String?): Reply {
+    private fun exchange(method: String, path: String, token: String?, body: ByteArray?, type: String): Reply {
         val c = URI(base.trimEnd('/') + path).toURL().openConnection() as HttpURLConnection
         if (pinned != null) {
             if (c !is HttpsURLConnection) throw IOException("a pinned key needs an https address")
@@ -327,8 +371,9 @@ class HttpTransport(private val base: String, private val pin: String? = null, p
             token?.let { c.setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {
                 c.doOutput = true
-                c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                c.setRequestProperty("Content-Type", type)
+                c.setFixedLengthStreamingMode(body.size)
+                c.outputStream.use { it.write(body) }
             }
             val status = c.responseCode
             val stream = if (status >= 400) c.errorStream else c.inputStream

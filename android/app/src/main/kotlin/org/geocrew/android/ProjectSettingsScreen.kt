@@ -270,9 +270,11 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit, 
                 item {
                     val waiting = team?.number("waiting") ?: 0
                     val rejected = team?.number("rejected") ?: 0
+                    val files = team?.number("files") ?: 0
                     val state = listOfNotNull(
                         pluralStringResource(R.plurals.team_waiting, waiting, waiting).takeIf { waiting > 0 },
                         pluralStringResource(R.plurals.team_rejected, rejected, rejected).takeIf { rejected > 0 },
+                        pluralStringResource(R.plurals.team_files, files, files).takeIf { files > 0 },
                     ).joinToString(" · ").ifEmpty { stringResource(R.string.team_up_to_date) }
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.team_sync_now)) },
