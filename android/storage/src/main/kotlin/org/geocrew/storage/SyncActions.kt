@@ -127,6 +127,18 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
             }
         },
         SyncAction(
+            INVITE, "Invite code",
+            "The invite code of the workspace the open project syncs with, for a member who may invite others; null for the others",
+            Risk.VIEW, NO_PARAMS, "{}",
+        ) { _ ->
+            val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
+            val account = accounts.of(project.id) ?: return@SyncAction ActionResult.Failed(NOT_LINKED, "the project syncs with no workspace")
+            remote {
+                val code = SyncClient(transport(account.server)).inviteCode(account.workspace, account.token)
+                ActionResult.Done(buildJsonObject { if (code == null) put("invite_code", JsonNull) else put("invite_code", code) })
+            }
+        },
+        SyncAction(
             STATUS, "Sync status",
             "Whether the open project syncs with a workspace, which, and how many changes wait to be sent or were refused",
             Risk.VIEW, NO_PARAMS, "{}",
@@ -160,7 +172,7 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
     } catch (e: ServerError) {
         ActionResult.Failed(e.code, e.message ?: "the server refused")
     } catch (e: ProjectSync.Unsupported) {
-        ActionResult.Failed(UNSUPPORTED, e.message ?: "a layer the workspace cannot take")
+        ActionResult.Failed(MIXED, e.message ?: "a layer the workspace cannot take")
     } catch (e: IOException) {
         ActionResult.Failed(OFFLINE, e.message ?: "the server cannot be reached")
     }
@@ -182,6 +194,7 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
     companion object {
         const val SHARE = "sync.share"
         const val JOIN = "sync.join"
+        const val INVITE = "sync.invite"
         const val NOW = "sync.now"
         const val STATUS = "sync.status"
 
@@ -190,6 +203,7 @@ class SyncActions(private val workspace: Workspace, accountsDir: File, private v
         const val LINKED = "linked"
         const val NOT_LINKED = "not_linked"
         const val UNSUPPORTED = "unsupported"
+        const val MIXED = "mixed_geometry"
         const val OFFLINE = "offline"
         const val UNSAVED = "unsaved"
         const val BAD_REQUEST = "invalid"

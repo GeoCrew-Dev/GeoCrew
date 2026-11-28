@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.ScreenLockRotation
 import androidx.compose.material.icons.rounded.SquareFoot
 import androidx.compose.material.icons.rounded.Straighten
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material.icons.rounded.Transform
 import androidx.compose.material.icons.rounded.Tune
@@ -83,6 +84,7 @@ enum class MapTool(val id: String, val group: Int?, val label: Int, val icon: Im
     MY_LOCATION("my_location", R.string.menu_location, R.string.my_position, Icons.Rounded.MyLocation),
     TRACK("track", R.string.menu_location, R.string.tool_track, Icons.Rounded.Route),
     CONVERT("convert", R.string.menu_analysis, R.string.tool_convert, Icons.Rounded.Transform),
+    SYNC("sync", R.string.menu_data, R.string.tool_sync, Icons.Rounded.Sync),
     EXPORT("export", R.string.menu_data, R.string.layer_export, Icons.Rounded.SaveAlt),
     FILES("files", R.string.menu_data, R.string.files, Icons.Rounded.FolderOpen),
     PROJECT_SETTINGS("project_settings", R.string.project_section, R.string.project_settings, Icons.Rounded.Tune),

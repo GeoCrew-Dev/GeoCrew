@@ -132,6 +132,7 @@ import org.geocrew.core.project.Templates
 import org.geocrew.storage.AttachmentActions
 import org.geocrew.storage.Crs
 import org.geocrew.storage.Projects
+import org.geocrew.storage.SyncActions
 import org.geocrew.storage.Workspace
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -299,6 +300,8 @@ fun MapScreen(
     var discardingTrack by remember { mutableStateOf(false) }
     var ai by remember { mutableStateOf(false) }
     var exported by remember { mutableStateOf<File?>(null) }
+    val syncFailures = syncTexts()
+    val syncedText = stringResource(R.string.team_synced)
     var exporting by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val modified = collections.values.any { it.flag("projectModified") }
@@ -1224,6 +1227,25 @@ fun MapScreen(
         measured = emptyList()
     }
 
+    // Sends the project's saved edits to its team and brings in the team's (ADR 0008): the map then shows what came in,
+    // new layers too, open for editing like the others.
+    fun syncNow() = once {
+        when (val done = graph.invoke(SyncActions.NOW)) {
+            is Outcome.Done -> {
+                (graph.invoke(Workspace.CURRENT) as? Outcome.Done)?.let { show(it.output.jsonObject) }
+                for (name in layers.mapNotNull { it.name() }.filterNot { collections[it].flag("editing") }) {
+                    graph.invoke(Editing.START, buildJsonObject { put("layer", name) })
+                }
+                reload()
+                val out = done.output.jsonObject
+                val sent = (out["sent"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
+                val pulled = (out["pulled"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
+                scope.launch { snackbar.showSnackbar(syncedText.format(sent, pulled)) }
+            }
+            else -> failure = syncFailures.of(done)
+        }
+    }
+
     // The whole project, in a format chosen from the list.
     fun export(format: String) = once {
         when (val outcome = graph.invoke(Workspace.EXPORT, buildJsonObject { put("format", format); put("language", AppLanguage.speaking(context)) })) {
@@ -1275,6 +1297,7 @@ fun MapScreen(
             MapTool.MY_LOCATION -> showMe()
             MapTool.TRACK -> if (ownTrack == null) requestTrack() else finishTrack()
             MapTool.CONVERT -> converting = true
+            MapTool.SYNC -> syncNow()
             MapTool.EXPORT -> exporting = true
             MapTool.FILES -> onFiles()
             MapTool.PROJECT_SETTINGS -> onProjectSettings()

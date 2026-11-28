@@ -545,4 +545,31 @@
     <string name="snapshot_restore">恢复</string>
     <string name="snapshot_restore_title">恢复到 %1$s 的快照？</string>
     <string name="snapshot_restore_body">现在的工程会先另存一份到快照文件夹。</string>
+    <string name="tool_sync">同步</string>
+    <string name="team_section">团队</string>
+    <string name="team_share">共享到团队</string>
+    <string name="team_share_action">共享</string>
+    <string name="team_join">加入团队</string>
+    <string name="team_join_action">加入</string>
+    <string name="team_server">服务器</string>
+    <string name="team_server_address">服务器地址</string>
+    <string name="team_nickname">昵称</string>
+    <string name="team_workspace_name">工作区名称</string>
+    <string name="team_invite">邀请码</string>
+    <string name="team_sync_now">立即同步</string>
+    <string name="team_up_to_date">已同步</string>
+    <string name="team_synced">已同步：上传 %1$d 条，收到 %2$d 条</string>
+    <string name="sync_offline">连不上服务器</string>
+    <string name="sync_bad_invite">邀请码不对</string>
+    <string name="sync_signed_out">团队登录已失效</string>
+    <string name="sync_unsupported">服务器不支持</string>
+    <string name="sync_mixed">有图层混合了点、线、面</string>
+    <string name="sync_not_linked">工程未共享</string>
+    <string name="sync_archived">工作区已归档</string>
+    <plurals name="team_waiting">
+        <item quantity="other">待上传 %d 条</item>
+    </plurals>
+    <plurals name="team_rejected">
+        <item quantity="other">未能提交 %d 条</item>
+    </plurals>
 </resources>
