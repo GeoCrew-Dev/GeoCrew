@@ -185,6 +185,8 @@ fun MapScreen(
     var linked by remember { mutableStateOf(false) }
     var editorsShown by remember { mutableStateOf(false) }
     var editors by remember { mutableStateOf<Map<String, Map<Long, String>>>(emptyMap()) }
+    // A team's project: the features with conflicts to settle (protocol v1 6.5), by layer, marked on the map.
+    var conflicts by remember { mutableStateOf<Map<String, Set<Long>>>(emptyMap()) }
     val meText = stringResource(R.string.conflict_me)
     // The features by their ids on the map ("layer index/fid"), with their exact coordinates, for snapping to.
     val featuresById by remember {
@@ -355,6 +357,17 @@ fun MapScreen(
         }.toMap()
     }
 
+    // The features of each layer with a conflict to settle, as the conflict list has them.
+    suspend fun loadConflicts(): Map<String, Set<Long>> {
+        val done = graph.invoke(SyncActions.CONFLICTS) as? Outcome.Done ?: return emptyMap()
+        return done.output.jsonObject["conflicts"]?.jsonArray.orEmpty().mapNotNull { c ->
+            val o = c as? JsonObject ?: return@mapNotNull null
+            val layer = (o["layer"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            val fid = (o["fid"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+            layer to fid
+        }.groupBy({ it.first }, { it.second }).mapValues { it.value.toSet() }
+    }
+
     suspend fun reload() {
         val loaded = LinkedHashMap<String, JsonObject>()
         for (name in layers.mapNotNull { it.name() }) {
@@ -365,6 +378,7 @@ fun MapScreen(
             }
         }
         editors = if (editorsShown && linked) loadEditors(loaded.keys) else emptyMap()
+        conflicts = if (linked) loadConflicts() else emptyMap()
         collections = loaded
         history = graph.registry.canUndo(Workspace.PROJECT_SCOPE) to graph.registry.canRedo(Workspace.PROJECT_SCOPE)
     }
@@ -562,6 +576,19 @@ fun MapScreen(
                     ).withFilter(Expression.eq(Expression.get(MapLabels.KIND), Expression.literal(kind))),
                 )
             }
+            // Features with conflicts to settle (protocol v1 6.5): a mark above each, over the labels and clear of them.
+            // Its image and opacity come from the feature, as a label's do: with constant ones MapLibre drew no icon.
+            style.addSource(GeoJsonSource(CONFLICT_MARKS))
+            style.addLayer(
+                SymbolLayer(CONFLICT_MARKS, CONFLICT_MARKS).withProperties(
+                    PropertyFactory.iconImage(Expression.get(MapLabels.PROPERTY)),
+                    PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                    PropertyFactory.iconOffset(Expression.get(MARK_OFFSET)),
+                    PropertyFactory.iconOpacity(Expression.get(OPACITY)),
+                    PropertyFactory.iconAllowOverlap(true),
+                    PropertyFactory.iconIgnorePlacement(true),
+                ),
+            )
             // The measurement on top of everything: its line or polygon, and its points.
             style.addSource(GeoJsonSource(MEASURE_SOURCE))
             style.addLayer(
@@ -699,12 +726,12 @@ fun MapScreen(
     }
 
     var fitted by remember { mutableStateOf(graph.cameras.containsKey(project)) }
-    LaunchedEffect(styleLoads, collections, editors) {
+    LaunchedEffect(styleLoads, collections, editors, conflicts) {
         val map = mapView.awaitMap()
         val style = map.style ?: return@LaunchedEffect
         // With no layers left, nothing of theirs stays on the map.
         if (collections.isEmpty()) {
-            for (source in listOf(POINT_SOURCE, SHAPE_LABELS)) style.getSourceAs<GeoJsonSource>(source)?.setGeoJson(EMPTY_COLLECTION)
+            for (source in listOf(POINT_SOURCE, SHAPE_LABELS, CONFLICT_MARKS)) style.getSourceAs<GeoJsonSource>(source)?.setGeoJson(EMPTY_COLLECTION)
             return@LaunchedEffect
         }
         // Every layer in one source (points, lines, areas), each feature with its layer's colour and an id that names its layer.
@@ -743,10 +770,45 @@ fun MapScreen(
                 JsonObject(label + ("properties" to JsonObject((label["properties"] as JsonObject) + (OPACITY to JsonPrimitive(opacity)))))
             }
         }
+        // A mark above each feature with a conflict to settle: over a point, over a line's or an area's label place.
+        val marks = layers.flatMap { l ->
+            if ((l["visible"] as? JsonPrimitive)?.contentOrNull == "false") return@flatMap emptyList()
+            val fids = conflicts[l.name()] ?: return@flatMap emptyList()
+            val point = (l["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT"
+            val size = styleOf(l, layerColor(madeIndex(l))).size
+            val opacity = (l["opacity"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() ?: 1.0
+            (collections[l.name()]?.get("features") as? JsonArray).orEmpty().mapNotNull { feature ->
+                val f = feature as? JsonObject ?: return@mapNotNull null
+                if (fidOf(f) !in fids) return@mapNotNull null
+                val geometry = f["geometry"] as? JsonObject ?: return@mapNotNull null
+                val at = if (point) coordinatesOf(f) else MapLabels.anchor(geometry)?.first
+                at ?: return@mapNotNull null
+                buildJsonObject {
+                    put("type", "Feature")
+                    putJsonObject("properties") {
+                        put(MapLabels.PROPERTY, CONFLICT_MARK)
+                        put(OPACITY, opacity)
+                        // Clear of the point, or of the label in a line's or an area's middle.
+                        putJsonArray(MARK_OFFSET) { add(0); add(if (point) -(size + 2) else -12) }
+                    }
+                    putJsonObject("geometry") {
+                        put("type", "Point")
+                        putJsonArray("coordinates") { add(at.first); add(at.second) }
+                    }
+                }
+            }
+        }
+        if (style.getImage(CONFLICT_MARK) == null) style.addImage(CONFLICT_MARK, MapLabels.conflictMark(density))
         style.getSourceAs<GeoJsonSource>(SHAPE_LABELS)?.setGeoJson(
             buildJsonObject {
                 put("type", "FeatureCollection")
                 put("features", JsonArray(shapeLabels))
+            }.toString(),
+        )
+        style.getSourceAs<GeoJsonSource>(CONFLICT_MARKS)?.setGeoJson(
+            buildJsonObject {
+                put("type", "FeatureCollection")
+                put("features", JsonArray(marks))
             }.toString(),
         )
         // The first visit shows the points there are.
@@ -2041,6 +2103,13 @@ private fun isType(type: String): Expression =
 
 // Where the names of lines and areas are shown, as points.
 private const val SHAPE_LABELS = "geocrew-shape-labels"
+
+// The marks of the features with conflicts to settle, and the image they show.
+private const val CONFLICT_MARKS = "geocrew-conflict-marks"
+private const val CONFLICT_MARK = "geocrew-conflict"
+
+// How far above its place a conflict mark sits.
+private const val MARK_OFFSET = "_mark_offset"
 
 private const val EMPTY_COLLECTION = """{"type":"FeatureCollection","features":[]}"""
 
