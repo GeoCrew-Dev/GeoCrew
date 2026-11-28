@@ -838,6 +838,15 @@ func layers(t *testing.T, open Opener) {
 	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 3, []v1.SchemaOp{{Op: "rename_field", ID: "f3", Name: "样品编号"}}); !errors.As(err, &taken) || taken.Field.ID != "f5" {
 		t.Fatalf("a rename to a name taken: %v", err)
 	}
+	// Two fields can swap names in one request; a rename to the name a field has changes nothing.
+	swapped, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 3, []v1.SchemaOp{{Op: "rename_field", ID: "f3", Name: "暂名"}, {Op: "rename_field", ID: "f5", Name: "采样编号"}, {Op: "rename_field", ID: "f3", Name: "样品编号"}})
+	if err != nil || swapped.SchemaVersion != 4 {
+		t.Fatalf("a swap: %v %+v", err, swapped)
+	}
+	if same, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 4, []v1.SchemaOp{{Op: "rename_field", ID: "f3", Name: "样品编号"}}); err != nil || same.SchemaVersion != 4 {
+		t.Fatalf("a rename to its own name: %v %+v", err, same)
+	}
+	added = swapped
 	// A rename still goes by version.
 	if _, err := s.ChangeSchema(ctx, tm.ws, l, layerA, 2, []v1.SchemaOp{{Op: "rename_field", ID: "f3", Name: "编号"}}); !errors.Is(err, store.ErrStale) {
 		t.Fatalf("a rename from an old version: %v", err)
