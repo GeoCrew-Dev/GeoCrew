@@ -51,8 +51,8 @@ func validField(f v1.FieldDef) bool {
 	return validOptions(f.Options)
 }
 
-// nameKey is how field names compare (protocol 7.2): trimmed, ignoring case.
-func nameKey(name string) string { return strings.ToLower(strings.TrimSpace(name)) }
+// sameName is how field names compare (protocol 7.2): trimmed, ignoring case.
+func sameName(a, b string) bool { return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b)) }
 
 // sameField reports whether a and b are one definition: the same id, name, type and options.
 func sameField(a, b v1.FieldDef) bool {
@@ -155,12 +155,17 @@ func (v *V1) CreateLayer(ctx context.Context, workspaceID, actor string, in v1.L
 		return v1.Layer{}, store.ErrInvalid
 	}
 	in.Fields = append([]v1.FieldDef(nil), in.Fields...) // normalised below; the caller's slice stays as it was
-	seen, named := map[string]bool{}, map[string]bool{}
+	seen := map[string]bool{}
 	for i, f := range in.Fields {
-		if !validField(f) || seen[f.ID] || named[nameKey(f.Name)] {
+		if !validField(f) || seen[f.ID] {
 			return v1.Layer{}, store.ErrInvalid
 		}
-		seen[f.ID], named[nameKey(f.Name)] = true, true
+		for _, other := range in.Fields[:i] {
+			if sameName(other.Name, f.Name) {
+				return v1.Layer{}, store.ErrInvalid // a name is one field's
+			}
+		}
+		seen[f.ID] = true
 		in.Fields[i].Name = strings.TrimSpace(f.Name)
 		if f.Options != nil {
 			in.Fields[i].Options = compactJSON(f.Options)
@@ -342,13 +347,14 @@ func (v *V1) ChangeSchema(ctx context.Context, workspaceID, actor, id string, ba
 	// The field other than [except] that has [name], if any: a name is one field's in a layer.
 	named := func(name string, except int) int {
 		for i, f := range fields {
-			if i != except && nameKey(f.Name) == nameKey(name) {
+			if i != except && sameName(f.Name, name) {
 				return i
 			}
 		}
 		return -1
 	}
 	changed := false
+	var renamed []string // checked once all ops are done, so two fields can swap names
 	for _, op := range ops {
 		i := find(op.ID)
 		switch {
@@ -375,11 +381,11 @@ func (v *V1) ChangeSchema(ctx context.Context, workspaceID, actor, id string, ba
 			if err != nil {
 				return v1.Layer{}, err
 			}
-			if at := named(name, i); at >= 0 {
-				return l, &v1.NameTakenError{Field: fields[at]}
+			if name != fields[i].Name {
+				fields[i].Name = name
+				renamed = append(renamed, op.ID)
+				changed = true
 			}
-			fields[i].Name = name
-			changed = true
 		case op.Op == "set_options" && i >= 0 && validOptions(op.Options):
 			fields[i].Options = nil
 			if op.Options != nil {
@@ -394,8 +400,15 @@ func (v *V1) ChangeSchema(ctx context.Context, workspaceID, actor, id string, ba
 			return v1.Layer{}, store.ErrInvalid
 		}
 	}
+	for _, fid := range renamed {
+		if i := find(fid); i >= 0 {
+			if at := named(fields[i].Name, i); at >= 0 {
+				return l, &v1.NameTakenError{Field: fields[at]}
+			}
+		}
+	}
 	if !changed {
-		return l, nil // every add sent again: the structure stays as it is, its version too
+		return l, nil // every add sent again, or names as they were: the structure stays as it is, its version too
 	}
 	seq, err := nextSeq(ctx, tx, ws.ID)
 	if err != nil {
