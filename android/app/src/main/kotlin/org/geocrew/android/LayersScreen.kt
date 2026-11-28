@@ -282,6 +282,7 @@ fun LayersScreen(
         unsaved = stringResource(R.string.failure_unsaved),
         failed = stringResource(R.string.action_failed),
         start = stringResource(R.string.start_failed),
+        shared = stringResource(R.string.failure_shared),
     )
 
     // A row put in above the first (a new group, a layer moved up) shows: a list at the top stays there.

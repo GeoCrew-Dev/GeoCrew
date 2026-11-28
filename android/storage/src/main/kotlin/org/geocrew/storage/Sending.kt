@@ -28,7 +28,7 @@ import org.geocrew.nativelib.VectorDataset
  */
 internal object Sending {
     /** Takes what the outbox holds into changes, in one transaction; edits made after this go to the outbox again. */
-    fun prepare(ds: VectorDataset) {
+    fun prepare(ds: VectorDataset, unsent: SharedSchema.Unsent? = null) {
         if (!exists(ds, ProjectFormat.OUTBOX_TABLE)) return
         val pending = rows(ds, "SELECT row, layer_id, field, value, edited_at FROM ${ProjectFormat.OUTBOX_TABLE} ORDER BY row, field")
         if (pending.isEmpty()) return
@@ -42,8 +42,11 @@ internal object Sending {
         val changes = pending.groupBy { it.getValue("row")!! }.entries.sortedBy { it.value.first()["layer_id"] == Outbox.ATTACHMENTS }
         ds.begin()
         try {
-            for ((row, entries) in changes) {
+            for ((row, all) in changes) {
                 if (row in waiting) continue
+                // What the workspace has not taken yet waits here (protocol v1 7.4): a layer made here, a field added here.
+                val entries = all.filter { unsent == null || goes(it, all, unsent) }
+                if (entries.isEmpty()) continue
                 val body = buildJsonObject {
                     val set = entries.filter { it["field"] != Outbox.DELETED }
                     if (set.isNotEmpty()) put("set", JsonObject(set.associate { it.getValue("field")!! to edit(it) }))
@@ -53,13 +56,24 @@ internal object Sending {
                     "INSERT INTO ${ProjectFormat.SENDING_TABLE} (change, row, layer_id, base_seq, body) VALUES " +
                         "(${quote(UUID.randomUUID().toString())}, ${quote(row)}, ${quote(entries.first().getValue("layer_id")!!)}, ${seqs[row] ?: 0}, ${quote(body.toString())})",
                 )
-                ds.sql("DELETE FROM ${ProjectFormat.OUTBOX_TABLE} WHERE row = ${quote(row)}")
+                for (e in entries) ds.sql("DELETE FROM ${ProjectFormat.OUTBOX_TABLE} WHERE row = ${quote(row)} AND field = ${quote(e.getValue("field")!!)}")
             }
             ds.commit()
         } catch (e: Exception) {
             runCatching { ds.rollback() }
             throw e
         }
+    }
+
+    // Whether outbox entry [e] of a row (with [all] its entries) may go: it is in no layer or field the workspace has not
+    // taken ([unsent]). A layer's own row goes once the layer is shared; an attachment's once its feature's layer is. A
+    // value of a field the team deleted goes too, for the workspace's conflict records (protocol v1 6.4).
+    private fun goes(e: Map<String, String?>, all: List<Map<String, String?>>, unsent: SharedSchema.Unsent): Boolean = when (val layer = e["layer_id"]) {
+        Outbox.LAYERS -> e["row"] !in unsent.layers
+        Outbox.ATTACHMENTS -> all.firstOrNull { it["field"] == "target_layer" }?.let { t ->
+            runCatching { Json.parseToJsonElement(t["value"].orEmpty()).let { (it as? JsonPrimitive)?.contentOrNull } }.getOrNull() !in unsent.layers
+        } ?: true
+        else -> layer !in unsent.layers && e["field"] !in unsent.fields[layer].orEmpty()
     }
 
     /** At most [max] changes to send, oldest first: those the server has not refused. */

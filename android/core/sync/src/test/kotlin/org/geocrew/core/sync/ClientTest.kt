@@ -52,6 +52,31 @@ class ClientTest {
     }
 
     @Test
+    fun fieldsAddedAndWhatARefusalBrings() {
+        val layer = """{"id": "L1", "geometry_type": "Point", "crs": "EPSG:4490", "schema_version": 3, "seq": 9,
+            "fields": [{"id": "f1", "name": "点名", "type": "string"}, {"id": "f2", "name": "岩性", "type": "string"}]}"""
+        val fake = Fake(
+            listOf(
+                Reply(200, layer),
+                Reply(409, """{"error": "name_taken", "message": "", "field": {"id": "f2", "name": "岩性", "type": "string", "options": ["花岗岩"]}}"""),
+                Reply(409, """{"error": "stale", "message": "", "layer": $layer}"""),
+            ),
+        )
+        val client = SyncClient(fake)
+        val made = client.addFields("w1", "t1", "L1", 1, listOf(FieldDef("f2", "岩性", "string")))
+        assertEquals(3L to listOf("f1", "f2"), made.schemaVersion to made.fields.map { it.id })
+        val sent = Json.parseToJsonElement(fake.sent[0].third!!).jsonObject
+        assertEquals("POST" to "/api/v1/workspaces/w1/layers/L1/schema", fake.sent[0].first to fake.sent[0].second)
+        assertEquals(1L, sent.getValue("base_version").jsonPrimitive.content.toLong())
+        assertEquals("add_field", sent.getValue("ops").jsonArray.single().jsonObject.getValue("op").jsonPrimitive.content)
+        val taken = assertFailsWith<ServerError> { client.addFields("w1", "t1", "L1", 3, listOf(FieldDef("f9", "岩性", "integer"))) }
+        assertEquals(FieldDef("f2", "岩性", "string", Json.parseToJsonElement("""["花岗岩"]""").jsonArray), client.fieldIn(taken))
+        val stale = assertFailsWith<ServerError> { client.addFields("w1", "t1", "L1", 3, emptyList()) }
+        assertEquals(3L, client.layerIn(stale)!!.schemaVersion)
+        assertEquals(null, client.layerIn(taken))
+    }
+
+    @Test
     fun theMembersAreListedByIdAndNickname() {
         val fake = Fake(
             listOf(

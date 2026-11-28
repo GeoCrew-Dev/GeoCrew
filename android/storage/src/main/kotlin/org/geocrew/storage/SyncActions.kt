@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.geocrew.core.action.Action
 import org.geocrew.core.action.ActionResult
 import org.geocrew.core.action.ActionSpec
@@ -78,7 +79,8 @@ class SyncActions(
                 val joined = client.create(p.text("name")?.takeIf { it.isNotBlank() } ?: project.name, p.text("nickname")!!, p.text("device")!!)
                 val account = SyncAccount(server, joined.workspace, joined.member, joined.token, pin)
                 accounts.put(project.id, account)
-                val sync = ProjectSync(project, client, account)
+                val ended = ArrayList<String>()
+                val sync = ProjectSync(project, client, account, changing(ended))
                 sync.share()
                 val pushed = sync.push(info.maxPushBatch)
                 ActionResult.Done(
@@ -88,6 +90,7 @@ class SyncActions(
                         put("sent", pushed.sent)
                         put("rejected", pushed.rejected)
                     },
+                    endsUndo = ended.distinct(),
                 )
             }
         },
@@ -116,16 +119,18 @@ class SyncActions(
                 val account = SyncAccount(server, joined.workspace, joined.member, joined.token, pin)
                 accounts.put(project.id, account)
                 project.link(joined.workspace)
-                val pulled = ProjectSync(project, client, account).pull(info.maxPullBatch)
-                keepNicknames(project, client, account)
+                val ended = ArrayList(opened.endsUndo)
+                val sync = ProjectSync(project, client, account, changing(ended))
+                val pulled = sync.pull(info.maxPullBatch)
+                keepNicknames(sync.project, client, account)
                 ActionResult.Done(
                     buildJsonObject {
-                        put("project", project.name)
+                        put("project", sync.project.name)
                         put("workspace", joined.workspace)
                         put("pulled", pulled.rows)
                         put("layers", pulled.layers)
                     },
-                    endsUndo = opened.endsUndo,
+                    endsUndo = ended.distinct(),
                 )
             }
         },
@@ -140,21 +145,27 @@ class SyncActions(
             remote {
                 val client = SyncClient(transport(account.server, account.pin))
                 val info = client.info()
-                val sync = ProjectSync(project, client, account)
+                val ended = ArrayList<String>()
+                val sync = ProjectSync(project, client, account, changing(ended))
                 if (!project.data(Outbox::linked)) sync.share()
                 val pushed = sync.push(info.maxPushBatch)
                 // Rows written into the file under an edit buffer with unsaved edits could clash with them on save.
                 val pulled = if (unsaved() == null) sync.pull(info.maxPullBatch) else null
-                keepNicknames(project, client, account)
+                keepNicknames(sync.project, client, account)
                 ActionResult.Done(
                     buildJsonObject {
                         put("sent", pushed.sent)
                         put("rejected", pushed.rejected)
                         put("conflicts", pushed.conflicts + (pulled?.conflicts ?: 0))
-                        put("open_conflicts", Conflicts.open(project))
+                        put("open_conflicts", Conflicts.open(sync.project))
+                        put("structure", sync.project.data { SharedSchema.unsent(it, sync.project) }.size)
+                        putJsonArray("renamed") {
+                            for (r in sync.renamed) add(buildJsonObject { put("layer", r.layer); put("from", r.from); put("to", r.to) })
+                        }
                         if (pulled == null) put("pulled", JsonNull) else put("pulled", pulled.rows)
                         put("layers", pulled?.layers ?: 0)
                     },
+                    endsUndo = ended.distinct(),
                 )
             }
         },
@@ -190,6 +201,7 @@ class SyncActions(
                     put("waiting", waiting)
                     put("rejected", rejected)
                     put("files", files)
+                    put("structure", project.data { SharedSchema.unsent(it, project) }.size)
                     put("conflicts", Conflicts.open(project))
                 },
             )
@@ -237,18 +249,28 @@ class SyncActions(
             val choose = p.text("choose")!!
             remote {
                 val client = SyncClient(transport(account.server, account.pin))
-                val sync = ProjectSync(project, client, account)
+                val ended = ArrayList<String>()
+                val sync = ProjectSync(project, client, account, changing(ended))
                 sync.resolve(p.text("conflict")!!, choose)
                 val pulled = if (choose == SyncClient.LOST && unsaved() == null) sync.pull(client.info().maxPullBatch) else null
                 ActionResult.Done(
                     buildJsonObject {
-                        put("open_conflicts", Conflicts.open(project))
+                        put("open_conflicts", Conflicts.open(sync.project))
                         if (pulled == null) put("pulled", JsonNull) else put("pulled", pulled.rows)
                     },
+                    endsUndo = ended.distinct(),
                 )
             }
         },
     )
+
+    // Fields changed for sync (protocol v1 7.4), the project opened again after; the undo histories that end go into [ended].
+    private fun changing(ended: MutableList<String>): (Project, () -> Unit) -> Project? = { p, change ->
+        workspace.changeFieldsForSync(p, change)?.let { (again, closed) ->
+            ended += closed
+            again
+        }
+    }
 
     // The members' nicknames for conflict records, as the server lists them now; when that fails, the last ones stay.
     private fun keepNicknames(project: Project, client: SyncClient, account: SyncAccount) {

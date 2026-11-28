@@ -946,7 +946,14 @@ class Project internal constructor(
      * Adds field [name] of [type] to [layer] (ADR 0004: it gets a stable id). GDAL
      * sees it once the project is opened again, see [Projects.reopen].
      */
-    fun addField(layer: String, name: String, type: FieldType) {
+    fun addField(layer: String, name: String, type: FieldType) = addField(layer, name, type, UUID.randomUUID().toString())
+
+    /**
+     * Adds field [name] of [type] to [layer] with the id [id] the team's
+     * workspace gave it (protocol v1 7.2), so that values go by the same id here
+     * and there. Open the project again afterwards, see [Projects.reopen].
+     */
+    internal fun addField(layer: String, name: String, type: FieldType, id: String) {
         require(layers.any { it.name == layer }) { "there is no layer $layer" }
         val column = when (type) {
             FieldType.STRING -> "TEXT"
@@ -958,13 +965,31 @@ class Project internal constructor(
             FieldType.OTHER -> throw IllegalArgumentException("a field cannot be of type other")
         }
         dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} ADD COLUMN ${ProjectFormat.identifier(name)} $column")
-        dataset.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES (${quote(layer)}, ${quote(name)}, ${quote(UUID.randomUUID().toString())})")
+        dataset.sql("INSERT INTO ${ProjectFormat.FIELDS_TABLE} VALUES (${quote(layer)}, ${quote(name)}, ${quote(id)})")
     }
 
-    /** The names of [layer]'s fields as GDAL reads them, its fid and geometry aside. */
+    /**
+     * Field [column] of [layer] (id [layerId]) takes the id [to] the team's
+     * workspace has for a field of its name and kind (protocol v1 7.4): two
+     * members made the same field offline, and its values go into one. Its
+     * values still to send go by the new id too.
+     */
+    internal fun adoptFieldId(layer: String, layerId: String, column: String, to: String) {
+        val from = Outbox.fieldIds(dataset, layer)[column] ?: return
+        dataset.sql("UPDATE ${ProjectFormat.FIELDS_TABLE} SET id = ${quote(to)} WHERE table_name = ${quote(layer)} AND column_name = ${quote(column)}")
+        val outbox = rows(dataset, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${quote(ProjectFormat.OUTBOX_TABLE)}").isNotEmpty()
+        if (outbox) dataset.sql("UPDATE ${ProjectFormat.OUTBOX_TABLE} SET field = ${quote(to)} WHERE layer_id = ${quote(layerId)} AND field = ${quote(from)}")
+    }
+
+    /**
+     * The names of [layer]'s fields as the file has them now, its fid and
+     * geometry aside: GDAL's own list waits till the project is opened again,
+     * and sync changes several fields in one go (protocol v1 7.4).
+     */
     fun fieldNames(layer: String): List<String> {
         require(layers.any { it.name == layer }) { "there is no layer $layer" }
-        return VectorLayerStore(dataset, layer).fields.map { it.name }
+        val geometry = rows(dataset, "SELECT column_name FROM gpkg_geometry_columns WHERE table_name = ${quote(layer)}").mapNotNull { it["column_name"] }
+        return rows(dataset, "SELECT name, pk FROM pragma_table_info(${quote(layer)})").filter { it["pk"] == "0" && it["name"] !in geometry }.mapNotNull { it["name"] }
     }
 
     /** Throws unless field [field] of [layer] can be named [to]: a name of its own in the layer, in any case, that fits. */

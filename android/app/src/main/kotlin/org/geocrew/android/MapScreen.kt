@@ -1245,12 +1245,13 @@ fun MapScreen(
                 val sent = (out["sent"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
                 // Nothing comes in while edits are unsaved (pulled is null then): said so, not as nothing received.
                 val pulled = (out["pulled"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
-                val said = if (pulled == null) sentOnlyText.format(sent) else syncedText.format(sent, pulled)
+                val renamed = renamedFields(context, out)
+                val said = listOfNotNull(if (pulled == null) sentOnlyText.format(sent) else syncedText.format(sent, pulled), renamed).joinToString(" · ")
                 // Conflicts waiting are said with it (protocol v1 8.4), with the way to them.
                 val open = (out["open_conflicts"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
                 scope.launch {
                     if (open == 0) {
-                        snackbar.showSnackbar(said)
+                        snackbar.showSnackbar(said, duration = if (renamed == null) SnackbarDuration.Short else SnackbarDuration.Long)
                     } else {
                         val shown = said + " · " + context.resources.getQuantityString(R.plurals.team_conflicts_open, open, open)
                         if (snackbar.showSnackbar(shown, actionLabel = viewText, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) onConflicts()

@@ -3,6 +3,7 @@ package org.geocrew.storage
 import android.util.Log
 import java.io.IOException
 import java.time.Instant
+import java.util.UUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -34,9 +35,28 @@ import org.geocrew.core.sync.sendFile
 /**
  * A project and the team workspace it syncs with (protocol v1 8.4, ADR
  * 0008), through [client], signed in as [account]: sharing the project, then
- * sending what it has to send.
+ * sending what it has to send. A change of a layer's fields here (one the team
+ * made, or a name a field of this phone's must give up) goes by way of
+ * [changing]: it makes the change with no layer being edited and opens the
+ * project's file again, giving the project as it is then, which [project] is
+ * from then on; or, while edits are unsaved, it changes nothing and gives null.
  */
-internal class ProjectSync(private val project: Project, private val client: SyncClient, private val account: SyncAccount) {
+internal class ProjectSync(
+    project: Project,
+    private val client: SyncClient,
+    private val account: SyncAccount,
+    private val changing: (Project, () -> Unit) -> Project? = { p, change -> change(); p },
+) {
+    /** The project, as it is after any change of fields. */
+    var project: Project = project
+        private set
+
+    /** A field of this phone's that gave its name up to one of the team's (protocol v1 7.4), [from] it [to] another. */
+    data class Renamed(val layer: String, val from: String, val to: String)
+
+    /** The fields renamed so, to tell the user. */
+    val renamed = mutableListOf<Renamed>()
+
     /** A layer the workspace cannot take: one whose features are of mixed kinds (backlog: GEOMETRY layers). */
     class Unsupported(val layer: String) : Exception("layer $layer mixes points, lines and areas")
 
@@ -57,7 +77,10 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         for (spec in specs) {
             val made = client.createLayer(account.workspace, account.token, spec)
             // The layer's row as the workspace has it: its style or place changed here later goes from this seq.
-            project.data { Outbox.seenSystemRow(it, spec.id, made.seq) }
+            project.data {
+                Outbox.seenSystemRow(it, spec.id, made.seq)
+                SharedSchema.put(it, spec.id, made.schemaVersion, made.fields)
+            }
         }
         project.link(account.workspace)
         project.data { ds ->
@@ -83,7 +106,9 @@ internal class ProjectSync(private val project: Project, private val client: Syn
      * [originalsFor], the rest going on from where it stopped the next time.
      */
     fun push(batch: Int, thumbsFor: Long = THUMBS_MS, originalsFor: Long = ORIGINALS_MS): Pushed {
-        project.data(Sending::prepare)
+        // The structure first (protocol v1 7.4): what the workspace has not taken waits, the rest goes.
+        sendStructure()
+        project.data { Sending.prepare(it, SharedSchema.unsent(it, project)) }
         sendFiles(thumbs = true, until = System.currentTimeMillis() + thumbsFor)
         var sent = 0
         var conflicts = 0
@@ -148,6 +173,7 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         do {
             val page = client.pull(account.workspace, account.token, since, batch)
             val layers = makeLayers(page.layers)
+            restructure(page.layers)
             writeLayerProps(page.layers)
             val rows = writeRows(page.rows, page.seq)
             writeAttachments(page.rows.filter { it.layer == Outbox.ATTACHMENTS }, page.seq, rowsCame = rows > 0)
@@ -295,21 +321,143 @@ internal class ProjectSync(private val project: Project, private val client: Syn
                 "MultiPolygon" -> "MULTIPOLYGON"
                 else -> "NONE"
             }
-            val fields = l.fields.map { f ->
-                val type = when (f.type) {
-                    "integer" -> FieldType.INTEGER64
-                    "real" -> FieldType.REAL
-                    "boolean" -> FieldType.BOOLEAN
-                    "date" -> FieldType.DATE
-                    "datetime" -> FieldType.DATETIME
-                    else -> FieldType.STRING // string, and json kept as its text
-                }
-                Triple(f.id, f.name, type)
-            }
+            val fields = l.fields.map { f -> Triple(f.id, SharedSchema.localName(f.name), SharedSchema.localType(f.type)) }
             project.createSharedLayer(l.id, project.freeLayerName(l.name ?: "layer"), geometry, l.crs, fields)
+            project.data { SharedSchema.put(it, l.id, l.schemaVersion, l.fields) }
             made++
         }
         return made
+    }
+
+    /**
+     * The fields of the shared layers in [layers] as the team has them now
+     * (protocol v1 7.4): one it added, added here with its id; one it renamed,
+     * renamed; one it deleted, deleted; the structure is kept as the
+     * workspace's then. A field of this phone's own, not sent yet, with a name
+     * one of the team's has takes the team's id when that one is new here and
+     * of one kind with it, and otherwise gives its name up.
+     */
+    private fun restructure(layers: List<PulledLayer>) {
+        val here = layers.filter { l -> !l.deleted && project.layers.any { it.id == l.id } }
+        val changes = here.filter(::differs)
+        if (changes.isNotEmpty()) {
+            // Nothing is unsaved while a pull comes in; were it, the page would come again with the next pull.
+            project = changing(project) { changes.forEach(::follow) } ?: throw IllegalStateException("edits are unsaved")
+        }
+        for (l in here) project.data { SharedSchema.put(it, l.id, l.schemaVersion, l.fields) }
+    }
+
+    // Whether layer [l]'s fields here are other than the team's: one gone there, one new or renamed there, or one of this
+    // phone's own with a name one of the team's has.
+    private fun differs(l: PulledLayer): Boolean {
+        val ids = project.fieldIds(project.layers.first { it.id == l.id }.name) // name -> id
+        val team = l.fields.associateBy { it.id }
+        val before = project.data { SharedSchema.of(it, l.id) }?.fields.orEmpty()
+        return before.any { it.id !in team && it.id in ids.values } ||
+            l.fields.any { f -> ids.none { (name, id) -> id == f.id && name == SharedSchema.localName(f.name) } } ||
+            ids.any { (name, id) -> id !in team && l.fields.any { SharedSchema.sameName(it.name, name) } }
+    }
+
+    // Layer [l]'s fields here made the team's, as [restructure] has it, while the project's file is being changed.
+    private fun follow(l: PulledLayer) {
+        val layer = project.layers.first { it.id == l.id }.name
+        val team = l.fields.associateBy { it.id }
+        // The team had them and has them no more: deleted there, deleted here. Ones it never had are this phone's own.
+        for (gone in project.data { SharedSchema.of(it, l.id) }?.fields.orEmpty().filter { it.id !in team }) {
+            project.fieldIds(layer).entries.firstOrNull { it.value == gone.id }?.let { project.deleteField(layer, it.key) }
+        }
+        val types = project.target(layer).store.fields.associate { it.name to it.type }
+        for (f in l.fields) {
+            val ids = project.fieldIds(layer)
+            val mine = ids.entries.firstOrNull { (name, id) -> id !in team && SharedSchema.sameName(name, f.name) }?.key ?: continue
+            if (f.id !in ids.values && sameKind(types[mine], f)) {
+                project.data { project.adoptFieldId(layer, l.id, mine, f.id) }
+            } else {
+                giveUp(layer, mine, l.fields)
+            }
+        }
+        // Renamed there: by way of names no field has, so that names two fields swapped go too.
+        val moving = project.fieldIds(layer).mapNotNull { (name, id) ->
+            val to = team[id]?.let { SharedSchema.localName(it.name) }
+            if (to == null || to == name) null else Triple(name, "geocrew_" + UUID.randomUUID().toString().replace("-", ""), to)
+        }
+        for ((from, via, _) in moving) project.renameField(layer, from, via)
+        for ((_, via, to) in moving) project.renameField(layer, via, to)
+        // New there: added with their ids.
+        val have = project.fieldIds(layer).values.toSet()
+        for (f in l.fields) if (f.id !in have) project.addField(layer, SharedSchema.localName(f.name), SharedSchema.localType(f.type), f.id)
+    }
+
+    // Whether a field of this phone's of [type] and the team's [f] are one (protocol v1 7.4): of one type, with no options.
+    private fun sameKind(type: FieldType?, f: FieldDef): Boolean =
+        type != null && SharedSchema.remoteType(type) == f.type && f.options.isNullOrEmpty()
+
+    // Field [field] of [layer], this phone's own, takes a name no field of the layer has, here or in [team]: "岩性 2"…
+    private fun giveUp(layer: String, field: String, team: List<FieldDef>) {
+        val taken = project.fieldIds(layer).keys + team.map { SharedSchema.localName(it.name) }
+        val base = field.take(ProjectFormat.MAX_NAME - 4).trimEnd()
+        val to = generateSequence(2) { it + 1 }.map { "$base $it" }.first { n -> taken.none { SharedSchema.sameName(it, n) } }
+        project.renameField(layer, field, to)
+        renamed += Renamed(layer, field, to)
+    }
+
+    /**
+     * What the workspace has not taken of the project's structure goes
+     * (protocol v1 7.1, 7.3, 7.4): layers made here since it was shared, made
+     * there; fields added here, added there. A layer or field the server
+     * refuses (a member who may not change the structure) stays here, its
+     * values with it; the rest of the sync goes on.
+     */
+    private fun sendStructure() {
+        val shared = project.data(Outbox::systemRows)
+        for (layer in project.layers.filter { it.id !in shared }) {
+            val spec = runCatching { spec(project, layer) }.getOrNull() ?: continue // a layer the workspace cannot take
+            val made = try {
+                client.createLayer(account.workspace, account.token, spec)
+            } catch (e: ServerError) {
+                client.layerIn(e) ?: continue // there already, otherwise: as it is there; refused: stays here
+            }
+            project.data {
+                Outbox.seenSystemRow(it, made.id, made.seq)
+                SharedSchema.put(it, made.id, made.schemaVersion, made.fields)
+            }
+        }
+        for (layer in project.layers) project.data { SharedSchema.of(it, layer.id) }?.let { sendFields(layer, it) }
+    }
+
+    /**
+     * The fields of [layer] the workspace, with [remote] of it, has not got,
+     * sent as adds: so from any version. A field of the team's with a name one
+     * of them has (protocol v1 7.4) takes that one over, values and all, when
+     * the two are of one kind; otherwise this phone's gives its name up and
+     * goes again under another, unless edits are unsaved: then it waits.
+     */
+    private fun sendFields(layer: Project.Layer, remote: SharedSchema.Layer) {
+        var known = remote
+        repeat(3) {
+            val types = project.target(layer.name).store.fields.associate { it.name to it.type }
+            val adds = project.fieldIds(layer.name).filter { (_, id) -> known.fields.none { it.id == id } }
+                .map { (name, id) -> FieldDef(id, name, SharedSchema.remoteType(types[name] ?: FieldType.STRING)) }
+            if (adds.isEmpty()) return
+            val theirs = try {
+                val l = client.addFields(account.workspace, account.token, layer.id, known.version, adds)
+                project.data { SharedSchema.put(it, l.id, l.schemaVersion, l.fields) }
+                return
+            } catch (e: ServerError) {
+                client.fieldIn(e) ?: return // refused otherwise: they stay here
+            }
+            val mine = adds.firstOrNull { SharedSchema.sameName(it.name, theirs.name) } ?: return
+            known = known.copy(fields = known.fields.filter { it.id != theirs.id } + theirs)
+            if (theirs.id !in project.fieldIds(layer.name).values && sameKind(types[mine.name], theirs)) {
+                // One field made twice offline: this phone's values go into the team's.
+                project.data {
+                    project.adoptFieldId(layer.name, layer.id, mine.name, theirs.id)
+                    SharedSchema.put(it, layer.id, known.version, known.fields)
+                }
+            } else {
+                project = changing(project) { giveUp(layer.name, mine.name, known.fields) } ?: return
+            }
+        }
     }
 
     // [rows] into their layers, each layer in one transaction; how many were written.
@@ -425,15 +573,7 @@ internal class ProjectSync(private val project: Project, private val client: Syn
             val ids = project.fieldIds(layer.name)
             val fields = project.target(layer.name).store.fields.mapNotNull { f ->
                 val id = ids[f.name] ?: return@mapNotNull null
-                val type = when (f.type) {
-                    FieldType.INTEGER, FieldType.INTEGER64 -> "integer"
-                    FieldType.REAL -> "real"
-                    FieldType.STRING -> "string"
-                    FieldType.DATE -> "date"
-                    FieldType.DATETIME -> "datetime"
-                    FieldType.BOOLEAN -> "boolean"
-                    FieldType.OTHER -> "json"
-                }
+                val type = SharedSchema.remoteType(f.type)
                 FieldDef(id, f.name, type)
             }
             return LayerSpec(

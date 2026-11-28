@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -92,6 +93,7 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit, 
     var keyToCheck by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     val scope = rememberCoroutineScope()
     var failure by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
     val sync = syncTexts()
     val noInviteText = stringResource(R.string.team_invite_none)
     val texts = FailureTexts(
@@ -137,7 +139,7 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit, 
         busy = true
         val done = graph.invoke(SyncActions.NOW)
         busy = false
-        if (done !is Outcome.Done) failure = sync.of(done)
+        failure = if (done is Outcome.Done) renamedFields(context, done.output.jsonObject) else sync.of(done)
         team = (graph.invoke(SyncActions.STATUS) as? Outcome.Done)?.output?.jsonObject
     }
 
@@ -271,7 +273,9 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit, 
                     val waiting = team?.number("waiting") ?: 0
                     val rejected = team?.number("rejected") ?: 0
                     val files = team?.number("files") ?: 0
+                    val structure = team?.number("structure") ?: 0
                     val state = listOfNotNull(
+                        pluralStringResource(R.plurals.team_structure, structure, structure).takeIf { structure > 0 },
                         pluralStringResource(R.plurals.team_waiting, waiting, waiting).takeIf { waiting > 0 },
                         pluralStringResource(R.plurals.team_rejected, rejected, rejected).takeIf { rejected > 0 },
                         pluralStringResource(R.plurals.team_files, files, files).takeIf { files > 0 },
