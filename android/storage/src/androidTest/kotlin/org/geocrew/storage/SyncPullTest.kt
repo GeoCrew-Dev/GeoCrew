@@ -38,6 +38,7 @@ class SyncPullTest {
     private class FakeServer : Transport {
         val pages = mutableMapOf<Long, String>()
         val pushes = mutableListOf<JsonObject>()
+        val resolved = mutableListOf<Pair<String, String>>()
 
         override fun send(method: String, path: String, token: String?, body: String?): Reply = when {
             path == "/api/v1/info" -> Reply(200, """{"protocol": 1, "capabilities": ["sync"], "limits": {"max_push_batch": 100, "max_pull_batch": 100, "max_file_size": 1}}""")
@@ -53,6 +54,12 @@ class SyncPullTest {
                     for (c in changes) add(buildJsonObject { put("id", c.getValue("id")); put("status", "applied"); put("seq", 100); put("conflicts", JsonArray(emptyList())) })
                 }
                 Reply(200, buildJsonObject { put("results", results); put("seq", 100) }.toString())
+            }
+            path.endsWith("/members") -> Reply(200, """[{"id": "m1", "nickname": "张三"}, {"id": "m2", "nickname": "李四"}]""")
+            path.endsWith("/resolve") -> {
+                val id = path.substringAfter("/conflicts/").substringBefore("/")
+                resolved += id to Json.parseToJsonElement(body!!).jsonObject.getValue("choose").jsonPrimitive.content
+                Reply(200, """{"conflict": {"id": "$id", "layer": "L1", "row": "r1", "seq": 7, "resolved": true, "kind": "value", "field": "f1"}}""")
             }
             else -> Reply(404, """{"error": "not_found", "message": "$path"}""")
         }
@@ -152,6 +159,38 @@ class SyncPullTest {
         val change = server.pushes.single()
         assertEquals("r1" to 10L, change.getValue("row").jsonPrimitive.content to change.getValue("base_seq").jsonPrimitive.long)
         assertEquals(setOf("f2"), change.getValue("set").jsonObject.keys)
+    }
+
+    @Test
+    fun aConflictIsListedAndSettled() {
+        val layer = """{"id": "L1", "geometry_type": "Point", "crs": "EPSG:4490", "schema_version": 1, "seq": 1,
+            "name": ${field("野外点", 1)}, "deleted": null, "fields": [{"id": "f1", "name": "点名", "type": "string"}]}"""
+        val mine = """{"value": "D009", "by": "m2", "at": "2026-11-28T09:00:00Z", "seq": 7}"""
+        server.pages[0] = """{"layers": [$layer], "rows": [{"layer": "L1", "id": "r1", "conflicted": true, "deleted": null,
+            "fields": {"f1": ${field("D001", 2)}, "geom": ${point(114.3, 2)}}}],
+            "conflicts": [{"id": "k1", "layer": "L1", "row": "r1", "seq": 7, "resolved": false, "kind": "value", "field": "f1",
+              "kept": ${field("D001", 2)}, "lost": $mine}], "seq": 8, "more": false}"""
+        output(run(SyncActions.JOIN, """{"server": "http://fake", "invite_code": "K7QX2MPA", "nickname": "李四", "device": "test", "language": "zh"}"""))
+        assertEquals(1, output(run(SyncActions.STATUS)).getValue("conflicts").jsonPrimitive.int)
+
+        // Where it is and the two values, each with whose it is: the nicknames as the server lists them.
+        val c = output(run(SyncActions.CONFLICTS)).getValue("conflicts").jsonArray.single().jsonObject
+        assertEquals("k1", c.getValue("id").jsonPrimitive.content)
+        assertEquals("value" to "点名", c.getValue("kind").jsonPrimitive.content to c.getValue("field").jsonPrimitive.content)
+        assertEquals("野外点" to "D001", c.getValue("layer").jsonPrimitive.content to c.getValue("name").jsonPrimitive.content)
+        val kept = c.getValue("kept").jsonObject
+        val lost = c.getValue("lost").jsonObject
+        assertEquals(Triple("D001", "张三", false), Triple(kept.getValue("value").jsonPrimitive.content, kept.getValue("by").jsonPrimitive.content, kept.getValue("mine").jsonPrimitive.content.toBoolean()))
+        assertEquals(Triple("D009", "李四", true), Triple(lost.getValue("value").jsonPrimitive.content, lost.getValue("by").jsonPrimitive.content, lost.getValue("mine").jsonPrimitive.content.toBoolean()))
+
+        // The lost value back: the server makes the change, and it comes in at once.
+        server.pages[8] = """{"layers": [], "rows": [{"layer": "L1", "id": "r1", "conflicted": false, "deleted": null,
+            "fields": {"f1": {"value": "D009", "by": "m2", "at": "2026-11-28T11:00:00Z", "seq": 9}}}], "conflicts": [], "seq": 9, "more": false}"""
+        val settled = output(run(SyncActions.RESOLVE, """{"conflict": "k1", "choose": "lost"}"""))
+        assertEquals(listOf("k1" to "lost"), server.resolved)
+        assertEquals(0 to 1, settled.getValue("open_conflicts").jsonPrimitive.int to settled.getValue("pulled").jsonPrimitive.int)
+        assertEquals("D009", feature("r1")!!.first)
+        assertTrue(output(run(SyncActions.CONFLICTS)).getValue("conflicts").jsonArray.isEmpty())
     }
 
     @Test

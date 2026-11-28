@@ -168,6 +168,7 @@ fun MapScreen(
     onProjectSettings: () -> Unit,
     onLayers: () -> Unit,
     onFiles: () -> Unit,
+    onConflicts: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -303,6 +304,7 @@ fun MapScreen(
     val syncFailures = syncTexts()
     val syncedText = stringResource(R.string.team_synced)
     val sentOnlyText = stringResource(R.string.team_sent_only)
+    val viewText = stringResource(R.string.conflicts_view)
     var exporting by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val modified = collections.values.any { it.flag("projectModified") }
@@ -1243,7 +1245,16 @@ fun MapScreen(
                 // Nothing comes in while edits are unsaved (pulled is null then): said so, not as nothing received.
                 val pulled = (out["pulled"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
                 val said = if (pulled == null) sentOnlyText.format(sent) else syncedText.format(sent, pulled)
-                scope.launch { snackbar.showSnackbar(said) }
+                // Conflicts waiting are said with it (protocol v1 8.4), with the way to them.
+                val open = (out["open_conflicts"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
+                scope.launch {
+                    if (open == 0) {
+                        snackbar.showSnackbar(said)
+                    } else {
+                        val shown = said + " · " + context.resources.getQuantityString(R.plurals.team_conflicts_open, open, open)
+                        if (snackbar.showSnackbar(shown, actionLabel = viewText, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) onConflicts()
+                    }
+                }
             }
             else -> failure = syncFailures.of(done)
         }

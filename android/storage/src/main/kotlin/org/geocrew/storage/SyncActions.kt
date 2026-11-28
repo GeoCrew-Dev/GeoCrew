@@ -116,6 +116,7 @@ class SyncActions(
                 accounts.put(project.id, account)
                 project.link(joined.workspace)
                 val pulled = ProjectSync(project, client, account).pull(info.maxPullBatch)
+                keepNicknames(project, client, account)
                 ActionResult.Done(
                     buildJsonObject {
                         put("project", project.name)
@@ -143,11 +144,13 @@ class SyncActions(
                 val pushed = sync.push(info.maxPushBatch)
                 // Rows written into the file under an edit buffer with unsaved edits could clash with them on save.
                 val pulled = if (unsaved() == null) sync.pull(info.maxPullBatch) else null
+                keepNicknames(project, client, account)
                 ActionResult.Done(
                     buildJsonObject {
                         put("sent", pushed.sent)
                         put("rejected", pushed.rejected)
                         put("conflicts", pushed.conflicts + (pulled?.conflicts ?: 0))
+                        put("open_conflicts", Conflicts.open(project))
                         if (pulled == null) put("pulled", JsonNull) else put("pulled", pulled.rows)
                         put("layers", pulled?.layers ?: 0)
                     },
@@ -184,10 +187,50 @@ class SyncActions(
                     }
                     put("waiting", waiting)
                     put("rejected", rejected)
+                    put("conflicts", Conflicts.open(project))
                 },
             )
         },
+        SyncAction(
+            CONFLICTS, "Conflicts",
+            "The conflicts of the open project waiting to be settled (protocol v1 6.5), oldest first: the layer, the feature (fid, " +
+                "name), the field (or geometry), and the value kept against the one that lost, each with whose it is and when",
+            Risk.VIEW, NO_PARAMS, "{}",
+        ) { _ ->
+            val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
+            val account = accounts.of(project.id) ?: return@SyncAction ActionResult.Failed(NOT_LINKED, "the project syncs with no workspace")
+            ActionResult.Done(buildJsonObject { put("conflicts", Conflicts.list(project, account.member, accounts.nicknames(project.id))) })
+        },
+        SyncAction(
+            RESOLVE, "Settle conflict",
+            "Settles [conflict] on the server: [choose] kept leaves the value as it is, lost puts the losing value back (for a " +
+                "refused deletion: deletes the feature). Only the leader and the two members it is between may settle it. A value " +
+                "put back comes in at once when nothing is unsaved (pulled is null otherwise)",
+            Risk.SEND, RESOLVE_PARAMS, """{"conflict": "k91x", "choose": "lost"}""",
+        ) { p ->
+            val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
+            val account = accounts.of(project.id) ?: return@SyncAction ActionResult.Failed(NOT_LINKED, "the project syncs with no workspace")
+            val choose = p.text("choose")!!
+            remote {
+                val client = SyncClient(transport(account.server, account.pin))
+                val sync = ProjectSync(project, client, account)
+                sync.resolve(p.text("conflict")!!, choose)
+                val pulled = if (choose == SyncClient.LOST && unsaved() == null) sync.pull(client.info().maxPullBatch) else null
+                ActionResult.Done(
+                    buildJsonObject {
+                        put("open_conflicts", Conflicts.open(project))
+                        if (pulled == null) put("pulled", JsonNull) else put("pulled", pulled.rows)
+                    },
+                )
+            }
+        },
     )
+
+    // The members' nicknames for conflict records, as the server lists them now; when that fails, the last ones stay.
+    private fun keepNicknames(project: Project, client: SyncClient, account: SyncAccount) {
+        val members = runCatching { client.members(account.workspace, account.token) }.getOrNull() ?: return
+        accounts.putNicknames(project.id, members.associate { it.id to it.nickname })
+    }
 
     // Unsaved edits in the open project, which a pull must not write under.
     private fun unsaved(): ActionResult.Failed? {
@@ -231,6 +274,12 @@ class SyncActions(
         const val NOW = "sync.now"
         const val STATUS = "sync.status"
         const val KEY = "sync.key"
+        const val CONFLICTS = "sync.conflicts"
+        const val RESOLVE = "sync.resolve"
+
+        /** [RESOLVE]'s choices (protocol v1 8.3): keep the value as it is, or take the one that lost. */
+        const val KEEP = SyncClient.KEPT
+        const val TAKE_LOST = SyncClient.LOST
 
         /** Failure codes besides the server's own (protocol v1 3.2). */
         const val NO_PROJECT = "no_project"
@@ -258,6 +307,10 @@ class SyncActions(
         )
         private val KEY_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["server"], "properties": {"server": {"type": "string"}}}""",
+        )
+        private val RESOLVE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["conflict", "choose"],
+                "properties": {"conflict": {"type": "string"}, "choose": {"enum": ["kept", "lost"]}}}""",
         )
         private val NO_PARAMS = schema("""{"type": "object", "additionalProperties": false, "properties": {}}""")
     }

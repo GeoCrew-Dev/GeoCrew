@@ -47,7 +47,31 @@ internal class SyncAccounts(private val dir: File) {
 
     fun remove(project: String) {
         file(project).delete()
+        members(project).delete()
     }
 
-    private fun file(project: String) = File(dir, project.replace(Regex("[^A-Za-z0-9_-]"), "_") + ".json")
+    /**
+     * The nicknames of the workspace's members by id, as the last sync listed
+     * them: for conflict records, which name members by id. Kept here with the
+     * account, not in the project people copy and share.
+     */
+    fun nicknames(project: String): Map<String, String> {
+        val file = members(project)
+        if (!file.isFile) return emptyMap()
+        val o = runCatching { Json.parseToJsonElement(file.readText()).jsonObject }.getOrNull() ?: return emptyMap()
+        return o.entries.mapNotNull { (id, v) -> (v as? JsonPrimitive)?.contentOrNull?.let { id to it } }.toMap()
+    }
+
+    fun putNicknames(project: String, nicknames: Map<String, String>) {
+        dir.mkdirs()
+        val part = File(dir, "${members(project).name}.part")
+        part.writeText(buildJsonObject { nicknames.forEach { (id, name) -> put(id, name) } }.toString())
+        check(part.renameTo(members(project))) { "cannot keep the members" }
+    }
+
+    private fun file(project: String) = File(dir, safe(project) + ".json")
+
+    private fun members(project: String) = File(dir, safe(project) + ".members.json")
+
+    private fun safe(project: String) = project.replace(Regex("[^A-Za-z0-9_-]"), "_")
 }
