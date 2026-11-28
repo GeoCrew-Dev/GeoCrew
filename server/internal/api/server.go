@@ -38,6 +38,9 @@ type Server struct {
 
 	// V1 serves protocol v1 next to v0 (M3); nil leaves the v1 routes out.
 	V1 v1.Store
+	// Fingerprint is the SHA-256 of the TLS certificate's public key that
+	// phones pin (protocol v1 3.4); empty when the server speaks plain HTTP.
+	Fingerprint string
 
 	// MaxPushFeatures bounds one push request.
 	MaxPushFeatures int

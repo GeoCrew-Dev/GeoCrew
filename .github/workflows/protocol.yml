@@ -34,7 +34,7 @@ jobs:
         run: go build -o "$RUNNER_TEMP/geocrew-server" ./cmd/geocrew-server
       - name: Run the conformance checks against it
         run: |
-          "$RUNNER_TEMP/geocrew-server" -addr 127.0.0.1:8080 -data "$RUNNER_TEMP/data" -push=false > "$RUNNER_TEMP/server.log" 2>&1 &
+          "$RUNNER_TEMP/geocrew-server" -addr 127.0.0.1:8080 -data "$RUNNER_TEMP/data" -push=false -tls=off > "$RUNNER_TEMP/server.log" 2>&1 &
           for i in $(seq 1 30); do curl -fsS 127.0.0.1:8080/healthz && break; sleep 1; done
           cd protocol/conformance && go vet ./... && go run . -server http://127.0.0.1:8080 -v
       - name: Server log

@@ -55,7 +55,22 @@ type Config struct {
 	// is out (once a day).
 	UpdateURL   string
 	UpdateCheck bool
+	// TLS is how the main listener speaks (ADR 0014): "self" serves a
+	// certificate the server makes on first start and keeps in DataDir/tls,
+	// whose public key phones pin; "files" serves TLSCert and TLSKey (Let's
+	// Encrypt, a company's own); "off" speaks plain HTTP, behind a reverse
+	// proxy that does TLS, or on a test machine.
+	TLS     string
+	TLSCert string
+	TLSKey  string
 }
+
+// TLS modes.
+const (
+	TLSSelf  = "self"
+	TLSFiles = "files"
+	TLSOff   = "off"
+)
 
 func envBool(k string) bool {
 	v, _ := strconv.ParseBool(os.Getenv(k))
@@ -130,6 +145,9 @@ func Load(args []string) (Config, error) {
 		updateCheck = b
 	}
 	fs.BoolVar(&c.UpdateCheck, "update-check", updateCheck, "check the release feed once a day and log when a newer version is out")
+	fs.StringVar(&c.TLS, "tls", env("GEOCREW_TLS", TLSSelf), "self (a certificate made on first start, pinned by the phones), files (-tls-cert and -tls-key) or off (plain HTTP, behind a TLS proxy)")
+	fs.StringVar(&c.TLSCert, "tls-cert", env("GEOCREW_TLS_CERT", ""), "certificate chain (PEM) for -tls files")
+	fs.StringVar(&c.TLSKey, "tls-key", env("GEOCREW_TLS_KEY", ""), "private key (PEM) for -tls files")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
@@ -157,6 +175,15 @@ func Load(args []string) (Config, error) {
 	}
 	if c.MaxUploadMB < 1 {
 		return c, fmt.Errorf("max upload must be at least 1 MiB")
+	}
+	switch c.TLS {
+	case TLSSelf, TLSOff:
+	case TLSFiles:
+		if c.TLSCert == "" || c.TLSKey == "" {
+			return c, fmt.Errorf("tls files needs -tls-cert and -tls-key")
+		}
+	default:
+		return c, fmt.Errorf("tls must be self, files or off")
 	}
 	return c, nil
 }

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -27,6 +28,7 @@ import (
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/postgres"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqldb"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/store/sqlite"
+	"github.com/GeoCrew-Dev/GeoCrew/server/internal/tlscert"
 	"github.com/GeoCrew-Dev/GeoCrew/server/internal/update"
 )
 
@@ -167,6 +169,25 @@ func serve(cfg config.Config, log *slog.Logger, trial *trialRun) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}
+	// TLS on the main listener (ADR 0014); the fingerprint is what phones pin, printed for the leader to check.
+	if cfg.TLS != config.TLSOff {
+		var cert tls.Certificate
+		if cfg.TLS == config.TLSFiles {
+			cert, err = tlscert.Load(cfg.TLSCert, cfg.TLSKey)
+		} else {
+			cert, err = tlscert.SelfSigned(filepath.Join(cfg.DataDir, "tls"), time.Now())
+		}
+		if err != nil {
+			return fmt.Errorf("tls: %w", err)
+		}
+		fingerprint, err := tlscert.Fingerprint(cert)
+		if err != nil {
+			return fmt.Errorf("tls: %w", err)
+		}
+		srv.Fingerprint = fingerprint
+		httpSrv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+		log.Info("tls", "mode", cfg.TLS, "fingerprint", fingerprint)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -235,7 +256,11 @@ func serve(cfg config.Config, log *slog.Logger, trial *trialRun) error {
 	go func() {
 		log.Info("geocrew-server listening", "addr", cfg.Addr, "protocol", api.ProtocolVersion,
 			"version", version, "data", cfg.DataDir)
-		errc <- httpSrv.ListenAndServe()
+		if httpSrv.TLSConfig != nil {
+			errc <- httpSrv.ListenAndServeTLS("", "")
+		} else {
+			errc <- httpSrv.ListenAndServe()
+		}
 	}()
 	if trial != nil {
 		tctx, cancel := context.WithCancel(ctx)
@@ -267,11 +292,20 @@ func serve(cfg config.Config, log *slog.Logger, trial *trialRun) error {
 }
 
 func healthcheck(base string) error {
+	// A bare address is tried over TLS first (the default, ADR 0014), then plain HTTP. The probe is the server's own
+	// health on this machine: the certificate, made by the server itself, is not checked.
+	bases := []string{base}
 	if !strings.HasPrefix(base, "http") {
-		base = "http://" + base
+		bases = []string{"https://" + base, "http://" + base}
 	}
-	c := &http.Client{Timeout: 3 * time.Second}
-	resp, err := c.Get(strings.TrimRight(base, "/") + "/healthz")
+	c := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	var resp *http.Response
+	var err error
+	for _, b := range bases {
+		if resp, err = c.Get(strings.TrimRight(b, "/") + "/healthz"); err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return err
 	}

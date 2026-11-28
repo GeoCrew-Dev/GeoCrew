@@ -12,10 +12,15 @@
 git clone https://github.com/GeoCrew-Dev/GeoCrew.git
 cd GeoCrew/server
 docker compose up -d          # 拉取已发布的镜像；还没有发布版本时加 --build 在本机构建
-curl http://localhost:8080/api/v0/info
+curl -k https://localhost:8080/api/v1/info
+docker compose logs geocrew | grep fingerprint   # 证书的公钥指纹，组员加入时核对
 ```
 
-数据保存在 Docker 卷 `geocrew-data`（容器内 `/data`）。生产环境请在前面加一层 HTTPS 反向代理，例如 Caddy：
+数据保存在 Docker 卷 `geocrew-data`（容器内 `/data`）。
+
+安卓客户端只通过 HTTPS 连接服务器（系统默认禁止明文 HTTP）。服务端默认自己说 HTTPS，用的是自签证书（[ADR 0014](../docs/adr/0014-certificates.md)）：第一次启动时生成，存在数据目录的 `tls/` 里，启动日志打印它的公钥指纹（`fingerprint=…`）。手机只认这个公钥，不需要域名和证书机构；IP 变了只要在手机上改地址。`tls/` 丢了会生成新的证书，手机就连不上了，要重新核对指纹，所以备份数据目录时连它一起备份。
+
+有域名的，也可以在前面放一层 HTTPS 反向代理，例如 Caddy，这时服务端改用明文（`GEOCREW_TLS=off`）：
 
 ```
 geo.example.org {
@@ -23,9 +28,7 @@ geo.example.org {
 }
 ```
 
-Caddy 会自动申请证书，并原样转发 WebSocket。放在反向代理后面时请设置 `GEOCREW_TRUST_PROXY=true`，否则所有人共用一个限流额度。
-
-安卓客户端只通过 HTTPS 连接服务器（系统默认禁止明文 HTTP），所以正式使用必须配好证书。
+Caddy 会自动申请证书，并原样转发 WebSocket。放在反向代理后面时请设置 `GEOCREW_TRUST_PROXY=true`，否则所有人共用一个限流额度。已经有证书文件（Let's Encrypt 等）的，用 `GEOCREW_TLS=files` 加 `GEOCREW_TLS_CERT`、`GEOCREW_TLS_KEY`。
 
 ## 不用 Docker
 
@@ -72,6 +75,9 @@ docker compose pull && docker compose up -d
 | 参数 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `-addr` | `GEOCREW_ADDR` | `:8080` | 监听地址 |
+| `-tls` | `GEOCREW_TLS` | `self` | `self`：自签证书，第一次启动时生成在数据目录的 `tls/`，手机固定它的公钥；`files`：用下面两个文件；`off`：明文 HTTP，只用于 HTTPS 反向代理后面或本机测试 |
+| `-tls-cert` | `GEOCREW_TLS_CERT` | 空 | `-tls files` 时的证书链（PEM） |
+| `-tls-key` | `GEOCREW_TLS_KEY` | 空 | `-tls files` 时的私钥（PEM） |
 | `-name` | `GEOCREW_NAME` | `GeoCrew Server` | 服务器显示名称 |
 | `-data` | `GEOCREW_DATA_DIR` | `./data`（镜像内 `/data`） | 数据库与附件目录 |
 | `-database` | `GEOCREW_DATABASE_URL` | 空 | PostgreSQL 连接地址（`postgres://…`）；留空用数据目录里的 SQLite，见下文 |
@@ -258,7 +264,7 @@ GEOCREW_TEST_POSTGRES="postgres://postgres:postgres@localhost:5432/postgres?sslm
 改了接口后，可以用 `protocol/conformance` 的一致性检查从外部跑一遍（CI 每次改动 `server/` 或 `protocol/` 也会跑）：
 
 ```bash
-go run ./cmd/geocrew-server -data /tmp/geocrew-check &
+go run ./cmd/geocrew-server -data /tmp/geocrew-check -tls=off &
 (cd ../protocol/conformance && go run . -server http://localhost:8080)
 ```
 
