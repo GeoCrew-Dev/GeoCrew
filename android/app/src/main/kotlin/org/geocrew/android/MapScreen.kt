@@ -1342,7 +1342,8 @@ fun MapScreen(
             MapTool.EDITORS -> {
                 editorsShown = !editorsShown
                 projectId?.let { graph.settings.showEditors(it, editorsShown) }
-                once { reload() }
+                // Only the labels change: not held up by another map action.
+                scope.launch { editors = if (editorsShown && linked) loadEditors(collections.keys) else emptyMap() }
             }
             MapTool.EXPORT -> exporting = true
             MapTool.FILES -> onFiles()
