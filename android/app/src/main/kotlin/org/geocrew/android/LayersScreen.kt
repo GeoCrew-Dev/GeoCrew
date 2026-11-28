@@ -114,6 +114,7 @@ import org.geocrew.core.edit.ValueRange
 import org.geocrew.core.project.Numbers
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.storage.RasterActions
+import org.geocrew.storage.SyncActions
 import org.geocrew.storage.Workspace
 
 /** A layer of the open project, in its colour on the map, with its fields and how many features it has once read. */
@@ -282,8 +283,17 @@ fun LayersScreen(
         unsaved = stringResource(R.string.failure_unsaved),
         failed = stringResource(R.string.action_failed),
         start = stringResource(R.string.start_failed),
-        shared = stringResource(R.string.failure_shared),
+        sync = syncTexts(),
     )
+
+    // What the team has (a shared field, a shared layer) changes with it, online (protocol v1 7.3): the action here
+    // refuses it as online_only, and the sync action does it.
+    suspend fun withTeam(action: String, params: JsonObject): Outcome {
+        val done = graph.invoke(action, params)
+        if ((done as? Outcome.Failed)?.code != Workspace.ONLINE_ONLY) return done
+        val online = TEAM_ACTIONS[action] ?: return done
+        return graph.invoke(online, params)
+    }
 
     // A row put in above the first (a new group, a layer moved up) shows: a list at the top stays there.
     val listState = rememberLazyListState()
@@ -339,9 +349,13 @@ fun LayersScreen(
 
     // Display changes are saved in the project at once; the page shows them when they are.
     fun display(action: String, params: JsonObject) = scope.launch {
-        when (val done = graph.invoke(action, params)) {
+        when (val done = withTeam(action, params)) {
             is Outcome.Done -> loads++
-            else -> failure = texts.of(done)
+            else -> {
+                // Refused as stale, the layer came in as the team has it: shown so, for the change to be done again.
+                if ((done as? Outcome.Failed)?.code == SyncActions.STALE) loads++
+                failure = texts.of(done)
+            }
         }
     }
 
@@ -481,9 +495,10 @@ fun LayersScreen(
                 is FieldChange.Rename -> Workspace.FIELD_RENAME
                 is FieldChange.Delete -> Workspace.FIELD_DELETE
             }
-            when (val done = graph.invoke(action, params)) {
+            when (val done = withTeam(action, params)) {
                 is Outcome.Done -> loads++
                 is Outcome.Failed -> {
+                    if (done.code == SyncActions.STALE) loads++
                     if (done.code == "unsaved") saveFirst = change else failure = texts.of(done)
                     return@launch
                 }
@@ -1144,3 +1159,10 @@ private fun fieldIcon(type: String): ImageVector = when (type) {
     "boolean" -> Icons.Rounded.ToggleOn
     else -> Icons.Rounded.TextFields
 }
+
+// The sync action that does with the team what each action here refuses, as online_only, for what the team has.
+private val TEAM_ACTIONS = mapOf(
+    Workspace.FIELD_RENAME to SyncActions.FIELD_RENAME,
+    Workspace.FIELD_DELETE to SyncActions.FIELD_DELETE,
+    Workspace.LAYER_DELETE to SyncActions.LAYER_DELETE,
+)

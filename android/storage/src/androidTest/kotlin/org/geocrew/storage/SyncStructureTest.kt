@@ -38,6 +38,7 @@ class SyncStructureTest {
     private class Layer(val id: String, val geometryType: String, val crs: String, val fields: MutableList<JsonObject>) {
         var version = 1L
         var seq = 0L
+        var deleted = false
         val gone = mutableSetOf<String>()
     }
 
@@ -58,7 +59,7 @@ class SyncStructureTest {
             put("fields", JsonArray(l.fields))
             put("schema_version", l.version)
             put("seq", l.seq)
-            put("deleted", JsonNull)
+            if (l.deleted) put("deleted", buildJsonObject { put("value", true); put("by", "m1"); put("at", "2026-11-28T10:00:00Z"); put("seq", l.seq) }) else put("deleted", JsonNull)
         }
 
         // Another member's change of layer [id]'s fields, online.
@@ -77,6 +78,14 @@ class SyncStructureTest {
                 path == "/api/v1/info" -> Reply(200, """{"protocol": 1, "capabilities": ["sync", "create"], "limits": {"max_push_batch": 100, "max_pull_batch": 1000, "max_file_size": 1}}""")
                 path == "/api/v1/workspaces" -> Reply(201, """{"workspace": {"id": "w1", "name": "组", "leader": "m1", "invite_code": "K7QX2MPA"}, "member": {"id": "m1"}, "token": "t1"}""")
                 path.endsWith("/schema") -> schema(path.substringAfter("/layers/").substringBefore("/schema"), o!!)
+                method == "DELETE" && path.contains("/layers/") -> {
+                    if (refuse) return Reply(403, """{"error": "forbidden", "message": "manage_layers is required"}""")
+                    val l = layers.getValue(path.substringAfterLast("/"))
+                    l.deleted = true
+                    l.seq = ++seq
+                    events += "delete layer"
+                    Reply(200, json(l).toString())
+                }
                 path.endsWith("/layers") -> create(o!!)
                 path.endsWith("/rows") -> push(o!!)
                 path.contains("/changes?since=") -> pull(path.substringAfter("since=").substringBefore("&").toLong())
@@ -98,19 +107,40 @@ class SyncStructureTest {
             if (refuse) return Reply(403, """{"error": "forbidden", "message": "edit_schema is required"}""")
             val l = layers.getValue(id)
             val fields = l.fields.toMutableList()
+            val gone = mutableSetOf<String>()
             val ops = o.getValue("ops").jsonArray.map { it.jsonObject }
-            for (op in ops) {
-                assertEquals("add_field", op.text("op"), "fields are only added offline")
-                val f = op.getValue("field").jsonObject
-                val had = fields.firstOrNull { it.text("id") == f.text("id") }
-                if (had == f) continue
-                if (had != null || f.text("id") in l.gone) return Reply(409, """{"error": "id_taken", "message": ""}""")
-                fields.firstOrNull { it.text("name").trim().equals(f.text("name").trim(), ignoreCase = true) }?.let { clash ->
-                    return Reply(409, buildJsonObject { put("error", "name_taken"); put("message", ""); put("field", clash) }.toString())
-                }
-                fields += f
+            // Renames and deletions go from the version the phone has, online only (protocol v1 7.3); adds from any.
+            if (ops.any { it.text("op") != "add_field" } && o.getValue("base_version").jsonPrimitive.content.toLong() != l.version) {
+                return Reply(409, buildJsonObject { put("error", "stale"); put("message", ""); put("layer", json(l)) }.toString())
             }
-            events += "schema " + ops.joinToString { it.getValue("field").jsonObject.text("name") }
+            fun taken(name: String, besides: String) = fields.firstOrNull { it.text("id") != besides && it.text("name").trim().equals(name.trim(), ignoreCase = true) }
+            for (op in ops) {
+                when (op.text("op")) {
+                    "rename_field" -> {
+                        taken(op.text("name"), op.text("id"))?.let { clash ->
+                            return Reply(409, buildJsonObject { put("error", "name_taken"); put("message", ""); put("field", clash) }.toString())
+                        }
+                        val i = fields.indexOfFirst { it.text("id") == op.text("id") }
+                        fields[i] = JsonObject(fields[i] + ("name" to JsonPrimitive(op.text("name"))))
+                    }
+                    "delete_field" -> {
+                        fields.removeAll { it.text("id") == op.text("id") }
+                        gone += op.text("id")
+                    }
+                    else -> {
+                        val f = op.getValue("field").jsonObject
+                        val had = fields.firstOrNull { it.text("id") == f.text("id") }
+                        if (had == f) continue
+                        if (had != null || f.text("id") in l.gone) return Reply(409, """{"error": "id_taken", "message": ""}""")
+                        taken(f.text("name"), f.text("id"))?.let { clash ->
+                            return Reply(409, buildJsonObject { put("error", "name_taken"); put("message", ""); put("field", clash) }.toString())
+                        }
+                        fields += f
+                    }
+                }
+            }
+            events += "schema " + ops.joinToString { op -> (op["field"] as? JsonObject)?.text("name") ?: "${op.text("op")} ${op["name"]?.jsonPrimitive?.content ?: op.text("id")}" }
+            l.gone += gone
             if (fields != l.fields) {
                 l.fields.clear()
                 l.fields += fields
@@ -350,6 +380,63 @@ class SyncStructureTest {
     }
 
     @Test
+    fun aSharedFieldIsRenamedAndDeletedWithTheTeamOnline() {
+        shared("在线改", "产状")
+        val describe = ids().getValue("描述")
+        val dip = ids().getValue("产状")
+        val rename = """{"layer": "野外点", "field": "描述", "to": "备注"}"""
+        assertEquals(Workspace.ONLINE_ONLY, (run(Workspace.FIELD_RENAME, rename) as Outcome.Failed).code)
+        output(run(SyncActions.FIELD_RENAME, rename))
+        assertEquals(describe, ids()["备注"])
+        assertTrue(server.layers.getValue(layerId).fields.any { it.text("id") == describe && it.text("name") == "备注" })
+
+        // A value in it not sent yet goes no more: the field is gone, here and there.
+        edit("野外点") { setValues("野外点", "D001", """{"产状": "120/35"}""") }
+        output(run(SyncActions.FIELD_DELETE, """{"layer": "野外点", "field": "产状"}"""))
+        assertNull(ids()["产状"])
+        assertTrue(server.layers.getValue(layerId).fields.none { it.text("id") == dip })
+        output(run(SyncActions.NOW))
+        assertEquals(emptyList(), sent(dip))
+        assertEquals(0, output(run(SyncActions.STATUS)).getValue("waiting").jsonPrimitive.int)
+    }
+
+    @Test
+    fun aChangeTheTeamOvertookBringsTheLayerInToDoItAgain() {
+        shared("过期")
+        server.change(layerId) { add(field("fA", "岩性", "string")) }
+        val rename = """{"layer": "野外点", "field": "描述", "to": "备注"}"""
+        assertEquals(SyncActions.STALE, (run(SyncActions.FIELD_RENAME, rename) as Outcome.Failed).code)
+        assertEquals("fA", ids()["岩性"], "the layer as the team has it now")
+        assertNull(ids()["备注"])
+        output(run(SyncActions.FIELD_RENAME, rename))
+        assertTrue(server.layers.getValue(layerId).fields.any { it.text("name") == "备注" })
+
+        // A name another field of the team's has, though not here yet.
+        server.change(layerId) { add(field("fB", "样品编号", "string")) }
+        server.layers.getValue(layerId).version-- // as if this phone had the version: only the name stands in the way
+        assertEquals(SyncActions.NAME_TAKEN, (run(SyncActions.FIELD_RENAME, """{"layer": "野外点", "field": "备注", "to": "样品编号"}""") as Outcome.Failed).code)
+    }
+
+    @Test
+    fun aSharedLayerIsDeletedThereAndHereWithWhatItHadToSend() {
+        shared("删图层")
+        output(run(Workspace.LAYER_CREATE, """{"name": "泉点", "language": "zh"}"""))
+        output(run(SyncActions.NOW))
+        val spring = workspace.current!!.layers.single { it.name == "泉点" }.id
+        edit("泉点") { add("泉点", """{"点名": "S001"}""") }
+        assertEquals(1, output(run(SyncActions.STATUS)).getValue("waiting").jsonPrimitive.int)
+        val delete = """{"layer": "泉点"}"""
+        assertEquals(Workspace.ONLINE_ONLY, (run(Workspace.LAYER_DELETE, delete) as Outcome.Failed).code)
+        output(run(SyncActions.LAYER_DELETE, delete))
+        assertTrue(server.layers.getValue(spring).deleted)
+        assertTrue(workspace.current!!.layers.none { it.id == spring })
+        assertEquals(0, output(run(SyncActions.STATUS)).getValue("waiting").jsonPrimitive.int, "its new point goes nowhere")
+        val pushes = server.pushes.size
+        output(run(SyncActions.NOW))
+        assertTrue(server.pushes.drop(pushes).none { it.text("layer") == spring })
+    }
+
+    @Test
     fun whatTheTeamHasChangesWithTheTeamOnly() {
         shared("拦截")
         val shared = listOf(
@@ -360,13 +447,19 @@ class SyncStructureTest {
         for ((action, params) in shared) assertEquals(Workspace.ONLINE_ONLY, (run(action, params) as Outcome.Failed).code, action)
         assertNull(ids()["备注"])
 
-        // What the workspace has not got yet is this phone's own.
+        // What the workspace has not got yet is this phone's own; deleted, what it had to send goes nowhere.
         addField("岩性")
+        edit("野外点") { setValues("野外点", "D001", """{"岩性": "灰岩"}""") }
+        val rock = ids().getValue("岩性")
         output(run(Workspace.FIELD_RENAME, """{"layer": "野外点", "field": "岩性", "to": "岩石"}"""))
         output(run(Workspace.FIELD_DELETE, """{"layer": "野外点", "field": "岩石"}"""))
         output(run(Workspace.LAYER_CREATE, """{"name": "泉点", "language": "zh"}"""))
+        edit("泉点") { add("泉点", """{"点名": "S001"}""") }
         output(run(Workspace.LAYER_DELETE, """{"layer": "泉点"}"""))
         assertEquals(0, structure())
+        assertEquals(0, output(run(SyncActions.STATUS)).getValue("waiting").jsonPrimitive.int)
+        output(run(SyncActions.NOW))
+        assertEquals(emptyList(), sent(rock))
     }
 }
 

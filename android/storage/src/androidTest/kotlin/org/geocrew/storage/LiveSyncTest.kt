@@ -178,6 +178,32 @@ class LiveSyncTest {
         assertEquals("S-1" to "花岗岩", point["样品编号"]?.jsonPrimitive?.content to point["岩性"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun theLeaderRenamesAndDeletesSharedFieldsOnlineAndTheTeamFollows() {
+        val base = server ?: return
+        NativeData.setup(context)
+        val leader = Phone(context, "live-online-leader")
+        leader.run(Workspace.CREATE, """{"name": "联调在线", "language": "zh"}""")
+        leader.run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        leader.run(Workspace.LAYER_CREATE, """{"name": "泉点", "language": "zh"}""")
+        leader.run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "产状", "type": "string"}""")
+        val invite = leader.run(SyncActions.SHARE, """{"server": "$base", "nickname": "组长", "device": "emulator"}""").getValue("invite_code").jsonPrimitive.content
+        val member = Phone(context, "live-online-member")
+        member.run(SyncActions.JOIN, """{"server": "$base", "invite_code": "$invite", "nickname": "组员", "device": "emulator 2", "language": "zh"}""")
+
+        val describe = leader.workspace.current!!.fieldIds("野外点").getValue("描述")
+        leader.run(SyncActions.FIELD_RENAME, """{"layer": "野外点", "field": "描述", "to": "备注"}""")
+        leader.run(SyncActions.FIELD_DELETE, """{"layer": "野外点", "field": "产状"}""")
+        leader.run(SyncActions.LAYER_DELETE, """{"layer": "泉点"}""")
+        assertTrue(leader.workspace.current!!.layers.none { it.name == "泉点" })
+
+        // The member's next sync brings the fields in as the team has them.
+        member.run(SyncActions.NOW)
+        val theirs = member.workspace.current!!.fieldIds("野外点")
+        assertEquals(describe, theirs["备注"])
+        assertTrue("描述" !in theirs && "产状" !in theirs, theirs.toString())
+    }
+
     // The leader of [account]'s workspace lets every member [permission] (protocol v1 4.1, 5.x: PATCH /roles/member).
     private fun grant(base: String, account: SyncAccount, permission: String) {
         fun call(method: String, path: String, body: String?): String {

@@ -52,8 +52,12 @@ sealed interface ActionResult {
      */
     data class Done(val output: JsonElement = JsonNull, val undo: Undo? = null, val endsUndo: Collection<String> = emptyList()) : ActionResult
 
-    /** It could not be done; [code] is for programs, [message] for people. */
-    data class Failed(val code: String, val message: String) : ActionResult
+    /**
+     * It could not be done; [code] is for programs, [message] for people.
+     * [endsUndo] names the scopes whose undo history ended all the same, as
+     * when editing stopped for a change the server then refused.
+     */
+    data class Failed(val code: String, val message: String, val endsUndo: Collection<String> = emptyList()) : ActionResult
 }
 
 /** Something the interface, the AI, a plugin or MCP can ask for (ADR 0010). */

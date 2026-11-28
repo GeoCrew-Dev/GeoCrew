@@ -347,6 +347,41 @@ internal class ProjectSync(
         for (l in here) project.data { SharedSchema.put(it, l.id, l.schemaVersion, l.fields) }
     }
 
+    /**
+     * Field [field] of shared layer [layer] renamed [to] another name, or with
+     * null deleted, with the team (protocol v1 7.3): online, from the version
+     * of the layer the phone has; then the field here follows the workspace's
+     * answer. The team having changed the layer meanwhile is a [ServerError]
+     * stale, and the layer comes in as it is now, to do it again on; a name
+     * another field there has is name_taken.
+     */
+    fun changeField(layer: String, field: String, to: String?) {
+        val l = project.layers.single { it.name == layer }
+        val id = project.fieldIds(layer).getValue(field)
+        val version = project.data { SharedSchema.of(it, l.id) }?.version ?: 0
+        val now = try {
+            if (to == null) {
+                client.deleteField(account.workspace, account.token, l.id, version, id)
+            } else {
+                client.renameField(account.workspace, account.token, l.id, version, id, to)
+            }
+        } catch (e: ServerError) {
+            if (e.code == SyncActions.STALE) client.layerIn(e)?.let { restructure(listOf(it)) }
+            throw e
+        }
+        restructure(listOf(now))
+    }
+
+    /** Shared layer [layer] deleted with the team (protocol v1 5.6): a tombstone there. One gone there already is too. */
+    fun deleteLayer(layer: String) {
+        val id = project.layers.single { it.name == layer }.id
+        try {
+            client.deleteLayer(account.workspace, account.token, id)
+        } catch (e: ServerError) {
+            if (e.code != "not_found") throw e
+        }
+    }
+
     // Whether layer [l]'s fields here are other than the team's: one gone there, one new or renamed there, or one of this
     // phone's own with a name one of the team's has.
     private fun differs(l: PulledLayer): Boolean {

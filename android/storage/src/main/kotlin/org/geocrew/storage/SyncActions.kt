@@ -263,7 +263,51 @@ class SyncActions(
                 )
             }
         },
+        SyncAction(
+            FIELD_RENAME, "Rename shared field",
+            "Renames a field of a layer the open project shares with its team, there and here (protocol v1 7.3), online only: its " +
+                "values stay. The team having changed the layer meanwhile fails stale, the layer coming in as it is now, to do it again on",
+            Risk.EDIT, FIELD_RENAME_PARAMS, """{"layer": "野外点", "field": "描述", "to": "备注"}""",
+        ) { p -> changeField(p.text("layer")!!, p.text("field")!!, p.text("to")!!.trim()) },
+        SyncAction(
+            FIELD_DELETE, "Delete shared field",
+            "Deletes a field of a layer the open project shares with its team, there (its values stay in the server's history) and " +
+                "here with every value in it, online only; it cannot be undone. The team having changed the layer meanwhile fails stale",
+            Risk.DELETE, FIELD_DELETE_PARAMS, """{"layer": "野外点", "field": "备注"}""",
+        ) { p -> changeField(p.text("layer")!!, p.text("field")!!, null) },
+        SyncAction(
+            LAYER_DELETE, "Delete shared layer",
+            "Deletes a layer the open project shares with its team, there (where it can be restored) and here with all its " +
+                "features, online only; here it cannot be undone. No layer may have unsaved edits",
+            Risk.DELETE, LAYER_PARAMS, """{"layer": "泉点"}""",
+        ) { p ->
+            val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
+            val account = accounts.of(project.id) ?: return@SyncAction ActionResult.Failed(NOT_LINKED, "the project syncs with no workspace")
+            unsaved()?.let { return@SyncAction it }
+            val layer = p.text("layer")!!
+            require(project.layers.any { it.name == layer }) { "there is no layer $layer" }
+            remote {
+                ProjectSync(project, SyncClient(transport(account.server, account.pin)), account).deleteLayer(layer)
+                workspace.deleteLayer(project, layer)
+            }
+        },
     )
+
+    // Field [field] of shared layer [layer] renamed [to] another name, or deleted with null, with the team (protocol v1 7.3).
+    private fun changeField(layer: String, field: String, to: String?): ActionResult {
+        val project = workspace.current ?: return ActionResult.Failed(NO_PROJECT, "no project is open")
+        val account = accounts.of(project.id) ?: return ActionResult.Failed(NOT_LINKED, "the project syncs with no workspace")
+        unsaved()?.let { return it }
+        if (to == null) project.checkFieldDelete(layer, field) else project.checkFieldRename(layer, field, to)
+        val ended = ArrayList<String>()
+        val done = remote {
+            val sync = ProjectSync(project, SyncClient(transport(account.server, account.pin)), account, changing(ended))
+            sync.changeField(layer, field, to)
+            ActionResult.Done(buildJsonObject { put("layer", layer); put("field", to ?: field) }, endsUndo = ended.distinct())
+        }
+        // Stale: the layer came in as the team has it now, editing having stopped for it.
+        return if (done is ActionResult.Failed) done.copy(endsUndo = ended.distinct()) else done
+    }
 
     // The fields of this phone's that sync gave other names, the team having theirs (protocol v1 7.4), to tell the user.
     private fun JsonObjectBuilder.renamed(sync: ProjectSync) = putJsonArray("renamed") {
@@ -329,6 +373,9 @@ class SyncActions(
         const val CONFLICTS = "sync.conflicts"
         const val FILE = "sync.file"
         const val RESOLVE = "sync.resolve"
+        const val FIELD_RENAME = "sync.field.rename"
+        const val FIELD_DELETE = "sync.field.delete"
+        const val LAYER_DELETE = "sync.layer.delete"
 
         /** [RESOLVE]'s choices (protocol v1 8.3): keep the value as it is, or take the one that lost. */
         const val KEEP = SyncClient.KEPT
@@ -341,6 +388,12 @@ class SyncActions(
         const val UNSUPPORTED = "unsupported"
         const val MIXED = "mixed_geometry"
         const val OFFLINE = "offline"
+
+        /** A failure: the team changed the layer since the phone's structure of it (protocol v1 7.3); sync.now brings it in. */
+        const val STALE = "stale"
+
+        /** A failure: another field of the team's layer has the name (protocol v1 7.2). */
+        const val NAME_TAKEN = "name_taken"
         const val UNSAVED = "unsaved"
         const val BAD_REQUEST = "invalid"
         const val UNTRUSTED = "untrusted"
@@ -372,6 +425,17 @@ class SyncActions(
         private val RESOLVE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["conflict", "choose"],
                 "properties": {"conflict": {"type": "string"}, "choose": {"enum": ["kept", "lost"]}}}""",
+        )
+        private val FIELD_RENAME_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "field", "to"],
+                "properties": {"layer": {"type": "string"}, "field": {"type": "string"}, "to": {"type": "string"}}}""",
+        )
+        private val FIELD_DELETE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer", "field"],
+                "properties": {"layer": {"type": "string"}, "field": {"type": "string"}}}""",
+        )
+        private val LAYER_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["layer"], "properties": {"layer": {"type": "string"}}}""",
         )
         private val NO_PARAMS = schema("""{"type": "object", "additionalProperties": false, "properties": {}}""")
     }

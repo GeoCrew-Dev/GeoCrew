@@ -236,12 +236,30 @@ class SyncClient(private val transport: Transport) {
      * has is a [ServerError] name_taken whose body's field is that one; an id
      * the layer has or had for another field, id_taken.
      */
-    fun addFields(workspace: String, token: String, layer: String, baseVersion: Long, fields: List<FieldDef>): PulledLayer {
+    fun addFields(workspace: String, token: String, layer: String, baseVersion: Long, fields: List<FieldDef>): PulledLayer =
+        changeSchema(workspace, token, layer, baseVersion, fields.map { f -> buildJsonObject { put("op", "add_field"); put("field", fieldJson(f)) } })
+
+    /**
+     * Renames field [field] of shared layer [layer] to [name] (protocol v1
+     * 7.3): online only, from [baseVersion], the version the phone has. One
+     * the layer is past is a [ServerError] stale whose body's layer is it as it
+     * is now; a name another field has, name_taken. The layer as it is after.
+     */
+    fun renameField(workspace: String, token: String, layer: String, baseVersion: Long, field: String, name: String): PulledLayer =
+        changeSchema(workspace, token, layer, baseVersion, listOf(buildJsonObject { put("op", "rename_field"); put("id", field); put("name", name) }))
+
+    /** Deletes field [field] of shared layer [layer] (protocol v1 7.3), as [renameField] renames one; its values stay in the server's history. */
+    fun deleteField(workspace: String, token: String, layer: String, baseVersion: Long, field: String): PulledLayer =
+        changeSchema(workspace, token, layer, baseVersion, listOf(buildJsonObject { put("op", "delete_field"); put("id", field) }))
+
+    /** Deletes shared layer [layer] (protocol v1 5.6): a tombstone there, which can be restored. The layer as it is after. */
+    fun deleteLayer(workspace: String, token: String, layer: String): PulledLayer =
+        layerOf(call("DELETE", "/api/v1/workspaces/${segment(workspace)}/layers/${segment(layer)}", token, null))
+
+    private fun changeSchema(workspace: String, token: String, layer: String, baseVersion: Long, ops: List<JsonObject>): PulledLayer {
         val body = buildJsonObject {
             put("base_version", baseVersion)
-            putJsonArray("ops") {
-                for (f in fields) add(buildJsonObject { put("op", "add_field"); put("field", fieldJson(f)) })
-            }
+            put("ops", JsonArray(ops))
         }
         return layerOf(call("POST", "/api/v1/workspaces/${segment(workspace)}/layers/${segment(layer)}/schema", token, body))
     }

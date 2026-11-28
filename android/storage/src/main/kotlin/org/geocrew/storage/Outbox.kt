@@ -56,6 +56,37 @@ internal object Outbox {
     fun linked(ds: VectorDataset): Boolean =
         rows(ds, "SELECT value FROM ${ProjectFormat.PROJECT_TABLE} WHERE key = ${quote(WORKSPACE_KEY)}").isNotEmpty()
 
+    /**
+     * What layer [layerId] had to send, and its rows, forgotten: it is deleted
+     * here (with the team too, for a shared one). The attachment rows on its
+     * features not sent yet go with it; the conflicts on it, and its own row
+     * and structure as the workspace has them, too.
+     */
+    fun forgetLayer(ds: VectorDataset, layerId: String) {
+        val id = quote(layerId)
+        if (exists(ds, ProjectFormat.OUTBOX_TABLE)) {
+            ds.sql(
+                "DELETE FROM ${ProjectFormat.OUTBOX_TABLE} WHERE layer_id = ${quote(ATTACHMENTS)} AND row IN (SELECT row FROM ${ProjectFormat.OUTBOX_TABLE} " +
+                    "WHERE layer_id = ${quote(ATTACHMENTS)} AND field = 'target_layer' AND value = ${quote(JsonPrimitive(layerId).toString())})",
+            )
+            ds.sql("DELETE FROM ${ProjectFormat.OUTBOX_TABLE} WHERE layer_id = $id OR (layer_id = ${quote(LAYERS)} AND row = $id)")
+        }
+        if (exists(ds, ProjectFormat.SENDING_TABLE)) ds.sql("DELETE FROM ${ProjectFormat.SENDING_TABLE} WHERE layer_id = $id OR (layer_id = ${quote(LAYERS)} AND row = $id)")
+        if (exists(ds, ProjectFormat.ROWS_TABLE)) ds.sql("DELETE FROM ${ProjectFormat.ROWS_TABLE} WHERE layer_id = $id")
+        if (exists(ds, ProjectFormat.CONFLICTS_TABLE)) ds.sql("DELETE FROM ${ProjectFormat.CONFLICTS_TABLE} WHERE layer_id = $id")
+        if (exists(ds, ProjectFormat.SYSTEM_ROWS_TABLE)) ds.sql("DELETE FROM ${ProjectFormat.SYSTEM_ROWS_TABLE} WHERE uuid = $id")
+        if (exists(ds, ProjectFormat.LAYER_SCHEMA_TABLE)) ds.sql("DELETE FROM ${ProjectFormat.LAYER_SCHEMA_TABLE} WHERE layer_id = $id")
+    }
+
+    /**
+     * The values of field [fieldId] of layer [layerId] still to send,
+     * forgotten: the field is deleted here. Sync sends before it brings in a
+     * deletion the team made, so what was edited before then went.
+     */
+    fun forgetField(ds: VectorDataset, layerId: String, fieldId: String) {
+        if (exists(ds, ProjectFormat.OUTBOX_TABLE)) ds.sql("DELETE FROM ${ProjectFormat.OUTBOX_TABLE} WHERE layer_id = ${quote(layerId)} AND field = ${quote(fieldId)}")
+    }
+
     /** Layer [layer]'s fields by name, to their stable ids. */
     fun fieldIds(ds: VectorDataset, layer: String): Map<String, String> =
         rows(ds, "SELECT column_name, id FROM ${ProjectFormat.FIELDS_TABLE} WHERE table_name = ${quote(layer)}")

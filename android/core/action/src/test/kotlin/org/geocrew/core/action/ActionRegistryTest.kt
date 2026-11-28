@@ -163,6 +163,19 @@ class ActionRegistryTest {
     }
 
     @Test
+    fun aFailureEndsTheHistoriesItSaysEnded() = runTest {
+        val a = Counter(id = "a.add", scope = "layer:a")
+        val refused = object : Action {
+            override val spec = ActionSpec("a.change", "Change", "", json("""{"type": "object"}"""), Risk.EDIT, Stability.STABLE)
+            override suspend fun run(caller: Caller, params: JsonObject) = ActionResult.Failed("stale", "refused", endsUndo = listOf("layer:a"))
+        }
+        val registry = ActionRegistry().apply { register(a); register(refused) }
+        registry.invoke(Caller.USER, "a.add", ok)
+        assertIs<Outcome.Failed>(registry.invoke(Caller.USER, "a.change"))
+        assertFalse(registry.canUndo("layer:a"), "editing stopped before the refusal")
+    }
+
+    @Test
     fun historyCanBeReadDuringARun() = runTest {
         lateinit var registry: ActionRegistry
         var seen: Boolean? = null
