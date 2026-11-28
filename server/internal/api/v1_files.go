@@ -66,6 +66,9 @@ func (s *Server) v1PutChunk(w http.ResponseWriter, r *http.Request) {
 
 	u, err := s.V1.Upload(ctx, ws, actor, id)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			uploading.Delete(id) // no such upload: no lock kept for it
+		}
 		s.v1Fail(w, r, err)
 		return
 	}

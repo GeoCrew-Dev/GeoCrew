@@ -94,3 +94,20 @@ func TestUploadByChunks(t *testing.T) {
 		t.Fatalf("traversal: %v", err)
 	}
 }
+
+func TestCommitOverAStoredFile(t *testing.T) {
+	d := &Disk{Root: t.TempDir()}
+	d.Put("ab12", sum("same"), strings.NewReader("same"))
+	open, err := d.Open("ab12", sum("same"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer open.Close()
+	d.Append("ab12", "u_09", 0, strings.NewReader("same"), 4)
+	if err := d.Commit("ab12", "u_09", sum("same")); err != nil {
+		t.Fatalf("the file is there already, open: %v", err)
+	}
+	if _, err := os.Stat(d.part("ab12", "u_09")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the part goes: %v", err)
+	}
+}
