@@ -35,7 +35,7 @@ internal object Sending {
         ds.sql(ProjectFormat.SENDING_SCHEMA)
         val waiting = rows(ds, "SELECT row FROM ${ProjectFormat.SENDING_TABLE} WHERE rejected IS NULL").mapNotNull { it["row"] }.toSet()
         val seqs = HashMap<String?, Long>()
-        for (table in listOf(ProjectFormat.ROWS_TABLE, ProjectFormat.ATTACHMENT_ROWS_TABLE)) {
+        for (table in listOf(ProjectFormat.ROWS_TABLE, ProjectFormat.SYSTEM_ROWS_TABLE)) {
             if (exists(ds, table)) rows(ds, "SELECT uuid, seq FROM $table").forEach { seqs[it["uuid"]] = it["seq"]?.toLongOrNull() ?: 0L }
         }
         // Attachment rows after the feature rows: the server takes an attachment only on a row it has (protocol v1 9.1).
@@ -111,7 +111,7 @@ internal object Sending {
      */
     private fun firstSeen(ds: VectorDataset, change: String, seq: Long) {
         val row = rows(ds, "SELECT row FROM ${ProjectFormat.SENDING_TABLE} WHERE change = ${quote(change)}").firstOrNull()?.get("row") ?: return
-        for (table in listOf(ProjectFormat.ROWS_TABLE, ProjectFormat.ATTACHMENT_ROWS_TABLE)) {
+        for (table in listOf(ProjectFormat.ROWS_TABLE, ProjectFormat.SYSTEM_ROWS_TABLE)) {
             if (exists(ds, table)) ds.sql("UPDATE $table SET seq = $seq WHERE uuid = ${quote(row)} AND seq = 0")
         }
     }

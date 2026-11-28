@@ -67,6 +67,8 @@ class LiveSyncTest {
 
         run(Workspace.CREATE, """{"name": "联调照片", "language": "zh"}""")
         run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "泉点", "language": "zh"}""")
+        run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#e53935", "size": 9}}""")
         run(Editing.START, """{"layer": "野外点"}""")
         val jpeg = File(context.cacheDir, "live.jpg")
         // Noise: a photo of a few MB, several chunks.
@@ -106,6 +108,10 @@ class LiveSyncTest {
         val member = Phone(context, "live-member")
         member.run(SyncActions.JOIN, """{"server": "$base", "invite_code": "$invite", "nickname": "组员", "device": "emulator 2", "language": "zh"}""")
         val theirs = member.workspace.current!!
+        // The layers as the leader has them: in the same order, drawn the same way.
+        assertEquals(workspace.current!!.layers.map { it.id }, theirs.layers.map { it.id })
+        val pointId = theirs.layers.single { it.name == "野外点" }.id
+        assertEquals(workspace.current!!.styles.getValue(pointId), theirs.styles.getValue(pointId))
         val theirStore = theirs.target("野外点").store
         val theirFid = theirStore.features().single().fid
         assertEquals(listOf(file), theirStore.attachments(theirFid).map { it.file })
@@ -124,8 +130,11 @@ class LiveSyncTest {
         val after = client.pull(account.workspace, account.token, 0)
         assertTrue(after.rows.single { it.layer == "attachments" }.deleted, "deleted on the server")
         assertTrue(after.conflicts.isEmpty(), after.conflicts.toString())
-        // And off the teammate's feature at their next sync.
+        // And off the teammate's feature at their next sync; a new look the leader gave the layer comes with it.
+        run(Workspace.LAYER_STYLE, """{"layer": "野外点", "style": {"color": "#1e88e5"}}""")
+        run(SyncActions.NOW)
         member.run(SyncActions.NOW)
         assertTrue(theirStore.attachments(theirFid).isEmpty())
+        assertEquals("#1e88e5", theirs.styles.getValue(pointId).getValue("color").jsonPrimitive.content)
     }
 }

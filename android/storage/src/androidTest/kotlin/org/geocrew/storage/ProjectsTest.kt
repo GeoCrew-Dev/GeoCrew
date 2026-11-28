@@ -65,6 +65,25 @@ class ProjectsTest {
         assertEquals(JsonPrimitive("1"), version)
     }
 
+    // A team's layers may give a field the same id (protocol v1 7.2): an id is its layer's own, in a project made before too.
+    @Test
+    fun sharedLayersMayGiveTheirFieldsTheSameIdsInAnOlderProjectToo() {
+        projects.create("旧", listOf(Templates.FIELD_POINT), "zh").close()
+        // As projects made before 2026-11-28 have it: an id unique among all layers.
+        sql("旧", "CREATE TABLE f_old (table_name TEXT NOT NULL, column_name TEXT NOT NULL, id TEXT NOT NULL UNIQUE, PRIMARY KEY (table_name, column_name))")
+        sql("旧", "INSERT INTO f_old SELECT table_name, column_name, id FROM geocrew_fields")
+        sql("旧", "DROP TABLE geocrew_fields")
+        sql("旧", "ALTER TABLE f_old RENAME TO geocrew_fields")
+        val before = sql("旧", "SELECT column_name, id FROM geocrew_fields").size
+        projects.open("旧").use { p ->
+            p.createSharedLayer("L1", "队1", "POINT", "EPSG:4490", listOf(Triple("f1", "点名", FieldType.STRING)))
+            p.createSharedLayer("L2", "队2", "POINT", "EPSG:4490", listOf(Triple("f1", "点名", FieldType.STRING)))
+            assertEquals(mapOf("点名" to "f1"), p.fieldIds("队1"))
+            assertEquals(mapOf("点名" to "f1"), p.fieldIds("队2"))
+        }
+        assertEquals(before + 2, sql("旧", "SELECT column_name, id FROM geocrew_fields").size, "the fields it had are kept")
+    }
+
     // The user makes the layers, the first when placing the first point.
     @Test
     fun aNewProjectStartsEmptyAndGetsLayersWhileOpen() {

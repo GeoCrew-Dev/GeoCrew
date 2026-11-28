@@ -276,6 +276,29 @@ class SyncPullTest {
     }
 
     @Test
+    fun layersComeWithTheirStyleAndPlace() {
+        fun layer(id: String, name: String, order: Int, color: String) = """{"id": "$id", "geometry_type": "Point", "crs": "EPSG:4490", "schema_version": 1, "seq": 2,
+            "name": ${field(name, 1)}, "deleted": null, "fields": [{"id": "f1", "name": "点名", "type": "string"}],
+            "style": ${value("""{"color": "$color"}""", 2)}, "order": ${value("$order", 2)}}"""
+        server.pages[0] = """{"layers": [${layer("L1", "野外点", 1, "#e53935")}, ${layer("L2", "泉点", 0, "#1e88e5")}],
+            "rows": [], "conflicts": [], "seq": 2, "more": false}"""
+        output(run(SyncActions.JOIN, """{"server": "http://fake", "invite_code": "K7QX2MPA", "nickname": "李四", "device": "test", "language": "zh"}"""))
+        val project = workspace.current!!
+        assertEquals(listOf("L2", "L1"), project.layers.map { it.id }, "in the team's order")
+        assertEquals("#e53935", project.styles.getValue("L1").getValue("color").jsonPrimitive.content)
+
+        // A teammate's change comes in; one this phone has yet to send stands.
+        run(Workspace.LAYER_STYLE, """{"layer": "泉点", "style": {"color": "#43a047"}}""")
+        server.pages[2] = """{"layers": [${layer("L1", "野外点", 0, "#8e24aa")}, ${layer("L2", "泉点", 1, "#fdd835")}],
+            "rows": [], "conflicts": [], "seq": 3, "more": false}"""
+        project.data { it.sql("UPDATE geocrew_outbox SET row = row") } // nothing sent yet: the style waits in the outbox
+        ProjectSync(project, SyncClient(server), SyncAccount("http://fake", "w2", "m2", "t2")).pull(100)
+        assertEquals("#8e24aa", project.styles.getValue("L1").getValue("color").jsonPrimitive.content)
+        assertEquals("#43a047", project.styles.getValue("L2").getValue("color").jsonPrimitive.content, "this phone's, not sent yet")
+        assertEquals("L1", project.layers.first().id)
+    }
+
+    @Test
     fun joiningWaitsForUnsavedEdits() {
         run(Workspace.CREATE, """{"name": "本地", "language": "zh"}""")
         run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")

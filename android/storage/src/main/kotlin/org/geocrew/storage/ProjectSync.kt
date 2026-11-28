@@ -5,6 +5,7 @@ import java.io.IOException
 import java.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -53,7 +54,11 @@ internal class ProjectSync(private val project: Project, private val client: Syn
      */
     fun share() {
         val specs = specs(project)
-        for (spec in specs) client.createLayer(account.workspace, account.token, spec)
+        for (spec in specs) {
+            val made = client.createLayer(account.workspace, account.token, spec)
+            // The layer's row as the workspace has it: its style or place changed here later goes from this seq.
+            project.data { Outbox.seenSystemRow(it, spec.id, made.seq) }
+        }
         project.link(account.workspace)
         project.data { ds ->
             ds.begin()
@@ -143,6 +148,7 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         do {
             val page = client.pull(account.workspace, account.token, since, batch)
             val layers = makeLayers(page.layers)
+            writeLayerProps(page.layers)
             val rows = writeRows(page.rows, page.seq)
             writeAttachments(page.rows.filter { it.layer == Outbox.ATTACHMENTS }, page.seq, rowsCame = rows > 0)
             keepConflicts(page.conflicts)
@@ -161,7 +167,7 @@ internal class ProjectSync(private val project: Project, private val client: Syn
     private fun writeAttachments(rows: List<PulledRow>, seq: Long, rowsCame: Boolean) {
         val waiting = project.data(Outbox::waiting)
         project.data { ds ->
-            ds.sql(ProjectFormat.ATTACHMENT_ROWS_SCHEMA)
+            ds.sql(ProjectFormat.SYSTEM_ROWS_SCHEMA)
             ds.sql(ProjectFormat.PENDING_ATTACHMENTS_SCHEMA)
             val pending = if (rowsCame) rows(ds, "SELECT uuid, row, seq FROM ${ProjectFormat.PENDING_ATTACHMENTS_TABLE}") else emptyList()
             if (rows.isEmpty() && pending.isEmpty()) return@data
@@ -220,7 +226,7 @@ internal class ProjectSync(private val project: Project, private val client: Syn
             if (had.any { it.id == id }) had.map { if (it.id == id) a else it } else had + a
         }
         if (now != had) store.setAttachments(fid, now)
-        Outbox.seenAttachment(ds, id, seq)
+        Outbox.seenSystemRow(ds, id, seq)
         return true
     }
 
@@ -247,6 +253,28 @@ internal class ProjectSync(private val project: Project, private val client: Syn
      * the original of a photo someone else took, when it is opened.
      */
     fun fetch(sha: String, type: String): Received = client.receiveFile(account.workspace, account.token, sha, AttachmentFiles.fileOf(project.attachments, sha, type))
+
+    // The merged properties of the shared layers as the workspace has them (protocol v1 7.1): how each is drawn and its
+    // place. A layer this phone still has a change of to send stands as it is here; its name stays (backlog).
+    private fun writeLayerProps(layers: List<PulledLayer>) {
+        if (layers.isEmpty()) return
+        val waiting = project.data(Outbox::waiting)
+        val places = ArrayList<Pair<String, Int>>()
+        for (l in layers) {
+            if (l.deleted || l.id in waiting || project.layers.none { it.id == l.id }) continue
+            l.style?.let { style -> if ((project.styles[l.id] ?: JsonNull) != style) project.data { project.applyStyle(l.id, style) } }
+            l.order?.let { places += l.id to it.toInt() }
+            project.data { Outbox.seenSystemRow(it, l.id, l.seq) }
+        }
+        if (places.isEmpty()) return
+        // Each to the place it came with, the lowest first: the sender's order, where both have the same layers.
+        val ids = project.layers.map { it.id }.toMutableList()
+        for ((id, at) in places.sortedBy { it.second }) {
+            ids.remove(id)
+            ids.add(at.coerceIn(0, ids.size), id)
+        }
+        if (ids != project.layers.map { it.id }) project.setOrder(ids.map { id -> project.layers.first { it.id == id }.name })
+    }
 
     // The shared layers the project lacks, made with their ids; how many. A deleted one is left out (backlog).
     private fun makeLayers(layers: List<PulledLayer>): Int {
@@ -403,7 +431,10 @@ internal class ProjectSync(private val project: Project, private val client: Syn
                 }
                 FieldDef(id, f.name, type)
             }
-            return LayerSpec(layer.id, layer.name, geometry, layer.srs ?: Crs.LONGITUDE_LATITUDE, fields)
+            return LayerSpec(
+                layer.id, layer.name, geometry, layer.srs ?: Crs.LONGITUDE_LATITUDE, fields,
+                style = project.styles[layer.id], order = project.layers.indexOf(layer).toDouble(),
+            )
         }
     }
 }

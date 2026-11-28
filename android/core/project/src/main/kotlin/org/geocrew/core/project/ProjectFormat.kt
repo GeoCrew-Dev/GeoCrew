@@ -124,13 +124,14 @@ object ProjectFormat {
         "resolved INTEGER NOT NULL DEFAULT 0)"
 
     /**
-     * A linked project's attachment rows (protocol v1 9.1): each attachment the
-     * workspace has or is to have, by its UUID, and the seq a pull last saw it
-     * at (0 until one does): its next change's base seq, as [ROWS_TABLE] keeps
-     * a feature's.
+     * A linked project's rows of the system tables: attachments (protocol v1
+     * 9.1) and layers, whose merged properties (7.1) change as a row does. Each
+     * the workspace has or is to have, by its UUID, and the seq a pull last saw
+     * it at (0 until one does): its next change's base seq, as [ROWS_TABLE]
+     * keeps a feature's.
      */
-    const val ATTACHMENT_ROWS_TABLE = "geocrew_attachment_rows"
-    const val ATTACHMENT_ROWS_SCHEMA = "CREATE TABLE IF NOT EXISTS $ATTACHMENT_ROWS_TABLE (uuid TEXT PRIMARY KEY NOT NULL, seq INTEGER NOT NULL DEFAULT 0)"
+    const val SYSTEM_ROWS_TABLE = "geocrew_system_rows"
+    const val SYSTEM_ROWS_SCHEMA = "CREATE TABLE IF NOT EXISTS $SYSTEM_ROWS_TABLE (uuid TEXT PRIMARY KEY NOT NULL, seq INTEGER NOT NULL DEFAULT 0)"
 
     /**
      * Attachment files a linked project has yet to upload (protocol v1 9.2,
@@ -156,8 +157,21 @@ object ProjectFormat {
     val SCHEMA = listOf(
         "CREATE TABLE $PROJECT_TABLE (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
         "CREATE TABLE $LAYERS_TABLE (table_name TEXT PRIMARY KEY NOT NULL, id TEXT NOT NULL UNIQUE, template TEXT)",
-        "CREATE TABLE $FIELDS_TABLE (table_name TEXT NOT NULL, column_name TEXT NOT NULL, id TEXT NOT NULL UNIQUE, " +
-            "PRIMARY KEY (table_name, column_name))",
+        "CREATE TABLE $FIELDS_TABLE (table_name TEXT NOT NULL, column_name TEXT NOT NULL, id TEXT NOT NULL, " +
+            "PRIMARY KEY (table_name, column_name), UNIQUE (table_name, id))",
+    )
+
+    /**
+     * [FIELDS_TABLE] as projects made before 2026-11-28 have it, a field's id
+     * unique among all layers' rather than its own layer's (protocol v1 7.2):
+     * made again the new way when a shared layer needs it. Each statement in turn.
+     */
+    val FIELDS_PER_LAYER = listOf(
+        "CREATE TABLE ${FIELDS_TABLE}_new (table_name TEXT NOT NULL, column_name TEXT NOT NULL, id TEXT NOT NULL, " +
+            "PRIMARY KEY (table_name, column_name), UNIQUE (table_name, id))",
+        "INSERT INTO ${FIELDS_TABLE}_new (table_name, column_name, id) SELECT table_name, column_name, id FROM $FIELDS_TABLE",
+        "DROP TABLE $FIELDS_TABLE",
+        "ALTER TABLE ${FIELDS_TABLE}_new RENAME TO $FIELDS_TABLE",
     )
 
     /** [s] as an SQL string literal. */
