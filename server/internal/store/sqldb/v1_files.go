@@ -112,6 +112,15 @@ func (v *V1) upload(ctx context.Context, tx *Tx, workspaceID, actor, id string) 
 	return u, err
 }
 
+func (v *V1) Upload(ctx context.Context, workspaceID, actor, uploadID string) (v1.Upload, error) {
+	tx, err := v.d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return v1.Upload{}, err
+	}
+	defer tx.Rollback()
+	return v.upload(ctx, tx, workspaceID, actor, uploadID)
+}
+
 func (v *V1) Received(ctx context.Context, workspaceID, actor, uploadID string, offset, n int64) (int64, error) {
 	tx, err := v.d.db.BeginTx(ctx, nil)
 	if err != nil {

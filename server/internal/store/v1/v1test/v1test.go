@@ -1537,6 +1537,12 @@ func uploads(t *testing.T, open Opener) {
 	if _, err := s.Received(ctx, tm.ws, b, u.ID, 0, 10); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("someone else's upload: %v", err)
 	}
+	if _, err := s.Upload(ctx, tm.ws, b, u.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("someone else's upload is not theirs to see: %v", err)
+	}
+	if got, err := s.Upload(ctx, tm.ws, a, u.ID); err != nil || got.SHA256 != photoSHA || got.Size != size || got.Offset != 0 || got.Type != "image/jpeg" {
+		t.Fatalf("the upload as it stands: %v %+v", err, got)
+	}
 	if _, err := s.Received(ctx, tm.ws, a, u.ID, 0, v1.ChunkSize+1); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("a chunk over the size: %v", err)
 	}
@@ -1555,6 +1561,9 @@ func uploads(t *testing.T, open Opener) {
 	}
 	if off, err = s.Received(ctx, tm.ws, a, u.ID, off, 10); err != nil || off != size {
 		t.Fatalf("last chunk: %v %d", err, off)
+	}
+	if got, err := s.Upload(ctx, tm.ws, a, u.ID); err != nil || got.Offset != size {
+		t.Fatalf("all of it received: %v %+v", err, got)
 	}
 
 	// Nobody can fetch it before an attachment refers to it.
@@ -1583,6 +1592,9 @@ func uploads(t *testing.T, open Opener) {
 	}
 	if _, err := s.Received(ctx, tm.ws, a, u.ID, size, 0); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("send to a finished upload: %v", err)
+	}
+	if _, err := s.Upload(ctx, tm.ws, a, u.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a finished upload is gone: %v", err)
 	}
 	if _, exists, err := s.StartUpload(ctx, tm.ws, b, photoSHA, size, "image/jpeg"); err != nil || !exists {
 		t.Fatalf("the file is here already: %v %v", err, exists)

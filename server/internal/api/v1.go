@@ -32,6 +32,7 @@ func (s *Server) v1Routes(mux *http.ServeMux, joins *limiter) {
 	s.v1RowRoutes(mux)
 	s.v1MemberRoutes(mux)
 	s.v1RoleRoutes(mux)
+	s.v1FileRoutes(mux)
 }
 
 type v1Limits struct {

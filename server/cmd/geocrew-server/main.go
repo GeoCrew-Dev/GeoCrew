@@ -194,6 +194,9 @@ func serve(cfg config.Config, log *slog.Logger, trial *trialRun) error {
 	if sender != nil {
 		go srv.WatchOutings(ctx, time.Minute)
 	}
+	if srv.V1 != nil {
+		go srv.CleanUploads(ctx, time.Hour)
+	}
 	if cfg.BackupDir != "" {
 		if db.Dialect() != "sqlite" {
 			log.Warn("scheduled backups only cover SQLite; use pg_dump for PostgreSQL", "engine", db.Dialect())

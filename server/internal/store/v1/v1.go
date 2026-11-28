@@ -444,6 +444,9 @@ type Store interface {
 	// ErrOffsetMismatch; going past the declared size is store.ErrInvalid; an
 	// upload that is finished, dropped or not actor's is store.ErrNotFound.
 	Received(ctx context.Context, workspaceID, actor, uploadID string, offset, n int64) (int64, error)
+	// Upload is actor's unfinished upload uploadID as it stands: ErrNotFound
+	// for one finished, voided or someone else's, ErrArchived while archived.
+	Upload(ctx context.Context, workspaceID, actor, uploadID string) (Upload, error)
 	// FinishUpload ends a complete upload: with hashOK the file is stored,
 	// otherwise the upload is dropped.
 	FinishUpload(ctx context.Context, workspaceID, actor, uploadID string, hashOK bool) error
