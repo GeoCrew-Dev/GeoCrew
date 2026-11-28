@@ -89,6 +89,7 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
     val scope = rememberCoroutineScope()
     var failure by remember { mutableStateOf<String?>(null) }
     val sync = syncTexts()
+    val noInviteText = stringResource(R.string.team_invite_none)
     val texts = FailureTexts(
         unsaved = stringResource(R.string.failure_unsaved),
         failed = stringResource(R.string.action_failed),
@@ -110,8 +111,21 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
         snapshots = (graph.invoke(Workspace.SNAPSHOTS) as? Outcome.Done)?.output?.jsonObject?.get("days")?.jsonArray
             ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
         team = (graph.invoke(SyncActions.STATUS) as? Outcome.Done)?.output?.jsonObject
-        // From the server: none when it cannot be reached, or this member may not invite.
-        if (team.flag("linked")) invite = (graph.invoke(SyncActions.INVITE) as? Outcome.Done)?.output?.jsonObject?.text("invite_code")
+    }
+
+    // The invite code from the server, asked for when wanted: actions run one at a time, and a server out of reach
+    // would hold the others up for as long as the call waits.
+    fun showInvite() = scope.launch {
+        invite?.let { shownInvite = it; return@launch }
+        busy = true
+        val done = graph.invoke(SyncActions.INVITE)
+        busy = false
+        when (done) {
+            is Outcome.Done -> done.output.jsonObject.text("invite_code").let { code ->
+                if (code == null) failure = noInviteText else { invite = code; shownInvite = code }
+            }
+            else -> failure = sync.of(done)
+        }
     }
 
     // Sends the project's saved edits and brings in the team's; the counts come again after.
@@ -242,16 +256,14 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
                         modifier = Modifier.clickable(enabled = !busy) { syncNow() },
                     )
                 }
-                invite?.let { code ->
-                    item {
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.team_invite)) },
-                            supportingContent = { Text(code) },
-                            leadingContent = { Icon(Icons.Rounded.PersonAdd, null) },
-                            colors = clear,
-                            modifier = Modifier.clickable { shownInvite = code },
-                        )
-                    }
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.team_invite)) },
+                        supportingContent = invite?.let { code -> { Text(code) } },
+                        leadingContent = { Icon(Icons.Rounded.PersonAdd, null) },
+                        colors = clear,
+                        modifier = Modifier.clickable(enabled = !busy) { showInvite() },
+                    )
                 }
             }
         }

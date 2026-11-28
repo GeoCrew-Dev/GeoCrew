@@ -605,4 +605,6 @@
         <item quantity="one">%d change not accepted</item>
         <item quantity="other">%d changes not accepted</item>
     </plurals>
+    <string name="team_invite_none">You cannot invite others</string>
+    <string name="team_sent_only">%1$d sent; changes come in once your edits are saved</string>
 </resources>
