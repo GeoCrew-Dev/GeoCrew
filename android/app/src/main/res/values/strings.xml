@@ -14,7 +14,6 @@
     <string name="action_failed">That did not work: %1$s</string>
     <string name="failure_empty">The project has no layers</string>
     <string name="failure_unsaved">The project has unsaved changes: save or discard them first.</string>
-    <string name="failure_shared">Shared with the team: can\'t be changed yet</string>
 
     <!-- Permissions -->
     <string name="permissions_title">A few permissions</string>
@@ -603,6 +602,8 @@
     <string name="team_check_key">Check the server key</string>
     <string name="team_key_matches">Matches</string>
     <string name="team_fingerprint">Server key</string>
+    <string name="sync_stale">The team just changed this layer: it is updated, try again</string>
+    <string name="sync_name_taken">The team has a field of that name</string>
     <string name="sync_forbidden">Not allowed</string>
     <string name="attachment_fetching">Downloading</string>
     <string name="attachment_not_uploaded">The original is not uploaded yet</string>

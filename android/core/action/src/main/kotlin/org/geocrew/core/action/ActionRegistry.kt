@@ -119,7 +119,11 @@ class ActionRegistry(
                 if (result.endsUndo.isNotEmpty() || result.undo != null) publish()
                 Outcome.Done(result.output)
             }
-            is ActionResult.Failed -> Outcome.Failed(result.code, result.message)
+            is ActionResult.Failed -> {
+                result.endsUndo.forEach { histories.remove(it) }
+                if (result.endsUndo.isNotEmpty()) publish()
+                Outcome.Failed(result.code, result.message)
+            }
         }
     }
 

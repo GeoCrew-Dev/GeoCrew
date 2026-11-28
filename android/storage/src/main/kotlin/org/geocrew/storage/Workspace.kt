@@ -258,10 +258,7 @@ class Workspace(private val projects: Projects) {
             val project = checkNotNull(current) { "no project is open" }
             unsaved()?.let { return@WorkspaceAction it }
             shared(project, p.getValue("layer").jsonPrimitive.content, null)?.let { return@WorkspaceAction it }
-            val ended = stopEditing() + editing.scopeOf(p.getValue("layer").jsonPrimitive.content)
-            project.deleteLayer(p.getValue("layer").jsonPrimitive.content)
-            current = reopen(project)
-            ActionResult.Done(about(current!!), endsUndo = ended.distinct())
+            deleteLayer(project, p.getValue("layer").jsonPrimitive.content)
         },
         WorkspaceAction(
             LAYER_DISPLAY, "Layer display", "Shows or hides a layer of the open project and sets its opacity (0 to 1); saved in the project at once, not undone",
@@ -549,12 +546,28 @@ class Workspace(private val projects: Projects) {
     }
 
     // A field (or with none, the layer) the team's workspace has, in a linked project: renamed or deleted with the team
-    // only, online (protocol v1 7.3), which the phone does not do yet (backlog). One added here and not sent yet is its own.
+    // only, online (protocol v1 7.3), by the sync actions. One added here and not sent yet is its own.
     private fun shared(project: Project, layer: String, field: String?): ActionResult.Failed? {
         val id = project.layers.firstOrNull { it.name == layer }?.id ?: return null
         val unsent = project.data { ds -> if (Outbox.linked(ds)) SharedSchema.unsent(ds, project) else null } ?: return null
         if (id in unsent.layers || (field != null && project.fieldIds(layer)[field] in unsent.fields[id].orEmpty())) return null
-        return ActionResult.Failed(ONLINE_ONLY, "the team has ${if (field == null) "layer $layer" else "field $field of $layer"}: it changes with the team only")
+        val instead = when {
+            field == null -> SyncActions.LAYER_DELETE
+            else -> "${SyncActions.FIELD_RENAME} or ${SyncActions.FIELD_DELETE}"
+        }
+        return ActionResult.Failed(ONLINE_ONLY, "the team has ${if (field == null) "layer $layer" else "field $field of $layer"}: it changes with the team, by $instead")
+    }
+
+    /**
+     * Layer [layer] of the open [project] deleted, as layer.delete deletes
+     * one: every layer stops being edited, its undo history ends, and the
+     * project opens again. For a shared one, once the team deleted it too.
+     */
+    internal fun deleteLayer(project: Project, layer: String): ActionResult.Done {
+        val ended = stopEditing() + editing.scopeOf(layer)
+        project.deleteLayer(layer)
+        current = reopen(project)
+        return ActionResult.Done(about(current!!), endsUndo = ended.distinct())
     }
 
     /**

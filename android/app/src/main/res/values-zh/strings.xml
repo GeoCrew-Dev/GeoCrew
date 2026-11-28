@@ -13,7 +13,6 @@
     <string name="action_failed">没有成功：%1$s</string>
     <string name="failure_empty">工程里没有图层</string>
     <string name="failure_unsaved">工程里有没保存的修改，先保存或放弃。</string>
-    <string name="failure_shared">团队共享的，暂时不能改</string>
 
     <!-- 权限 -->
     <string name="permissions_title">需要几项权限</string>
@@ -572,6 +571,8 @@
     <string name="team_check_key">核对服务器指纹</string>
     <string name="team_key_matches">一致</string>
     <string name="team_fingerprint">服务器指纹</string>
+    <string name="sync_stale">团队刚改过这个图层，已更新，再试一次</string>
+    <string name="sync_name_taken">团队已有这个名字的字段</string>
     <string name="sync_forbidden">没有权限</string>
     <string name="attachment_fetching">正在下载</string>
     <string name="attachment_not_uploaded">原图还没上传</string>

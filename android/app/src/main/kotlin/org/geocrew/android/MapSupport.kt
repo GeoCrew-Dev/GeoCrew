@@ -43,7 +43,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.edit.ValueRange
 import org.geocrew.core.project.Templates
-import org.geocrew.storage.Workspace
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -59,23 +58,22 @@ import org.maplibre.android.storage.FileSource
 internal const val POINT_SOURCE = "geocrew-points"
 internal const val POINT_LABELS = "geocrew-point-labels"
 
-/** Failures said in the user's language when their code is known. */
+/** Failures said in the user's language when their code is known; with [sync], those of sync actions too. */
 internal class FailureTexts(
     val unsaved: String,
     val failed: String,
     val start: String,
     val empty: String = failed,
     val crs: String = failed,
-    val shared: String = failed,
+    val sync: SyncTexts? = null,
 ) {
     fun of(outcome: Outcome): String = when (outcome) {
         is Outcome.Failed -> when (outcome.code) {
             "unsaved" -> unsaved
-            Workspace.ONLINE_ONLY -> shared
             "crs" -> crs.format(outcome.message)
             "empty" -> empty.format(outcome.message)
             AppGraph.START_FAILED -> start.format(outcome.message)
-            else -> failed.format(outcome.message)
+            else -> sync?.of(outcome) ?: failed.format(outcome.message)
         }
         else -> failed.format(outcome.toString())
     }

@@ -77,6 +77,26 @@ class ClientTest {
     }
 
     @Test
+    fun fieldsRenamedAndDeletedOnlineAndALayerDeleted() {
+        val layer = """{"id": "L1", "geometry_type": "Point", "crs": "EPSG:4490", "schema_version": 4, "seq": 10,
+            "fields": [{"id": "f1", "name": "点名", "type": "string"}]}"""
+        val fake = Fake(listOf(Reply(200, layer), Reply(200, layer), Reply(200, """{"id": "L1", "geometry_type": "Point", "crs": "EPSG:4490",
+            "schema_version": 4, "seq": 11, "fields": [], "deleted": {"value": true, "by": "m1", "at": "2026-11-28T10:00:00Z", "seq": 11}}""")))
+        val client = SyncClient(fake)
+        assertEquals(4L, client.renameField("w1", "t1", "L1", 3, "f2", "岩石").schemaVersion)
+        assertEquals(4L, client.deleteField("w1", "t1", "L1", 3, "f2").schemaVersion)
+        assertTrue(client.deleteLayer("w1", "t1", "L1").deleted)
+        val (rename, delete) = fake.sent.take(2).map { Json.parseToJsonElement(it.third!!).jsonObject }
+        assertEquals(3L, rename.getValue("base_version").jsonPrimitive.content.toLong())
+        assertEquals(
+            listOf("rename_field" to "岩石", "delete_field" to null),
+            listOf(rename, delete).map { o -> o.getValue("ops").jsonArray.single().jsonObject.let { it.getValue("op").jsonPrimitive.content to it["name"]?.jsonPrimitive?.content } },
+        )
+        assertEquals("f2", delete.getValue("ops").jsonArray.single().jsonObject.getValue("id").jsonPrimitive.content)
+        assertEquals("DELETE" to "/api/v1/workspaces/w1/layers/L1", fake.sent[2].first to fake.sent[2].second)
+    }
+
+    @Test
     fun theMembersAreListedByIdAndNickname() {
         val fake = Fake(
             listOf(

@@ -1039,7 +1039,9 @@ class Project internal constructor(
     fun deleteField(layer: String, field: String) {
         checkFieldDelete(layer, field)
         val id = layers.single { it.name == layer }.id
+        val fieldId = Outbox.fieldIds(dataset, layer)[field]
         changing {
+            fieldId?.let { Outbox.forgetField(dataset, id, it) }
             FieldRanges.columnDropped(dataset, layer, field)
             dataset.sql("ALTER TABLE ${ProjectFormat.identifier(layer)} DROP COLUMN ${ProjectFormat.identifier(field)}")
             dataset.sql("DELETE FROM ${ProjectFormat.FIELDS_TABLE} WHERE table_name = ${quote(layer)} AND column_name = ${quote(field)}")
@@ -1224,6 +1226,7 @@ class Project internal constructor(
         dataset.sql("DELETE FROM ${ProjectFormat.DISPLAY_TABLE} WHERE layer_id = ${quote(found.id)}")
         dataset.sql(ProjectFormat.STYLE_SCHEMA)
         dataset.sql("DELETE FROM ${ProjectFormat.STYLE_TABLE} WHERE layer_id = ${quote(found.id)}")
+        Outbox.forgetLayer(dataset, found.id)
         File(journals, "${found.id}.jsonl").delete()
     }
 
