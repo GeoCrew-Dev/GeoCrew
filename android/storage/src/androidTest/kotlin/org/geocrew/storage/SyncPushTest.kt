@@ -299,6 +299,20 @@ class SyncPushTest {
         output(run(SyncActions.NOW))
         val moved = server.pushes.last().associate { it.getValue("row").jsonPrimitive.content to it.getValue("set").jsonObject.getValue("order").jsonObject.getValue("value").jsonPrimitive.int }
         assertEquals(project.layers.withIndex().associate { (i, l) -> l.id to i }, moved)
+
+        // A layer made after sharing is not the team's yet: dragged to the top, it goes nowhere and counts for nothing;
+        // moving a shared one with layer.move sends its place among the shared.
+        run(Workspace.LAYER_CREATE, """{"name": "钻孔", "language": "zh"}""")
+        val pushes = server.pushes.size
+        run(Workspace.LAYER_MOVE, """{"layer": "钻孔", "index": 0}""")
+        output(run(SyncActions.NOW))
+        assertEquals(pushes, server.pushes.size, "nothing to send")
+        val last = project.layers.filter { it.name != "钻孔" }.last()
+        run(Workspace.LAYER_MOVE, """{"layer": "${last.name}", "index": 0}""")
+        output(run(SyncActions.NOW))
+        val again = server.pushes.last().associate { it.getValue("row").jsonPrimitive.content to it.getValue("set").jsonObject.getValue("order").jsonObject.getValue("value").jsonPrimitive.int }
+        assertEquals(0, again[last.id], again.toString())
+        assertTrue(project.layers.none { it.name == "钻孔" && it.id in again })
     }
 
     @Test
