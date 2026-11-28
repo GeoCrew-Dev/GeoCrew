@@ -42,6 +42,9 @@ internal object Outbox {
     /** The system table of layers, whose merged properties change as a row's fields do (protocol v1 7.1); a layer is a row by its id. */
     const val LAYERS = "layers"
 
+    /** The editor of a row this phone changed last, until the server says who that was (its member id). */
+    const val ME = "me"
+
     /** Merged properties of a layer (protocol v1 7.1): how it is drawn (ADR 0006) and its place, 0 drawn on top. */
     const val STYLE = "style"
     const val ORDER = "order"
@@ -108,7 +111,7 @@ internal object Outbox {
         now: Long = System.currentTimeMillis(),
     ) {
         if (changes.isEmpty() || !linked(ds)) return
-        ds.sql(ProjectFormat.ROWS_SCHEMA)
+        ensureRows(ds)
         ds.sql(ProjectFormat.OUTBOX_SCHEMA)
         val ids = fieldIds(ds, layer)
         for (change in changes) {
@@ -124,6 +127,7 @@ internal object Outbox {
                 sent = change.copy(values = f.properties, geometrySet = true, geometry = f.geometry, attachments = attachmentsOf(change.fid), attachmentsBefore = emptyList())
             }
             val row = known ?: newRow(ds, layerId, change.fid)
+            edited(ds, row, ME)
             // A field with no edit time of its own (one a new feature was not given) has the feature's latest.
             val latest = listOfNotNull(change.geometryTime, change.times.values.maxOrNull()).maxOrNull() ?: now
             for ((name, value) in sent.values) {
@@ -253,16 +257,41 @@ internal object Outbox {
         attachmentsOf: (Long) -> List<Attachment> = { emptyList() },
         now: Long = System.currentTimeMillis(),
     ) {
-        ds.sql(ProjectFormat.ROWS_SCHEMA)
+        ensureRows(ds)
         ds.sql(ProjectFormat.OUTBOX_SCHEMA)
         val ids = fieldIds(ds, layer)
         for (f in features) {
             if (lookup(ds, layerId, f.fid) != null) continue
             val row = newRow(ds, layerId, f.fid)
+            edited(ds, row, ME)
             for ((name, value) in f.properties) ids[name]?.let { put(ds, row, layerId, it, value, now) }
             put(ds, row, layerId, GEOMETRY, f.geometry ?: JsonNull, now)
             attachmentsOf(f.fid).takeIf { it.isNotEmpty() }?.let { recordAttachments(ds, layerId, row, emptyList(), it, now) }
         }
+    }
+
+    /**
+     * The table of the rows' ids, made when first needed, with the editor
+     * column a project linked before it was there lacks.
+     */
+    fun ensureRows(ds: VectorDataset) {
+        ds.sql(ProjectFormat.ROWS_SCHEMA)
+        if (rows(ds, "SELECT name FROM pragma_table_info(${quote(ProjectFormat.ROWS_TABLE)}) WHERE name = 'editor'").isEmpty()) {
+            ds.sql("ALTER TABLE ${ProjectFormat.ROWS_TABLE} ADD COLUMN editor TEXT")
+        }
+    }
+
+    /** Row [uuid] was last edited by member [editor], or by this phone: [ME] until the server says who that was. */
+    fun edited(ds: VectorDataset, uuid: String, editor: String) {
+        ds.sql("UPDATE ${ProjectFormat.ROWS_TABLE} SET editor = ${quote(editor)} WHERE uuid = ${quote(uuid)}")
+    }
+
+    /** Who last edited each feature of layer [layerId] that a member of the team edited, by fid: a member id, or [ME]. */
+    fun editors(ds: VectorDataset, layerId: String): Map<Long, String> {
+        if (!exists(ds, ProjectFormat.ROWS_TABLE)) return emptyMap()
+        if (rows(ds, "SELECT name FROM pragma_table_info(${quote(ProjectFormat.ROWS_TABLE)}) WHERE name = 'editor'").isEmpty()) return emptyMap()
+        return rows(ds, "SELECT fid AS feature, editor FROM ${ProjectFormat.ROWS_TABLE} WHERE layer_id = ${quote(layerId)} AND editor IS NOT NULL")
+            .mapNotNull { r -> r["feature"]?.toLongOrNull()?.let { fid -> r["editor"]?.let { fid to it } } }.toMap()
     }
 
     /** The feature of layer [layerId] that row [uuid] is, if it has been here. */

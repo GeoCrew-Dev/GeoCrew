@@ -46,19 +46,30 @@ internal object MapLabels {
     }
 
     /**
-     * [features] with each one's [field] as its label, and the label images
-     * added to [style] that it does not have yet.
+     * [features] with each one's [field] as its label (none with null), a
+     * [second] line under it in smaller type (who last edited it, say), and
+     * the label images added to [style] that it does not have yet.
      */
-    fun label(features: JsonArray, field: String, style: Style, density: Float): JsonArray = JsonArray(
+    fun label(features: JsonArray, field: String?, style: Style, density: Float, second: (JsonObject) -> String? = { null }): JsonArray = JsonArray(
         features.map { feature ->
             val f = feature as? JsonObject ?: return@map feature
             val properties = f["properties"] as? JsonObject ?: return@map feature
-            val text = (properties[field] as? JsonPrimitive)?.contentOrNull?.let(::shown) ?: return@map feature
-            val image = PREFIX + text
-            if (style.getImage(image) == null) style.addImage(image, draw(text, density))
+            val image = image(textOf(properties, field), second(f)?.let(::shown), style, density) ?: return@map feature
             JsonObject(f + ("properties" to JsonObject(properties + (PROPERTY to JsonPrimitive(image)))))
         },
     )
+
+    // What [field] of [properties] shows as a label; null for none.
+    private fun textOf(properties: JsonObject?, field: String?): String? =
+        field?.let { (properties?.get(it) as? JsonPrimitive)?.contentOrNull?.let(::shown) }
+
+    // The name of the label image of [text] over [under], added to [style] the first time; null with neither.
+    private fun image(text: String?, under: String?, style: Style, density: Float): String? {
+        if (text == null && under == null) return null
+        val image = PREFIX + text.orEmpty() + (under?.let { "\n$it" } ?: "")
+        if (style.getImage(image) == null) style.addImage(image, draw(text, under, density))
+        return image
+    }
 
     /** The property that turns a line's label to run with the line, degrees clockwise. */
     const val ROTATE = "_label_rotate"
@@ -72,13 +83,18 @@ internal object MapLabels {
      * and kept upright; an area's at its centre. The images go into [style];
      * [tag] adds what the map needs to each (its layer's opacity, say).
      */
-    fun shapes(features: JsonArray, field: String, style: Style, density: Float, tag: (JsonObject) -> JsonObject): List<JsonObject> =
+    fun shapes(
+        features: JsonArray,
+        field: String?,
+        style: Style,
+        density: Float,
+        second: (JsonObject) -> String? = { null },
+        tag: (JsonObject) -> JsonObject,
+    ): List<JsonObject> =
         features.mapNotNull { feature ->
             val f = feature as? JsonObject ?: return@mapNotNull null
-            val text = ((f["properties"] as? JsonObject)?.get(field) as? JsonPrimitive)?.contentOrNull?.let(::shown) ?: return@mapNotNull null
             val (at, rotate, kind) = anchor(f["geometry"] as? JsonObject) ?: return@mapNotNull null
-            val image = PREFIX + text
-            if (style.getImage(image) == null) style.addImage(image, draw(text, density))
+            val image = image(textOf(f["properties"] as? JsonObject, field), second(f)?.let(::shown), style, density) ?: return@mapNotNull null
             tag(
                 buildJsonObject {
                     put("type", "Feature")
@@ -178,27 +194,38 @@ internal object MapLabels {
         if (ring.size < 3) 0.0 else (ring.zipWithNext() + (ring.last() to ring.first())).sumOf { (a, b) -> a.first * b.second - b.first * a.second } / 2
 
     // White text with a dark halo, readable on imagery.
-    private fun draw(text: String, density: Float): Bitmap {
+    // [text] in white bold over [under] in smaller, plainer type, each with a dark halo to read on any map.
+    private fun draw(text: String?, under: String?, density: Float): Bitmap {
         val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 13f * density
             typeface = Typeface.DEFAULT_BOLD
             color = Color.WHITE
         }
-        val halo = Paint(fill).apply {
+        val small = Paint(fill).apply {
+            textSize = 11f * density
+            typeface = Typeface.DEFAULT
+            color = Color.rgb(230, 230, 230)
+        }
+        fun halo(paint: Paint) = Paint(paint).apply {
             style = Paint.Style.STROKE
             strokeWidth = 3f * density
             strokeJoin = Paint.Join.ROUND
             color = Color.BLACK
         }
-        val metrics = fill.fontMetrics
-        val margin = halo.strokeWidth
+        val lines = listOfNotNull(text?.let { it to fill }, under?.let { it to small })
+        val margin = 3f * density
         val bitmap = createBitmap(
-            ceil(fill.measureText(text) + 2 * margin).toInt(),
-            ceil(metrics.descent - metrics.ascent + 2 * margin).toInt(),
+            ceil(lines.maxOf { (t, paint) -> paint.measureText(t) } + 2 * margin).toInt(),
+            ceil(lines.sumOf { (_, paint) -> (paint.fontMetrics.descent - paint.fontMetrics.ascent).toDouble() } + 2 * margin).toInt(),
         )
         val canvas = Canvas(bitmap)
-        canvas.drawText(text, margin, margin - metrics.ascent, halo)
-        canvas.drawText(text, margin, margin - metrics.ascent, fill)
+        var top = margin
+        for ((t, paint) in lines) {
+            val metrics = paint.fontMetrics
+            canvas.drawText(t, margin, top - metrics.ascent, halo(paint))
+            canvas.drawText(t, margin, top - metrics.ascent, paint)
+            top += metrics.descent - metrics.ascent
+        }
         return bitmap
     }
 }

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.AddCircleOutline
+import androidx.compose.material.icons.rounded.Badge
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Bookmarks
@@ -76,6 +77,7 @@ enum class MapTool(val id: String, val group: Int?, val label: Int, val icon: Im
     SCREENSHOT("screenshot", R.string.menu_map, R.string.tool_screenshot, Icons.Rounded.PhotoCamera),
     BOOKMARKS("bookmarks", R.string.menu_map, R.string.tool_bookmarks, Icons.Rounded.Bookmarks),
     LOCK_ROTATION("lock_rotation", R.string.menu_map, R.string.tool_lock_rotation, Icons.Rounded.ScreenLockRotation),
+    EDITORS("editors", R.string.menu_map, R.string.tool_editors, Icons.Rounded.Badge),
     MEASURE_DISTANCE("measure_distance", R.string.menu_measure, R.string.tool_measure_distance, Icons.Rounded.Straighten),
     MEASURE_AREA("measure_area", R.string.menu_measure, R.string.tool_measure_area, Icons.Rounded.SquareFoot),
     AZIMUTH("azimuth", R.string.menu_measure, R.string.tool_azimuth, Icons.Rounded.Explore),

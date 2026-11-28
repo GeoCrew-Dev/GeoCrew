@@ -132,6 +132,13 @@ class AppSettings(context: Context) {
     /** Which Tianditu map project [projectId] shows (img, vec or ter); imagery by default. */
     fun basemapKind(projectId: String): String = prefs.getString(BASEMAP_KIND + projectId, null) ?: "img"
 
+    /** Whether the map labels each feature of a team's project [projectId] with who last edited it. */
+    fun editorsShown(projectId: String): Boolean = prefs.getBoolean(EDITORS_SHOWN + projectId, false)
+
+    fun showEditors(projectId: String, on: Boolean) {
+        prefs.edit { putBoolean(EDITORS_SHOWN + projectId, on) }
+    }
+
     fun setBasemapKind(projectId: String, kind: String) {
         prefs.edit { putString(BASEMAP_KIND + projectId, kind) }
     }
@@ -184,6 +191,7 @@ class AppSettings(context: Context) {
         const val BATTERY_ASKED = "battery_asked"
         const val BATTERY_PROMPTED = "battery_prompted"
         const val BASEMAP_KIND = "basemap_kind:"
+        const val EDITORS_SHOWN = "editors_shown:"
         const val ROTATION_LOCKED = "rotation_locked"
         const val SNAPPING = "snapping"
         const val RECENT_CRS = "recent_crs"

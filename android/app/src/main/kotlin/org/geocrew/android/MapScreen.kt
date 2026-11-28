@@ -181,6 +181,11 @@ fun MapScreen(
     var groups by remember { mutableStateOf<List<JsonObject>>(emptyList()) }
     // Each layer as layer.features gives it, by name.
     var collections by remember { mutableStateOf<Map<String, JsonObject>>(emptyMap()) }
+    // A team's project: who last edited each feature, by layer and fid, while the map labels them with it.
+    var linked by remember { mutableStateOf(false) }
+    var editorsShown by remember { mutableStateOf(false) }
+    var editors by remember { mutableStateOf<Map<String, Map<Long, String>>>(emptyMap()) }
+    val meText = stringResource(R.string.conflict_me)
     // The features by their ids on the map ("layer index/fid"), with their exact coordinates, for snapping to.
     val featuresById by remember {
         derivedStateOf {
@@ -339,6 +344,17 @@ fun MapScreen(
     }
 
     // The layers as they are now, and what the project's undo history holds.
+    // Who last edited each feature of layers [names] (protocol v1 6.1): their nicknames, "me" for this phone's own.
+    suspend fun loadEditors(names: Collection<String>): Map<String, Map<Long, String>> = names.associateWith { name ->
+        val done = graph.invoke(SyncActions.EDITORS, buildJsonObject { put("layer", name) }) as? Outcome.Done ?: return@associateWith emptyMap()
+        done.output.jsonObject["editors"]?.jsonArray.orEmpty().mapNotNull { e ->
+            val o = e.jsonObject
+            val fid = (o["fid"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+            val who = if (o["mine"] == JsonPrimitive(true)) meText else (o["nickname"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            fid to who
+        }.toMap()
+    }
+
     suspend fun reload() {
         val loaded = LinkedHashMap<String, JsonObject>()
         for (name in layers.mapNotNull { it.name() }) {
@@ -348,6 +364,7 @@ fun MapScreen(
                 else -> failure = texts.of(read)
             }
         }
+        editors = if (editorsShown && linked) loadEditors(loaded.keys) else emptyMap()
         collections = loaded
         history = graph.registry.canUndo(Workspace.PROJECT_SCOPE) to graph.registry.canRedo(Workspace.PROJECT_SCOPE)
     }
@@ -355,6 +372,8 @@ fun MapScreen(
     // The project as project.current describes it: its id, layers and basemaps, and which layers are in a projected CRS.
     suspend fun show(about: JsonObject) {
         projectId = (about["id"] as? JsonPrimitive)?.contentOrNull
+        linked = about["linked"] == JsonPrimitive(true)
+        editorsShown = projectId?.let(graph.settings::editorsShown) ?: false
         layers = about["layers"]?.jsonArray.orEmpty().map { it.jsonObject }
         groups = about["groups"]?.jsonArray.orEmpty().map { it.jsonObject }
         basemaps = listedBasemaps(about)
@@ -680,7 +699,7 @@ fun MapScreen(
     }
 
     var fitted by remember { mutableStateOf(graph.cameras.containsKey(project)) }
-    LaunchedEffect(styleLoads, collections) {
+    LaunchedEffect(styleLoads, collections, editors) {
         val map = mapView.awaitMap()
         val style = map.style ?: return@LaunchedEffect
         // With no layers left, nothing of theirs stays on the map.
@@ -698,7 +717,10 @@ fun MapScreen(
                 val own = collection["features"] as? JsonArray ?: return@flatMap emptyList()
                 val point = (l["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT"
                 val look = styleOf(l, layerColor(madeIndex(l)))
-                val labelled = labelField(look, collection)?.takeIf { point }?.let { MapLabels.label(own, it, style, density) } ?: own
+                val field = labelField(look, collection)
+                // Under its name, who last edited it, while that shows.
+                val who = editors[l.name()].orEmpty()
+                val labelled = if (point && (field != null || who.isNotEmpty())) MapLabels.label(own, field, style, density) { fidOf(it)?.let(who::get) } else own
                 labelled.map { tagged(it.jsonObject, index, look, opacity) }
             },
         )
@@ -712,9 +734,12 @@ fun MapScreen(
             if ((l["visible"] as? JsonPrimitive)?.contentOrNull == "false") return@flatMap emptyList()
             if ((l["geometry"] as? JsonPrimitive)?.contentOrNull == "POINT") return@flatMap emptyList()
             val collection = collections[l.name()] ?: return@flatMap emptyList()
-            val field = labelField(styleOf(l, layerColor(madeIndex(l))), collection) ?: return@flatMap emptyList()
+            val field = labelField(styleOf(l, layerColor(madeIndex(l))), collection)
+            val who = editors[l.name()].orEmpty()
+            if (field == null && who.isEmpty()) return@flatMap emptyList()
             val opacity = (l["opacity"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() ?: 1.0
-            MapLabels.shapes(collection["features"] as? JsonArray ?: return@flatMap emptyList(), field, style, density) { label ->
+            val features = collection["features"] as? JsonArray ?: return@flatMap emptyList()
+            MapLabels.shapes(features, field, style, density, second = { f -> fidOf(f)?.let(who::get) }) { label ->
                 JsonObject(label + ("properties" to JsonObject((label["properties"] as JsonObject) + (OPACITY to JsonPrimitive(opacity)))))
             }
         }
@@ -1314,6 +1339,11 @@ fun MapScreen(
             MapTool.TRACK -> if (ownTrack == null) requestTrack() else finishTrack()
             MapTool.CONVERT -> converting = true
             MapTool.SYNC -> syncNow()
+            MapTool.EDITORS -> {
+                editorsShown = !editorsShown
+                projectId?.let { graph.settings.showEditors(it, editorsShown) }
+                once { reload() }
+            }
             MapTool.EXPORT -> exporting = true
             MapTool.FILES -> onFiles()
             MapTool.PROJECT_SETTINGS -> onProjectSettings()
@@ -1333,6 +1363,7 @@ fun MapScreen(
             // A locked map is always north up.
             MapTool.NORTH_UP -> plain.copy(enabled = !graph.settings.rotationLocked)
             MapTool.LOCK_ROTATION -> if (graph.settings.rotationLocked) ToolState(stringResource(R.string.tool_unlock_rotation), Icons.Rounded.ScreenRotation, on = true) else plain
+            MapTool.EDITORS -> plain.copy(on = editorsShown, enabled = linked)
             MapTool.MEASURE_DISTANCE -> plain.copy(on = measuring == MeasureMode.DISTANCE)
             MapTool.MEASURE_AREA -> plain.copy(on = measuring == MeasureMode.AREA)
             MapTool.AZIMUTH -> plain.copy(on = measuring == MeasureMode.AZIMUTH)
@@ -1601,6 +1632,8 @@ fun MapScreen(
                 val tools = MapTool.entries.filter { it.group == group }
                     // A locked map is always north up.
                     .filterNot { it == MapTool.NORTH_UP && graph.settings.rotationLocked }
+                    // Who edited what is a team's project's.
+                    .filterNot { it == MapTool.EDITORS && !linked }
                     .map { entry(it) }
                 val extra = if (group == R.string.menu_map) {
                     listOf(MenuTool(stringResource(R.string.toolbar_edit), Icons.Rounded.DashboardCustomize) { editingToolbar = true })
@@ -2035,6 +2068,9 @@ private fun tagged(feature: JsonObject, layer: Int, style: LayerStyle, opacity: 
         (LABEL_OFFSET to JsonArray(listOf(JsonPrimitive(style.size + 2), JsonPrimitive(0))))
     return JsonObject(feature + ("id" to JsonPrimitive("$layer/$fid")) + ("properties" to JsonObject(shown)))
 }
+
+// A feature's fid, as layer.features gives it (before it is tagged for the map).
+private fun fidOf(feature: JsonObject): Long? = (feature["id"] as? JsonPrimitive)?.longOrNull
 
 // The point's layer's opacity.
 private const val OPACITY = "_opacity"

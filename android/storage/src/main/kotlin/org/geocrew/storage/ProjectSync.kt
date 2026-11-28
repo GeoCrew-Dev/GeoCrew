@@ -163,7 +163,7 @@ internal class ProjectSync(
      */
     fun pull(batch: Int, thumbsFor: Long = THUMBS_MS): Pulled {
         project.data { ds ->
-            ds.sql(ProjectFormat.ROWS_SCHEMA)
+            Outbox.ensureRows(ds)
             ds.sql(ProjectFormat.CONFLICTS_SCHEMA)
         }
         var since = project.data { ds ->
@@ -578,8 +578,14 @@ internal class ProjectSync(
                 changed.isNotEmpty() || moved
             }
         }
-        // A row with fields still to send keeps the base they were edited from: the server must see what changed alongside.
-        if (mine.isEmpty()) project.data { Outbox.seen(it, row.id, seq) }
+        // A row with fields still to send keeps the base they were edited from: the server must see what changed alongside;
+        // and this phone stays its last editor. Otherwise whoever made the row's latest change is.
+        if (mine.isEmpty()) {
+            project.data { ds ->
+                Outbox.seen(ds, row.id, seq)
+                row.fields.values.maxByOrNull { it.seq }?.by?.takeIf { it.isNotEmpty() }?.let { Outbox.edited(ds, row.id, it) }
+            }
+        }
         return wrote
     }
 

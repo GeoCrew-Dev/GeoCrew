@@ -196,6 +196,7 @@
     <string name="measure_area_value">面积 %1$s</string>
     <string name="tool_bookmarks">书签</string>
     <string name="tool_lock_rotation">锁定旋转</string>
+    <string name="tool_editors">编辑者</string>
     <string name="tool_unlock_rotation">解锁旋转</string>
     <string name="bookmark_add">添加</string>
     <string name="bookmark_add_title">添加书签</string>
