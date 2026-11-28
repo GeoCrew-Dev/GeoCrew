@@ -194,6 +194,29 @@ internal object MapLabels {
         if (ring.size < 3) 0.0 else (ring.zipWithNext() + (ring.last() to ring.first())).sumOf { (a, b) -> a.first * b.second - b.first * a.second } / 2
 
     // White text with a dark halo, readable on imagery.
+    /**
+     * The mark of a feature with a conflict to settle (protocol v1 6.5): an
+     * amber disc with a white exclamation mark and a white rim. GeoCrew's own
+     * mark, drawn over the map, not a field of the feature.
+     */
+    fun conflictMark(density: Float): Bitmap {
+        val size = ceil(18f * density).toInt()
+        val bitmap = createBitmap(size, size)
+        val canvas = Canvas(bitmap)
+        val r = size / 2f
+        canvas.drawCircle(r, r, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE })
+        canvas.drawCircle(r, r, r - 1.5f * density, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(255, 143, 0) })
+        val bang = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 13f * density
+            typeface = Typeface.DEFAULT_BOLD
+            textAlign = Paint.Align.CENTER
+        }
+        val metrics = bang.fontMetrics
+        canvas.drawText("!", r, r - (metrics.ascent + metrics.descent) / 2, bang)
+        return bitmap
+    }
+
     // [text] in white bold over [under] in smaller, plainer type, each with a dark halo to read on any map.
     private fun draw(text: String?, under: String?, density: Float): Bitmap {
         val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
