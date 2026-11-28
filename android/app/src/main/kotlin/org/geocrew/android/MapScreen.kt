@@ -302,6 +302,7 @@ fun MapScreen(
     var exported by remember { mutableStateOf<File?>(null) }
     val syncFailures = syncTexts()
     val syncedText = stringResource(R.string.team_synced)
+    val sentOnlyText = stringResource(R.string.team_sent_only)
     var exporting by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val modified = collections.values.any { it.flag("projectModified") }
@@ -1239,8 +1240,10 @@ fun MapScreen(
                 reload()
                 val out = done.output.jsonObject
                 val sent = (out["sent"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
-                val pulled = (out["pulled"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
-                scope.launch { snackbar.showSnackbar(syncedText.format(sent, pulled)) }
+                // Nothing comes in while edits are unsaved (pulled is null then): said so, not as nothing received.
+                val pulled = (out["pulled"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+                val said = if (pulled == null) sentOnlyText.format(sent) else syncedText.format(sent, pulled)
+                scope.launch { snackbar.showSnackbar(said) }
             }
             else -> failure = syncFailures.of(done)
         }

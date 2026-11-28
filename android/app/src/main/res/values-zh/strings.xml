@@ -572,4 +572,6 @@
     <plurals name="team_rejected">
         <item quantity="other">未能提交 %d 条</item>
     </plurals>
+    <string name="team_invite_none">你没有邀请权限</string>
+    <string name="team_sent_only">已上传 %1$d 条；保存修改后才能收到别人的修改</string>
 </resources>
