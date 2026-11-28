@@ -72,6 +72,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.geocrew.core.action.Outcome
 import org.geocrew.storage.AttachmentActions
+import org.geocrew.storage.SyncActions
 
 /** Where a new attachment comes from: the app's camera, the phone's photos, or any file. */
 enum class AttachmentSource { CAMERA, GALLERY, FILE }
@@ -183,10 +184,10 @@ private fun AttachmentTile(file: JsonObject, modifier: Modifier) {
     }
 }
 
-/** A photo shown whole, on black, with a way to open it in another app. */
+/** A photo shown whole, on black, with a way to open it in another app; [note] under its name, when there is one. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun PhotoViewer(file: JsonObject, onDismiss: () -> Unit) {
+internal fun PhotoViewer(file: JsonObject, note: String? = null, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val path = file.text("path").orEmpty()
     val name = file.text("name").orEmpty()
@@ -200,7 +201,12 @@ internal fun PhotoViewer(file: JsonObject, onDismiss: () -> Unit) {
             containerColor = Color.Black,
             topBar = {
                 TopAppBar(
-                    title = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = {
+                        Column {
+                            Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.7f)) }
+                        }
+                    },
                     navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Rounded.Close, stringResource(R.string.close)) } },
                     actions = {
                         IconButton(onClick = { openWith(context, File(path), openText) }) { Icon(Icons.AutoMirrored.Rounded.OpenInNew, openText) }
@@ -219,6 +225,18 @@ internal fun PhotoViewer(file: JsonObject, onDismiss: () -> Unit) {
                     ?.onFailure { Icon(Icons.Rounded.Image, null, tint = Color.White, modifier = Modifier.size(48.dp)) }
             }
         }
+    }
+}
+
+/** Fetches [file]'s original from the team's workspace (protocol v1 9.2): null once it is here, else what to tell the user. */
+internal suspend fun fetchAttachment(graph: AppGraph, texts: SyncTexts, file: JsonObject): String? {
+    val params = buildJsonObject {
+        put("file", file.text("file").orEmpty())
+        put("type", file.text("type").orEmpty())
+    }
+    return when (val done = graph.invoke(SyncActions.FILE, params)) {
+        is Outcome.Done -> null
+        else -> texts.of(done)
     }
 }
 

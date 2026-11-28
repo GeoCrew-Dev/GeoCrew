@@ -41,6 +41,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -158,6 +159,7 @@ fun FeatureForm(
     area: Boolean? = null,
     attachments: List<JsonObject>? = null,
     importFile: (suspend (Uri) -> JsonObject?)? = null,
+    fetchFile: (suspend (JsonObject) -> String?)? = null,
 ) {
     // What is deleted: a point, or with [area] a line (false) or an area (true).
     val deleteText = stringResource(when (area) { null -> R.string.feature_delete; false -> R.string.line_delete; true -> R.string.area_delete })
@@ -199,6 +201,10 @@ fun FeatureForm(
     val files = remember(attachments) { mutableStateListOf<JsonObject>().apply { attachments?.let(::addAll) } }
     var adding by remember { mutableStateOf(false) }
     var viewing by remember { mutableStateOf<JsonObject?>(null) }
+    // A photo shown by its thumbnail, its original not here: why.
+    var viewingNote by remember { mutableStateOf<String?>(null) }
+    var fetching by remember { mutableStateOf(false) }
+    var fetchProblem by remember { mutableStateOf<String?>(null) }
     var addFailed by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val openText = stringResource(R.string.attachment_open_with)
@@ -397,10 +403,29 @@ fun FeatureForm(
                             onOpen = { file ->
                                 val path = (file["path"] as? JsonPrimitive)?.contentOrNull
                                 val type = (file["type"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                                fun open() {
+                                    viewingNote = null
+                                    if (type.startsWith("image/")) viewing = file else openWith(context, File(path!!), openText)
+                                }
                                 when {
-                                    path == null || !File(path).exists() -> Unit
-                                    type.startsWith("image/") -> viewing = file
-                                    else -> openWith(context, File(path), openText)
+                                    path == null -> Unit
+                                    File(path).exists() -> open()
+                                    // Someone else's photo: its original comes from the team when it is opened (protocol v1 9.2).
+                                    fetchFile != null -> scope.launch {
+                                        fetching = true
+                                        val problem = fetchFile(file)
+                                        fetching = false
+                                        val thumb = (file["thumbPath"] as? JsonPrimitive)?.contentOrNull
+                                        when {
+                                            problem == null -> open()
+                                            // Not up yet: the thumbnail stands in for it (protocol v1 9.3).
+                                            thumb != null && type.startsWith("image/") -> {
+                                                viewingNote = problem
+                                                viewing = JsonObject(file + ("path" to JsonPrimitive(thumb)))
+                                            }
+                                            else -> fetchProblem = problem
+                                        }
+                                    }
                                 }
                             },
                             onRemove = { files.remove(it) },
@@ -439,7 +464,23 @@ fun FeatureForm(
             }
         }
     }
-    viewing?.let { PhotoViewer(it, onDismiss = { viewing = null }) }
+    viewing?.let { PhotoViewer(it, note = viewingNote, onDismiss = { viewing = null }) }
+    if (fetching) {
+        // An original on its way from the team: it takes a while on a weak signal.
+        AppDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.attachment_fetching)) },
+            text = { LinearProgressIndicator(Modifier.fillMaxWidth()) },
+            confirmButton = {},
+        )
+    }
+    fetchProblem?.let { message ->
+        AppDialog(
+            onDismissRequest = { fetchProblem = null },
+            confirmButton = { TextButton(onClick = { fetchProblem = null }) { Text(stringResource(R.string.ok)) } },
+            text = { Text(message) },
+        )
+    }
     if (measuring && attitude != null) {
         ClinometerScreen(
             declination = remember { declinationHere() },

@@ -19,6 +19,7 @@ import org.geocrew.core.action.Stability
 import org.geocrew.core.sync.HttpTransport
 import org.geocrew.core.sync.KeyChanged
 import org.geocrew.core.sync.Pins
+import org.geocrew.core.sync.Received
 import org.geocrew.core.sync.ServerError
 import org.geocrew.core.sync.ServerKey
 import org.geocrew.core.sync.SyncClient
@@ -194,6 +195,27 @@ class SyncActions(
             )
         },
         SyncAction(
+            FILE, "Fetch attachment file",
+            "Fetches the file [file] (its SHA-256) of type [type], an attachment's original or thumbnail, from the workspace the open " +
+                "project syncs with into the project's attachment folder, going on from where an earlier try stopped; gives its path. " +
+                "not_uploaded: it is not up yet",
+            Risk.VIEW, FILE_PARAMS, """{"file": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "type": "image/jpeg"}""",
+        ) { p ->
+            val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
+            val account = accounts.of(project.id) ?: return@SyncAction ActionResult.Failed(NOT_LINKED, "the project syncs with no workspace")
+            val sha = p.text("file")!!
+            // The hash names the file in the attachment folder: nothing else may.
+            if (!HASH.matches(sha)) return@SyncAction ActionResult.Failed(BAD_REQUEST, "file is a SHA-256 in lower-case hex")
+            val type = p.text("type")!!
+            remote {
+                when (ProjectSync(project, SyncClient(transport(account.server, account.pin)), account).fetch(sha, type)) {
+                    Received.DONE -> ActionResult.Done(buildJsonObject { put("path", AttachmentFiles.fileOf(project.attachments, sha, type).path) })
+                    Received.NOT_UPLOADED -> ActionResult.Failed(NOT_UPLOADED, "the file is not uploaded yet")
+                    Received.BROKEN -> ActionResult.Failed(BROKEN, "what came is not the file its hash names")
+                }
+            }
+        },
+        SyncAction(
             CONFLICTS, "Conflicts",
             "The conflicts of the open project waiting to be settled (protocol v1 6.5), as their records came: the layer, the feature (fid, " +
                 "name), the field (or geometry), and the value kept against the one that lost, each with whose it is and when",
@@ -277,6 +299,7 @@ class SyncActions(
         const val STATUS = "sync.status"
         const val KEY = "sync.key"
         const val CONFLICTS = "sync.conflicts"
+        const val FILE = "sync.file"
         const val RESOLVE = "sync.resolve"
 
         /** [RESOLVE]'s choices (protocol v1 8.3): keep the value as it is, or take the one that lost. */
@@ -294,6 +317,10 @@ class SyncActions(
         const val BAD_REQUEST = "invalid"
         const val UNTRUSTED = "untrusted"
         const val KEY_CHANGED = "key_changed"
+        const val NOT_UPLOADED = "not_uploaded"
+        const val BROKEN = "broken"
+
+        private val HASH = Regex("[0-9a-f]{64}")
 
         private fun schema(s: String) = Json.parseToJsonElement(s).jsonObject
 
@@ -309,6 +336,10 @@ class SyncActions(
         )
         private val KEY_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["server"], "properties": {"server": {"type": "string"}}}""",
+        )
+        private val FILE_PARAMS = schema(
+            """{"type": "object", "additionalProperties": false, "required": ["file", "type"],
+                "properties": {"file": {"type": "string"}, "type": {"type": "string"}}}""",
         )
         private val RESOLVE_PARAMS = schema(
             """{"type": "object", "additionalProperties": false, "required": ["conflict", "choose"],

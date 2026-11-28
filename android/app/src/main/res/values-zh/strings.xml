@@ -572,6 +572,8 @@
     <string name="team_key_matches">一致</string>
     <string name="team_fingerprint">服务器指纹</string>
     <string name="sync_forbidden">没有权限</string>
+    <string name="attachment_fetching">正在下载</string>
+    <string name="attachment_not_uploaded">原图还没上传</string>
     <string name="conflicts">冲突</string>
     <string name="conflicts_none">没有冲突</string>
     <string name="conflicts_view">查看</string>

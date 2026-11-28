@@ -13,6 +13,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -36,23 +37,33 @@ class LiveSyncTest {
     private val server: String? = InstrumentationRegistry.getArguments().getString("geocrewServer")?.takeIf { it.isNotBlank() }
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @Test
-    fun aPhotoReachesTheServerAndIsTakenOffAgain() {
-        val base = server ?: return
-        NativeData.setup(context)
-        val root = File(context.filesDir, "GeoCrew-live").apply { deleteRecursively() }
-        val accounts = File(context.noBackupFilesDir, "sync-live").apply { deleteRecursively() }
-        val workspace = Workspace(Projects(root, File(context.noBackupFilesDir, "journals-live").apply { deleteRecursively() }))
-        val registry = ActionRegistry().apply {
+    // A phone of its own: its projects, its accounts, its actions.
+    private class Phone(context: android.content.Context, name: String) {
+        val accounts = File(context.noBackupFilesDir, "sync-$name").apply { deleteRecursively() }
+        val workspace = Workspace(
+            Projects(File(context.filesDir, "GeoCrew-$name").apply { deleteRecursively() }, File(context.noBackupFilesDir, "journals-$name").apply { deleteRecursively() }),
+        )
+        private val registry = ActionRegistry().apply {
             workspace.actions.forEach(::register)
             AttachmentActions(workspace, context.filesDir).actions.forEach(::register)
             SyncActions(workspace, accounts).actions.forEach(::register)
         }
-        fun run(action: String, params: String = "{}"): kotlinx.serialization.json.JsonObject {
+
+        fun run(action: String, params: String = "{}"): JsonObject {
             val done = runBlocking { registry.invoke(Caller.USER, action, Json.parseToJsonElement(params).jsonObject) }
             assertTrue(done is Outcome.Done, "$action: $done")
             return done.output.jsonObject
         }
+    }
+
+    @Test
+    fun aPhotoGoesToTheServerToATeammateAndIsTakenOffAgain() {
+        val base = server ?: return
+        NativeData.setup(context)
+        val leader = Phone(context, "live-leader")
+        val workspace = leader.workspace
+        val accounts = leader.accounts
+        fun run(action: String, params: String = "{}") = leader.run(action, params)
 
         run(Workspace.CREATE, """{"name": "联调照片", "language": "zh"}""")
         run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
@@ -77,7 +88,7 @@ class LiveSyncTest {
         )
         run(Editing.SAVE, """{"layer": "野外点"}""")
 
-        run(SyncActions.SHARE, """{"server": "$base", "nickname": "组长", "device": "emulator"}""")
+        val invite = run(SyncActions.SHARE, """{"server": "$base", "nickname": "组长", "device": "emulator"}""").getValue("invite_code").jsonPrimitive.content
         val status = run(SyncActions.STATUS)
         assertEquals(0 to 0, status.getValue("files").jsonPrimitive.int to status.getValue("rejected").jsonPrimitive.int, status.toString())
 
@@ -91,6 +102,19 @@ class LiveSyncTest {
         val row = client.pull(account.workspace, account.token, 0).rows.single { it.layer == "attachments" }
         assertEquals(JsonPrimitive(file), row.fields.getValue("file").value)
 
+        // A teammate joins: the photo is on the feature, its thumbnail here, its original when it is opened.
+        val member = Phone(context, "live-member")
+        member.run(SyncActions.JOIN, """{"server": "$base", "invite_code": "$invite", "nickname": "组员", "device": "emulator 2", "language": "zh"}""")
+        val theirs = member.workspace.current!!
+        val theirStore = theirs.target("野外点").store
+        val theirFid = theirStore.features().single().fid
+        assertEquals(listOf(file), theirStore.attachments(theirFid).map { it.file })
+        val thumb = photo.getValue("thumb").jsonPrimitive.content
+        assertTrue(File(theirs.attachments, "$thumb.jpg").isFile, "the thumbnail came with the pull")
+        assertTrue(!File(theirs.attachments, "$file.jpg").exists(), "the original waits to be opened")
+        val opened = member.run(SyncActions.FILE, """{"file": "$file", "type": "image/jpeg"}""")
+        assertContentEquals(jpeg.readBytes(), File(opened.getValue("path").jsonPrimitive.content).readBytes())
+
         // Taken off: the deletion goes from the seq the pull saw, so the server takes it, with no conflict.
         val fid = workspace.current!!.target("野外点").store.features().single().fid
         run(Editing.ATTACHMENTS, """{"layer": "野外点", "fid": $fid, "attachments": []}""")
@@ -100,5 +124,8 @@ class LiveSyncTest {
         val after = client.pull(account.workspace, account.token, 0)
         assertTrue(after.rows.single { it.layer == "attachments" }.deleted, "deleted on the server")
         assertTrue(after.conflicts.isEmpty(), after.conflicts.toString())
+        // And off the teammate's feature at their next sync.
+        member.run(SyncActions.NOW)
+        assertTrue(theirStore.attachments(theirFid).isEmpty())
     }
 }

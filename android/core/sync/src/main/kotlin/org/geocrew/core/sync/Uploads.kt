@@ -1,10 +1,58 @@
 package org.geocrew.core.sync
 
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.security.MessageDigest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
+
+/** What became of a file fetched (protocol v1 9.2). */
+enum class Received {
+    /** The file is here, whole and the one its hash names. */
+    DONE,
+
+    /** It is not uploaded yet: a thumbnail stands in for it till then (protocol v1 9.3). */
+    NOT_UPLOADED,
+
+    /** What came is not the file its hash names; nothing is kept. */
+    BROKEN,
+}
+
+/**
+ * Fetches file [sha256] of [workspace] into [target] (protocol v1 9.2), by way
+ * of a part file next to it, so a download cut short goes on from where it
+ * stopped the next time; the file takes its place only once its hash is
+ * right. A file already there is not fetched again. Network failures and
+ * other refusals are thrown.
+ */
+fun SyncClient.receiveFile(workspace: String, token: String, sha256: String, target: File): Received {
+    if (target.isFile) return Received.DONE
+    target.parentFile?.mkdirs()
+    val part = File(target.path + ".part")
+    try {
+        fetchFile(workspace, token, sha256, if (part.isFile) part.length() else 0) { whole -> FileOutputStream(part, !whole) }
+    } catch (e: ServerError) {
+        if (e.code == "not_uploaded") return Received.NOT_UPLOADED
+        throw e
+    }
+    val digest = MessageDigest.getInstance("SHA-256")
+    part.inputStream().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            digest.update(buffer, 0, n)
+        }
+    }
+    if (digest.digest().joinToString("") { "%02x".format(it) } != sha256) {
+        part.delete()
+        return Received.BROKEN
+    }
+    if (!part.renameTo(target) && !target.isFile) throw IOException("cannot keep ${target.name}")
+    return Received.DONE
+}
 
 /** What became of a file sent (protocol v1 9.2). */
 enum class Sent {

@@ -50,6 +50,7 @@ internal class SyncTexts(
     private val untrusted: String,
     private val keyChanged: String,
     private val forbidden: String,
+    private val notUploaded: String,
     private val failed: String,
 ) {
     fun of(outcome: Outcome): String = when ((outcome as? Outcome.Failed)?.code) {
@@ -64,6 +65,7 @@ internal class SyncTexts(
         SyncActions.UNTRUSTED -> untrusted
         SyncActions.KEY_CHANGED -> keyChanged
         "forbidden" -> forbidden
+        SyncActions.NOT_UPLOADED -> notUploaded
         else -> failed.format((outcome as? Outcome.Failed)?.message ?: outcome.toString())
     }
 }
@@ -81,6 +83,7 @@ internal fun syncTexts() = SyncTexts(
     untrusted = stringResource(R.string.sync_untrusted),
     keyChanged = stringResource(R.string.sync_key_changed),
     forbidden = stringResource(R.string.sync_forbidden),
+    notUploaded = stringResource(R.string.attachment_not_uploaded),
     failed = stringResource(R.string.action_failed),
 )
 

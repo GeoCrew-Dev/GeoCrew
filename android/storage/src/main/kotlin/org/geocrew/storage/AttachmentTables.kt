@@ -24,6 +24,10 @@ internal object AttachmentTables {
     private const val EXTENSION = "gpkg_related_tables"
     private const val DEFINITION = "http://www.geopackage.org/18-000.html"
 
+    /** The thumbnails the project's attachments name, each once. */
+    fun thumbs(dataset: VectorDataset): List<String> =
+        if (!exists(dataset, TABLE)) emptyList() else rows(dataset, "SELECT DISTINCT thumb FROM $TABLE WHERE thumb IS NOT NULL").mapNotNull { it["thumb"] }
+
     /** The mapping table of the layer whose id is [layerId]. */
     fun mapping(layerId: String): String = "geocrew_attachments_" + layerId.replace("-", "")
 

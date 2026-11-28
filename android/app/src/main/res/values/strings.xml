@@ -603,6 +603,8 @@
     <string name="team_key_matches">Matches</string>
     <string name="team_fingerprint">Server key</string>
     <string name="sync_forbidden">Not allowed</string>
+    <string name="attachment_fetching">Downloading</string>
+    <string name="attachment_not_uploaded">The original is not uploaded yet</string>
     <string name="conflicts">Conflicts</string>
     <string name="conflicts_none">No conflicts</string>
     <string name="conflicts_view">View</string>

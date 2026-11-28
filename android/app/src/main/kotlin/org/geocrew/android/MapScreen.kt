@@ -1818,6 +1818,7 @@ fun MapScreen(
                     ?.takeUnless { it.endsWith("Point") }?.contains("Polygon"),
                 attachments = selectedFiles,
                 importFile = { importAttachment(context, graph, it) },
+                fetchFile = { fetchAttachment(graph, syncFailures, it) },
             )
         }
     }
