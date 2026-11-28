@@ -39,7 +39,7 @@
   - 提交前确认 `gofmt -l .` 输出为空，`go vet ./...` 通过。
 - **协议**：
   - OpenAPI 检查：在 `protocol/` 下运行 `npx --yes @redocly/cli@1.34.5 lint docs/openapi.yaml`。
-  - 一致性检查：先启动服务端（`cd server && go run ./cmd/geocrew-server -data /tmp/geocrew-check -push=false`），再到 `protocol/conformance` 下运行 `go run . -server http://127.0.0.1:8080 -v`。
+  - 一致性检查：先启动服务端（`cd server && go run ./cmd/geocrew-server -data /tmp/geocrew-check -push=false -tls=off`），再到 `protocol/conformance` 下运行 `go run . -server http://127.0.0.1:8080 -v`。
 - **安卓**：`cd android && ./gradlew assembleDebug test lintDebug`，需要 JDK 17 以上和 Android SDK，详见 `android/CLAUDE.md`。
 
 ## 发布

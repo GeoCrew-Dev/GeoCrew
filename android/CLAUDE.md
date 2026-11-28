@@ -25,5 +25,5 @@
 - 先取 GeoCrew-Native 的 AAR：`android/scripts/fetch-native.sh`（要装好并登录 `gh`）。它按 `android/native.properties` 里写的 CI 运行编号下载，并核对 SHA-256。要试 GeoCrew-Native 的改动，把环境变量 `GEOCREW_NATIVE_AAR` 设成本地编出的 AAR 再运行。换版本就改 `native.properties`。
 - `cd android && ./gradlew assembleDebug test lintDebug`
 - 仪器测试要连着手机或模拟器：`./gradlew :storage:connectedDebugAndroidTest`。用到原生库的代码放安卓库模块（现在是 `storage`），它们只编译时引用 AAR，由 `app` 打包。
-- 同步客户端和真的服务端联调：在 `server/` 下 `go run ./cmd/geocrew-server -data /tmp/geocrew-live -push=false`，再 `GEOCREW_TEST_SERVER=http://127.0.0.1:8080 ./gradlew :core:sync:test --rerun-tasks`；不设这个变量时联调测试跳过。
+- 同步客户端和真的服务端联调：在 `server/` 下 `go run ./cmd/geocrew-server -data /tmp/geocrew-live -push=false -tls=off`，再 `GEOCREW_TEST_SERVER=http://127.0.0.1:8080 ./gradlew :core:sync:test --rerun-tasks`；不设这个变量时联调测试跳过。
 - CI 是根目录的 `.github/workflows/android.yml`，改了 `android/` 或 `protocol/testdata/` 时运行。

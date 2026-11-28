@@ -11,6 +11,8 @@ services:
       GEOCREW_NAME: "GeoCrew Server"
       GEOCREW_MAX_UPLOAD_MB: "32"
       GEOCREW_LOG_FORMAT: "json"
+      # HTTPS with a certificate the server makes itself (ADR 0014); "off" behind a reverse proxy that does HTTPS.
+      # GEOCREW_TLS: "off"
       # Daily backups into the volume below; point it at another disk in production.
       # GEOCREW_BACKUP_DIR: "/backups"
     volumes:

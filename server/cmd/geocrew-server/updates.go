@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -120,8 +121,13 @@ func confirmTrial(ctx context.Context, cfg config.Config, st update.State, log *
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}
-	url := "http://" + net.JoinHostPort(host, port) + "/healthz"
-	client := &http.Client{Timeout: 3 * time.Second}
+	// The server's own health on this machine: over TLS when it serves TLS, its own certificate not checked.
+	scheme := "https://"
+	if cfg.TLS == config.TLSOff {
+		scheme = "http://"
+	}
+	url := scheme + net.JoinHostPort(host, port) + "/healthz"
+	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		select {

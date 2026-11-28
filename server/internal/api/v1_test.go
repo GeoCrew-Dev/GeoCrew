@@ -16,6 +16,7 @@ type v1JoinedResp struct {
 		Leader        string  `json:"leader"`
 		ArchivedAt    *string `json:"archived_at"`
 		InviteCode    string  `json:"invite_code"`
+		Fingerprint   string  `json:"fingerprint"`
 		AccessVersion int64   `json:"access_version"`
 	} `json:"workspace"`
 	Member struct {
@@ -63,10 +64,16 @@ func TestV1Info(t *testing.T) {
 
 func TestV1JoinAndWorkspace(t *testing.T) {
 	var store v1.Store
-	e := newEnvWith(t, func(s *Server) { store = s.V1 })
+	e := newEnvWith(t, func(s *Server) {
+		store = s.V1
+		s.Fingerprint = "the-pinned-key"
+	})
 	var leader, member v1JoinedResp
 	if c := e.call("POST", "/api/v1/workspaces", "", map[string]string{"name": " 2026 秋季填图 ", "nickname": "张三", "device": "Galaxy S24"}, &leader); c != 201 {
 		t.Fatalf("create: %d", c)
+	}
+	if leader.Workspace.Fingerprint != "the-pinned-key" {
+		t.Fatalf("the workspace names the key phones pin: %+v", leader.Workspace)
 	}
 	if leader.Token == "" || leader.Workspace.InviteCode == "" || leader.Workspace.Leader != leader.Member.ID ||
 		leader.Workspace.Name != "2026 秋季填图" || leader.Member.Roles == nil {

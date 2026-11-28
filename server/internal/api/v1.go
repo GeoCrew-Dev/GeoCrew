@@ -63,6 +63,7 @@ type v1WorkspaceJSON struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	ArchivedAt    *time.Time `json:"archived_at,omitempty"`
 	InviteCode    string     `json:"invite_code,omitempty"`
+	Fingerprint   string     `json:"fingerprint,omitempty"`
 	AccessVersion int64      `json:"access_version"`
 }
 
@@ -90,7 +91,7 @@ func v1Member(m v1.Member) v1MemberJSON {
 // v1WorkspaceFor is the workspace as member sees it: the invite code only
 // for those who may manage members (protocol 5.1).
 func (s *Server) v1WorkspaceFor(ctx context.Context, ws v1.Workspace, m v1.Member) (v1WorkspaceJSON, error) {
-	out := v1WorkspaceJSON{ID: ws.ID, Name: ws.Name, Leader: ws.Leader, CreatedAt: ws.CreatedAt.UTC(), AccessVersion: m.AccessVersion}
+	out := v1WorkspaceJSON{ID: ws.ID, Name: ws.Name, Leader: ws.Leader, CreatedAt: ws.CreatedAt.UTC(), Fingerprint: s.Fingerprint, AccessVersion: m.AccessVersion}
 	if ws.ArchivedAt != nil {
 		at := ws.ArchivedAt.UTC()
 		out.ArchivedAt = &at
