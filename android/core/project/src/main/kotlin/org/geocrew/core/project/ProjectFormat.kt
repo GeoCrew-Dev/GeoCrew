@@ -123,6 +123,23 @@ object ProjectFormat {
         "(id TEXT PRIMARY KEY NOT NULL, layer_id TEXT NOT NULL, row TEXT NOT NULL, field TEXT, kind TEXT NOT NULL, kept TEXT, lost TEXT, " +
         "resolved INTEGER NOT NULL DEFAULT 0)"
 
+    /**
+     * A linked project's attachment rows (protocol v1 9.1): each attachment the
+     * workspace has or is to have, by its UUID, and the seq a pull last saw it
+     * at (0 until one does): its next change's base seq, as [ROWS_TABLE] keeps
+     * a feature's.
+     */
+    const val ATTACHMENT_ROWS_TABLE = "geocrew_attachment_rows"
+    const val ATTACHMENT_ROWS_SCHEMA = "CREATE TABLE IF NOT EXISTS $ATTACHMENT_ROWS_TABLE (uuid TEXT PRIMARY KEY NOT NULL, seq INTEGER NOT NULL DEFAULT 0)"
+
+    /**
+     * Attachment files a linked project has yet to upload (protocol v1 9.2,
+     * 9.3), by hash, with their type: thumbnails (thumb 1) go up before the
+     * rows that name them, originals (thumb 0) after, a while each sync.
+     */
+    const val UPLOADS_TABLE = "geocrew_uploads"
+    const val UPLOADS_SCHEMA = "CREATE TABLE IF NOT EXISTS $UPLOADS_TABLE (sha TEXT PRIMARY KEY NOT NULL, type TEXT NOT NULL, thumb INTEGER NOT NULL)"
+
     /** The project's key in its own table for the seq its last pull reached (protocol v1 8.2): where the next one starts. */
     const val PULLED_KEY = "pulled_seq"
 

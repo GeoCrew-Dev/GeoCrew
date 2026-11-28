@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.geocrew.core.edit.Attachment
 import org.geocrew.core.edit.Feature
 import org.geocrew.core.edit.Saved
 import org.geocrew.core.project.ProjectFormat
@@ -35,6 +36,9 @@ internal object Outbox {
     /** A deletion of the row. */
     const val DELETED = "deleted"
 
+    /** The system table attachment rows are in (protocol v1 9.1): a change's layer for them. */
+    const val ATTACHMENTS = "attachments"
+
     /** The project's key in its own table naming the workspace it is linked to. */
     const val WORKSPACE_KEY = "workspace"
 
@@ -53,9 +57,18 @@ internal object Outbox {
     /**
      * Records [changes] that a save made to layer [layer] (id [layerId]), when
      * the project is linked. A feature the workspace has not had goes whole: a
-     * new one, or one made before the project was linked, read with [whole].
+     * new one, or one made before the project was linked, read with [whole],
+     * with all its attachments ([attachmentsOf]).
      */
-    fun record(ds: VectorDataset, layer: String, layerId: String, changes: List<Saved>, whole: (Long) -> Feature?, now: Long = System.currentTimeMillis()) {
+    fun record(
+        ds: VectorDataset,
+        layer: String,
+        layerId: String,
+        changes: List<Saved>,
+        whole: (Long) -> Feature?,
+        attachmentsOf: (Long) -> List<Attachment> = { emptyList() },
+        now: Long = System.currentTimeMillis(),
+    ) {
         if (changes.isEmpty() || !linked(ds)) return
         ds.sql(ProjectFormat.ROWS_SCHEMA)
         ds.sql(ProjectFormat.OUTBOX_SCHEMA)
@@ -70,7 +83,7 @@ internal object Outbox {
             var sent = change
             if (known == null && !change.added) {
                 val f = whole(change.fid) ?: continue
-                sent = change.copy(values = f.properties, geometrySet = true, geometry = f.geometry)
+                sent = change.copy(values = f.properties, geometrySet = true, geometry = f.geometry, attachments = attachmentsOf(change.fid), attachmentsBefore = emptyList())
             }
             val row = known ?: newRow(ds, layerId, change.fid)
             // A field with no edit time of its own (one a new feature was not given) has the feature's latest.
@@ -80,16 +93,94 @@ internal object Outbox {
                 put(ds, row, layerId, field, value, change.times[name] ?: latest)
             }
             if (sent.geometrySet) put(ds, row, layerId, GEOMETRY, sent.geometry ?: JsonNull, change.geometryTime ?: latest)
+            sent.attachments?.let { recordAttachments(ds, layerId, row, sent.attachmentsBefore, it, now) }
         }
+    }
+
+    /**
+     * The attachment rows of the feature that is row [row] of layer [layerId]
+     * (protocol v1 9.1): one new goes whole and its files wait to be uploaded;
+     * one changed goes as what changed; one taken off goes deleted, when the
+     * workspace has or is to have it. A deleted feature's stay as they are:
+     * the row comes back with them if it is restored.
+     */
+    private fun recordAttachments(ds: VectorDataset, layerId: String, row: String, before: List<Attachment>, after: List<Attachment>, now: Long) {
+        ds.sql(ProjectFormat.ATTACHMENT_ROWS_SCHEMA)
+        ds.sql(ProjectFormat.UPLOADS_SCHEMA)
+        val had = before.associateBy { it.id }
+        for (a in after) {
+            val fields = attachmentFields(a, layerId, row)
+            val old = had[a.id]?.takeIf { knownAttachment(ds, a.id) }
+            if (old == null) {
+                ds.sql("INSERT OR IGNORE INTO ${ProjectFormat.ATTACHMENT_ROWS_TABLE} (uuid) VALUES (${quote(a.id)})")
+                upload(ds, a.file, a.type, thumb = false)
+                a.thumb?.let { upload(ds, it, "image/jpeg", thumb = true) }
+                for ((field, value) in fields) put(ds, a.id, ATTACHMENTS, field, value, now)
+            } else {
+                val was = attachmentFields(old, layerId, row)
+                for ((field, value) in fields) if (was[field] != value) put(ds, a.id, ATTACHMENTS, field, value, now)
+            }
+        }
+        val kept = after.mapTo(HashSet()) { it.id }
+        for (a in before) if (a.id !in kept && knownAttachment(ds, a.id)) put(ds, a.id, ATTACHMENTS, DELETED, JsonPrimitive(true), now)
+    }
+
+    // An attachment as its row has it (protocol v1 9.1); a name of more than 255 characters is cut.
+    private fun attachmentFields(a: Attachment, layerId: String, row: String): Map<String, JsonElement> = linkedMapOf(
+        "target_layer" to JsonPrimitive(layerId),
+        "target_row" to JsonPrimitive(row),
+        "file" to JsonPrimitive(a.file),
+        "thumb" to (a.thumb?.let(::JsonPrimitive) ?: JsonNull),
+        "type" to JsonPrimitive(a.type),
+        "size" to JsonPrimitive(a.size),
+        "name" to (a.name.takeIf { it.isNotBlank() }?.let { JsonPrimitive(it.take(255)) } ?: JsonNull),
+        "meta" to (a.meta ?: JsonNull),
+    )
+
+    private fun knownAttachment(ds: VectorDataset, uuid: String): Boolean =
+        rows(ds, "SELECT uuid FROM ${ProjectFormat.ATTACHMENT_ROWS_TABLE} WHERE uuid = ${quote(uuid)}").isNotEmpty()
+
+    // A file to upload; the same one named twice goes once.
+    private fun upload(ds: VectorDataset, sha: String, type: String, thumb: Boolean) {
+        ds.sql("INSERT OR IGNORE INTO ${ProjectFormat.UPLOADS_TABLE} (sha, type, thumb) VALUES (${quote(sha)}, ${quote(type)}, ${if (thumb) 1 else 0})")
+    }
+
+    /** Attachment row [uuid], if this project has it, was last seen at [seq]: its next change's base seq. */
+    fun seenAttachment(ds: VectorDataset, uuid: String, seq: Long) {
+        if (exists(ds, ProjectFormat.ATTACHMENT_ROWS_TABLE)) ds.sql("UPDATE ${ProjectFormat.ATTACHMENT_ROWS_TABLE} SET seq = $seq WHERE uuid = ${quote(uuid)}")
+    }
+
+    /** How many attachment files wait to be uploaded. */
+    fun filesWaiting(ds: VectorDataset): Int =
+        if (!exists(ds, ProjectFormat.UPLOADS_TABLE)) 0 else rows(ds, "SELECT COUNT(*) AS n FROM ${ProjectFormat.UPLOADS_TABLE}").first()["n"]?.toIntOrNull() ?: 0
+
+    /** The files waiting to be uploaded, thumbnails or originals, oldest first: hash and type. */
+    fun uploads(ds: VectorDataset, thumbs: Boolean): List<Pair<String, String>> =
+        if (!exists(ds, ProjectFormat.UPLOADS_TABLE)) {
+            emptyList()
+        } else {
+            rows(ds, "SELECT sha, type FROM ${ProjectFormat.UPLOADS_TABLE} WHERE thumb = ${if (thumbs) 1 else 0} ORDER BY rowid").map { it.getValue("sha")!! to it.getValue("type")!! }
+        }
+
+    /** File [sha] is up, or can never go: no longer waiting. */
+    fun uploaded(ds: VectorDataset, sha: String) {
+        ds.sql("DELETE FROM ${ProjectFormat.UPLOADS_TABLE} WHERE sha = ${quote(sha)}")
     }
 
     /**
      * Queues the features of layer [layer] (id [layerId]) that the workspace
      * has not had, whole, as new rows: the project joins a workspace (protocol
-     * v1 5.6). Features already queued or sent keep their rows, so it can run
-     * again after a share cut short.
+     * v1 5.6), with their attachments ([attachmentsOf]). Features already
+     * queued or sent keep their rows, so it can run again after a share cut short.
      */
-    fun enqueueNew(ds: VectorDataset, layer: String, layerId: String, features: List<Feature>, now: Long = System.currentTimeMillis()) {
+    fun enqueueNew(
+        ds: VectorDataset,
+        layer: String,
+        layerId: String,
+        features: List<Feature>,
+        attachmentsOf: (Long) -> List<Attachment> = { emptyList() },
+        now: Long = System.currentTimeMillis(),
+    ) {
         ds.sql(ProjectFormat.ROWS_SCHEMA)
         ds.sql(ProjectFormat.OUTBOX_SCHEMA)
         val ids = fieldIds(ds, layer)
@@ -98,6 +189,7 @@ internal object Outbox {
             val row = newRow(ds, layerId, f.fid)
             for ((name, value) in f.properties) ids[name]?.let { put(ds, row, layerId, it, value, now) }
             put(ds, row, layerId, GEOMETRY, f.geometry ?: JsonNull, now)
+            attachmentsOf(f.fid).takeIf { it.isNotEmpty() }?.let { recordAttachments(ds, layerId, row, emptyList(), it, now) }
         }
     }
 

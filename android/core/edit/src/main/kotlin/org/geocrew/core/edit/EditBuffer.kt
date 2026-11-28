@@ -49,6 +49,8 @@ data class Edit(val fid: Long, val before: Slot, val after: Slot)
  * store, whether it was [added] (every field given) or [deleted], the [values]
  * set by field name and the [geometry] when [geometrySet], with when each was
  * edited ([times], [geometryTime], [deletedTime]; milliseconds, phone's clock).
+ * When its attachments changed, [attachments] are those it has now and
+ * [attachmentsBefore] those it had (none for a new feature).
  */
 data class Saved(
     val fid: Long,
@@ -60,6 +62,8 @@ data class Saved(
     val times: Map<String, Long> = emptyMap(),
     val geometryTime: Long? = null,
     val deletedTime: Long? = null,
+    val attachments: List<Attachment>? = null,
+    val attachmentsBefore: List<Attachment> = emptyList(),
 )
 
 /** A line of the journal. */
@@ -261,9 +265,13 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal, pr
             for ((fid, slot) in slots) {
                 if (fid < 0 || slot.deleted) continue
                 if (slot.values.isNotEmpty() || slot.geometryChanged) store.update(fid, slot.values, slot.geometryChanged, slot.geometry)
+                val before = slot.attachments?.let { store.attachments(fid) }.orEmpty()
                 slot.attachments?.let { store.setAttachments(fid, it) }
                 written += fid
-                saved += Saved(fid, values = slot.values, geometrySet = slot.geometryChanged, geometry = slot.geometry, times = slot.times, geometryTime = slot.geometryTime)
+                saved += Saved(
+                    fid, values = slot.values, geometrySet = slot.geometryChanged, geometry = slot.geometry, times = slot.times,
+                    geometryTime = slot.geometryTime, attachments = slot.attachments, attachmentsBefore = before,
+                )
             }
             for ((fid, slot) in slots) {
                 if (!slot.deleted) continue
@@ -281,7 +289,7 @@ class EditBuffer(private val store: LayerStore, private val journal: Journal, pr
                 written += fid
                 saved += Saved(
                     stored, added = true, values = f.properties, geometrySet = true, geometry = f.geometry,
-                    times = slot.times, geometryTime = slot.geometryTime,
+                    times = slot.times, geometryTime = slot.geometryTime, attachments = slot.attachments?.takeIf { it.isNotEmpty() },
                 )
             }
             // With the features, in the same transaction: what sync is to send never misses a save (ADR 0008).

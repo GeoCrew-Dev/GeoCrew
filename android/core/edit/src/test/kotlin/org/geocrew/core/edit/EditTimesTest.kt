@@ -45,6 +45,28 @@ class EditTimesTest {
     }
 
     @Test
+    fun attachmentsGoWithWhatTheFeatureHadBefore() {
+        val photo = Attachment("0b6f1c3e-5d2a-4e8b-9f10-2a3b4c5d6e7f", "a".repeat(64), "image/jpeg", 10, "D001.jpg")
+        val sketch = Attachment("1c7a2d4f-6e3b-4f9c-8a21-3b4c5d6e7f80", "b".repeat(64), "image/png", 20, "sketch.png")
+        val made = buffer.add(point(1, 2), values("rock" to "granite"), listOf(photo)).fid
+        val fid = buffer.save().getValue(made)
+        assertEquals(listOf(photo), store.recorded.single().attachments, "a new feature's, none before")
+        assertEquals(emptyList(), store.recorded.single().attachmentsBefore)
+        store.recorded.clear()
+
+        buffer.changeAttachments(fid, listOf(sketch))
+        buffer.save()
+        val saved = store.recorded.single()
+        assertEquals(listOf(sketch), saved.attachments)
+        assertEquals(listOf(photo), saved.attachmentsBefore)
+        store.recorded.clear()
+
+        buffer.changeValues(fid, values("rock" to "gneiss"))
+        buffer.save()
+        assertEquals(null, store.recorded.single().attachments, "attachments not changed: none said")
+    }
+
+    @Test
     fun aDeletionGoesWithItsTime() {
         val fid = store.put("granite")
         now = 4_000
