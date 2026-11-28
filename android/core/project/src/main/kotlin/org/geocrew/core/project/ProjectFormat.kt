@@ -140,6 +140,15 @@ object ProjectFormat {
     const val UPLOADS_TABLE = "geocrew_uploads"
     const val UPLOADS_SCHEMA = "CREATE TABLE IF NOT EXISTS $UPLOADS_TABLE (sha TEXT PRIMARY KEY NOT NULL, type TEXT NOT NULL, thumb INTEGER NOT NULL)"
 
+    /**
+     * Attachment rows a pull brought for features the project has not got yet
+     * (protocol v1 9.1): a feature changed after its photo comes later in a
+     * pull, and one brought back from deletion comes without its photos. Each
+     * row as JSON ({fields, deleted}) and its seq, until its feature is here.
+     */
+    const val PENDING_ATTACHMENTS_TABLE = "geocrew_pending_attachments"
+    const val PENDING_ATTACHMENTS_SCHEMA = "CREATE TABLE IF NOT EXISTS $PENDING_ATTACHMENTS_TABLE (uuid TEXT PRIMARY KEY NOT NULL, row TEXT NOT NULL, seq INTEGER NOT NULL)"
+
     /** The project's key in its own table for the seq its last pull reached (protocol v1 8.2): where the next one starts. */
     const val PULLED_KEY = "pulled_seq"
 

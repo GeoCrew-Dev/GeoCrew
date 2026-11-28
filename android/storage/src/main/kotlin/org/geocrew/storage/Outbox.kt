@@ -161,9 +161,10 @@ internal object Outbox {
         ds.sql("INSERT OR IGNORE INTO ${ProjectFormat.UPLOADS_TABLE} (sha, type, thumb) VALUES (${quote(sha)}, ${quote(type)}, ${if (thumb) 1 else 0})")
     }
 
-    /** Attachment row [uuid], if this project has it, was last seen at [seq]: its next change's base seq. */
+    /** Attachment row [uuid] was last seen at [seq]: its next change's base seq; the workspace has it. */
     fun seenAttachment(ds: VectorDataset, uuid: String, seq: Long) {
-        if (exists(ds, ProjectFormat.ATTACHMENT_ROWS_TABLE)) ds.sql("UPDATE ${ProjectFormat.ATTACHMENT_ROWS_TABLE} SET seq = $seq WHERE uuid = ${quote(uuid)}")
+        ds.sql(ProjectFormat.ATTACHMENT_ROWS_SCHEMA)
+        ds.sql("INSERT OR REPLACE INTO ${ProjectFormat.ATTACHMENT_ROWS_TABLE} (uuid, seq) VALUES (${quote(uuid)}, $seq)")
     }
 
     /** How many attachment files wait to be uploaded. */

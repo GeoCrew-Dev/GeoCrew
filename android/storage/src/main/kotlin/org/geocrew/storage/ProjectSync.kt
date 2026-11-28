@@ -1,10 +1,18 @@
 package org.geocrew.storage
 
 import android.util.Log
+import java.io.IOException
 import java.time.Instant
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.geocrew.core.edit.Attachment
 import org.geocrew.core.edit.FieldType
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.core.project.ProjectFormat.quote
@@ -15,9 +23,11 @@ import org.geocrew.core.sync.PulledConflict
 import org.geocrew.core.sync.PulledLayer
 import org.geocrew.core.sync.PulledRow
 import org.geocrew.core.sync.PushResult
+import org.geocrew.core.sync.Received
 import org.geocrew.core.sync.Sent
 import org.geocrew.core.sync.ServerError
 import org.geocrew.core.sync.SyncClient
+import org.geocrew.core.sync.receiveFile
 import org.geocrew.core.sync.sendFile
 
 /**
@@ -112,13 +122,16 @@ internal class ProjectSync(private val project: Project, private val client: Syn
     /**
      * Brings the workspace's changes since the last pull into the project
      * (protocol v1 8.2, 8.4), page by page: a shared layer the project lacks is
-     * made, rows are written into their layers, conflict records kept. Rows go
-     * straight into the file, not through an edit buffer: they are not this
-     * phone's edits, so nothing goes to the outbox. Fields this phone still has
-     * to send keep its values. Each row's base seq becomes the page's. Call it
-     * with nothing unsaved: edit buffers know nothing of what it writes.
+     * made, rows are written into their layers, attachments onto their features,
+     * conflict records kept. Rows go straight into the file, not through an edit
+     * buffer: they are not this phone's edits, so nothing goes to the outbox.
+     * Fields this phone still has to send keep its values, and their row keeps
+     * its base seq till they are sent, so the server can tell what changed
+     * alongside them; every other row's base becomes the page's seq. Then the
+     * thumbnails the project lacks come, for [thumbsFor] at most. Call it with
+     * nothing unsaved: edit buffers know nothing of what it writes.
      */
-    fun pull(batch: Int): Pulled {
+    fun pull(batch: Int, thumbsFor: Long = THUMBS_MS): Pulled {
         project.data { ds ->
             ds.sql(ProjectFormat.ROWS_SCHEMA)
             ds.sql(ProjectFormat.CONFLICTS_SCHEMA)
@@ -131,14 +144,107 @@ internal class ProjectSync(private val project: Project, private val client: Syn
             val page = client.pull(account.workspace, account.token, since, batch)
             val layers = makeLayers(page.layers)
             val rows = writeRows(page.rows, page.seq)
+            writeAttachments(page.rows.filter { it.layer == Outbox.ATTACHMENTS }, page.seq, rowsCame = rows > 0)
             keepConflicts(page.conflicts)
             done = Pulled(done.rows + rows, done.layers + layers, done.conflicts + page.conflicts.size)
             since = page.seq
             // After the page is written: a pull cut short writes it again, to the same end.
             project.data { ds -> ds.sql("INSERT OR REPLACE INTO ${ProjectFormat.PROJECT_TABLE} (key, value) VALUES (${quote(ProjectFormat.PULLED_KEY)}, ${quote(since.toString())})") }
         } while (page.more)
+        fetchThumbs(until = System.currentTimeMillis() + thumbsFor)
         return done
     }
+
+    // The attachment rows of a page onto the features they hang on (protocol v1 9.1): new, changed or taken off. One
+    // this phone still has a change of to send stands as it is here; one whose feature is not here yet waits for it
+    // ([ProjectFormat.PENDING_ATTACHMENTS_TABLE]), and those waiting are tried again once rows have come.
+    private fun writeAttachments(rows: List<PulledRow>, seq: Long, rowsCame: Boolean) {
+        val waiting = project.data(Outbox::waiting)
+        project.data { ds ->
+            ds.sql(ProjectFormat.ATTACHMENT_ROWS_SCHEMA)
+            ds.sql(ProjectFormat.PENDING_ATTACHMENTS_SCHEMA)
+            val pending = if (rowsCame) rows(ds, "SELECT uuid, row, seq FROM ${ProjectFormat.PENDING_ATTACHMENTS_TABLE}") else emptyList()
+            if (rows.isEmpty() && pending.isEmpty()) return@data
+            ds.begin()
+            try {
+                for (p in pending) {
+                    val o = Json.parseToJsonElement(p.getValue("row")!!).jsonObject
+                    val values = (o["fields"] as? JsonObject).orEmpty()
+                    val deleted = (o["deleted"] as? JsonPrimitive)?.booleanOrNull == true
+                    if (writeAttachment(ds, p.getValue("uuid")!!, values, deleted, p["seq"]?.toLongOrNull() ?: 0)) {
+                        ds.sql("DELETE FROM ${ProjectFormat.PENDING_ATTACHMENTS_TABLE} WHERE uuid = ${quote(p.getValue("uuid")!!)}")
+                    }
+                }
+                for (r in rows) {
+                    if (r.id in waiting) continue
+                    val values = r.fields.mapValues { it.value.value }
+                    if (writeAttachment(ds, r.id, values, r.deleted, seq)) {
+                        ds.sql("DELETE FROM ${ProjectFormat.PENDING_ATTACHMENTS_TABLE} WHERE uuid = ${quote(r.id)}")
+                    } else {
+                        val row = buildJsonObject { put("fields", JsonObject(values)); put("deleted", r.deleted) }
+                        ds.sql("INSERT OR REPLACE INTO ${ProjectFormat.PENDING_ATTACHMENTS_TABLE} (uuid, row, seq) VALUES (${quote(r.id)}, ${quote(row.toString())}, $seq)")
+                    }
+                }
+                ds.commit()
+            } catch (e: Exception) {
+                runCatching { ds.rollback() }
+                throw e
+            }
+        }
+    }
+
+    // One attachment row onto its feature, seen at [seq]; false when the feature is not here (yet).
+    private fun writeAttachment(ds: org.geocrew.nativelib.VectorDataset, id: String, values: Map<String, JsonElement>, deleted: Boolean, seq: Long): Boolean {
+        fun text(field: String) = (values[field] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val layer = project.layers.firstOrNull { it.id == text("target_layer") } ?: return false
+        val fid = Outbox.fidOf(ds, layer.id, text("target_row") ?: return false) ?: return false
+        val store = project.target(layer.name).store
+        val had = store.attachments(fid)
+        val now = if (deleted) {
+            had.filterNot { it.id == id }
+        } else {
+            // A row that is no attachment (a field missing or wrong) is left as it was.
+            val a = runCatching {
+                Attachment(
+                    id = id,
+                    file = text("file")!!,
+                    type = text("type")!!,
+                    size = (values["size"] as? JsonPrimitive)?.longOrNull ?: 0,
+                    name = text("name").orEmpty(),
+                    thumb = text("thumb"),
+                    meta = values["meta"] as? JsonObject,
+                )
+            }.getOrNull() ?: return true
+            if (had.any { it.id == id }) had.map { if (it.id == id) a else it } else had + a
+        }
+        if (now != had) store.setAttachments(fid, now)
+        Outbox.seenAttachment(ds, id, seq)
+        return true
+    }
+
+    // The thumbnails of the project's attachments that are not here yet, until the clock passes [until]; one not
+    // uploaded yet, or that cannot be had, comes another time. The pull is done by now: a failure here is not its.
+    private fun fetchThumbs(until: Long) {
+        for (thumb in project.data(AttachmentTables::thumbs)) {
+            if (System.currentTimeMillis() > until) return
+            val file = AttachmentFiles.fileOf(project.attachments, thumb, "image/jpeg")
+            if (file.isFile) continue
+            try {
+                client.receiveFile(account.workspace, account.token, thumb, file)
+            } catch (e: ServerError) {
+                continue
+            } catch (e: IOException) {
+                return
+            }
+        }
+    }
+
+    /**
+     * Fetches the file [sha] of type [type] into the project's attachment
+     * folder (protocol v1 9.2), going on from where an earlier try stopped:
+     * the original of a photo someone else took, when it is opened.
+     */
+    fun fetch(sha: String, type: String): Received = client.receiveFile(account.workspace, account.token, sha, AttachmentFiles.fileOf(project.attachments, sha, type))
 
     // The shared layers the project lacks, made with their ids; how many. A deleted one is left out (backlog).
     private fun makeLayers(layers: List<PulledLayer>): Int {
@@ -173,10 +279,6 @@ internal class ProjectSync(private val project: Project, private val client: Syn
 
     // [rows] into their layers, each layer in one transaction; how many were written.
     private fun writeRows(rows: List<PulledRow>, seq: Long): Int {
-        // This phone's attachment rows: the seq their next change goes from. Others' come in with the download half (backlog).
-        rows.filter { it.layer == Outbox.ATTACHMENTS }.takeIf { it.isNotEmpty() }?.let { attached ->
-            project.data { ds -> for (r in attached) Outbox.seenAttachment(ds, r.id, seq) }
-        }
         val waiting = project.data(Outbox::waiting)
         var written = 0
         for ((layerId, layerRows) in rows.groupBy { it.layer }) {
@@ -226,7 +328,8 @@ internal class ProjectSync(private val project: Project, private val client: Syn
                 changed.isNotEmpty() || moved
             }
         }
-        project.data { Outbox.seen(it, row.id, seq) }
+        // A row with fields still to send keeps the base they were edited from: the server must see what changed alongside.
+        if (mine.isEmpty()) project.data { Outbox.seen(it, row.id, seq) }
         return wrote
     }
 

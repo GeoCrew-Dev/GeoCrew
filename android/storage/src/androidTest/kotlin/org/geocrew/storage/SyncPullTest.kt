@@ -3,7 +3,10 @@ package org.geocrew.storage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.io.OutputStream
+import java.security.MessageDigest
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -40,6 +43,16 @@ class SyncPullTest {
         val pages = mutableMapOf<Long, String>()
         val pushes = mutableListOf<JsonObject>()
         val resolved = mutableListOf<Pair<String, String>>()
+        val files = mutableMapOf<String, ByteArray>()
+        val fetched = mutableListOf<String>()
+
+        override fun fetch(path: String, token: String?, from: Long, open: (whole: Boolean) -> OutputStream): Reply {
+            val sha = path.substringAfterLast("/")
+            fetched += sha
+            val bytes = files[sha] ?: return Reply(404, """{"error": "not_uploaded", "message": "not up yet"}""")
+            open(true).use { it.write(bytes) }
+            return Reply(200, "")
+        }
 
         override fun send(method: String, path: String, token: String?, body: String?): Reply = when {
             path == "/api/v1/info" -> Reply(200, """{"protocol": 1, "capabilities": ["sync"], "limits": {"max_push_batch": 100, "max_pull_batch": 100, "max_file_size": 1}}""")
@@ -93,6 +106,8 @@ class SyncPullTest {
     }
 
     private fun field(value: String, seq: Long) = """{"value": "$value", "by": "m1", "at": "2026-11-28T10:00:00Z", "seq": $seq}"""
+
+    private fun value(json: String, seq: Long) = """{"value": $json, "by": "m1", "at": "2026-11-28T10:00:00Z", "seq": $seq}"""
 
     private fun point(x: Double, seq: Long) = """{"value": {"type": "Point", "coordinates": [$x, 30.6]}, "by": "m1", "at": "2026-11-28T10:00:00Z", "seq": $seq}"""
 
@@ -155,10 +170,10 @@ class SyncPullTest {
         ProjectSync(project, SyncClient(server), account).pull(100)
         assertEquals(Triple("D001-再改", "本机", 114.31), feature("r1"))
 
-        // Its change goes from the seq it last saw the row at.
+        // Its change goes from the seq the row was at when it was edited: the server sees 远端 came alongside and keeps the later.
         run(SyncActions.NOW)
         val change = server.pushes.single()
-        assertEquals("r1" to 10L, change.getValue("row").jsonPrimitive.content to change.getValue("base_seq").jsonPrimitive.long)
+        assertEquals("r1" to 9L, change.getValue("row").jsonPrimitive.content to change.getValue("base_seq").jsonPrimitive.long)
         assertEquals(setOf("f2"), change.getValue("set").jsonObject.keys)
     }
 
@@ -199,6 +214,56 @@ class SyncPullTest {
         assertEquals("k1" to "kept", server.resolved.last())
         assertTrue(keeping["pulled"] is JsonNull, keeping.toString())
         assertEquals(0, keeping.getValue("open_conflicts").jsonPrimitive.int)
+    }
+
+    private fun sha(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b).joinToString("") { "%02x".format(it) }
+
+    @Test
+    fun aTeammatesPhotoComesOnItsFeatureTheThumbnailAtOnceTheOriginalWhenOpened() {
+        val original = "the original photo".toByteArray()
+        val thumb = "its thumbnail".toByteArray()
+        val late = "a photo whose feature comes later".toByteArray()
+        server.files[sha(original)] = original
+        server.files[sha(thumb)] = thumb
+        val layer = """{"id": "L1", "geometry_type": "Point", "crs": "EPSG:4490", "schema_version": 1, "seq": 1,
+            "name": ${field("野外点", 1)}, "deleted": null, "fields": [{"id": "f1", "name": "点名", "type": "string"}]}"""
+        fun attachment(id: String, row: String, file: String, thumbOf: String?, seq: Long) = """{"layer": "attachments", "id": "$id", "conflicted": false, "deleted": null,
+            "fields": {"target_layer": ${value("\"L1\"", seq)}, "target_row": ${value("\"$row\"", seq)}, "file": ${value("\"$file\"", seq)},
+            "thumb": ${value(thumbOf?.let { "\"$it\"" } ?: "null", seq)}, "type": ${value("\"image/jpeg\"", seq)}, "size": ${value("18", seq)},
+            "name": ${value("\"D001.jpg\"", seq)}, "meta": ${value("null", seq)}}}"""
+        // The second photo's feature was changed after it: it comes in a later page.
+        server.pages[0] = """{"layers": [$layer], "rows": [
+            {"layer": "L1", "id": "r1", "conflicted": false, "deleted": null, "fields": {"f1": ${field("D001", 2)}, "geom": ${point(114.3, 2)}}},
+            ${attachment("a1", "r1", sha(original), sha(thumb), 3)},
+            ${attachment("a2", "r2", sha(late), null, 5)}], "conflicts": [], "seq": 5, "more": true}"""
+        server.pages[5] = """{"layers": [], "rows": [
+            {"layer": "L1", "id": "r2", "conflicted": false, "deleted": null, "fields": {"f1": ${field("D002", 6)}, "geom": ${point(114.4, 6)}}}],
+            "conflicts": [], "seq": 6, "more": false}"""
+        output(run(SyncActions.JOIN, """{"server": "http://fake", "invite_code": "K7QX2MPA", "nickname": "李四", "device": "test", "language": "zh"}"""))
+
+        val project = workspace.current!!
+        val store = project.target("野外点").store
+        fun on(row: String) = store.attachments(project.data { Outbox.fidOf(it, "L1", row) }!!)
+        assertEquals(listOf("a1" to sha(original)), on("r1").map { it.id to it.file })
+        assertEquals(listOf("a2"), on("r2").map { it.id }, "the photo waited for its feature")
+        // The thumbnail came with the pull; the originals did not.
+        assertTrue(File(project.attachments, sha(thumb) + ".jpg").readBytes().contentEquals(thumb))
+        assertFalse(File(project.attachments, sha(original) + ".jpg").exists())
+        assertEquals(listOf(sha(thumb)), server.fetched)
+
+        // Opened: the original comes.
+        val fetched = output(run(SyncActions.FILE, """{"file": "${sha(original)}", "type": "image/jpeg"}"""))
+        assertTrue(File(fetched.getValue("path").jsonPrimitive.content).readBytes().contentEquals(original))
+        // One not up yet says so.
+        assertEquals(SyncActions.NOT_UPLOADED, (run(SyncActions.FILE, """{"file": "${sha(late)}", "type": "image/jpeg"}""") as Outcome.Failed).code)
+        assertEquals(SyncActions.BAD_REQUEST, (run(SyncActions.FILE, """{"file": "../../x", "type": "image/jpeg"}""") as Outcome.Failed).code)
+
+        // Taken off by the teammate: it goes here too. A deleted row keeps its fields (protocol v1 6.1).
+        val gone = attachment("a1", "r1", sha(original), sha(thumb), 3)
+            .replace(""""deleted": null""", """"deleted": {"value": true, "by": "m1", "at": "2026-11-28T10:00:00Z", "seq": 7}""")
+        server.pages[6] = """{"layers": [], "rows": [$gone], "conflicts": [], "seq": 7, "more": false}"""
+        output(run(SyncActions.NOW))
+        assertTrue(on("r1").isEmpty())
     }
 
     @Test

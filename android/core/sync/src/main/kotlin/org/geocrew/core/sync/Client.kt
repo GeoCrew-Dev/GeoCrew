@@ -1,6 +1,7 @@
 package org.geocrew.core.sync
 
 import java.io.IOException
+import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
@@ -32,6 +33,14 @@ fun interface Transport {
     /** Sends [body] as raw bytes (a chunk of a file) to [path] with [method]; the answer is JSON as with [send]. */
     fun sendBytes(method: String, path: String, token: String?, body: ByteArray): Reply =
         throw UnsupportedOperationException("this transport sends no files")
+
+    /**
+     * GETs [path] as raw bytes from byte [from] on (a file, or the rest of
+     * one): they go to the stream [open] gives, told whether they are the whole
+     * file (the server took no range). The answer's status, and an error's body.
+     */
+    fun fetch(path: String, token: String?, from: Long, open: (whole: Boolean) -> OutputStream): Reply =
+        throw UnsupportedOperationException("this transport fetches no files")
 }
 
 /** A server's answer: HTTP [status] and the [body] as text. */
@@ -172,6 +181,19 @@ class SyncClient(private val transport: Transport) {
         val reply = transport.sendBytes("PUT", path, token, bytes)
         val o = answer("PUT", path, reply) as? JsonObject ?: throw IOException("the server's answer to PUT $path is not a JSON object")
         return if (reply.status == 201) null else o.long("offset")
+    }
+
+    /**
+     * Fetches file [sha256] from byte [from] on into the stream [open] gives
+     * (protocol v1 9.2): the status, 200 for the whole file, 206 for the rest,
+     * 416 when there is nothing past [from]. A file nobody it can see refers
+     * to is a [ServerError] not_found; one not uploaded yet, not_uploaded.
+     */
+    fun fetchFile(workspace: String, token: String, sha256: String, from: Long, open: (whole: Boolean) -> OutputStream): Int {
+        val path = "/api/v1/workspaces/${segment(workspace)}/files/${segment(sha256)}"
+        val reply = transport.fetch(path, token, from, open)
+        if (reply.status != 416) answer("GET", path, Reply(reply.status, reply.body.ifEmpty { "{}" }))
+        return reply.status
     }
 
     /** Creates a shared layer; the same id again with the same schema gives the layer as it is (a retry). */
@@ -344,6 +366,24 @@ class HttpTransport(private val base: String, private val pin: String? = null, p
     override fun sendBytes(method: String, path: String, token: String?, body: ByteArray): Reply =
         guarded { exchange(method, path, token, body, "application/octet-stream") }
 
+    override fun fetch(path: String, token: String?, from: Long, open: (whole: Boolean) -> OutputStream): Reply = guarded {
+        val c = connect(path)
+        try {
+            c.requestMethod = "GET"
+            token?.let { c.setRequestProperty("Authorization", "Bearer $it") }
+            if (from > 0) c.setRequestProperty("Range", "bytes=$from-")
+            val status = c.responseCode
+            if (status == 200 || status == 206) {
+                open(status == 200).use { out -> c.inputStream.use { it.copyTo(out) } }
+                Reply(status, "")
+            } else {
+                Reply(status, c.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) }.orEmpty())
+            }
+        } finally {
+            c.disconnect()
+        }
+    }
+
     // A failure of the certificate as what it means here: a key changed, or one not to be trusted.
     private inline fun guarded(block: () -> Reply): Reply = try {
         block()
@@ -356,17 +396,23 @@ class HttpTransport(private val base: String, private val pin: String? = null, p
         }
     }
 
-    private fun exchange(method: String, path: String, token: String?, body: ByteArray?, type: String): Reply {
+    // A connection to [path], taking only the pinned key when there is one, with this transport's timeouts.
+    private fun connect(path: String): HttpURLConnection {
         val c = URI(base.trimEnd('/') + path).toURL().openConnection() as HttpURLConnection
         if (pinned != null) {
             if (c !is HttpsURLConnection) throw IOException("a pinned key needs an https address")
             c.sslSocketFactory = pinned.socketFactory
             c.setHostnameVerifier { _, _ -> true }
         }
+        c.connectTimeout = timeoutMs
+        c.readTimeout = timeoutMs
+        return c
+    }
+
+    private fun exchange(method: String, path: String, token: String?, body: ByteArray?, type: String): Reply {
+        val c = connect(path)
         try {
             c.requestMethod = method
-            c.connectTimeout = timeoutMs
-            c.readTimeout = timeoutMs
             c.setRequestProperty("Accept", "application/json")
             token?.let { c.setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {
