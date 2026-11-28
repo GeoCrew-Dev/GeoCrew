@@ -157,6 +157,7 @@ class SyncStructureTest {
         registry = ActionRegistry().apply {
             workspace.actions.forEach(::register)
             SyncActions(workspace, accounts) { _, _ -> server }.actions.forEach(::register)
+            ImportActions(workspace, root) { Probe.inspect(context, it.path) }.actions.forEach(::register)
         }
     }
 
@@ -247,6 +248,24 @@ class SyncStructureTest {
         assertEquals(listOf("灰岩"), sent(rock))
         assertTrue(server.pushes.any { it.text("layer") == spring })
         assertEquals(0, structure())
+    }
+
+    @Test
+    fun aLayerImportedOfflineGoesWithItsFeatures() {
+        shared("导入")
+        val file = File(context.cacheDir, "点位.geojson").apply {
+            writeText(
+                """{"type": "FeatureCollection", "features": [
+                    {"type": "Feature", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"名称": "A1"}},
+                    {"type": "Feature", "geometry": {"type": "Point", "coordinates": [114.31, 30.61]}, "properties": {"名称": "A2"}}]}""",
+            )
+        }
+        output(run(ImportActions.IMPORT, buildJsonObject { put("path", file.path) }.toString()))
+        val imported = workspace.current!!.layers.single { it.name == "点位" }.id
+        output(run(SyncActions.NOW))
+        assertTrue(imported in server.layers)
+        val name = ids("点位").getValue("名称")
+        assertEquals(setOf("A1", "A2"), server.pushes.filter { it.text("layer") == imported }.mapNotNull { (it["set"] as? JsonObject)?.get(name)?.jsonObject?.text("value") }.toSet())
     }
 
     @Test

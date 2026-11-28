@@ -417,9 +417,20 @@ internal class ProjectSync(
             } catch (e: ServerError) {
                 client.layerIn(e) ?: continue // there already, otherwise: as it is there; refused: stays here
             }
-            project.data {
-                Outbox.seenSystemRow(it, made.id, made.seq)
-                SharedSchema.put(it, made.id, made.schemaVersion, made.fields)
+            // Its features go as new rows, as when a project is shared: ones not edited here since (imported, copied with
+            // the layer) are not queued yet; ones that are stay as they are.
+            val store = project.target(layer.name).store
+            project.data { ds ->
+                ds.begin()
+                try {
+                    Outbox.seenSystemRow(ds, made.id, made.seq)
+                    SharedSchema.put(ds, made.id, made.schemaVersion, made.fields)
+                    Outbox.enqueueNew(ds, layer.name, layer.id, store.features(), attachmentsOf = { store.attachments(it) })
+                    ds.commit()
+                } catch (e: Exception) {
+                    runCatching { ds.rollback() }
+                    throw e
+                }
             }
         }
         for (layer in project.layers) project.data { SharedSchema.of(it, layer.id) }?.let { sendFields(layer, it) }
