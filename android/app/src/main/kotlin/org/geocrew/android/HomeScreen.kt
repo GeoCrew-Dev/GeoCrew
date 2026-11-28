@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Settings
@@ -41,6 +42,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -80,6 +82,7 @@ import java.time.format.FormatStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -92,6 +95,7 @@ import kotlinx.serialization.json.put
 import org.geocrew.core.action.Outcome
 import org.geocrew.core.project.ProjectFormat
 import org.geocrew.core.project.ProjectFormat.NameProblem
+import org.geocrew.storage.SyncActions
 import org.geocrew.storage.Workspace
 
 private data class ProjectEntry(
@@ -118,6 +122,10 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
     val context = LocalContext.current
     var projects by remember { mutableStateOf<List<ProjectEntry>?>(null) }
     var creating by remember { mutableStateOf(false) }
+    // Joining a team's workspace makes a project of it and opens it (ADR 0008).
+    var joining by remember { mutableStateOf(false) }
+    var joiningBusy by remember { mutableStateOf(false) }
+    val sync = syncTexts()
     var failure by remember { mutableStateOf<String?>(null) }
     val failedText = stringResource(R.string.action_failed)
     val startText = stringResource(R.string.start_failed)
@@ -152,6 +160,7 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
             TopAppBar(
                 title = { Text(stringResource(R.string.projects_title)) },
                 actions = {
+                    IconButton(onClick = { joining = true }) { Icon(Icons.Rounded.GroupAdd, stringResource(R.string.team_join)) }
                     IconButton(onClick = onFiles) { Icon(Icons.Rounded.Folder, stringResource(R.string.files)) }
                     IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, stringResource(R.string.settings)) }
                     IconButton(onClick = onAbout) { Icon(Icons.Rounded.Info, stringResource(R.string.about)) }
@@ -217,6 +226,40 @@ fun HomeScreen(graph: AppGraph, onOpen: (String) -> Unit, onSettings: () -> Unit
                     }
                 }
             },
+        )
+    }
+    if (joining) {
+        JoinDialog(
+            onDismiss = { joining = false },
+            onJoin = { server, code, nickname ->
+                joining = false
+                joiningBusy = true
+                scope.launch {
+                    val params = buildJsonObject {
+                        put("server", server)
+                        put("invite_code", code)
+                        put("nickname", nickname)
+                        put("device", deviceName())
+                        put("language", AppLanguage.speaking(context))
+                    }
+                    val joined = graph.invoke(SyncActions.JOIN, params)
+                    joiningBusy = false
+                    when (joined) {
+                        // The project made for the workspace, with what came in, opens on its map.
+                        is Outcome.Done -> (joined.output.jsonObject["project"] as? JsonPrimitive)?.contentOrNull?.let(onOpen)
+                        else -> failure = sync.of(joined)
+                    }
+                }
+            },
+        )
+    }
+    if (joiningBusy) {
+        // Joining brings the whole workspace in: it takes a while, and nothing else should start meanwhile.
+        AppDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.team_join)) },
+            text = { LinearProgressIndicator(Modifier.fillMaxWidth()) },
+            confirmButton = {},
         )
     }
     failure?.let { message ->

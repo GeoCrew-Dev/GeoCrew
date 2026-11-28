@@ -123,6 +123,10 @@ class SyncClient(private val transport: Transport) {
     fun joinWithTransferCode(code: String, device: String): Joined =
         joined(call("POST", "/api/v1/join", null, buildJsonObject { put("transfer_code", code); put("device", device) }))
 
+    /** The workspace's invite code, for those who may invite (manage_members); null for the others (protocol v1 5.1). */
+    fun inviteCode(workspace: String, token: String): String? =
+        call("GET", "/api/v1/workspaces/${segment(workspace)}", token, null).text("invite_code")
+
     /** Creates a shared layer; the same id again with the same schema gives the layer as it is (a retry). */
     fun createLayer(workspace: String, token: String, layer: LayerSpec): PulledLayer {
         val body = buildJsonObject {

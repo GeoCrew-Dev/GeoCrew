@@ -576,4 +576,33 @@
     <string name="snapshot_restore_title">Restore the snapshot of %1$s?</string>
     <string name="snapshot_restore_body">The project as it is now is kept in the snapshot folder first.</string>
     <string name="format_kmz" translatable="false">KMZ</string>
+    <string name="tool_sync">Sync</string>
+    <string name="team_section">Team</string>
+    <string name="team_share">Share with a team</string>
+    <string name="team_share_action">Share</string>
+    <string name="team_join">Join a team</string>
+    <string name="team_join_action">Join</string>
+    <string name="team_server">Server</string>
+    <string name="team_server_address">Server address</string>
+    <string name="team_nickname">Nickname</string>
+    <string name="team_workspace_name">Workspace name</string>
+    <string name="team_invite">Invite code</string>
+    <string name="team_sync_now">Sync now</string>
+    <string name="team_up_to_date">Up to date</string>
+    <string name="team_synced">Synced: %1$d sent, %2$d received</string>
+    <string name="sync_offline">Cannot reach the server</string>
+    <string name="sync_bad_invite">Wrong invite code</string>
+    <string name="sync_signed_out">No longer signed in to the team</string>
+    <string name="sync_unsupported">The server does not support this</string>
+    <string name="sync_mixed">A layer mixes points, lines and areas</string>
+    <string name="sync_not_linked">Not shared with a team</string>
+    <string name="sync_archived">The workspace is archived</string>
+    <plurals name="team_waiting">
+        <item quantity="one">%d change to send</item>
+        <item quantity="other">%d changes to send</item>
+    </plurals>
+    <plurals name="team_rejected">
+        <item quantity="one">%d change not accepted</item>
+        <item quantity="other">%d changes not accepted</item>
+    </plurals>
 </resources>

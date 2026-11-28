@@ -7,15 +7,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AddLocationAlt
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,12 +44,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -51,11 +59,13 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.geocrew.core.action.Outcome
+import org.geocrew.storage.SyncActions
 import org.geocrew.storage.Workspace
 
 /**
- * A project's settings, opened from its map's menu: the project and which layer
- * new points go into; more settings join them here. Layers and their fields
+ * A project's settings, opened from its map's menu: the project, which layer
+ * new points go into, its snapshots, and the team it syncs with (ADR 0008).
+ * More settings join them here. Layers and their fields
  * have their own page, from the map. Everything goes through actions (ADR 0010).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,8 +80,15 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
     // The days with a snapshot (ADR 0004), newest first, and the one about to be restored.
     var snapshots by remember { mutableStateOf<List<String>>(emptyList()) }
     var restoring by remember { mutableStateOf<String?>(null) }
+    // The team the project syncs with (sync.status), its invite code when this member may invite, and what is under way.
+    var team by remember { mutableStateOf<JsonObject?>(null) }
+    var invite by remember { mutableStateOf<String?>(null) }
+    var sharing by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var shownInvite by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     var failure by remember { mutableStateOf<String?>(null) }
+    val sync = syncTexts()
     val texts = FailureTexts(
         unsaved = stringResource(R.string.failure_unsaved),
         failed = stringResource(R.string.action_failed),
@@ -92,6 +109,38 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
         placing = projectId?.let(graph.settings::placingLayer)?.takeIf { id -> layers.any { it.id == id } }
         snapshots = (graph.invoke(Workspace.SNAPSHOTS) as? Outcome.Done)?.output?.jsonObject?.get("days")?.jsonArray
             ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+        team = (graph.invoke(SyncActions.STATUS) as? Outcome.Done)?.output?.jsonObject
+        // From the server: none when it cannot be reached, or this member may not invite.
+        if (team.flag("linked")) invite = (graph.invoke(SyncActions.INVITE) as? Outcome.Done)?.output?.jsonObject?.text("invite_code")
+    }
+
+    // Sends the project's saved edits and brings in the team's; the counts come again after.
+    fun syncNow() = scope.launch {
+        busy = true
+        val done = graph.invoke(SyncActions.NOW)
+        busy = false
+        if (done !is Outcome.Done) failure = sync.of(done)
+        team = (graph.invoke(SyncActions.STATUS) as? Outcome.Done)?.output?.jsonObject
+    }
+
+    fun share(server: String, name: String, nickname: String) = scope.launch {
+        busy = true
+        val params = buildJsonObject {
+            put("server", server)
+            put("name", name)
+            put("nickname", nickname)
+            put("device", deviceName())
+        }
+        val done = graph.invoke(SyncActions.SHARE, params)
+        busy = false
+        when (done) {
+            is Outcome.Done -> {
+                invite = done.output.jsonObject.text("invite_code")
+                shownInvite = invite
+            }
+            else -> failure = sync.of(done)
+        }
+        team = (graph.invoke(SyncActions.STATUS) as? Outcome.Done)?.output?.jsonObject
     }
 
     Scaffold(
@@ -155,8 +204,70 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
                     colors = clear,
                 )
             }
+            // The team (ADR 0008): sharing the project, or, once shared, its server, syncing and the invite code.
+            item { SectionHeader(stringResource(R.string.team_section)) }
+            val progress: @Composable () -> Unit = { if (busy) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp) }
+            if (!team.flag("linked")) {
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.team_share)) },
+                        leadingContent = { Icon(Icons.Rounded.GroupAdd, null) },
+                        trailingContent = progress,
+                        colors = clear,
+                        modifier = Modifier.clickable(enabled = !busy && team != null) { sharing = true },
+                    )
+                }
+            } else {
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.team_server)) },
+                        supportingContent = { Text(team?.text("server").orEmpty()) },
+                        leadingContent = { Icon(Icons.Rounded.Dns, null) },
+                        colors = clear,
+                    )
+                }
+                item {
+                    val waiting = team?.number("waiting") ?: 0
+                    val rejected = team?.number("rejected") ?: 0
+                    val state = listOfNotNull(
+                        pluralStringResource(R.plurals.team_waiting, waiting, waiting).takeIf { waiting > 0 },
+                        pluralStringResource(R.plurals.team_rejected, rejected, rejected).takeIf { rejected > 0 },
+                    ).joinToString(" · ").ifEmpty { stringResource(R.string.team_up_to_date) }
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.team_sync_now)) },
+                        supportingContent = { Text(state) },
+                        leadingContent = { Icon(Icons.Rounded.Sync, null) },
+                        trailingContent = progress,
+                        colors = clear,
+                        modifier = Modifier.clickable(enabled = !busy) { syncNow() },
+                    )
+                }
+                invite?.let { code ->
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.team_invite)) },
+                            supportingContent = { Text(code) },
+                            leadingContent = { Icon(Icons.Rounded.PersonAdd, null) },
+                            colors = clear,
+                            modifier = Modifier.clickable { shownInvite = code },
+                        )
+                    }
+                }
+            }
         }
     }
+
+    if (sharing) {
+        ShareDialog(
+            project = project,
+            onDismiss = { sharing = false },
+            onShare = { server, name, nickname ->
+                sharing = false
+                share(server, name, nickname)
+            },
+        )
+    }
+    shownInvite?.let { code -> InviteDialog(code, onDismiss = { shownInvite = null }) }
 
     restoring?.let { day ->
         AppDialog(
@@ -222,3 +333,9 @@ private fun dayText(day: String): String {
     val locale = LocalConfiguration.current.locales[0]
     return runCatching { LocalDate.parse(day).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale)) }.getOrDefault(day)
 }
+
+private fun JsonObject?.flag(key: String): Boolean = (this?.get(key) as? JsonPrimitive)?.contentOrNull == "true"
+
+private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+
+private fun JsonObject.number(key: String): Int? = (this[key] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
