@@ -134,13 +134,6 @@ object ProjectFormat {
     const val SYSTEM_ROWS_SCHEMA = "CREATE TABLE IF NOT EXISTS $SYSTEM_ROWS_TABLE (uuid TEXT PRIMARY KEY NOT NULL, seq INTEGER NOT NULL DEFAULT 0)"
 
     /**
-     * Each shared layer's structure as the workspace has it (protocol v1 7.2,
-     * 7.3): its schema version and its fields ([{id, name, type}], JSON), from
-     * the last time the server said. A field here but no more there was deleted
-     * by the team; one here on the phone but not there is this phone's own, yet
-     * to be sent, and its values wait with it.
-     */
-    /**
      * A linked project's shared layers the team deleted (protocol v1 5.6):
      * kept in the file with their features, left out of the project's layers,
      * and back when the team restores them.
@@ -148,6 +141,13 @@ object ProjectFormat {
     const val HIDDEN_LAYERS_TABLE = "geocrew_hidden_layers"
     const val HIDDEN_LAYERS_SCHEMA = "CREATE TABLE IF NOT EXISTS $HIDDEN_LAYERS_TABLE (layer_id TEXT PRIMARY KEY NOT NULL)"
 
+    /**
+     * Each shared layer's structure as the workspace has it (protocol v1 7.2,
+     * 7.3): its schema version and its fields ([{id, name, type}], JSON), from
+     * the last time the server said. A field here but no more there was deleted
+     * by the team; one here on the phone but not there is this phone's own, yet
+     * to be sent, and its values wait with it.
+     */
     const val LAYER_SCHEMA_TABLE = "geocrew_layer_schema"
     const val LAYER_SCHEMA_SCHEMA = "CREATE TABLE IF NOT EXISTS $LAYER_SCHEMA_TABLE (layer_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, fields TEXT NOT NULL)"
 
