@@ -9,6 +9,7 @@ import java.time.OffsetDateTime
 import javax.net.ssl.HttpsURLConnection
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -51,6 +52,9 @@ data class ServerInfo(
 
 /** Signed in to a workspace (protocol v1 3.4): who the member is, and the device's token, given only once. */
 data class Joined(val workspace: String, val workspaceName: String, val member: String, val leader: String, val inviteCode: String?, val token: String)
+
+/** A member as the workspace lists them (protocol v1 5.2): the id conflict records and fields name, and their nickname. */
+data class Member(val id: String, val nickname: String)
 
 /** A field of a shared layer (protocol v1 7.2), by the stable id rows use. */
 data class FieldDef(val id: String, val name: String, val type: String, val options: JsonArray? = null)
@@ -127,6 +131,13 @@ class SyncClient(private val transport: Transport) {
     /** The workspace's invite code, for those who may invite (manage_members); null for the others (protocol v1 5.1). */
     fun inviteCode(workspace: String, token: String): String? =
         call("GET", "/api/v1/workspaces/${segment(workspace)}", token, null).text("invite_code")
+
+    /** The workspace's members, which every member may read (protocol v1 5.2). */
+    fun members(workspace: String, token: String): List<Member> {
+        val listed = request("GET", "/api/v1/workspaces/${segment(workspace)}/members", token, null) as? JsonArray
+            ?: throw IOException("the server's member list is not a JSON array")
+        return listed.mapNotNull { it as? JsonObject }.map { Member(it.text("id").orEmpty(), it.text("nickname").orEmpty()) }
+    }
 
     /** Creates a shared layer; the same id again with the same schema gives the layer as it is (a retry). */
     fun createLayer(workspace: String, token: String, layer: LayerSpec): PulledLayer {
@@ -208,14 +219,18 @@ class SyncClient(private val transport: Transport) {
         const val LOST = "lost"
     }
 
-    private fun call(method: String, path: String, token: String?, body: JsonObject?): JsonObject {
+    private fun call(method: String, path: String, token: String?, body: JsonObject?): JsonObject =
+        request(method, path, token, body) as? JsonObject ?: throw IOException("the server's answer to $method $path is not a JSON object")
+
+    // The server's answer as JSON, an object or an array; a refusal as a ServerError.
+    private fun request(method: String, path: String, token: String?, body: JsonObject?): JsonElement? {
         val reply = transport.send(method, path, token, body?.toString())
         val parsed = runCatching { json.parseToJsonElement(reply.body) }.getOrNull()
         if (reply.status !in 200..299) {
             val o = parsed as? JsonObject
             throw ServerError(reply.status, o?.text("error") ?: "http_${reply.status}", o?.text("message") ?: reply.body.take(200), o)
         }
-        return parsed as? JsonObject ?: throw IOException("the server's answer to $method $path is not a JSON object")
+        return parsed
     }
 
     private fun joined(o: JsonObject): Joined {

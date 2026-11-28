@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -72,7 +73,7 @@ import org.geocrew.storage.Workspace
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) {
+fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit, onConflicts: () -> Unit) {
     var folder by remember { mutableStateOf<String?>(null) }
     var projectId by remember { mutableStateOf<String?>(null) }
     var layers by remember { mutableStateOf<List<LayerInfo>>(emptyList()) }
@@ -281,6 +282,18 @@ fun ProjectSettingsScreen(graph: AppGraph, project: String, onBack: () -> Unit) 
                         colors = clear,
                         modifier = Modifier.clickable(enabled = !busy) { syncNow() },
                     )
+                }
+                // Conflicts the team's edits left (protocol v1 6.5), to settle one by one.
+                (team?.number("conflicts") ?: 0).takeIf { it > 0 }?.let { open ->
+                    item {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.conflicts)) },
+                            supportingContent = { Text(pluralStringResource(R.plurals.conflicts_open, open, open)) },
+                            leadingContent = { Icon(Icons.Rounded.Warning, null) },
+                            colors = clear,
+                            modifier = Modifier.clickable(enabled = !busy, onClick = onConflicts),
+                        )
+                    }
                 }
                 item {
                     ListItem(

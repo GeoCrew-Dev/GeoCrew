@@ -571,6 +571,27 @@
     <string name="team_check_key">核对服务器指纹</string>
     <string name="team_key_matches">一致</string>
     <string name="team_fingerprint">服务器指纹</string>
+    <string name="sync_forbidden">没有权限</string>
+    <string name="conflicts">冲突</string>
+    <string name="conflicts_none">没有冲突</string>
+    <string name="conflicts_view">查看</string>
+    <plurals name="conflicts_open">
+        <item quantity="other">%d 处待处理</item>
+    </plurals>
+    <plurals name="team_conflicts_open">
+        <item quantity="other">%d 处冲突</item>
+    </plurals>
+    <string name="conflict_now">现在</string>
+    <string name="conflict_other">另一个</string>
+    <string name="conflict_keep">保留</string>
+    <string name="conflict_use_other">换成另一个</string>
+    <string name="conflict_field_deleted">字段已删除</string>
+    <string name="conflict_delete_rejected">没有删掉</string>
+    <string name="conflict_delete_overridden">删除被撤销</string>
+    <string name="conflict_me">我</string>
+    <string name="conflict_empty">空</string>
+    <string name="conflict_location">位置</string>
+    <string name="conflict_shape">形状</string>
     <plurals name="team_waiting">
         <item quantity="other">待上传 %d 条</item>
     </plurals>

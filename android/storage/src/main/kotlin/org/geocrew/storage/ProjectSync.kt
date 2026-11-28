@@ -188,6 +188,17 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         return wrote
     }
 
+    /**
+     * Settles conflict [conflict] on the server (protocol v1 8.3): keeps the
+     * current value ([SyncClient.KEPT]) or puts the losing one back
+     * ([SyncClient.LOST]), which comes in with the next pull; the record is
+     * kept as the server now has it.
+     */
+    fun resolve(conflict: String, choose: String) {
+        project.data { it.sql(ProjectFormat.CONFLICTS_SCHEMA) }
+        keepConflicts(listOf(client.resolve(account.workspace, account.token, conflict, choose)))
+    }
+
     // Conflict records as the pull gives them, new or changed (resolved), for the page that lists them.
     private fun keepConflicts(conflicts: List<PulledConflict>) {
         if (conflicts.isEmpty()) return

@@ -98,6 +98,7 @@ private sealed interface Screen {
     data class Files(val folder: String = "") : Screen { override val key = if (folder.isEmpty()) "files" else "files:$folder" }
     data class Project(val name: String) : Screen { override val key = "project:$name" }
     data class ProjectSettings(val name: String) : Screen { override val key = "project-settings:$name" }
+    data class Conflicts(val name: String) : Screen { override val key = "project-conflicts:$name" }
     data class Layers(val name: String) : Screen { override val key = "project-layers:$name" }
 
     // The layer's name comes last: it may hold any character, the project's no "/".
@@ -107,6 +108,7 @@ private sealed interface Screen {
         fun of(key: String): Screen = when {
             key.startsWith("project:") -> Project(key.removePrefix("project:"))
             key.startsWith("project-settings:") -> ProjectSettings(key.removePrefix("project-settings:"))
+            key.startsWith("project-conflicts:") -> Conflicts(key.removePrefix("project-conflicts:"))
             key.startsWith("project-layers:") -> Layers(key.removePrefix("project-layers:"))
             key.startsWith("project-table:") -> key.removePrefix("project-table:").split("/", limit = 2).let { Table(it[0], it.getOrElse(1) { "" }) }
             key == Permissions.key -> Permissions
@@ -213,8 +215,10 @@ private fun App(graph: AppGraph, resumed: Int, received: List<Uri>, onReceived: 
                 onProjectSettings = { push(Screen.ProjectSettings(screen.name)) },
                 onLayers = { push(Screen.Layers(screen.name)) },
                 onFiles = { push(Screen.Files()) },
+                onConflicts = { push(Screen.Conflicts(screen.name)) },
             )
-            is Screen.ProjectSettings -> ProjectSettingsScreen(graph, screen.name, onBack = ::pop)
+            is Screen.ProjectSettings -> ProjectSettingsScreen(graph, screen.name, onBack = ::pop, onConflicts = { push(Screen.Conflicts(screen.name)) })
+            is Screen.Conflicts -> ConflictsScreen(graph, screen.name, onBack = ::pop, onFeature = { layer, fid -> backToMap(Zoom(layer, fid)) })
             is Screen.Layers -> LayersScreen(
                 graph, screen.name, onBack = ::pop,
                 onZoom = { backToMap(Zoom(it)) },

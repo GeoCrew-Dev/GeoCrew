@@ -52,6 +52,21 @@ class ClientTest {
     }
 
     @Test
+    fun theMembersAreListedByIdAndNickname() {
+        val fake = Fake(
+            listOf(
+                Reply(200, """[{"id": "m1", "nickname": "张三", "roles": ["leader"], "joined_at": "2026-11-28T00:00:00Z"}, {"id": "m2", "nickname": "李四", "roles": [], "joined_at": "2026-11-28T00:00:00Z"}]"""),
+                Reply(200, """{"members": []}"""),
+            ),
+        )
+        val client = SyncClient(fake)
+        assertEquals(listOf(Member("m1", "张三"), Member("m2", "李四")), client.members("w 1", "t1"))
+        assertEquals("GET" to "/api/v1/workspaces/w%201/members", fake.sent[0].first to fake.sent[0].second)
+        assertEquals("t1", fake.tokens[0])
+        assertFailsWith<java.io.IOException>("an answer of another shape") { client.members("w1", "t1") }
+    }
+
+    @Test
     fun pushingAndPulling() {
         val fake = Fake(
             listOf(

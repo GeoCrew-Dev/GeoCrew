@@ -602,6 +602,29 @@
     <string name="team_check_key">Check the server key</string>
     <string name="team_key_matches">Matches</string>
     <string name="team_fingerprint">Server key</string>
+    <string name="sync_forbidden">Not allowed</string>
+    <string name="conflicts">Conflicts</string>
+    <string name="conflicts_none">No conflicts</string>
+    <string name="conflicts_view">View</string>
+    <plurals name="conflicts_open">
+        <item quantity="one">%d to settle</item>
+        <item quantity="other">%d to settle</item>
+    </plurals>
+    <plurals name="team_conflicts_open">
+        <item quantity="one">%d conflict</item>
+        <item quantity="other">%d conflicts</item>
+    </plurals>
+    <string name="conflict_now">Now</string>
+    <string name="conflict_other">Other</string>
+    <string name="conflict_keep">Keep</string>
+    <string name="conflict_use_other">Use other</string>
+    <string name="conflict_field_deleted">Field deleted</string>
+    <string name="conflict_delete_rejected">Not deleted</string>
+    <string name="conflict_delete_overridden">Deletion undone</string>
+    <string name="conflict_me">Me</string>
+    <string name="conflict_empty">Empty</string>
+    <string name="conflict_location">Location</string>
+    <string name="conflict_shape">Shape</string>
     <plurals name="team_waiting">
         <item quantity="one">%d change to send</item>
         <item quantity="other">%d changes to send</item>
