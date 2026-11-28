@@ -193,7 +193,6 @@ internal object MapLabels {
     private fun signedArea(ring: List<Pair<Double, Double>>): Double =
         if (ring.size < 3) 0.0 else (ring.zipWithNext() + (ring.last() to ring.first())).sumOf { (a, b) -> a.first * b.second - b.first * a.second } / 2
 
-    // White text with a dark halo, readable on imagery.
     /**
      * The mark of a feature with a conflict to settle (protocol v1 6.5): an
      * amber disc with a white exclamation mark and a white rim. GeoCrew's own
