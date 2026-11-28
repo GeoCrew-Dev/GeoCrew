@@ -122,8 +122,24 @@ internal object Outbox {
             }
         }
         val kept = after.mapTo(HashSet()) { it.id }
-        for (a in before) if (a.id !in kept && knownAttachment(ds, a.id)) put(ds, a.id, ATTACHMENTS, DELETED, JsonPrimitive(true), now)
+        for (a in before) {
+            if (a.id in kept || !knownAttachment(ds, a.id)) continue
+            // Taken off before its row ever left the phone: its files need not go either, unless another attachment has them.
+            if (!sentAttachment(ds, a.id)) listOfNotNull(a.file, a.thumb).filterNot { usedElsewhere(ds, it) }.forEach { uploaded(ds, it) }
+            put(ds, a.id, ATTACHMENTS, DELETED, JsonPrimitive(true), now)
+        }
     }
+
+    // Whether attachment row [uuid] has gone, or is going, to the server: seen there, or in a change on its way.
+    private fun sentAttachment(ds: VectorDataset, uuid: String): Boolean {
+        val seq = rows(ds, "SELECT seq FROM ${ProjectFormat.ATTACHMENT_ROWS_TABLE} WHERE uuid = ${quote(uuid)}").firstOrNull()?.get("seq")?.toLongOrNull() ?: 0
+        return seq > 0 || (exists(ds, ProjectFormat.SENDING_TABLE) && rows(ds, "SELECT row FROM ${ProjectFormat.SENDING_TABLE} WHERE row = ${quote(uuid)}").isNotEmpty())
+    }
+
+    // Whether an attachment the project still has names file [sha].
+    private fun usedElsewhere(ds: VectorDataset, sha: String): Boolean =
+        exists(ds, AttachmentTables.TABLE) &&
+            rows(ds, "SELECT uuid FROM ${AttachmentTables.TABLE} WHERE file = ${quote(sha)} OR thumb = ${quote(sha)} LIMIT 1").isNotEmpty()
 
     // An attachment as its row has it (protocol v1 9.1); a name of more than 255 characters is cut.
     private fun attachmentFields(a: Attachment, layerId: String, row: String): Map<String, JsonElement> = linkedMapOf(

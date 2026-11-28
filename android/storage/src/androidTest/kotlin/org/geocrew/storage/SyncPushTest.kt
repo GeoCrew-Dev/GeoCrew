@@ -51,6 +51,7 @@ class SyncPushTest {
         val files = mutableMapOf<String, ByteArray>()
         private val uploads = mutableMapOf<String, Triple<String, Long, ByteArrayOutputStream>>()
         val events = mutableListOf<String>()
+        var refuseUploads = false
 
         override fun sendBytes(method: String, path: String, token: String?, body: ByteArray): Reply {
             val id = path.substringAfter("/uploads/").substringBefore("?")
@@ -79,6 +80,7 @@ class SyncPushTest {
                     layers += o!!
                     Reply(200, buildJsonObject { put("id", o.getValue("id")); put("geometry_type", o.getValue("geometry_type")); put("crs", o.getValue("crs")); put("fields", o.getValue("fields")); put("schema_version", 1); put("seq", ++seq) }.toString())
                 }
+                path.endsWith("/uploads") && refuseUploads -> Reply(403, """{"error": "forbidden", "message": "edit_rows is required"}""")
                 path.endsWith("/uploads") -> {
                     val sha = o!!.getValue("sha256").jsonPrimitive.content
                     if (sha in files) return Reply(200, """{"exists": true}""")
@@ -225,6 +227,47 @@ class SyncPushTest {
         assertEquals("true", deleted.getValue("delete").jsonObject.getValue("value").toString())
         assertTrue(deleted.getValue("base_seq").jsonPrimitive.long > 0, "from the seq its creation was taken at, so the server takes the deletion")
         assertEquals(listOf(thumb, "rows", file, "rows"), server.events)
+    }
+
+    // A photo as attachment.import gives it, for feature.add.
+    private fun photo(name: String, color: Int): JsonObject {
+        val jpeg = File(context.cacheDir, name)
+        jpeg.outputStream().use { Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        val imported = output(run(AttachmentActions.IMPORT, """{"path": "${jpeg.path}"}"""))
+        return buildJsonObject { for (k in listOf("file", "thumb", "type", "size", "name")) put(k, imported.getValue(k)) }
+    }
+
+    private fun addWith(name: String, attachment: JsonObject) = run(
+        Editing.ADD,
+        buildJsonObject {
+            put("layer", "野外点")
+            put("geometry", Json.parseToJsonElement("""{"type": "Point", "coordinates": [114.3, 30.6]}"""))
+            put("properties", buildJsonObject { put("点名", name) })
+            put("attachments", buildJsonArray { add(attachment) })
+        }.toString(),
+    )
+
+    @Test
+    fun refusedUploadsLeaveTheRestOfTheSyncAlone() {
+        run(Workspace.CREATE, """{"name": "只读", "language": "zh"}""")
+        run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        run(Editing.START, """{"layer": "野外点"}""")
+        addWith("D001", photo("a.jpg", Color.RED))
+        run(Editing.SAVE, """{"layer": "野外点"}""")
+        server.refuseUploads = true
+        output(run(SyncActions.SHARE, """{"server": "http://fake", "nickname": "组员", "device": "test"}"""))
+        assertTrue(server.pushes.flatten().isNotEmpty(), "the changes went")
+        assertEquals(2, output(run(SyncActions.STATUS)).getValue("files").jsonPrimitive.int, "the photo and its thumbnail wait")
+
+        // A photo taken off before its row ever went: its files wait no more; the one still on a feature does.
+        val other = photo("b.jpg", Color.BLUE)
+        addWith("D002", other)
+        run(Editing.SAVE, """{"layer": "野外点"}""")
+        assertEquals(4, output(run(SyncActions.STATUS)).getValue("files").jsonPrimitive.int)
+        val fid = workspace.current!!.target("野外点").store.features().first { it.properties["点名"]?.jsonPrimitive?.content == "D002" }.fid
+        run(Editing.ATTACHMENTS, """{"layer": "野外点", "fid": $fid, "attachments": []}""")
+        run(Editing.SAVE, """{"layer": "野外点"}""")
+        assertEquals(2, output(run(SyncActions.STATUS)).getValue("files").jsonPrimitive.int)
     }
 
     @Test

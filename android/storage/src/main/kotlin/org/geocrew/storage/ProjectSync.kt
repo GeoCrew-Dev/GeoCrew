@@ -1,5 +1,6 @@
 package org.geocrew.storage
 
+import android.util.Log
 import java.time.Instant
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -15,6 +16,7 @@ import org.geocrew.core.sync.PulledLayer
 import org.geocrew.core.sync.PulledRow
 import org.geocrew.core.sync.PushResult
 import org.geocrew.core.sync.Sent
+import org.geocrew.core.sync.ServerError
 import org.geocrew.core.sync.SyncClient
 import org.geocrew.core.sync.sendFile
 
@@ -90,8 +92,19 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         for ((sha, type) in project.data { Outbox.uploads(it, thumbs) }) {
             if (System.currentTimeMillis() > until) return
             val file = AttachmentFiles.fileOf(project.attachments, sha, type)
-            val sent = if (file.isFile) client.sendFile(account.workspace, account.token, file, sha, type, until) else Sent.BROKEN
+            val sent = if (!file.isFile) {
+                Sent.BROKEN
+            } else {
+                try {
+                    client.sendFile(account.workspace, account.token, file, sha, type, until)
+                } catch (e: ServerError) {
+                    // Refused (a member who may edit nothing, an archived workspace): the files wait, the changes and the pull go on.
+                    Log.w(TAG, "uploads refused: ${e.code}")
+                    return
+                }
+            }
             if (sent == Sent.LATER) return
+            if (sent == Sent.BROKEN) Log.w(TAG, "file $sha cannot be sent: missing, or not what its name says")
             project.data { Outbox.uploaded(it, sha) }
         }
     }
@@ -254,6 +267,7 @@ internal class ProjectSync(private val project: Project, private val client: Syn
         // How long a sync spends on files: thumbnails, then originals (a phone in the field may have little signal).
         private const val THUMBS_MS = 30_000L
         private const val ORIGINALS_MS = 20_000L
+        private const val TAG = "GeoCrewSync"
 
         /** Each layer of [project] as the workspace will have it; [Unsupported] for one it cannot take, before anything is made. */
         fun specs(project: Project): List<LayerSpec> = project.layers.map { spec(project, it) }
