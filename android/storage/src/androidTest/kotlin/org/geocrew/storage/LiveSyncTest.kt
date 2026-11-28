@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -30,7 +31,7 @@ import org.geocrew.core.sync.SyncClient
 import org.junit.Test
 import org.junit.runner.RunWith
 
-// A photo going to a real GeoCrew server and coming off it again, given by the instrumentation argument geocrewServer
+// Sync with a real GeoCrew server (photos there and back, fields added offline), given by the instrumentation argument geocrewServer
 // (for example http://10.0.2.2:8080, the computer running the emulator, with `go run ./cmd/geocrew-server -tls=off`); skipped without it.
 @RunWith(AndroidJUnit4::class)
 class LiveSyncTest {
@@ -136,5 +137,66 @@ class LiveSyncTest {
         member.run(SyncActions.NOW)
         assertTrue(theirStore.attachments(theirFid).isEmpty())
         assertEquals("#1e88e5", theirs.styles.getValue(pointId).getValue("color").jsonPrimitive.content)
+    }
+
+    @Test
+    fun fieldsAddedOfflineReachTheTeamAndTwoOfOneNameBecomeOne() {
+        val base = server ?: return
+        NativeData.setup(context)
+        val leader = Phone(context, "live-fields-leader")
+        leader.run(Workspace.CREATE, """{"name": "联调字段", "language": "zh"}""")
+        leader.run(Workspace.LAYER_CREATE, """{"name": "野外点", "language": "zh"}""")
+        val invite = leader.run(SyncActions.SHARE, """{"server": "$base", "nickname": "组长", "device": "emulator"}""").getValue("invite_code").jsonPrimitive.content
+        val member = Phone(context, "live-fields-member")
+        member.run(SyncActions.JOIN, """{"server": "$base", "invite_code": "$invite", "nickname": "组员", "device": "emulator 2", "language": "zh"}""")
+
+        // Both add 样品编号 offline, of one type, and the member 岩性 too, with a point that has values in them.
+        for (phone in listOf(leader, member)) phone.run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "样品编号", "type": "string"}""")
+        member.run(Workspace.FIELD_ADD, """{"layer": "野外点", "name": "岩性", "type": "string"}""")
+        member.run(Editing.START, """{"layer": "野外点"}""")
+        member.run(Editing.ADD, """{"layer": "野外点", "geometry": {"type": "Point", "coordinates": [114.3, 30.6]}, "properties": {"点名": "D001", "样品编号": "S-1", "岩性": "花岗岩"}}""")
+        member.run(Editing.SAVE, """{"layer": "野外点"}""")
+        assertEquals(0, leader.run(SyncActions.NOW).getValue("structure").jsonPrimitive.int)
+
+        // A member may not change the structure (protocol v1 4.1): 岩性 waits here, and 样品编号 becomes the leader's.
+        var synced = member.run(SyncActions.NOW)
+        assertEquals(1 to 0, synced.getValue("structure").jsonPrimitive.int to synced.getValue("renamed").jsonArray.size, synced.toString())
+        val leaderIds = leader.workspace.current!!.fieldIds("野外点")
+        assertEquals(leaderIds["样品编号"], member.workspace.current!!.fieldIds("野外点")["样品编号"], "one field")
+
+        // Allowed to, the member sends 岩性, and what waited goes with it.
+        grant(base, checkNotNull(SyncAccounts(leader.accounts).of(leader.workspace.current!!.id)), "edit_schema")
+        synced = member.run(SyncActions.NOW)
+        assertEquals(0 to 0, synced.getValue("structure").jsonPrimitive.int to synced.getValue("rejected").jsonPrimitive.int, synced.toString())
+        val rock = member.workspace.current!!.fieldIds("野外点").getValue("岩性")
+
+        // The leader gets 岩性, and the point with its values in both.
+        leader.run(SyncActions.NOW)
+        val project = leader.workspace.current!!
+        assertEquals(rock, project.fieldIds("野外点")["岩性"])
+        val point = project.target("野外点").store.features().single().properties
+        assertEquals("S-1" to "花岗岩", point["样品编号"]?.jsonPrimitive?.content to point["岩性"]?.jsonPrimitive?.content)
+    }
+
+    // The leader of [account]'s workspace lets every member [permission] (protocol v1 4.1, 5.x: PATCH /roles/member).
+    private fun grant(base: String, account: SyncAccount, permission: String) {
+        fun call(method: String, path: String, body: String?): String {
+            val c = URI("$base/api/v1/workspaces/${account.workspace}$path").toURL().openConnection() as HttpURLConnection
+            c.requestMethod = method
+            c.setRequestProperty("Authorization", "Bearer ${account.token}")
+            if (body != null) {
+                c.doOutput = true
+                c.setRequestProperty("Content-Type", "application/json")
+                c.outputStream.use { it.write(body.toByteArray()) }
+            }
+            assertEquals(200, c.responseCode, "$method $path")
+            return c.inputStream.use { it.readBytes().decodeToString() }
+        }
+        val role = Json.parseToJsonElement(call("GET", "/roles", null)).jsonArray.map { it.jsonObject }.single { it.getValue("id").jsonPrimitive.content == "member" }
+        val permissions = buildJsonObject {
+            role.getValue("permissions").jsonObject.forEach { (k, v) -> put(k, v) }
+            put(permission, true)
+        }
+        call("PATCH", "/roles/member", buildJsonObject { put("permissions", permissions); put("base_version", role.getValue("version")) }.toString())
     }
 }

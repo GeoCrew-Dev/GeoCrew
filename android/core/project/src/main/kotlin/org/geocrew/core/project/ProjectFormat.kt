@@ -134,6 +134,16 @@ object ProjectFormat {
     const val SYSTEM_ROWS_SCHEMA = "CREATE TABLE IF NOT EXISTS $SYSTEM_ROWS_TABLE (uuid TEXT PRIMARY KEY NOT NULL, seq INTEGER NOT NULL DEFAULT 0)"
 
     /**
+     * Each shared layer's structure as the workspace has it (protocol v1 7.2,
+     * 7.3): its schema version and its fields ([{id, name, type}], JSON), from
+     * the last time the server said. A field here but no more there was deleted
+     * by the team; one here on the phone but not there is this phone's own, yet
+     * to be sent, and its values wait with it.
+     */
+    const val LAYER_SCHEMA_TABLE = "geocrew_layer_schema"
+    const val LAYER_SCHEMA_SCHEMA = "CREATE TABLE IF NOT EXISTS $LAYER_SCHEMA_TABLE (layer_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, fields TEXT NOT NULL)"
+
+    /**
      * Attachment files a linked project has yet to upload (protocol v1 9.2,
      * 9.3), by hash, with their type: thumbnails (thumb 1) go up before the
      * rows that name them, originals (thumb 0) after, a while each sync.

@@ -13,6 +13,7 @@
     <string name="action_failed">没有成功：%1$s</string>
     <string name="failure_empty">工程里没有图层</string>
     <string name="failure_unsaved">工程里有没保存的修改，先保存或放弃。</string>
+    <string name="failure_shared">团队共享的，暂时不能改</string>
 
     <!-- 权限 -->
     <string name="permissions_title">需要几项权限</string>
@@ -596,6 +597,13 @@
     <string name="conflict_shape">形状</string>
     <plurals name="team_waiting">
         <item quantity="other">待上传 %d 条</item>
+    </plurals>
+    <string name="team_field_renamed">团队已有字段“%1$s”，你的改名为“%2$s”</string>
+    <plurals name="team_fields_renamed">
+        <item quantity="other">团队已有同名字段，你的 %d 个字段已改名</item>
+    </plurals>
+    <plurals name="team_structure">
+        <item quantity="other">%d 个图层或字段待提交</item>
     </plurals>
     <plurals name="team_files">
         <item quantity="other">%d 个文件待上传</item>

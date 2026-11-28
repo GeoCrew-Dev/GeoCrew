@@ -14,6 +14,7 @@
     <string name="action_failed">That did not work: %1$s</string>
     <string name="failure_empty">The project has no layers</string>
     <string name="failure_unsaved">The project has unsaved changes: save or discard them first.</string>
+    <string name="failure_shared">Shared with the team: can\'t be changed yet</string>
 
     <!-- Permissions -->
     <string name="permissions_title">A few permissions</string>
@@ -630,6 +631,15 @@
     <plurals name="team_waiting">
         <item quantity="one">%d change to send</item>
         <item quantity="other">%d changes to send</item>
+    </plurals>
+    <string name="team_field_renamed">The team has a field “%1$s”: yours is now “%2$s”</string>
+    <plurals name="team_fields_renamed">
+        <item quantity="one">The team has a field of that name: yours is renamed</item>
+        <item quantity="other">The team has fields of those names: %d of yours are renamed</item>
+    </plurals>
+    <plurals name="team_structure">
+        <item quantity="one">%d layer or field to send</item>
+        <item quantity="other">%d layers or fields to send</item>
     </plurals>
     <plurals name="team_files">
         <item quantity="one">%d file to upload</item>

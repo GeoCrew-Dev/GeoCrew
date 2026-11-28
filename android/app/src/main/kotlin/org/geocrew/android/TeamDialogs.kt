@@ -1,5 +1,6 @@
 package org.geocrew.android
 
+import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -36,6 +39,17 @@ import org.geocrew.storage.SyncActions
 
 /** This phone as a team's member list shows it: its maker and model. */
 fun deviceName(): String = listOf(Build.MANUFACTURER, Build.MODEL).filter { it.isNotBlank() }.distinct().joinToString(" ").take(64)
+
+/** What sync.now says of fields of this phone's that took other names, the team having theirs (protocol v1 7.4); null for none. */
+internal fun renamedFields(context: Context, out: JsonObject): String? {
+    val renamed = (out["renamed"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+    fun JsonObject.text(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
+    return when (renamed.size) {
+        0 -> null
+        1 -> context.getString(R.string.team_field_renamed, renamed[0].text("from"), renamed[0].text("to"))
+        else -> context.resources.getQuantityString(R.plurals.team_fields_renamed, renamed.size, renamed.size)
+    }
+}
 
 /** What a failed sync action says to the user: short, by what went wrong (protocol v1 3.2). */
 internal class SyncTexts(

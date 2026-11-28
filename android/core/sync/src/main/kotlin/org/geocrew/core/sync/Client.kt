@@ -229,6 +229,31 @@ class SyncClient(private val transport: Transport) {
         return layerOf(call("POST", "/api/v1/workspaces/${segment(workspace)}/layers", token, body))
     }
 
+    /**
+     * Adds [fields] to shared layer [layer] (protocol v1 7.3): a request of
+     * adds only, so not checked against [baseVersion]; the same field sent
+     * again changes nothing. The layer as it is after. A name another field
+     * has is a [ServerError] name_taken whose body's field is that one; an id
+     * the layer has or had for another field, id_taken.
+     */
+    fun addFields(workspace: String, token: String, layer: String, baseVersion: Long, fields: List<FieldDef>): PulledLayer {
+        val body = buildJsonObject {
+            put("base_version", baseVersion)
+            putJsonArray("ops") {
+                for (f in fields) add(buildJsonObject { put("op", "add_field"); put("field", fieldJson(f)) })
+            }
+        }
+        return layerOf(call("POST", "/api/v1/workspaces/${segment(workspace)}/layers/${segment(layer)}/schema", token, body))
+    }
+
+    /** The layer as it is now that a stale refusal brings (protocol v1 5.6, 7.3); null for another refusal. */
+    fun layerIn(error: ServerError): PulledLayer? = (error.body?.get("layer") as? JsonObject)?.let(::layerOf)
+
+    /** The field that has the name a name_taken refusal is about (protocol v1 7.3); null for another refusal. */
+    fun fieldIn(error: ServerError): FieldDef? = (error.body?.get("field") as? JsonObject)?.let { x ->
+        FieldDef(x.text("id").orEmpty(), x.text("name").orEmpty(), x.text("type").orEmpty(), x["options"] as? JsonArray)
+    }
+
     /** Pushes [changes] (at most max_push_batch, one a row), the results in their order, and the workspace's latest seq. */
     fun push(workspace: String, token: String, clientNow: Instant, changes: List<PushChange>): Pair<List<PushResult>, Long> {
         val body = buildJsonObject {

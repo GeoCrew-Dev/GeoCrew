@@ -170,6 +170,7 @@ class Workspace(private val projects: Projects) {
             val field = p.getValue("field").jsonPrimitive.content
             val to = p.getValue("to").jsonPrimitive.content.trim()
             unsaved()?.let { return@WorkspaceAction it }
+            shared(project, layer, field)?.let { return@WorkspaceAction it }
             project.checkFieldRename(layer, field, to)
             val ended = changeFields(project, layer) { project.renameField(layer, field, to) }
             ActionResult.Done(buildJsonObject { put("layer", layer); put("field", to) }, endsUndo = ended)
@@ -183,6 +184,7 @@ class Workspace(private val projects: Projects) {
             val layer = p.getValue("layer").jsonPrimitive.content
             val field = p.getValue("field").jsonPrimitive.content
             unsaved()?.let { return@WorkspaceAction it }
+            shared(project, layer, field)?.let { return@WorkspaceAction it }
             project.checkFieldDelete(layer, field)
             val ended = changeFields(project, layer) { project.deleteField(layer, field) }
             ActionResult.Done(buildJsonObject { put("layer", layer); put("field", field) }, endsUndo = ended)
@@ -255,6 +257,7 @@ class Workspace(private val projects: Projects) {
         ) { p ->
             val project = checkNotNull(current) { "no project is open" }
             unsaved()?.let { return@WorkspaceAction it }
+            shared(project, p.getValue("layer").jsonPrimitive.content, null)?.let { return@WorkspaceAction it }
             val ended = stopEditing() + editing.scopeOf(p.getValue("layer").jsonPrimitive.content)
             project.deleteLayer(p.getValue("layer").jsonPrimitive.content)
             current = reopen(project)
@@ -545,6 +548,32 @@ class Workspace(private val projects: Projects) {
         return ended
     }
 
+    // A field (or with none, the layer) the team's workspace has, in a linked project: renamed or deleted with the team
+    // only, online (protocol v1 7.3), which the phone does not do yet (backlog). One added here and not sent yet is its own.
+    private fun shared(project: Project, layer: String, field: String?): ActionResult.Failed? {
+        val id = project.layers.firstOrNull { it.name == layer }?.id ?: return null
+        val unsent = project.data { ds -> if (Outbox.linked(ds)) SharedSchema.unsent(ds, project) else null } ?: return null
+        if (id in unsent.layers || (field != null && project.fieldIds(layer)[field] in unsent.fields[id].orEmpty())) return null
+        return ActionResult.Failed(ONLINE_ONLY, "the team has ${if (field == null) "layer $layer" else "field $field of $layer"}: it changes with the team only")
+    }
+
+    /**
+     * Fields of the open [project] changed for sync (protocol v1 7.4) as the
+     * field actions change them: every layer stops being edited, then the
+     * project's file opens again. The project then, and the undo histories
+     * that end; null, nothing changed, while edits are unsaved.
+     */
+    internal fun changeFieldsForSync(project: Project, change: () -> Unit): Pair<Project, List<String>>? {
+        if (unsaved() != null) return null
+        val ended = stopEditing()
+        try {
+            change()
+        } finally {
+            current = reopen(project)
+        }
+        return current!! to ended
+    }
+
     // Unsaved edits are saved or discarded before the project's file closes, as QGIS asks.
     private fun unsaved(): ActionResult.Failed? {
         val layers = editing.layersBeingEdited.filter(editing::isModified)
@@ -657,6 +686,9 @@ class Workspace(private val projects: Projects) {
         const val CURRENT = "project.current"
         const val FEATURES = "layer.features"
         const val EXPORT = "project.export"
+        /** A failure: what the team's workspace has changes with the team only. */
+        const val ONLINE_ONLY = "online_only"
+
         const val FIELD_ADD = "layer.field.add"
         const val FIELD_RENAME = "layer.field.rename"
         const val FIELD_DELETE = "layer.field.delete"

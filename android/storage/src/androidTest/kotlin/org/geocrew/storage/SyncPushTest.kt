@@ -300,19 +300,22 @@ class SyncPushTest {
         val moved = server.pushes.last().associate { it.getValue("row").jsonPrimitive.content to it.getValue("set").jsonObject.getValue("order").jsonObject.getValue("value").jsonPrimitive.int }
         assertEquals(project.layers.withIndex().associate { (i, l) -> l.id to i }, moved)
 
-        // A layer made after sharing is not the team's yet: dragged to the top, it goes nowhere and counts for nothing;
-        // moving a shared one with layer.move sends its place among the shared.
+        // A layer made after sharing is the team's from the next sync (protocol v1 7.1), made there with its place; until
+        // then, dragged to the top, it moves no shared one.
         run(Workspace.LAYER_CREATE, """{"name": "钻孔", "language": "zh"}""")
         val pushes = server.pushes.size
         run(Workspace.LAYER_MOVE, """{"layer": "钻孔", "index": 0}""")
         output(run(SyncActions.NOW))
-        assertEquals(pushes, server.pushes.size, "nothing to send")
-        val last = project.layers.filter { it.name != "钻孔" }.last()
+        assertEquals(pushes, server.pushes.size, "no place to send")
+        val drill = project.layers.single { it.name == "钻孔" }
+        assertEquals(0.0, server.layers.single { it.getValue("id").jsonPrimitive.content == drill.id }.getValue("order").jsonPrimitive.double)
+        // Moving one with layer.move sends the places among the shared that changed.
+        val last = project.layers.last()
         run(Workspace.LAYER_MOVE, """{"layer": "${last.name}", "index": 0}""")
         output(run(SyncActions.NOW))
-        val again = server.pushes.last().associate { it.getValue("row").jsonPrimitive.content to it.getValue("set").jsonObject.getValue("order").jsonObject.getValue("value").jsonPrimitive.int }
-        assertEquals(0, again[last.id], again.toString())
-        assertTrue(project.layers.none { it.name == "钻孔" && it.id in again })
+        val again = server.pushes.drop(pushes).flatten()
+            .associate { it.getValue("row").jsonPrimitive.content to it.getValue("set").jsonObject.getValue("order").jsonObject.getValue("value").jsonPrimitive.int }
+        assertEquals(project.layers.withIndex().associate { (i, l) -> l.id to i }, again)
     }
 
     @Test
