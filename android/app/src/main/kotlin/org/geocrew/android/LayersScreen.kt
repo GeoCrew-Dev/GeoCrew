@@ -126,6 +126,8 @@ data class LayerInfo(
     val color: Color,
     val count: Int = 0,
     val fields: List<FormField> = emptyList(),
+    /** In a project shared with a team: one the team's workspace has not taken yet (protocol v1 7.4). */
+    val unsent: Boolean = false,
     val visible: Boolean = true,
     val opacity: Float = 1f,
     val geometry: String? = null,
@@ -286,6 +288,8 @@ fun LayersScreen(
         sync = syncTexts(),
     )
 
+    val unsentText = stringResource(R.string.unsent)
+
     // What the team has (a shared field, a shared layer) changes with it, online (protocol v1 7.3): the action here
     // refuses it as online_only, and the sync action does it.
     suspend fun withTeam(action: String, params: JsonObject): Outcome {
@@ -322,7 +326,7 @@ fun LayersScreen(
             when (val info = graph.invoke(Workspace.LAYER_INFO, buildJsonObject { put("layer", layer.name) })) {
                 is Outcome.Done -> {
                     val described = info.output.jsonObject
-                    layer.copy(count = described["count"]?.jsonPrimitive?.intOrNull ?: 0, fields = formFields(described))
+                    layer.copy(count = described["count"]?.jsonPrimitive?.intOrNull ?: 0, fields = formFields(described), unsent = described["unsent"] == JsonPrimitive(true))
                 }
                 else -> {
                     failure = texts.of(info)
@@ -397,7 +401,7 @@ fun LayersScreen(
             Column(reorderable(reorder, key)) {
                 LayerRow(
                     title = layer.name,
-                    detail = pluralStringResource(countOf(layer.geometry), layer.count, layer.count),
+                    detail = listOfNotNull(pluralStringResource(countOf(layer.geometry), layer.count, layer.count), unsentText.takeIf { layer.unsent }).joinToString(" · "),
                     visible = layer.visible,
                     onToggle = { display(Workspace.LAYER_DISPLAY, buildJsonObject { put("layer", layer.name); put("visible", !layer.visible) }) },
                     swatch = { LegendSwatch(layer.geometry, legendColors(layer), layer.shown) },
@@ -723,7 +727,10 @@ fun LayersScreen(
             FieldsSheet(
                 layer = layer.name,
                 fields = layer.fields,
-                detail = { field -> field.range?.let { stringResource(R.string.field_type_range, typeName(field.type), rangeText(it)) } ?: typeName(field.type) },
+                detail = { field ->
+                    val kind = field.range?.let { stringResource(R.string.field_type_range, typeName(field.type), rangeText(it)) } ?: typeName(field.type)
+                    listOfNotNull(kind, unsentText.takeIf { field.unsent }).joinToString(" · ")
+                },
                 icon = { fieldIcon(it.type) },
                 menu = { field ->
                     FieldMenu(

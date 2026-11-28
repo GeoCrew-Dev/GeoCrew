@@ -205,17 +205,26 @@ class Workspace(private val projects: Projects) {
             ActionResult.Done(buildJsonObject { put("layer", layer); put("field", field); put("range", range?.toJson() ?: JsonNull) })
         },
         WorkspaceAction(
-            LAYER_INFO, "Layer info", "A layer of the open project: its fields with their types and ranges, and how many features it has, as edited",
+            LAYER_INFO, "Layer info",
+            "A layer of the open project: its fields with their types and ranges, and how many features it has, as edited. In a " +
+                "project shared with a team, unsent marks a layer or field the team's workspace has not taken yet (protocol v1 7.4)",
             Risk.VIEW, LAYER_PARAMS, """{"layer": "野外点"}""",
         ) { p ->
             val layer = p.getValue("layer").jsonPrimitive.content
             val project = checkNotNull(current) { "no project is open" }
             val store = project.target(layer).store
+            val id = project.layers.firstOrNull { it.name == layer }?.id
+            val unsent = project.data { ds -> if (Outbox.linked(ds)) SharedSchema.unsent(ds, project) else null }
+            val waiting = unsent?.fields?.get(id).orEmpty()
+            val ids = if (waiting.isEmpty()) emptyMap() else project.fieldIds(layer)
             ActionResult.Done(
                 buildJsonObject {
                     put("name", layer)
                     put("template", project.layers.firstOrNull { it.name == layer }?.template)
-                    putJsonArray("fields") { for (f in store.fields) add(fieldJson(f)) }
+                    if (unsent != null && id in unsent.layers) put("unsent", true)
+                    putJsonArray("fields") {
+                        for (f in store.fields) add(fieldJson(f).let { o -> if (ids[f.name] in waiting) JsonObject(o + ("unsent" to JsonPrimitive(true))) else o })
+                    }
                     put("count", editing.features(layer)?.size?.toLong() ?: project.count(layer))
                 },
             )

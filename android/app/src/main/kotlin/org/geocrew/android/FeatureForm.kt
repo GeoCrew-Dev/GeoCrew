@@ -97,7 +97,7 @@ import org.geocrew.core.project.Degrees
 import org.geocrew.core.project.Numbers
 
 /** A field of a layer, as layer.features describes it. */
-data class FormField(val name: String, val type: String, val range: ValueRange? = null) {
+data class FormField(val name: String, val type: String, val range: ValueRange? = null, val unsent: Boolean = false) {
     /** The field as the edit buffer checks values against it. */
     fun field(): Field = Field(name, FieldType.of(type), range)
 }
