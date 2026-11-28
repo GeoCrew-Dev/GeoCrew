@@ -619,6 +619,8 @@ class Workspace(private val projects: Projects) {
         val styles = project.styles
         put("name", project.name)
         put("id", project.id)
+        // Shared with a team (protocol v1): what only a team's project has, such as who edited a feature, shows.
+        put("linked", project.data(Outbox::linked))
         put("folder", project.folder.path)
         // Said once, by whatever first describes the project after it opened.
         project.takeSnapshotFailure()?.let { put("snapshotFailure", it) }

@@ -19,6 +19,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import org.geocrew.core.action.ActionRegistry
 import org.geocrew.core.action.Caller
@@ -89,7 +90,7 @@ class SyncStructureTest {
                 path.endsWith("/layers") -> create(o!!)
                 path.endsWith("/rows") -> push(o!!)
                 path.contains("/changes?since=") -> pull(path.substringAfter("since=").substringBefore("&").toLong())
-                path.endsWith("/members") -> Reply(200, "[]")
+                path.endsWith("/members") -> Reply(200, """[{"id": "m1", "nickname": "组长"}, {"id": "m2", "nickname": "李四"}]""")
                 else -> Reply(404, """{"error": "not_found", "message": "$path"}""")
             }
         }
@@ -455,6 +456,27 @@ class SyncStructureTest {
         output(run(SyncActions.NOW))
         assertEquals(listOf("D001"), workspace.current!!.target("野外点").store.features().map { it.properties["点名"]?.jsonPrimitive?.contentOrNull })
         assertTrue(workspace.current!!.hiddenLayers().isEmpty())
+    }
+
+    @Test
+    fun eachFeatureKnowsWhoLastEditedIt() {
+        shared("编辑者")
+        // A teammate's point comes in.
+        val describe = ids().getValue("描述")
+        server.seq++
+        val at = """"by": "m2", "at": "2026-11-28T10:00:00Z", "seq": ${server.seq}"""
+        server.rows += server.seq to """{"layer": "$layerId", "id": "r9", "conflicted": false, "deleted": null, "fields": {
+            "$describe": {"value": "李四的点", $at}, "geom": {"value": {"type": "Point", "coordinates": [114.4, 30.6]}, $at}}}"""
+        output(run(SyncActions.NOW))
+        fun editors() = output(run(SyncActions.EDITORS, """{"layer": "野外点"}""")).getValue("editors").jsonArray.map { it.jsonObject }
+            .associate { e -> e.getValue("fid").jsonPrimitive.long to (e["nickname"]?.jsonPrimitive?.content ?: "mine") }
+        val mine = feature("野外点", "D001").fid
+        val theirs = workspace.current!!.target("野外点").store.features().single { it.fid != mine }.fid
+        assertEquals(mapOf(mine to "mine", theirs to "李四"), editors())
+
+        // Edited here, it is this phone's.
+        edit("野外点") { output(run(Editing.VALUES, """{"layer": "野外点", "fid": $theirs, "values": {"描述": "改过"}}""")) }
+        assertEquals(mapOf(mine to "mine", theirs to "mine"), editors())
     }
 
     @Test

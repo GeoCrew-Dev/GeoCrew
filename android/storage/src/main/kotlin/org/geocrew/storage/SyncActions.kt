@@ -264,6 +264,31 @@ class SyncActions(
             }
         },
         SyncAction(
+            EDITORS, "Feature editors",
+            "Who last edited each feature of a layer of the open project, as the team's workspace says (protocol v1 6.1): by fid, " +
+                "the member's nickname, or mine for this phone's own edits. Features no member edited are left out",
+            Risk.VIEW, LAYER_PARAMS, """{"layer": "野外点"}""",
+        ) { p ->
+            val project = workspace.current ?: return@SyncAction ActionResult.Failed(NO_PROJECT, "no project is open")
+            val layer = p.text("layer")!!
+            val id = project.layers.firstOrNull { it.name == layer }?.id ?: return@SyncAction ActionResult.Failed("invalid", "there is no layer $layer")
+            val account = accounts.of(project.id)
+            val nicknames = accounts.nicknames(project.id)
+            val editors = project.data { Outbox.editors(it, id) }
+            ActionResult.Done(
+                buildJsonObject {
+                    putJsonArray("editors") {
+                        for ((fid, editor) in editors.toSortedMap()) {
+                            val mine = editor == Outbox.ME || editor == account?.member
+                            val nickname = nicknames[editor]
+                            if (!mine && nickname == null) continue // one who left the team, or not listed yet
+                            add(buildJsonObject { put("fid", fid); if (mine) put("mine", true) else put("nickname", nickname) })
+                        }
+                    }
+                },
+            )
+        },
+        SyncAction(
             FIELD_RENAME, "Rename shared field",
             "Renames a field of a layer the open project shares with its team, there and here (protocol v1 7.3), online only: its " +
                 "values stay. The team having changed the layer meanwhile fails stale, the layer coming in as it is now, to do it again on",
@@ -373,6 +398,7 @@ class SyncActions(
         const val CONFLICTS = "sync.conflicts"
         const val FILE = "sync.file"
         const val RESOLVE = "sync.resolve"
+        const val EDITORS = "sync.editors"
         const val FIELD_RENAME = "sync.field.rename"
         const val FIELD_DELETE = "sync.field.delete"
         const val LAYER_DELETE = "sync.layer.delete"

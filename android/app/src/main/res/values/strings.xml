@@ -208,6 +208,7 @@
     <string name="tool_bookmarks">Bookmarks</string>
     <string name="tool_lock_rotation">Lock rotation</string>
     <string name="tool_unlock_rotation">Unlock rotation</string>
+    <string name="tool_editors">Editors</string>
     <string name="bookmark_add">Add</string>
     <string name="bookmark_add_title">Add bookmark</string>
     <string name="bookmark_name">Name</string>

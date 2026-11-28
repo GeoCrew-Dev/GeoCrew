@@ -89,7 +89,7 @@ object ProjectFormat {
      */
     const val ROWS_TABLE = "geocrew_rows"
     const val ROWS_SCHEMA = "CREATE TABLE IF NOT EXISTS $ROWS_TABLE " +
-        "(layer_id TEXT NOT NULL, fid INTEGER NOT NULL, uuid TEXT NOT NULL UNIQUE, seq INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (layer_id, fid))"
+        "(layer_id TEXT NOT NULL, fid INTEGER NOT NULL, uuid TEXT NOT NULL UNIQUE, seq INTEGER NOT NULL DEFAULT 0, editor TEXT, PRIMARY KEY (layer_id, fid))"
 
     /**
      * What a linked project has to send its workspace (protocol v1 8.4): each
