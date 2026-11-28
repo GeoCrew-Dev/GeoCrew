@@ -267,13 +267,18 @@ internal class ProjectSync(private val project: Project, private val client: Syn
             project.data { Outbox.seenSystemRow(it, l.id, l.seq) }
         }
         if (places.isEmpty()) return
-        // Each to the place it came with, the lowest first: the sender's order, where both have the same layers.
-        val ids = project.layers.map { it.id }.toMutableList()
+        // A place counts among the shared layers: each to the one it came with, the lowest first (the sender's order),
+        // into the slots the shared layers have here; layers only this phone has stay where they are.
+        val all = project.layers.map { it.id }
+        val shared = project.data(Outbox::systemRows)
+        val ranked = all.filter { it in shared }.toMutableList()
         for ((id, at) in places.sortedBy { it.second }) {
-            ids.remove(id)
-            ids.add(at.coerceIn(0, ids.size), id)
+            ranked.remove(id)
+            ranked.add(at.coerceIn(0, ranked.size), id)
         }
-        if (ids != project.layers.map { it.id }) project.setOrder(ids.map { id -> project.layers.first { it.id == id }.name })
+        val next = ranked.iterator()
+        val ids = all.map { if (it in shared) next.next() else it }
+        if (ids != all) project.setOrder(ids.map { id -> project.layers.first { it.id == id }.name })
     }
 
     // The shared layers the project lacks, made with their ids; how many. A deleted one is left out (backlog).

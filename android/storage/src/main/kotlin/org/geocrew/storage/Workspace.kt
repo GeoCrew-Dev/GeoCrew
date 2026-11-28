@@ -470,13 +470,15 @@ class Workspace(private val projects: Projects) {
         },
     ) + editing.actions
 
-    // For a project linked to a team: the layers whose place in the draw order ([before]: ids, the top first) changed go
-    // to it with their new place (the merged property order, protocol v1 7.1).
+    // For a project linked to a team: the layers it shares whose place among them in the draw order ([before]: ids, the
+    // top first) changed go to it with their new place (the merged property order, protocol v1 7.1). Layers it has not
+    // got are left out, and count for nothing.
     private fun sendOrder(project: Project, before: List<String>) {
-        val after = project.layers.map { it.id }
-        if (after == before) return
         project.data { ds ->
-            for ((i, id) in after.withIndex()) if (before.indexOf(id) != i) Outbox.recordLayer(ds, id, Outbox.ORDER, JsonPrimitive(i))
+            val shared = Outbox.systemRows(ds)
+            val was = before.filter { it in shared }
+            val now = project.layers.map { it.id }.filter { it in shared }
+            for ((i, id) in now.withIndex()) if (was.indexOf(id) != i) Outbox.recordLayer(ds, id, Outbox.ORDER, JsonPrimitive(i))
         }
     }
 

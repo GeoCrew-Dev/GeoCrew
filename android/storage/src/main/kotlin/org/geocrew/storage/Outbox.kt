@@ -181,6 +181,10 @@ internal object Outbox {
         put(ds, layerId, LAYERS, field, value, now)
     }
 
+    /** The system-table rows the workspace has or is to have: attachments, and the layers it shares. */
+    fun systemRows(ds: VectorDataset): Set<String> =
+        if (!exists(ds, ProjectFormat.SYSTEM_ROWS_TABLE)) emptySet() else rows(ds, "SELECT uuid FROM ${ProjectFormat.SYSTEM_ROWS_TABLE}").mapNotNullTo(HashSet()) { it["uuid"] }
+
     /** Attachment row [uuid] was last seen at [seq]: its next change's base seq; the workspace has it. */
     fun seenSystemRow(ds: VectorDataset, uuid: String, seq: Long) {
         ds.sql(ProjectFormat.SYSTEM_ROWS_SCHEMA)
