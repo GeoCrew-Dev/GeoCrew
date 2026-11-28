@@ -91,7 +91,9 @@ internal fun address(typed: String): String {
             else -> c
         }
     }.joinToString("").filterNot { it.isWhitespace() }
-    return if (t.contains("://")) t else "https://$t"
+    if (!t.contains("://")) return "https://$t"
+    // The scheme as the transport and the key check read it: lower case.
+    return t.substringBefore("://").lowercase() + "://" + t.substringAfter("://")
 }
 
 private fun usable(typed: String): Boolean = address(typed).substringAfter("://").isNotBlank()
@@ -180,7 +182,8 @@ internal suspend fun checkKey(graph: AppGraph, server: String): KeyCheck {
     val done = graph.invoke(SyncActions.KEY, buildJsonObject { put("server", server) })
     if (done !is Outcome.Done) return KeyCheck.Failed(done)
     val key = done.output.jsonObject
-    val fingerprint = (key["fingerprint"] as? JsonPrimitive)?.contentOrNull ?: return KeyCheck.Failed(done)
+    val fingerprint = (key["fingerprint"] as? JsonPrimitive)?.contentOrNull
+        ?: return KeyCheck.Failed(Outcome.Failed(SyncActions.UNTRUSTED, "the server showed no key"))
     return if ((key["trusted"] as? JsonPrimitive)?.booleanOrNull == true) KeyCheck.Vouched else KeyCheck.Ask(fingerprint)
 }
 
