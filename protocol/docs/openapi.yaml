@@ -1452,6 +1452,111 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
 
+  /api/v1/workspaces/{ws}/uploads:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+    post:
+      tags: [v1]
+      operationId: v1StartUpload
+      summary: Begin an attachment file's upload, or pick up the caller's unfinished one; needs edit_rows on some layer (v1 9.2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sha256, size, type]
+              properties:
+                sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+                size: { type: integer, format: int64, minimum: 0 }
+                type: { type: string, description: MIME type, examples: [image/jpeg] }
+      responses:
+        "200":
+          description: The workspace has the file already (exists), or where to send its bytes from
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists: { type: boolean, const: true }
+                  upload: { type: string }
+                  offset: { type: integer, format: int64, description: Bytes the server has }
+                  chunk_size: { type: integer, format: int64, description: The most bytes a chunk may hold }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+
+  /api/v1/workspaces/{ws}/uploads/{upload}:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+      - { name: upload, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [v1]
+      operationId: v1PutChunk
+      summary: Send the next chunk of the caller's upload; the last one stores the file if its hash is right (v1 9.2)
+      parameters:
+        - { name: offset, in: query, required: true, description: "Bytes the server has: where this chunk starts", schema: { type: integer, format: int64, minimum: 0 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary, description: "At most chunk_size bytes, not past the size the upload began with" }
+      responses:
+        "200":
+          description: Not all there yet
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [offset]
+                properties:
+                  offset: { type: integer, format: int64 }
+        "201":
+          description: All there, and the file the upload named
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sha256]
+                properties:
+                  sha256: { type: string }
+        "400": { description: "invalid: too many bytes; hash_mismatch: the bytes are not the file named, the upload is void", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: "No such upload of the caller's: finished, void or dropped after 7 days untouched", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409":
+          description: "offset_mismatch: the chunk does not start where the upload stands, which comes with it; archived"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Error"
+                  - type: object
+                    properties:
+                      offset: { type: integer, format: int64 }
+
+  /api/v1/workspaces/{ws}/files/{sha256}:
+    parameters:
+      - $ref: "#/components/parameters/ws"
+      - { name: sha256, in: path, required: true, schema: { type: string, pattern: "^[0-9a-f]{64}$" } }
+    get:
+      tags: [v1]
+      operationId: v1GetFile
+      summary: Download an attachment's file, with Range to go on from where a download stopped; HEAD follows the same rules (v1 9.2)
+      parameters:
+        - { name: Range, in: header, schema: { type: string, examples: ["bytes=1048576-"] } }
+      responses:
+        "200":
+          description: The file; ETag is its hash, it never changes
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "206":
+          description: The part asked for
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404": { description: "not_found: no attachment the caller can see refers to the file; not_uploaded: one does, but the file is not up yet", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
 components:
   securitySchemes:
     bearer:

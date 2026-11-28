@@ -21,8 +21,9 @@ var (
 )
 
 var (
-	hashRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	idRe   = regexp.MustCompile(`^[0-9a-f]{1,64}$`)
+	hashRe   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	idRe     = regexp.MustCompile(`^[0-9a-f]{1,64}$`)
+	uploadRe = regexp.MustCompile(`^u_[0-9a-f]{1,64}$`)
 )
 
 // ValidHash reports whether s is a lowercase hex SHA-256.
@@ -75,6 +76,87 @@ func (d *Disk) Put(workspaceID, sha string, r io.Reader) (int64, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// part is where the bytes of upload so far are kept, out of the way of List.
+func (d *Disk) part(workspaceID, upload string) string {
+	return filepath.Join(d.Root, workspaceID, ".uploads", upload)
+}
+
+// Append writes what r holds, at most max bytes, at offset of upload's part
+// file (protocol v1 9.2) and returns how many it wrote. Anything past offset
+// from an earlier write that was never counted goes first, so a chunk sent
+// again lands where it belongs. More than max bytes is ErrTooLarge, and the
+// part is left as it was up to offset.
+func (d *Disk) Append(workspaceID, upload string, offset int64, r io.Reader, max int64) (int64, error) {
+	if !idRe.MatchString(workspaceID) || !uploadRe.MatchString(upload) || offset < 0 || max < 0 {
+		return 0, ErrBadHash
+	}
+	p := d.part(workspaceID, upload)
+	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+		return 0, err
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY, 0o640)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	if err := f.Truncate(offset); err != nil {
+		return 0, err
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return 0, err
+	}
+	n, err := io.Copy(f, io.LimitReader(r, max+1))
+	if err == nil && n > max {
+		err = ErrTooLarge
+	}
+	if err != nil {
+		if terr := f.Truncate(offset); terr != nil {
+			return 0, terr
+		}
+		return 0, err
+	}
+	return n, f.Sync()
+}
+
+// Commit checks that upload's part file is the file sha names and, if so,
+// stores it as that file. A part that is not is removed: ErrMismatch.
+func (d *Disk) Commit(workspaceID, upload, sha string) error {
+	if !idRe.MatchString(workspaceID) || !uploadRe.MatchString(upload) || !ValidHash(sha) {
+		return ErrBadHash
+	}
+	p := d.part(workspaceID, upload)
+	f, err := os.Open(p)
+	if err != nil {
+		return err
+	}
+	h := sha256.New()
+	_, err = io.Copy(h, f)
+	f.Close()
+	if err != nil {
+		return err
+	}
+	if hex.EncodeToString(h.Sum(nil)) != sha {
+		os.Remove(p)
+		return ErrMismatch
+	}
+	dst := d.path(workspaceID, sha)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return err
+	}
+	return os.Rename(p, dst)
+}
+
+// Discard removes upload's part file; one already gone is not an error.
+func (d *Disk) Discard(workspaceID, upload string) error {
+	if !idRe.MatchString(workspaceID) || !uploadRe.MatchString(upload) {
+		return ErrBadHash
+	}
+	if err := os.Remove(d.part(workspaceID, upload)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // Open returns the stored file or an error satisfying errors.Is(err, os.ErrNotExist).
