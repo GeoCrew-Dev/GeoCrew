@@ -224,9 +224,10 @@ private fun readLayers(ds: VectorDataset): List<Project.Layer> {
     val present = ds.layers.toSet()
     val geometry = rows(ds, "SELECT table_name, geometry_type_name FROM gpkg_geometry_columns").associate { it["table_name"] to it["geometry_type_name"] }
     val display = readDisplay(ds)
+    val hidden = hiddenLayers(ds)
     // Rows of GeoCrew's layer table keep their number when a layer before them is deleted: colours stay too.
     val layers = rows(ds, "SELECT rowid - 1 AS made, table_name, id, template FROM ${ProjectFormat.LAYERS_TABLE} ORDER BY rowid")
-        .filter { it["table_name"] in present }
+        .filter { it["table_name"] in present && it["id"] !in hidden }
         .map {
             val made = it["made"]?.toIntOrNull() ?: 0
             val name = it.getValue("table_name")!!
@@ -236,6 +237,12 @@ private fun readLayers(ds: VectorDataset): List<Project.Layer> {
         }
     val order = LayerTree.drawOrder(treeNodes(layers, readGroups(ds, display))).withIndex().associate { (i, id) -> id to i }
     return layers.sortedBy { order[it.id] ?: Int.MAX_VALUE }
+}
+
+// The ids of the shared layers the team deleted, hidden here (protocol v1 5.6).
+internal fun hiddenLayers(ds: VectorDataset): Set<String> {
+    val made = rows(ds, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${ProjectFormat.HIDDEN_LAYERS_TABLE}'").isNotEmpty()
+    return if (made) rows(ds, "SELECT layer_id FROM ${ProjectFormat.HIDDEN_LAYERS_TABLE}").mapNotNullTo(HashSet()) { it["layer_id"] } else emptySet()
 }
 
 // The layer list's groups, in no order (the tree puts them in place); none for a project that never had one.
@@ -1314,6 +1321,26 @@ class Project internal constructor(
 
     /** Layer [layer]'s fields by name, to the stable ids sync knows them by. */
     internal fun fieldIds(layer: String): Map<String, String> = Outbox.fieldIds(dataset, layer)
+
+    /** The ids of the shared layers the team deleted, kept in the file and hidden (protocol v1 5.6). */
+    internal fun hiddenLayers(): Set<String> = hiddenLayers(dataset)
+
+    /**
+     * Shared layer [id] hidden, the team having deleted it, or with [hidden]
+     * false shown again, the team having restored it (protocol v1 5.6): its
+     * table and what it had to send stay. Open the project again afterwards,
+     * see [Projects.reopen].
+     */
+    internal fun hideLayer(id: String, hidden: Boolean) {
+        dataset.sql(ProjectFormat.HIDDEN_LAYERS_SCHEMA)
+        dataset.sql(
+            if (hidden) {
+                "INSERT OR IGNORE INTO ${ProjectFormat.HIDDEN_LAYERS_TABLE} (layer_id) VALUES (${quote(id)})"
+            } else {
+                "DELETE FROM ${ProjectFormat.HIDDEN_LAYERS_TABLE} WHERE layer_id = ${quote(id)}"
+            },
+        )
+    }
 
     /** Whether the project has been closed: its file is no longer open. */
     var closed = false

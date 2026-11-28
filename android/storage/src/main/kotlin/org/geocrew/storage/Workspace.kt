@@ -587,13 +587,16 @@ class Workspace(private val projects: Projects) {
      */
     internal fun changeFieldsForSync(project: Project, change: () -> Unit): Pair<Project, List<String>>? {
         if (unsaved() != null) return null
+        val before = project.layers.map { it.name }
         val ended = stopEditing()
         try {
             change()
         } finally {
             current = reopen(project)
         }
-        return current!! to ended
+        // A layer gone with it (one the team deleted, hidden here) takes its undo history along.
+        val gone = before - current!!.layers.map { it.name }.toSet()
+        return current!! to (ended + gone.map(editing::scopeOf)).distinct()
     }
 
     // Unsaved edits are saved or discarded before the project's file closes, as QGIS asks.
