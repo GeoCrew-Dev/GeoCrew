@@ -245,6 +245,19 @@ const (
 )
 
 var (
+	// ErrIDTaken means an add_field names an id the layer has, or had, for a
+	// field defined otherwise (protocol 7.3).
+	ErrIDTaken = errors.New("field id taken")
+)
+
+// NameTakenError means an add_field or rename_field gives a field a name
+// another field of the layer has (compared trimmed, ignoring case; protocol
+// 7.2). Field is that field.
+type NameTakenError struct{ Field FieldDef }
+
+func (e *NameTakenError) Error() string { return "field name taken by " + e.Field.ID }
+
+var (
 	// ErrTooLarge means a file is over MaxFileSize.
 	ErrTooLarge = errors.New("file too large")
 	// ErrOffsetMismatch means a chunk does not start where the upload stands;

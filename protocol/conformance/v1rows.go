@@ -230,5 +230,62 @@ func (s *suite) v1RowChecks() []check {
 			}
 			return expect(r, http.StatusConflict, "stale")
 		}},
+		{section: "v1 §7.3", name: "只含 add_field 的请求不比对版本，重发不改结构；ID 定义不同返回 409 id_taken；重名返回 409 name_taken 带上已有的字段", v1: true, run: func() error {
+			if err := ready(); err != nil {
+				return err
+			}
+			path := v1Path(s.v1.ws, "/layers/"+layer+"/schema")
+			add := func(base int, id, name, typ string) map[string]any {
+				return map[string]any{"base_version": base, "ops": []any{map[string]any{"op": "add_field", "field": map[string]any{"id": id, "name": name, "type": typ}}}}
+			}
+			version := func(r response) (int64, error) {
+				var l struct {
+					SchemaVersion int64 `json:"schema_version"`
+				}
+				return l.SchemaVersion, r.json(&l)
+			}
+			// Made offline from version 1; the layer is at 2 by now.
+			r, err := s.c.do(http.MethodPost, path, s.v1.leader, add(1, "f9", "岩性", "string"), nil)
+			if err != nil {
+				return err
+			}
+			if err := expect(r, http.StatusOK, ""); err != nil {
+				return fmt.Errorf("只含 add_field、版本是旧的：%w", err)
+			}
+			v, err := version(r)
+			if err != nil {
+				return err
+			}
+			if r, err = s.c.do(http.MethodPost, path, s.v1.leader, add(1, "f9", "岩性", "string"), nil); err != nil {
+				return err
+			}
+			if err := expect(r, http.StatusOK, ""); err != nil {
+				return fmt.Errorf("重发同一个 add_field：%w", err)
+			}
+			if again, err := version(r); err != nil || again != v {
+				return fmt.Errorf("重发后 schema_version 为 %d，应仍是 %d", again, v)
+			}
+			if r, err = s.c.do(http.MethodPost, path, s.v1.leader, add(int(v), "f9", "岩性", "integer"), nil); err != nil {
+				return err
+			}
+			if err := expect(r, http.StatusConflict, "id_taken"); err != nil {
+				return fmt.Errorf("同一 ID 定义不同：%w", err)
+			}
+			if r, err = s.c.do(http.MethodPost, path, s.v1.leader, add(int(v), "f10", " 岩性 ", "integer"), nil); err != nil {
+				return err
+			}
+			if err := expect(r, http.StatusConflict, "name_taken"); err != nil {
+				return fmt.Errorf("重名：%w", err)
+			}
+			var taken struct {
+				Field struct {
+					ID string `json:"id"`
+				} `json:"field"`
+			}
+			if err := r.json(&taken); err != nil || taken.Field.ID != "f9" {
+				return fmt.Errorf("name_taken 应带上已有的字段 f9：%s", clip(r.body))
+			}
+			return nil
+		}},
 	}
 }

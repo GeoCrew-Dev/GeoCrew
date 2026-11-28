@@ -1034,7 +1034,7 @@ paths:
     post:
       tags: [v1]
       operationId: v1ChangeSchema
-      summary: Apply schema operations in order, all or none; needs edit_schema (v1 7.3)
+      summary: Apply schema operations in order, all or none; needs edit_schema. Adds alone are not version-checked (v1 7.3)
       requestBody:
         required: true
         content:
@@ -1058,13 +1058,24 @@ paths:
                       options: { type: array }
       responses:
         "200":
-          description: The layer with its new schema
+          description: The layer with its schema; unchanged, its version too, when every add was there already
           content:
             application/json:
               schema: { $ref: "#/components/schemas/V1Layer" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
-        "409": { $ref: "#/components/responses/V1Stale" }
+        "409":
+          description: "stale: a rename, an option change or a deletion from another version, with the layer as it is now (V1Stale); id_taken: the layer has, or had, a field of that id defined otherwise; name_taken: another field has the name, which comes as field"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, message]
+                properties:
+                  error: { type: string, enum: [stale, id_taken, name_taken] }
+                  message: { type: string }
+                  layer: { $ref: "#/components/schemas/V1Layer" }
+                  field: { $ref: "#/components/schemas/V1FieldDef" }
 
   /api/v1/workspaces/{ws}/rows:
     parameters:
