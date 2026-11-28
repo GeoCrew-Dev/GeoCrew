@@ -269,6 +269,11 @@ class SyncStructureTest {
         assertEquals(emptyList(), sent(rock))
         assertTrue(server.pushes.none { it.text("layer") == spring })
         assertEquals(2, structure())
+        // Shown as not sent: the layer, and the field in a shared one.
+        fun unsent(info: JsonObject) = info["unsent"] == JsonPrimitive(true)
+        val point = output(run(Workspace.LAYER_INFO, """{"layer": "野外点"}"""))
+        assertEquals(setOf("岩性"), point.getValue("fields").jsonArray.map { it.jsonObject }.filter(::unsent).map { it.text("name") }.toSet())
+        assertTrue(!unsent(point) && unsent(output(run(Workspace.LAYER_INFO, """{"layer": "泉点"}"""))))
 
         // Once the server takes them, the layer and the field go, and then what waited in them.
         server.refuse = false
@@ -278,6 +283,7 @@ class SyncStructureTest {
         assertEquals(listOf("灰岩"), sent(rock))
         assertTrue(server.pushes.any { it.text("layer") == spring })
         assertEquals(0, structure())
+        assertTrue(output(run(Workspace.LAYER_INFO, """{"layer": "野外点"}""")).getValue("fields").jsonArray.none { it.jsonObject.containsKey("unsent") })
     }
 
     @Test

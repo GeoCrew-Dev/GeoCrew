@@ -571,6 +571,7 @@
     <string name="team_check_key">核对服务器指纹</string>
     <string name="team_key_matches">一致</string>
     <string name="team_fingerprint">服务器指纹</string>
+    <string name="unsent">未提交</string>
     <string name="sync_stale">团队刚改过这个图层，已更新，再试一次</string>
     <string name="sync_name_taken">团队已有这个名字的字段</string>
     <string name="sync_forbidden">没有权限</string>

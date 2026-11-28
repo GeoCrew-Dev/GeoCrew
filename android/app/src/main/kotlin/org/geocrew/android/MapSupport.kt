@@ -107,7 +107,7 @@ private val EARLIER_NAME_FIELDS = setOf("点号", "Number")
 
 internal fun formFields(collection: JsonObject?): List<FormField> = collection?.get("fields")?.jsonArray.orEmpty().map {
     val f = it.jsonObject
-    FormField((f["name"] as JsonPrimitive).content, (f["type"] as JsonPrimitive).content, ValueRange.of(f["range"]))
+    FormField((f["name"] as JsonPrimitive).content, (f["type"] as JsonPrimitive).content, ValueRange.of(f["range"]), f["unsent"] == JsonPrimitive(true))
 }
 
 /** A point feature's longitude and latitude, or null when it is not a point (a line, an area, no geometry). */
