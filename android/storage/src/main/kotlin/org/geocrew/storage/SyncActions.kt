@@ -193,7 +193,7 @@ class SyncActions(
         },
         SyncAction(
             CONFLICTS, "Conflicts",
-            "The conflicts of the open project waiting to be settled (protocol v1 6.5), oldest first: the layer, the feature (fid, " +
+            "The conflicts of the open project waiting to be settled (protocol v1 6.5), as their records came: the layer, the feature (fid, " +
                 "name), the field (or geometry), and the value kept against the one that lost, each with whose it is and when",
             Risk.VIEW, NO_PARAMS, "{}",
         ) { _ ->

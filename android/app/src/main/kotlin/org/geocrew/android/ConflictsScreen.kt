@@ -77,6 +77,8 @@ fun ConflictsScreen(graph: AppGraph, project: String, onBack: () -> Unit, onFeat
     // The conflict being settled: one at a time, as the server answers.
     var settling by remember { mutableStateOf<String?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
+    // The list could not be read: no "no conflicts" for it.
+    var unread by remember { mutableStateOf(false) }
     val sync = syncTexts()
     val texts = FailureTexts(
         unsaved = stringResource(R.string.failure_unsaved),
@@ -87,6 +89,7 @@ fun ConflictsScreen(graph: AppGraph, project: String, onBack: () -> Unit, onFeat
     suspend fun load() {
         val done = graph.invoke(SyncActions.CONFLICTS)
         if (done !is Outcome.Done) failure = sync.of(done)
+        unread = done !is Outcome.Done
         conflicts = (done as? Outcome.Done)?.output?.jsonObject?.get("conflicts")?.jsonArray?.mapNotNull { it as? JsonObject }.orEmpty()
     }
 
@@ -94,6 +97,7 @@ fun ConflictsScreen(graph: AppGraph, project: String, onBack: () -> Unit, onFeat
         val opened = graph.open(project)
         if (opened !is Outcome.Done) {
             failure = texts.of(opened)
+            unread = true
             conflicts = emptyList()
             return@LaunchedEffect
         }
@@ -122,6 +126,7 @@ fun ConflictsScreen(graph: AppGraph, project: String, onBack: () -> Unit, onFeat
         val shown = conflicts
         when {
             shown == null -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            shown.isEmpty() && unread -> {}
             shown.isEmpty() -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.conflicts_none), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
